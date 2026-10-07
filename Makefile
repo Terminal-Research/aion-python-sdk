@@ -26,7 +26,7 @@ POSTGRES_TEST_URL_IS_EXTERNAL := $(filter environment command line,$(origin POST
 
 .PHONY: help tests tests-unit tests-integration tests-full tests-scenarios tests-scenarios-persistence \
 	tests-scenarios-pg tests-scenarios-distributed \
-	tests-scenarios-dist tests-floors scenarios-matrix lint-imports release-check release check-env \
+	tests-scenarios-dist tests-floors scenarios-matrix lint-imports release-check release check-env chat-bundle-check \
 	dist-build dist-check dist-smoke pg-test-up pg-test-down
 
 # `make help` lists targets in file order, under the `##@` heading above them.
@@ -134,14 +134,30 @@ TAGS ?=
 FRAMEWORK ?=
 
 # Without TAGS, everything except the two groups that need a database and
-# have targets of their own: persistence restarts a server and waits out a
-# production lease, distributed runs two servers over one database.
+# have targets of their own: persistence restarts servers over one database,
+# distributed runs two servers over one database.
 SCENARIO_TAGS := $(if $(TAGS),$(shell echo "$(TAGS)" | sed 's/  */ or /g'),not persistence and not distributed)
 SCENARIO_EXPR := scenario and ($(SCENARIO_TAGS))
 FRAMEWORK_FILTER := $(if $(FRAMEWORK),-k "[$(FRAMEWORK)]",)
 
-tests-scenarios: ## Run the scenarios against this working tree (TAGS=, FRAMEWORK=)
-	poetry run pytest tests/scenarios -m "$(SCENARIO_EXPR)" $(FRAMEWORK_FILTER) $(ARGS)
+# Every scenario target runs on pytest-xdist workers. Each worker starts the
+# servers its scenarios need. SCENARIO_WORKERS takes what `pytest -n` takes;
+# 0 runs every scenario in the pytest process itself, which `-s` and `--pdb`
+# need. KEEP_SERVE forces 0: a worker's report of the servers it left running
+# would not reach this terminal. The database-backed groups share one
+# database across workers: each scenario reads and writes only its own tasks
+# and conversations, and servers starting together on it is a cluster-mode
+# deployment they have to survive anyway.
+SCENARIO_WORKERS ?= 4
+SCENARIO_N := -n $(if $(KEEP_SERVE),0,$(SCENARIO_WORKERS))
+# `--dist loadfile` keeps a module on one worker, so a server a module shares
+# between its scenarios - a deployment variant, a distributed pair - is not
+# started on every worker. Persistence starts a server per scenario and
+# spreads them one by one.
+SCENARIO_XDIST := $(SCENARIO_N) --dist loadfile
+
+tests-scenarios: ## Run the scenarios against this working tree (TAGS=, FRAMEWORK=, SCENARIO_WORKERS=)
+	poetry run pytest tests/scenarios -m "$(SCENARIO_EXPR)" $(SCENARIO_XDIST) $(FRAMEWORK_FILTER) $(ARGS)
 
 # The scenarios that restart a server and expect the tasks to still be there.
 # The database is handled the way the integration targets handle it, and by
@@ -150,20 +166,21 @@ tests-scenarios: ## Run the scenarios against this working tree (TAGS=, FRAMEWOR
 # target is named for what it proves rather than for the store that backs it;
 # `tests-scenarios-pg` remains as a compatibility alias for existing local workflows.
 tests-scenarios-persistence: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
-tests-scenarios-persistence: ## Run the persistence scenarios against a real database
+tests-scenarios-persistence: ## Run the persistence scenarios against a real database (SCENARIO_WORKERS=)
 	@$(call with_pg_test,poetry run pytest tests/scenarios -m "scenario and persistence" \
-		$(FRAMEWORK_FILTER) $(ARGS))
+		$(SCENARIO_N) --dist load $(FRAMEWORK_FILTER) $(ARGS))
 
 tests-scenarios-pg: tests-scenarios-persistence ## Alias for tests-scenarios-persistence
 
 # The scenarios that run two servers of one agent over one database and ask
-# which of them owns a task. Same database contract as the persistence target,
-# and separate from it for the same reason: a plain `make tests-scenarios`
-# would otherwise start four servers per scenario and wait out a lease.
+# whether one of them follows, continues and cancels a task the other runs.
+# Same database contract as the persistence target. A plain `make
+# tests-scenarios` leaves them out: they need that database and start two
+# servers per scenario.
 tests-scenarios-distributed: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
-tests-scenarios-distributed: ## Run the distributed scenarios against a real database
+tests-scenarios-distributed: ## Run the distributed scenarios against a real database (SCENARIO_WORKERS=)
 	@$(call with_pg_test,poetry run pytest tests/scenarios -m "scenario and distributed" \
-		$(FRAMEWORK_FILTER) $(ARGS))
+		$(SCENARIO_XDIST) $(FRAMEWORK_FILTER) $(ARGS))
 
 # An explicit complete source-checkout run. Clear selectors so command-line
 # TEST_PATHS, ARGS, TAGS, or FRAMEWORK cannot make "full" silently partial.
@@ -198,6 +215,36 @@ scenarios-matrix: ## Regenerate tests/scenarios/SCENARIOS.md from the suite
 # the script reports on whichever interpreter runs it.
 check-env: ## Check the installed environment for duplicate or broken packages
 	poetry run ./scripts/packaging/envcheck.py
+
+# `aion chat` runs src/aion/cli/bin/cli.mjs, a bundle of libs/aion-chat-ui
+# committed beside the Python code. The check builds the bundle again from the
+# current sources into a scratch directory and compares the SHA-256 of the two.
+# libs/aion-chat-ui/dist is left alone: a source checkout's `aion chat` runs
+# from there. The build is reproducible - the same sources and lockfile give
+# the same bytes - so a different hash means the committed bundle came from
+# other sources.
+#
+# The dependencies are reinstalled with `npm ci` whenever package.json or
+# package-lock.json is newer than the last install, so the bundle is built from
+# the locked versions rather than from whatever an earlier install left.
+CHAT_UI := libs/aion-chat-ui
+CHAT_BUNDLE := src/aion/cli/bin/cli.mjs
+SHA256 := python3 -c 'import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())'
+
+$(CHAT_UI)/node_modules/.package-lock.json: $(CHAT_UI)/package.json $(CHAT_UI)/package-lock.json
+	cd $(CHAT_UI) && npm ci
+
+chat-bundle-check: $(CHAT_UI)/node_modules/.package-lock.json ## Check that the bundled aion chat client is built from libs/aion-chat-ui
+	@out=$$(mktemp -d) && trap 'rm -rf "$$out"' EXIT && \
+	(cd $(CHAT_UI) && ./node_modules/.bin/tsup --config tsup.config.ts --out-dir "$$out" > /dev/null) && \
+	built=$$($(SHA256) "$$out/cli.mjs") && bundled=$$($(SHA256) $(CHAT_BUNDLE)) && \
+	if [ "$$built" = "$$bundled" ]; then \
+		echo "$(CHAT_BUNDLE) is current: sha256 $$bundled"; \
+	else \
+		echo "$(CHAT_BUNDLE) is stale: sha256 $$bundled, $(CHAT_UI) builds $$built" >&2; \
+		echo "Rebuild and stage it: cd $(CHAT_UI) && npm run prepare:python" >&2; \
+		exit 1; \
+	fi
 
 # The other direction of the compatibility question. Every other target here
 # runs against the newest release in each declared range; this one installs the

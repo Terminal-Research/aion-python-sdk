@@ -55,12 +55,12 @@ class FilePartPreprocessor:
             context: Verified projection the upload is authorized against.
 
         Raises:
-            InvalidParamsError: The request carries inline content that cannot
-                be stored for a reason the client can fix - no declared
-                distribution, an ambiguous organization, content the storage
-                service rejects outright.
-            InternalError: Storage was reachable but did not accept the
-                content in time. Retrying the same request can succeed.
+            InvalidParamsError: The request carries inline content the storage
+                service rejects outright, which only the client can fix.
+            InternalError: The deployment cannot store the content - the agent
+                has no daemon identity, storage refused its credentials or
+                permissions, or did not answer in time. Retrying the same
+                request can succeed only in the last case.
         """
         _request_receipts.set([])
 
@@ -107,11 +107,11 @@ class FilePartPreprocessor:
 
         Compensation is secondary to the failure that triggered it, in both
         directions. Letting it raise out of ``process`` would replace the
-        rejection the client needs to read - "no distribution declared" - with
-        whatever the storage service said about a delete it also could not do;
-        letting it raise out of ``rollback`` would mask the original downstream
-        error. Either way the abandoned files are the smaller problem, and the
-        traceback is logged where it happened.
+        rejection the client needs to read - "the storage service rejected the
+        request" - with whatever the storage service said about a delete it
+        also could not do; letting it raise out of ``rollback`` would mask the
+        original downstream error. Either way the abandoned files are the
+        smaller problem, and the traceback is logged where it happened.
         """
         receipts = _request_receipts.get()
         if not receipts:

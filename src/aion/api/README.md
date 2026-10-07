@@ -152,7 +152,9 @@ Without deployment credentials, a guest session cannot access metered APIs.
 
 `AionDaemonIdentityRequired` (also exported from `aion.core.exceptions`) carries
 the stable `daemon_identity_required` code and `retryable = False`. Assign a
-daemon in the deployment/agent environment Identity tab before retrying. Model
+daemon in the deployment/agent environment Identity tab before retrying; the
+message names the resource Aion reports as missing it, such as the deployment
+and its id. Model
 and MCP adapters preserve this configuration error; successful response streams
 are not buffered for error inspection. Model helpers default to no transport
 retry, so missing configuration is not disguised by repeated connection attempts.

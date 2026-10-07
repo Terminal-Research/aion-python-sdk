@@ -303,7 +303,9 @@ class TestCredentials:
 
         assert outcome.error_code is FileUploadErrorCode.STORAGE_UNAUTHORIZED
         assert outcome.retryable is False and outcome.client_fault is False
-        assert "refuses the agent's credentials (HTTP 401)" in str(outcome.cause)
+        reason = str(outcome.cause)
+        assert reason.startswith("Files API refuses the agent's credentials for the upload")
+        assert reason.endswith("(HTTP 401)")
 
     async def test_the_backend_logs_nothing_itself(self, caplog):
         """Whoever drops the file writes its one line; a second would repeat it."""
@@ -335,35 +337,89 @@ class TestPermissions:
                 "code": "daemon_identity_required", "retryable": False,
             }})
         outcome = await backend(handle).store(upload(), context=upload_context())
-        assert outcome.error_code is FileUploadErrorCode.STORAGE_FORBIDDEN
-        assert outcome.retryable is False
-        assert isinstance(outcome.cause, AionDaemonIdentityRequired)
+        assert outcome.error_code is FileUploadErrorCode.NO_DAEMON_IDENTITY
+        assert outcome.retryable is False and outcome.client_fault is False
+        assert isinstance(outcome.cause.__cause__, AionDaemonIdentityRequired)
         assert len(attempts) == 1
 
-    async def test_a_refused_principal_is_named_with_its_organization(self):
+    async def test_a_missing_daemon_names_its_resource_operation_and_behalf(self):
+        """What to assign and where comes from the API; the request is the SDK's."""
+        operations = []
+
         async def handle(request: httpx.Request) -> httpx.Response:
+            operations.append(request.url.params["operationId"])
+            return httpx.Response(409, json={"error": {
+                "code": "daemon_identity_required",
+                "resourceType": "Deployment",
+                "resourceId": "deployment-1",
+            }})
+
+        outcome = await backend(handle).store(upload(), context=upload_context())
+
+        assert str(outcome.cause) == (
+            f"Files API has no daemon identity for the upload (operation {operations[0]}) "
+            "on behalf of the deployment's daemon: Assign a daemon identity to "
+            "Deployment deployment-1 in the deployment or agent environment's "
+            "Identity tab before making this callback (daemon_identity_required)."
+        )
+
+    async def test_a_refused_upload_names_its_operation_and_behalf(self):
+        """The operation id is what the platform logs the refused request under."""
+        operations = []
+
+        async def handle(request: httpx.Request) -> httpx.Response:
+            operations.append(request.url.params["operationId"])
             return httpx.Response(403, text="Forbidden", headers={"x-request-id": "req-7"})
 
-        context = upload_context(usage_attribution="opaque")
+        context = upload_context(usage_attribution="opaque-carrier")
         outcome = await backend(handle).store(upload(), context=context)
 
         assert outcome.error_code is FileUploadErrorCode.STORAGE_FORBIDDEN
         assert outcome.retryable is False and outcome.client_fault is False
-        reason = str(outcome.cause)
-        assert "resolved identity" in reason and ORG in reason
-        assert "HTTP 403: Forbidden (request id req-7)" in reason
-        assert "credentials" not in reason and "Daemon Identity" not in reason
+        assert str(outcome.cause) == (
+            f"Files API does not permit the upload (operation {operations[0]}) on "
+            "behalf of the request's signed usage attribution "
+            "(HTTP 403: Forbidden (request id req-7))"
+        )
+        assert "opaque-carrier" not in str(outcome.cause)
         assert isinstance(outcome.cause.__cause__, httpx.HTTPStatusError)
 
-    async def test_permission_error_does_not_guess_the_resolved_principal(self):
+    async def test_a_direct_caller_is_named_by_its_subject(self):
         async def handle(request: httpx.Request) -> httpx.Response:
             return httpx.Response(403)
 
-        context = upload_context(usage_attribution="opaque")
+        caller = Principal("AionUser", "019e4fe6-a19d-75e7-bc51-bd90004b67c9")
+        context = resolve_upload_context(
+            AionRuntimeContext(callback_attribution=DirectAttribution(caller))
+        )
         outcome = await backend(handle).store(upload(), context=context)
 
-        assert "resolved identity" in str(outcome.cause)
-        assert "no Daemon Identity" not in str(outcome.cause)
+        assert f"on behalf of caller {caller.subject} " in str(outcome.cause)
+
+    async def test_without_request_scope_the_daemon_is_named(self):
+        async def handle(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(403)
+
+        outcome = await backend(handle).store(upload(), context=upload_context())
+
+        assert "on behalf of the deployment's daemon " in str(outcome.cause)
+
+    async def test_a_refused_grant_names_the_stored_file(self):
+        """The upload succeeded, so the line must not claim the file was not stored."""
+        async def handle(request: httpx.Request) -> httpx.Response:
+            return accepted("file-7")
+
+        async def refuse_grant(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(403)
+
+        outcome = await backend(handle, grant_handler=refuse_grant).store(
+            upload(), context=upload_context()
+        )
+
+        assert outcome.error_code is FileUploadErrorCode.STORAGE_FORBIDDEN
+        assert str(outcome.cause).startswith(
+            "Files API does not permit the download grant for stored file file-7 "
+        )
 
 
 class TestResponseContract:

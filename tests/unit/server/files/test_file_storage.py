@@ -429,7 +429,7 @@ class TestA2AFileTransformer:
         assert "internal.host" not in event.SerializeToString().decode("latin-1")
         assert "internal.host" in caplog.text
 
-    async def test_reason_is_one_line_and_the_traceback_waits_for_debug(self, caplog):
+    async def test_reason_is_one_line_without_a_traceback(self, caplog):
         cause = RuntimeError("refused")
         backend = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_REJECTED, cause=cause)])
         with caplog.at_level("DEBUG"):
@@ -437,8 +437,8 @@ class TestA2AFileTransformer:
                 status_event(raw_part()), upload_context=upload_context()
             )
         warning = next(r for r in caplog.records if r.levelname == "WARNING")
-        assert warning.getMessage().endswith(" - refused") and warning.exc_info is None
-        assert any(r.levelname == "DEBUG" and r.exc_info for r in caplog.records)
+        assert warning.getMessage().endswith(" - refused")
+        assert not any(r.exc_info for r in caplog.records)
 
     async def test_context_failure_is_reported_once_for_the_batch(self):
         """Five attachments under one broken request produce one diagnostic."""
@@ -449,7 +449,7 @@ class TestA2AFileTransformer:
             role=Role.ROLE_USER,
             parts=[raw_part(name=f"{i}.png") for i in range(5)],
         )
-        failure = UploadFailure(FileUploadErrorCode.NO_DISTRIBUTION)
+        failure = UploadFailure(FileUploadErrorCode.NO_ATTRIBUTION)
 
         result = await transformer.transform_message(message, upload_context=failure)
 
@@ -594,21 +594,16 @@ class TestStoreGuard:
 # --------------------------------------------------------------------------
 
 class TestFaultClassification:
-    @pytest.mark.parametrize(
-        "code",
-        [
-            FileUploadErrorCode.NO_DISTRIBUTION,
-            FileUploadErrorCode.NO_ORGANIZATION,
-            FileUploadErrorCode.AMBIGUOUS_ORGANIZATION,
-            FileUploadErrorCode.STORAGE_REJECTED,
-        ],
-    )
-    def test_codes_the_sender_must_fix(self, code):
-        assert code.client_fault is True
+    def test_only_rejected_content_is_the_senders_to_fix(self):
+        assert {code for code in FileUploadErrorCode if code.client_fault} == {
+            FileUploadErrorCode.STORAGE_REJECTED
+        }
 
     @pytest.mark.parametrize(
         "code",
         [
+            FileUploadErrorCode.NO_ATTRIBUTION,
+            FileUploadErrorCode.NO_DAEMON_IDENTITY,
             FileUploadErrorCode.STORAGE_UNAVAILABLE,
             FileUploadErrorCode.STORAGE_UNAUTHORIZED,
             FileUploadErrorCode.STORAGE_FORBIDDEN,

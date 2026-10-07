@@ -38,8 +38,8 @@ class FileStorageBackend(ABC):
 
         Args:
             uploads: Files to store, in the order their parts appeared.
-            context: Verified projection naming the owning organization, the
-                effective principal, and the usage carrier.
+            context: Callback scope of the request: the usage carrier or
+                runtime context Aion resolves the payer and owner from.
 
         Returns:
             One outcome per upload, in the same order. Never shorter than

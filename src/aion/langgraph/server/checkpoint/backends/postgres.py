@@ -1,10 +1,12 @@
 """PostgreSQL checkpointer backend."""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import Any
 
 from psycopg import AsyncConnection, AsyncCursor, sql
+from psycopg.pq import TransactionStatus
 from psycopg_pool import AsyncConnectionPool
 
 from aion.db.postgres.constants import AION_SCHEMA
@@ -15,6 +17,20 @@ from aion.langgraph.server.constants import AION_LANGGRAPH_SCHEMA
 from .base import CheckpointerBackend
 
 logger = logging.getLogger(__name__)
+
+# Every server of an agent runs the checkpoint setup on start, and in cluster
+# mode they share one database. The setup checks for its schema and tables and
+# then creates them, so servers starting together against a fresh database
+# would all create, and all but one would fail on PostgreSQL's catalog
+# constraints. They take turns under this session-level advisory lock, which
+# is distinct from the SDK migration lock so neither setup waits on the other.
+CHECKPOINT_SETUP_LOCK_KEY = 7_382_194_612
+
+# How often a server waiting for that lock asks for it again. The lock is
+# polled rather than waited for: LangGraph's migrations build indexes
+# CONCURRENTLY, which waits for every open transaction, and a statement blocked
+# in pg_advisory_lock is one - the holder and the waiter would deadlock.
+CHECKPOINT_SETUP_LOCK_POLL_SECONDS = 0.1
 
 
 class AionAsyncPostgresSaver(AsyncPostgresSaver):
@@ -50,17 +66,41 @@ class AionAsyncPostgresSaver(AsyncPostgresSaver):
 
         Checks out a dedicated connection from the pool with autocommit enabled,
         required by CREATE INDEX CONCURRENTLY used in LangGraph migrations.
+        The whole setup runs under ``CHECKPOINT_SETUP_LOCK_KEY``, so servers
+        that start together against one database run it one after another.
         """
         if isinstance(self.conn, AsyncConnectionPool):
             async with self.conn.connection() as conn:
                 await conn.set_autocommit(True)
-                await self._ensure_schema_exists(conn, self._schema)
-                await self._set_search_path(conn, self._schema)
-                await AsyncPostgresSaver(conn=conn).setup()
+                await self._locked_setup(conn)
         else:
-            await self._ensure_schema_exists(self.conn, self._schema)
-            await self._set_search_path(self.conn, self._schema)
-            await AsyncPostgresSaver(conn=self.conn).setup()
+            await self._locked_setup(self.conn)
+
+    async def _locked_setup(self, conn: AsyncConnection[Any]) -> None:
+        """Run the schema and table setup on ``conn`` while holding the setup lock."""
+        while not await self._try_setup_lock(conn):
+            await asyncio.sleep(CHECKPOINT_SETUP_LOCK_POLL_SECONDS)
+        try:
+            await self._ensure_schema_exists(conn, self._schema)
+            await self._set_search_path(conn, self._schema)
+            await AsyncPostgresSaver(conn=conn).setup()
+        finally:
+            # A session-level lock survives a rolled-back transaction, and an
+            # aborted one would refuse the unlock, so roll back first.
+            if conn.info.transaction_status == TransactionStatus.INERROR:
+                await conn.rollback()
+            await conn.execute(
+                "SELECT pg_advisory_unlock(%s::bigint)", (CHECKPOINT_SETUP_LOCK_KEY,)
+            )
+
+    @staticmethod
+    async def _try_setup_lock(conn: AsyncConnection[Any]) -> bool:
+        """Take the setup lock if no other session holds it, without waiting."""
+        cursor = await conn.execute(
+            "SELECT pg_try_advisory_lock(%s::bigint)", (CHECKPOINT_SETUP_LOCK_KEY,)
+        )
+        row = await cursor.fetchone()
+        return bool(row and row[0])
 
     @asynccontextmanager
     async def _cursor(self, *, pipeline: bool = False):

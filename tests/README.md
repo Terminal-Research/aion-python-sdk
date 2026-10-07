@@ -28,13 +28,20 @@ or scenario group that covers a changed boundary.
 
 `make tests-full` runs all five source-checkout groups in sequence, without
 narrowing selectors. It does not build or test the distribution wheel. The
-database-backed groups share one local container and port, so they cannot run
-side by side. Run it when a complete local validation is needed; CI
-runs the full source-checkout gate on every pull request ([CI guide](../docs/development/ci.md)).
+integration and database-backed scenario targets share one local container
+and port, and each stops it when it finishes, so they cannot run side by
+side. Run it when a complete local validation is needed; CI runs the full
+source-checkout gate on every pull request ([CI guide](../docs/development/ci.md)).
 
 `make tests-unit` runs on pytest-xdist workers. `UNIT_WORKERS` sets the
 count (default 4; any `pytest -n` value). `UNIT_WORKERS=0` runs the suite in
 one process, which `--pdb` and `-s` need.
+
+The scenario targets run on pytest-xdist workers as well. `SCENARIO_WORKERS`
+sets the count the same way (default 4); `SCENARIO_WORKERS=0` runs the
+scenarios in one process for `--pdb` and `-s`, and `KEEP_SERVE=1` implies it.
+The database-backed groups share one database across their workers. CI runs
+those two groups in one process and the ordinary scenarios on workers.
 
 Use `TEST_PATHS` for a unit or integration subset and `ARGS` for pytest
 options:
@@ -50,9 +57,10 @@ Each target rejects `TEST_PATHS` outside its own suite. Scenario-specific
 selection uses `TAGS` and `FRAMEWORK`; see the scenario guide.
 
 The integration and database-backed scenario targets start a disposable
-PostgreSQL container unless `POSTGRES_TEST_URL` is provided. These tests
-migrate and truncate the specified database, so supply only a disposable test
-database. `PG_TEST_KEEP=1` retains the local container while debugging.
+PostgreSQL container unless `POSTGRES_TEST_URL` is provided. The integration
+tests migrate and truncate the specified database, and the scenarios migrate it
+and write their own tasks to it, so supply only a disposable test database.
+`PG_TEST_KEEP=1` retains the local container while debugging.
 
 ## Shared test code
 
