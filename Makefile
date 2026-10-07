@@ -26,7 +26,7 @@ POSTGRES_TEST_URL_IS_EXTERNAL := $(filter environment command line,$(origin POST
 
 .PHONY: help tests tests-unit tests-integration tests-full tests-scenarios tests-scenarios-persistence \
 	tests-scenarios-pg tests-scenarios-distributed \
-	tests-scenarios-dist tests-floors scenarios-matrix lint-imports release-check release check-env \
+	tests-scenarios-dist tests-floors scenarios-matrix lint-imports release-check release check-env chat-bundle-check \
 	dist-build dist-check dist-smoke pg-test-up pg-test-down
 
 # `make help` lists targets in file order, under the `##@` heading above them.
@@ -215,6 +215,36 @@ scenarios-matrix: ## Regenerate tests/scenarios/SCENARIOS.md from the suite
 # the script reports on whichever interpreter runs it.
 check-env: ## Check the installed environment for duplicate or broken packages
 	poetry run ./scripts/packaging/envcheck.py
+
+# `aion chat` runs src/aion/cli/bin/cli.mjs, a bundle of libs/aion-chat-ui
+# committed beside the Python code. The check builds the bundle again from the
+# current sources into a scratch directory and compares the SHA-256 of the two.
+# libs/aion-chat-ui/dist is left alone: a source checkout's `aion chat` runs
+# from there. The build is reproducible - the same sources and lockfile give
+# the same bytes - so a different hash means the committed bundle came from
+# other sources.
+#
+# The dependencies are reinstalled with `npm ci` whenever package.json or
+# package-lock.json is newer than the last install, so the bundle is built from
+# the locked versions rather than from whatever an earlier install left.
+CHAT_UI := libs/aion-chat-ui
+CHAT_BUNDLE := src/aion/cli/bin/cli.mjs
+SHA256 := python3 -c 'import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())'
+
+$(CHAT_UI)/node_modules/.package-lock.json: $(CHAT_UI)/package.json $(CHAT_UI)/package-lock.json
+	cd $(CHAT_UI) && npm ci
+
+chat-bundle-check: $(CHAT_UI)/node_modules/.package-lock.json ## Check that the bundled aion chat client is built from libs/aion-chat-ui
+	@out=$$(mktemp -d) && trap 'rm -rf "$$out"' EXIT && \
+	(cd $(CHAT_UI) && ./node_modules/.bin/tsup --config tsup.config.ts --out-dir "$$out" > /dev/null) && \
+	built=$$($(SHA256) "$$out/cli.mjs") && bundled=$$($(SHA256) $(CHAT_BUNDLE)) && \
+	if [ "$$built" = "$$bundled" ]; then \
+		echo "$(CHAT_BUNDLE) is current: sha256 $$bundled"; \
+	else \
+		echo "$(CHAT_BUNDLE) is stale: sha256 $$bundled, $(CHAT_UI) builds $$built" >&2; \
+		echo "Rebuild and stage it: cd $(CHAT_UI) && npm run prepare:python" >&2; \
+		exit 1; \
+	fi
 
 # The other direction of the compatibility question. Every other target here
 # runs against the newest release in each declared range; this one installs the

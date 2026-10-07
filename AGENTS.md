@@ -134,6 +134,8 @@ aion.cli
 - Treat `src/aion/cli/bin/cli.mjs` as a bundled output of
   `libs/aion-chat-ui`. Edit its TypeScript source and rebuild the bundle.
   Verify the staging destination when refreshing the Python bundle.
+  `make chat-bundle-check` confirms the committed bundle is what the sources
+  build.
 
 ## Tests and validation
 
