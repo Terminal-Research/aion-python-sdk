@@ -196,10 +196,10 @@ The shape of a turn: which events arrive, in which order, under which ids.
 |---|---|---|---|---|---|
 | [A plain turn is: Task SUBMITTED, WORKING, the reply, the terminal Task.](core/test_events.py#L28 "test_a_turn_opens_with_submitted_and_closes_with_the_task") | `events` | `echo` | `default` | ✓ | ✓ |
 | [`steps <n>` reports each step once, in order, before completing.](core/test_events.py#L47 "test_working_statuses_arrive_in_order") | `events` | `steps` | `default` | ✓ | ✓ |
-| [The task and context the agent reports are the ones on the wire.](core/test_events.py#L63 "test_the_agent_sees_the_ids_the_client_sees") | `events` | `ids` | `default` | ✓ | ✓ |
-| [Reusing a context keeps it and starts a fresh task under it.](core/test_events.py#L75 "test_a_second_message_in_a_context_starts_a_new_task") | `events` | `ids` | `default` | ✓ | ✓ |
-| [Reading the task back gives the state and the text the stream ended on.](core/test_events.py#L85 "test_get_task_agrees_with_the_closing_event") | `events` | `echo` | `default` | ✓ | ✓ |
-| [Nothing follows the closing Task, and the stream ends there.](core/test_events.py#L101 "test_the_stream_carries_nothing_after_the_terminal_task") | `events` | `echo` | `default` | ✓ | ✓ |
+| [The task and context the agent reports are the ones on the wire.](core/test_events.py#L68 "test_the_agent_sees_the_ids_the_client_sees") | `events` | `ids` | `default` | ✓ | ✓ |
+| [Reusing a context keeps it and starts a fresh task under it.](core/test_events.py#L80 "test_a_second_message_in_a_context_starts_a_new_task") | `events` | `ids` | `default` | ✓ | ✓ |
+| [Reading the task back gives the state and the text the stream ended on.](core/test_events.py#L90 "test_get_task_agrees_with_the_closing_event") | `events` | `echo` | `default` | ✓ | ✓ |
+| [Nothing follows the closing Task, and the stream ends there.](core/test_events.py#L107 "test_the_stream_carries_nothing_after_the_terminal_task") | `events` | `echo` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_extensions.py`
 
@@ -271,10 +271,10 @@ Push notification delivery to a real HTTP callback.
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
 | [The server POSTs a terminal notification to the registered URL.](core/test_push_notifications.py#L125 "test_push_notification_reaches_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
-| [The pushed body identifies the task the notification is about.](core/test_push_notifications.py#L152 "test_push_notification_carries_the_task_id") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
-| [The callback accepts the delivery, because it arrived authenticated.](core/test_push_notifications.py#L175 "test_a_declared_credential_is_presented_to_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
-| [The callback really checks: the same delivery without credentials is rejected.](core/test_push_notifications.py#L206 "test_an_undeclared_credential_is_refused_by_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
-| [The four push config methods, on a task of this caller; a config created without an id takes the task's.](core/test_push_notifications.py#L228 "test_a_push_config_is_created_read_listed_and_deleted") | `lifecycle` | `echo` | `default` | ✓ | ✓ |
+| [The pushed body identifies the task the notification is about.](core/test_push_notifications.py#L161 "test_push_notification_carries_the_task_id") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The callback accepts the delivery, because it arrived authenticated.](core/test_push_notifications.py#L184 "test_a_declared_credential_is_presented_to_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The callback really checks: the same delivery without credentials is rejected.](core/test_push_notifications.py#L215 "test_an_undeclared_credential_is_refused_by_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The four push config methods, on a task of this caller; a config created without an id takes the task's.](core/test_push_notifications.py#L237 "test_a_push_config_is_created_read_listed_and_deleted") | `lifecycle` | `echo` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_resubscribe.py`
 
