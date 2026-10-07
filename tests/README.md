@@ -28,9 +28,10 @@ or scenario group that covers a changed boundary.
 
 `make tests-full` runs all five source-checkout groups in sequence, without
 narrowing selectors. It does not build or test the distribution wheel. The
-database-backed groups share one local container and port, so they cannot run
-side by side. Run it when a complete local validation is needed; CI
-runs the full source-checkout gate on every pull request ([CI guide](../docs/development/ci.md)).
+integration and database-backed scenario targets share one local container
+and port, and each stops it when it finishes, so they cannot run side by
+side. Run it when a complete local validation is needed; CI runs the full
+source-checkout gate on every pull request ([CI guide](../docs/development/ci.md)).
 
 `make tests-unit` runs on pytest-xdist workers. `UNIT_WORKERS` sets the
 count (default 4; any `pytest -n` value). `UNIT_WORKERS=0` runs the suite in
@@ -56,9 +57,10 @@ Each target rejects `TEST_PATHS` outside its own suite. Scenario-specific
 selection uses `TAGS` and `FRAMEWORK`; see the scenario guide.
 
 The integration and database-backed scenario targets start a disposable
-PostgreSQL container unless `POSTGRES_TEST_URL` is provided. These tests
-migrate and truncate the specified database, so supply only a disposable test
-database. `PG_TEST_KEEP=1` retains the local container while debugging.
+PostgreSQL container unless `POSTGRES_TEST_URL` is provided. The integration
+tests migrate and truncate the specified database, and the scenarios migrate it
+and write their own tasks to it, so supply only a disposable test database.
+`PG_TEST_KEEP=1` retains the local container while debugging.
 
 ## Shared test code
 

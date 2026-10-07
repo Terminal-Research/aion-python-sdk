@@ -180,9 +180,13 @@ fixture and configuration directories do not.
   gate. `make release` publishes; follow `RELEASE.md` for that workflow.
 
 `POSTGRES_TEST_URL` gives the test targets ownership of the specified
-database: integration and database-backed scenario tests migrate and truncate
-it. Point it only at a disposable test database. `PG_TEST_KEEP=1` retains the
-local test container while debugging.
+database: integration tests migrate and truncate it, and the database-backed
+scenarios migrate it and write their own tasks to it. Point it only at a
+disposable test database. Without it, `tests-integration`,
+`tests-scenarios-persistence` and `tests-scenarios-distributed` share one
+local container and port, and each stops it when it finishes: run them one
+after another, never side by side from separate shells or background jobs.
+`PG_TEST_KEEP=1` retains the local test container while debugging.
 
 Run checks relevant to the change, fix failures caused by it, and report what
 was run. There is no need to run every suite for a documentation-only edit.
