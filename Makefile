@@ -140,15 +140,21 @@ SCENARIO_TAGS := $(if $(TAGS),$(shell echo "$(TAGS)" | sed 's/  */ or /g'),not p
 SCENARIO_EXPR := scenario and ($(SCENARIO_TAGS))
 FRAMEWORK_FILTER := $(if $(FRAMEWORK),-k "[$(FRAMEWORK)]",)
 
-# The ordinary scenarios run on pytest-xdist workers. Each worker starts the
-# servers its scenarios need and keeps them for its session; `--dist loadfile`
-# keeps a module on one worker, so a deployment variant is not started on
-# every worker. SCENARIO_WORKERS takes what `pytest -n` takes; 0 runs every
-# scenario in the pytest process itself, which `-s` and `--pdb` need.
-# KEEP_SERVE forces 0: a worker's report of the servers it left running
-# would not reach this terminal.
+# Every scenario target runs on pytest-xdist workers. Each worker starts the
+# servers its scenarios need. SCENARIO_WORKERS takes what `pytest -n` takes;
+# 0 runs every scenario in the pytest process itself, which `-s` and `--pdb`
+# need. KEEP_SERVE forces 0: a worker's report of the servers it left running
+# would not reach this terminal. The database-backed groups share one
+# database across workers: each scenario reads and writes only its own tasks
+# and conversations, and servers starting together on it is a cluster-mode
+# deployment they have to survive anyway.
 SCENARIO_WORKERS ?= 4
-SCENARIO_XDIST := -n $(if $(KEEP_SERVE),0,$(SCENARIO_WORKERS)) --dist loadfile
+SCENARIO_N := -n $(if $(KEEP_SERVE),0,$(SCENARIO_WORKERS))
+# `--dist loadfile` keeps a module on one worker, so a server a module shares
+# between its scenarios - a deployment variant, a distributed pair - is not
+# started on every worker. Persistence starts a server per scenario and
+# spreads them one by one.
+SCENARIO_XDIST := $(SCENARIO_N) --dist loadfile
 
 tests-scenarios: ## Run the scenarios against this working tree (TAGS=, FRAMEWORK=, SCENARIO_WORKERS=)
 	poetry run pytest tests/scenarios -m "$(SCENARIO_EXPR)" $(SCENARIO_XDIST) $(FRAMEWORK_FILTER) $(ARGS)
@@ -160,9 +166,9 @@ tests-scenarios: ## Run the scenarios against this working tree (TAGS=, FRAMEWOR
 # target is named for what it proves rather than for the store that backs it;
 # `tests-scenarios-pg` remains as a compatibility alias for existing local workflows.
 tests-scenarios-persistence: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
-tests-scenarios-persistence: ## Run the persistence scenarios against a real database
+tests-scenarios-persistence: ## Run the persistence scenarios against a real database (SCENARIO_WORKERS=)
 	@$(call with_pg_test,poetry run pytest tests/scenarios -m "scenario and persistence" \
-		$(FRAMEWORK_FILTER) $(ARGS))
+		$(SCENARIO_N) --dist load $(FRAMEWORK_FILTER) $(ARGS))
 
 tests-scenarios-pg: tests-scenarios-persistence ## Alias for tests-scenarios-persistence
 
@@ -170,12 +176,11 @@ tests-scenarios-pg: tests-scenarios-persistence ## Alias for tests-scenarios-per
 # whether one of them follows, continues and cancels a task the other runs.
 # Same database contract as the persistence target. A plain `make
 # tests-scenarios` leaves them out: they need that database and start two
-# servers per scenario. Both database-backed targets run in one process,
-# because their scenarios share and truncate that one database.
+# servers per scenario.
 tests-scenarios-distributed: export POSTGRES_TEST_URL := $(POSTGRES_TEST_URL)
-tests-scenarios-distributed: ## Run the distributed scenarios against a real database
+tests-scenarios-distributed: ## Run the distributed scenarios against a real database (SCENARIO_WORKERS=)
 	@$(call with_pg_test,poetry run pytest tests/scenarios -m "scenario and distributed" \
-		$(FRAMEWORK_FILTER) $(ARGS))
+		$(SCENARIO_XDIST) $(FRAMEWORK_FILTER) $(ARGS))
 
 # An explicit complete source-checkout run. Clear selectors so command-line
 # TEST_PATHS, ARGS, TAGS, or FRAMEWORK cannot make "full" silently partial.

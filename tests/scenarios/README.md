@@ -103,10 +103,14 @@ from and nothing survives a restart. That is a property of the deployment
 rather than a gap in the tests - `tests/unit/server/tasks/test_store_manager.py`
 asserts it from the other side - and nothing here pretends otherwise.
 
-`make tests-scenarios` spreads the scenario modules over `SCENARIO_WORKERS`
-pytest-xdist workers (default 4). Each worker starts the servers its modules
+Every scenario target spreads its scenarios over `SCENARIO_WORKERS`
+pytest-xdist workers (default 4). Each worker starts the servers its scenarios
 need, so a deployment variant may run once per worker; `SCENARIO_WORKERS=0`
-runs everything in one process with one server per variant.
+runs everything in one process with one server per variant. The persistence
+and distributed groups share one database across their workers: a scenario
+reads and writes only its own tasks and conversations, and servers starting
+together on one database is a cluster-mode deployment they have to survive
+anyway. CI runs those two groups with `SCENARIO_WORKERS=0`.
 
 `KEEP_SERVE=1` leaves the servers running after the session and prints the
 port, the rendered `aion.yaml` and the log of each — the fastest way to poke at

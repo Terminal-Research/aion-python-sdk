@@ -9,9 +9,9 @@ are independent, so one failing group does not stop the others.
 | --- | --- |
 | `unit` | `make tests-unit`, layer contract, scenario matrix, distribution build and check on Python 3.12, 3.13, and 3.14 |
 | `integration` | `make tests-integration` with its own PostgreSQL service |
-| `scenarios` | Ordinary in-memory scenarios |
-| `scenarios-persistence` | Persistence scenarios with its own PostgreSQL service |
-| `scenarios-distributed` | Distributed scenarios with its own PostgreSQL service |
+| `scenarios` | Ordinary in-memory scenarios, on pytest-xdist workers |
+| `scenarios-persistence` | Persistence scenarios with its own PostgreSQL service, in one process |
+| `scenarios-distributed` | Distributed scenarios with its own PostgreSQL service, in one process |
 | `floors` | Unit tests against the oldest allowed direct dependencies |
 | `CI result` | Fails unless every job above succeeded |
 

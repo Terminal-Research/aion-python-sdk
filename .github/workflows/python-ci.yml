@@ -158,7 +158,9 @@ jobs:
 
       # The ones that restart a server and expect the tasks to still be there.
       - name: Run persistence scenarios
-        run: make tests-scenarios-persistence
+        # One process here: the database-backed groups run on workers only
+        # locally, where a shorter run is worth more than a quieter runner.
+        run: make tests-scenarios-persistence SCENARIO_WORKERS=0
 
   scenarios-distributed:
     name: Scenarios (distributed)
@@ -191,7 +193,9 @@ jobs:
       # Two servers of one agent over one database: a2a-sdk's cluster mode -
       # following, continuing and cancelling a task across processes.
       - name: Run distributed scenarios
-        run: make tests-scenarios-distributed
+        # One process here: the database-backed groups run on workers only
+        # locally, where a shorter run is worth more than a quieter runner.
+        run: make tests-scenarios-distributed SCENARIO_WORKERS=0
 
   floors:
     name: Oldest allowed dependencies
