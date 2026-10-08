@@ -26,12 +26,23 @@ While editing, run the tests of the affected module. Before finishing a
 change, run the whole unit suite with `make tests-unit`, plus the integration
 or scenario group that covers a changed boundary.
 
-`make tests-full` runs all five source-checkout groups in sequence, without
-narrowing selectors. It does not build or test the distribution wheel. The
-integration and database-backed scenario targets share one local container
-and port, and each stops it when it finishes, so they cannot run side by
-side. Run it when a complete local validation is needed; CI runs the full
-source-checkout gate on every pull request ([CI guide](../docs/development/ci.md)).
+`make tests-full` runs everything CI checks on a pull request, then the
+release workflow's checks of the built wheel, in sequence and without
+narrowing selectors: the unit suite in the project environment, on every
+other Python of the CI matrix and at the oldest allowed dependencies; the
+layer contract and the scenario matrix; integration and all three scenario
+groups; the build, the packaging contract, clean-install smoke and the
+scenarios against the wheel. The integration and database-backed scenario
+targets share one local container and port, and each stops it when it
+finishes, so they cannot run side by side. Run it when a complete local
+validation is needed; CI runs the full source-checkout gate on every pull
+request ([CI guide](../docs/development/ci.md)).
+
+`make tests-unit-python PY=3.12` runs the unit suite on another Python, in an
+environment of its own (`.venv-py3.12`) that uv builds from the newest
+releases the declared ranges allow and downloads the interpreter for when
+none is installed. `make tests-unit-versions` does that for every version in
+`TEST_PYTHONS` (the CI unit matrix) but the project environment's own.
 
 `make tests-unit` runs on pytest-xdist workers. `UNIT_WORKERS` sets the
 count (default 4; any `pytest -n` value). `UNIT_WORKERS=0` runs the suite in

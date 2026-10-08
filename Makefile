@@ -26,7 +26,7 @@ POSTGRES_TEST_URL_IS_EXTERNAL := $(filter environment command line,$(origin POST
 
 .PHONY: help tests tests-unit tests-integration tests-full tests-scenarios tests-scenarios-persistence \
 	tests-scenarios-pg tests-scenarios-distributed \
-	tests-scenarios-dist tests-floors scenarios-matrix lint-imports release-check release check-env chat-bundle-check \
+	tests-scenarios-dist tests-floors tests-unit-python tests-unit-versions scenarios-matrix lint-imports release-check release check-env chat-bundle-check \
 	dist-build dist-check dist-smoke pg-test-up pg-test-down
 
 # `make help` lists targets in file order, under the `##@` heading above them.
@@ -78,6 +78,51 @@ UNIT_WORKERS ?= 4
 tests-unit: ## Run the unit suite (make tests-unit ARGS="-k platform_link" TEST_PATHS="tests/unit/core" UNIT_WORKERS=0)
 	@$(call require_under,tests/unit)
 	poetry run pytest -n $(UNIT_WORKERS) $(if $(TEST_PATHS),$(TEST_PATHS),tests/unit) $(ARGS)
+
+# uv comes from the dev group, so a `poetry install` is enough for the targets
+# that use it; one on PATH is used first, which is how CI provides it without
+# Poetry.
+DEV_UV = $(or $(shell command -v uv 2>/dev/null),$(shell poetry run sh -c 'command -v uv' 2>/dev/null))
+
+# The unit suite on another Python than the project environment's. Each
+# version gets an environment of its own, `.venv-py<version>`, built afresh by
+# uv from the newest releases the declared ranges allow - what the CI unit job
+# installs on that version - and the project environment is left alone. uv
+# downloads the interpreter when none is installed.
+#
+# TEST_PYTHONS is the unit job's matrix in .github/workflows/python-ci.yml;
+# keep the two in step. `tests-unit-versions` runs every version in it but the
+# project environment's own, which `tests-unit` already covers.
+TEST_PYTHONS ?= 3.12 3.13 3.14
+PY ?= 3.12
+PY_VENV = .venv-py$(PY)
+PY_BIN = $(PY_VENV)/bin/python
+
+tests-unit-python: UV := $(DEV_UV)
+tests-unit-python: ## Run the unit suite on Python PY in .venv-py<PY> (make tests-unit-python PY=3.13)
+	@$(call require_under,tests/unit)
+	@test -n "$(UV)" || { \
+		echo "tests-unit-python needs uv: run 'poetry install --with dev', or see https://docs.astral.sh/uv/getting-started/installation/" >&2; \
+		exit 2; \
+	}
+	$(UV) venv --clear --seed --python $(PY) $(PY_VENV)
+	$(UV) pip install --python $(PY_BIN) packaging
+	$(PY_BIN) ./scripts/packaging/floors.py --test-requirements > $(PY_VENV)/test-requirements.txt
+	$(UV) pip install --python $(PY_BIN) -r $(PY_VENV)/test-requirements.txt -e ".[langgraph-server,adk-server]"
+	$(PY_BIN) ./scripts/packaging/envcheck.py
+	$(PY_BIN) -m pytest -n $(UNIT_WORKERS) $(if $(TEST_PATHS),$(TEST_PATHS),tests/unit) $(ARGS)
+
+tests-unit-versions: ## Run the unit suite on every TEST_PYTHONS version but the project environment's
+	@current=$$(poetry run python -c 'import sys; print("%d.%d" % sys.version_info[:2])') || exit 2; \
+	failed=; \
+	for version in $(TEST_PYTHONS); do \
+		if [ "$$version" = "$$current" ]; then \
+			echo "Python $$version is the project environment's: make tests-unit covers it"; \
+			continue; \
+		fi; \
+		$(MAKE) tests-unit-python PY=$$version || failed="$$failed $$version"; \
+	done; \
+	if [ -n "$$failed" ]; then echo "unit suite failed on Python$$failed" >&2; exit 1; fi
 
 # tests/ is a directory, so without this rule "make tests" would succeed
 # without running any tests. Fail explicitly rather than silently passing.
@@ -182,17 +227,33 @@ tests-scenarios-distributed: ## Run the distributed scenarios against a real dat
 	@$(call with_pg_test,poetry run pytest tests/scenarios -m "scenario and distributed" \
 		$(SCENARIO_XDIST) $(FRAMEWORK_FILTER) $(ARGS))
 
-# An explicit complete source-checkout run. Clear selectors so command-line
-# TEST_PATHS, ARGS, TAGS, or FRAMEWORK cannot make "full" silently partial.
-# Each database-backed target manages its own disposable PostgreSQL lifecycle.
-# The groups run one after another because they share that one container name
-# and port; CI runs them as separate jobs, each with its own database.
-tests-full: ## Run unit, integration, and every scenario group
+# Everything the repository tests, in one run: what CI checks on a pull
+# request - the unit suite on every TEST_PYTHONS version and at the oldest
+# allowed dependencies, the layer contract, the scenario matrix, integration
+# and every scenario group, the build and the packaging contract - followed by
+# what the release workflow adds before an upload: clean installs of the built
+# files and the scenarios against the wheel. The quick groups go first, so a
+# broken change stops the run early.
+#
+# Selectors are cleared so command-line TEST_PATHS, ARGS, TAGS, FRAMEWORK,
+# SMOKE_ARGS or SCENARIOS_ARGS cannot make "full" silently partial. Each
+# database-backed target manages its own disposable PostgreSQL lifecycle. The
+# groups run one after another because they share that one container name and
+# port; CI runs them as separate jobs, each with its own database.
+tests-full: ## Run every test and check of CI and the release workflow
 	$(MAKE) tests-unit TEST_PATHS= ARGS=
+	$(MAKE) lint-imports
+	poetry run ./scripts/scenarios_matrix.py --check
+	$(MAKE) tests-unit-versions TEST_PATHS= ARGS=
+	$(MAKE) tests-floors ARGS=
 	$(MAKE) tests-integration TEST_PATHS= ARGS=
 	$(MAKE) tests-scenarios TAGS= FRAMEWORK= ARGS=
 	$(MAKE) tests-scenarios-persistence FRAMEWORK= ARGS=
 	$(MAKE) tests-scenarios-distributed FRAMEWORK= ARGS=
+	$(MAKE) dist-build
+	$(MAKE) dist-check
+	$(MAKE) dist-smoke SMOKE_ARGS=
+	$(MAKE) tests-scenarios-dist SCENARIOS_ARGS=
 
 # The same scenarios, against the wheel in dist/ rather than the working tree:
 # `poetry run`, because pytest and the A2A client come from this project's
@@ -280,17 +341,13 @@ chat-bundle-check: $(CHAT_UI)/node_modules/.package-lock.json ## Check that the 
 # direction. FLOORS_EXCLUDE_NEWER is moved on purpose, in the same commit as
 # whatever RAISED_BY_SIBLING change the new resolution needs. The jobs that
 # install the newest releases keep covering everything published since.
-#
-# uv comes from the dev group, so a `poetry install` is enough to run this;
-# one on PATH is used first, which is how CI provides it without Poetry.
 FLOORS_PYTHON ?= 3.12
 FLOORS_EXCLUDE_NEWER ?= 2026-10-06
 FLOORS_VENV := .venv-floors
 FLOORS_PY := $(FLOORS_VENV)/bin/python
-FLOORS_UV = $(or $(shell command -v uv 2>/dev/null),$(shell poetry run sh -c 'command -v uv' 2>/dev/null))
 FLOORS_UV_PIP = $(UV) pip install --python $(FLOORS_PY) --exclude-newer $(FLOORS_EXCLUDE_NEWER)
 
-tests-floors: UV := $(FLOORS_UV)
+tests-floors: UV := $(DEV_UV)
 tests-floors: ## Install the oldest allowed dependencies in .venv-floors and run the unit suite there
 	@test -n "$(UV)" || { \
 		echo "tests-floors needs uv: run 'poetry install --with dev', or see https://docs.astral.sh/uv/getting-started/installation/" >&2; \
