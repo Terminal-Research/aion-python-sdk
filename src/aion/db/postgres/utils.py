@@ -8,7 +8,7 @@ from typing import Literal, Optional
 
 import psycopg
 
-from aion.db.postgres.constants import AION_SCHEMA
+from aion.db.postgres.constants import AION_SCHEMA, MIGRATION_ADVISORY_LOCK_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +99,7 @@ async def verify_connection(url: str) -> bool:
         return False
 
 
-async def validate_permissions(url: str) -> dict:
+async def validate_permissions(url: str, schema: str = AION_SCHEMA) -> dict:
     """Test database permissions for the current user.
 
     This function attempts various database operations to determine
@@ -107,6 +107,7 @@ async def validate_permissions(url: str) -> dict:
 
     Args:
         url: Connection URL.
+        schema: The schema the migrations create and write to.
 
     Returns:
         Dictionary with test results.
@@ -150,9 +151,17 @@ async def validate_permissions(url: str) -> dict:
                 async with conn.cursor() as cur:
                     # Test schema and table creation in a transaction that we'll rollback
                     await cur.execute("BEGIN")
-                    await cur.execute(f"CREATE SCHEMA IF NOT EXISTS {AION_SCHEMA}")
+                    # A migration runner creates this schema and commits it
+                    # under the migration lock. Creating it beside one would
+                    # race it on pg_namespace's unique index, so the check
+                    # waits its turn and then finds the schema in place. The
+                    # lock is the transaction's and goes with the rollback.
                     await cur.execute(
-                        f"CREATE TABLE {AION_SCHEMA}.{test_table} (id serial PRIMARY KEY)"
+                        "SELECT pg_advisory_xact_lock(%s)", (MIGRATION_ADVISORY_LOCK_KEY,)
+                    )
+                    await cur.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
+                    await cur.execute(
+                        f"CREATE TABLE {schema}.{test_table} (id serial PRIMARY KEY)"
                     )
                     await cur.execute("ROLLBACK")
                     results["can_create_table"] = True

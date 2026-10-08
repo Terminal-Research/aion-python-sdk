@@ -38,8 +38,8 @@ contracts; reconcile this file with them when behavior changes.
   the SDK can notice in `CHANGELOG.md`, under `## Unreleased`, in the
   a2a-python changelog format: `### ⚠ BREAKING CHANGES`, `### Features` and
   `### Bug Fixes`, one short `* **scope:** description` line each. Before a
-  release the section must be complete and renamed to the released version;
-  see `RELEASE.md`.
+  final release the section must be complete and renamed to the released
+  version; a pre-release leaves it under `## Unreleased`. See `RELEASE.md`.
 - Running a task across several instances is a2a-sdk's cluster mode, not an
   Aion mechanism: with PostgreSQL the handler gets a `VersionedTaskStore`
   (`PostgresVersionedTaskStore`) and a2a-sdk's `DatabaseTaskEventStream`.
@@ -151,7 +151,9 @@ fixture and configuration directories do not.
   Before finishing a task, run the whole unit suite with `make tests-unit`.
   It runs on four pytest-xdist workers; `UNIT_WORKERS=0` runs it in one
   process for `--pdb` or `-s`. `tests/unit` mirrors `src/aion`; shared unit
-  builders live in `tests/unit/support`.
+  builders live in `tests/unit/support`. `make tests-unit-python PY=3.12`
+  runs it on another Python in `.venv-py3.12`, built by uv, and
+  `make tests-unit-versions` on every other version of the CI matrix.
 - Real PostgreSQL, real process trees, or elapsed timeout behavior:
   `make tests-integration`, optionally with `TEST_PATHS=` and `ARGS=`.
   Run the relevant integration suite before committing changes to these
@@ -171,13 +173,15 @@ fixture and configuration directories do not.
   built wheel. Check its marker selection when adding scenario groups.
 - Changes to scenario inventory: `make scenarios-matrix` regenerates
   `tests/scenarios/SCENARIOS.md`; commit the generated matrix with the tests.
-- Complete source-checkout validation: `make tests-full` runs unit,
-  integration, ordinary scenarios, persistence, and distributed scenarios in
-  sequence. It clears narrowing selectors and does not build or test the
-  wheel. Run it deliberately, not as a routine end-of-task check: the
-  full source-checkout gate runs on every pull request in CI. Require
-  its `CI result` check in the `main` ruleset to block a failing merge; see
-  `docs/development/ci.md`.
+- Complete validation: `make tests-full` runs everything CI checks on a pull
+  request - unit on every Python of the CI matrix and at the oldest allowed
+  dependencies, the layer contract, the scenario matrix, integration, every
+  scenario group, the build and the packaging contract - and then the
+  release workflow's checks of the built files: clean-install smoke and the
+  scenarios against the wheel. It clears narrowing selectors. Run it
+  deliberately, not as a routine end-of-task check: the full source-checkout
+  gate runs on every pull request in CI. Require its `CI result` check in the
+  `main` ruleset to block a failing merge; see `docs/development/ci.md`.
 - Release preparation: `make release-check` runs the full non-publishing
   gate. `make release` publishes; follow `RELEASE.md` for that workflow.
 

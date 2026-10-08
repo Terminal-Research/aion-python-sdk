@@ -25,6 +25,10 @@ and scenarios against the built wheel run in the release workflow; see
 `RELEASE.md`. `workflow_dispatch` runs the full source-checkout gate manually,
 but it is not a substitute for a required pull request check.
 
+`make tests-full` runs every job above locally, one after another, and then
+the release workflow's checks of the built wheel. `TEST_PYTHONS` in the
+`Makefile` is the `unit` job's matrix; change the two together.
+
 ## Require the checks before merging
 
 The workflow alone does not block a merge. Protect `main` after `CI result` has
