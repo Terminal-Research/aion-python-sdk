@@ -6,10 +6,12 @@ from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
 
+from aion.core.exceptions import AionError
 from aion.server.agent.execution.scope import get_task_manager as exec_scope_get_task_manager
 from aion.server.files.a2a import A2AFileTransformer
+from aion.server.files.storage import UploadFailure
 from aion.server.tasks import A2ATaskDeduplicator
-from aion.server.a2a.constants import TERMINAL_TASK_STATES
+from aion.server.a2a.constants import NON_ACTIVE_TASK_STATES, TERMINAL_TASK_STATES
 from aion.server.a2a.response_extensions import ResponseServiceParameters
 from aion.server.a2a.utils import (
     is_ephemeral_status_event,
@@ -19,6 +21,39 @@ from aion.server.a2a.utils import (
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+
+class OutboundFileNotStoredError(AionError):
+    """A file the agent produced could not be stored, so the task fails.
+
+    The client is told only that, through ``public_reason``; each file's own
+    reason, with the storage service's answer, is already in the log line the
+    transformer wrote for it. ``event`` is the agent's event as it produced
+    it, so whoever produced it can forget what it kept of the files.
+    """
+
+    def __init__(
+            self,
+            failures: list[UploadFailure],
+            event: TaskStatusUpdateEvent | TaskArtifactUpdateEvent,
+    ) -> None:
+        """Initialize the error.
+
+        Args:
+            failures: Every failure of the event that carried the files;
+                never empty.
+            event: The agent's event that carried the files, before any of
+                its parts were stored or dropped.
+        """
+        self.failures = failures
+        self.event = event
+        codes = ", ".join(sorted({failure.error_code.value for failure in failures}))
+        super().__init__(f"{len(failures)} outbound file(s) could not be stored: {codes}")
+
+    @property
+    def public_reason(self) -> str:
+        """The safe, stable sentence the client reads, from the first failure."""
+        return self.failures[0].public_reason
 
 
 def _event_debug_info(event) -> str:
@@ -81,10 +116,27 @@ class AionEventPipeline:
         return self._terminal_seen
 
     async def process(self, event) -> None:
+        """Prepare one agent event and deliver what is left of it.
+
+        Raises:
+            OutboundFileNotStoredError: The event carried a file that could
+                not be stored. The rest of the event has been delivered by
+                then, so an answer sent alongside the file reaches the client
+                before the task fails.
+        """
         await self._ensure_task_started()
-        event = await self._prepare_event(event)
-        if event is None:
-            return
+        produced = event
+        event, failures = await self._prepare_event(event)
+        if event is not None:
+            if failures and self._is_non_active_status(event):
+                # The FAILED that follows is the task's outcome, not the state
+                # this event declared with the file still in it.
+                event.status.state = TaskState.TASK_STATE_WORKING
+            await self._deliver(event)
+        if failures:
+            raise OutboundFileNotStoredError(failures, produced)
+
+    async def _deliver(self, event) -> None:
         event = await self._deduplicate_event(event)
         if event is None:
             return
@@ -105,6 +157,13 @@ class AionEventPipeline:
         # the database does not have.
         if self._deduplicator is not None and not is_ephemeral_status_event(event):
             self._deduplicator.apply_processed_item(event)
+
+    @staticmethod
+    def _is_non_active_status(event) -> bool:
+        return (
+            isinstance(event, TaskStatusUpdateEvent)
+            and event.status.state in NON_ACTIVE_TASK_STATES
+        )
 
     def _note_terminal_state(self, event) -> None:
         """Record that this event closed the task, whatever shape it arrived in."""
@@ -166,11 +225,16 @@ class AionEventPipeline:
             await self._task_updater.start_work()
             self._task_started = True
 
-    async def _prepare_event(self, event):
+    async def _prepare_event(self, event) -> tuple[object, list[UploadFailure]]:
+        """Return the event ready for delivery and the files it could not keep.
+
+        The event is ``None`` when nothing of it is left to deliver.
+        """
         event = self._response_parameters.annotate(event, self._prior_message_ids)
-        if self._file_transformer:
-            event = await self._file_transformer.transform_event(event)
-        return event
+        if not self._file_transformer:
+            return event, []
+        transform = await self._file_transformer.transform_event(event)
+        return transform.event, transform.report.failures
 
     async def _deduplicate_event(self, event):
         # Skip deduplication for artifact updates - each update should be streamed

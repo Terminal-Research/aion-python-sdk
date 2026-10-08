@@ -11,7 +11,7 @@ class _ConcretePlugin(BasePluginProtocol):
     def name(self) -> str:
         return "test-plugin"
 
-    async def initialize(self, db_manager, file_upload_manager=None, **deps) -> None:
+    async def initialize(self, db_manager, **deps) -> None:
         self._initialized_with = db_manager
 
 
@@ -19,7 +19,7 @@ class _ConcreteAgentPlugin(AgentPluginProtocol):
     def name(self) -> str:
         return "test-agent-plugin"
 
-    async def initialize(self, db_manager, file_upload_manager=None, **deps) -> None:
+    async def initialize(self, db_manager, **deps) -> None:
         pass
 
     def get_adapter(self):
@@ -33,7 +33,7 @@ class TestBasePluginProtocolAbstract:
     def test_cannot_instantiate_without_name(self):
         """BasePluginProtocol subclass missing name() raises TypeError on instantiation."""
         class _Missing(BasePluginProtocol):
-            async def initialize(self, db_manager, file_upload_manager=None, **deps):
+            async def initialize(self, db_manager, **deps):
                 pass
 
         with pytest.raises(TypeError):
@@ -64,11 +64,11 @@ class TestBasePluginProtocolName:
         """Different plugin classes return different name() values."""
         class _Alpha(BasePluginProtocol):
             def name(self): return "alpha"
-            async def initialize(self, db_manager, file_upload_manager=None, **deps): pass
+            async def initialize(self, db_manager, **deps): pass
 
         class _Beta(BasePluginProtocol):
             def name(self): return "beta"
-            async def initialize(self, db_manager, file_upload_manager=None, **deps): pass
+            async def initialize(self, db_manager, **deps): pass
 
         assert _Alpha().name() != _Beta().name()
 
@@ -81,19 +81,11 @@ class TestBasePluginProtocolInitialize:
         await plugin.initialize(db_manager)
         assert plugin._initialized_with is db_manager
 
-    async def test_initialize_accepts_file_upload_manager(self):
-        """initialize accepts an optional file_upload_manager without error."""
-        plugin = _ConcretePlugin()
-        db = MagicMock()
-        file_mgr = MagicMock()
-        await plugin.initialize(db, file_upload_manager=file_mgr)
-        assert plugin._initialized_with is db
-
     async def test_initialize_accepts_extra_deps(self):
         """initialize forwards extra keyword dependencies to the implementation."""
         class _DepPlugin(BasePluginProtocol):
             def name(self): return "dep-plugin"
-            async def initialize(self, db_manager, file_upload_manager=None, **deps):
+            async def initialize(self, db_manager, **deps):
                 self.extra = deps
 
         plugin = _DepPlugin()
@@ -113,7 +105,7 @@ class TestBasePluginProtocolTeardown:
         class _WithTeardown(BasePluginProtocol):
             torn_down = False
             def name(self): return "td"
-            async def initialize(self, db_manager, file_upload_manager=None, **deps): pass
+            async def initialize(self, db_manager, **deps): pass
             async def teardown(self): _WithTeardown.torn_down = True
 
         plugin = _WithTeardown()
@@ -140,7 +132,7 @@ class TestBasePluginProtocolHealthCheck:
         """A subclass can override health_check() to return False when unhealthy."""
         class _Unhealthy(BasePluginProtocol):
             def name(self): return "unhealthy"
-            async def initialize(self, db_manager, file_upload_manager=None, **deps): pass
+            async def initialize(self, db_manager, **deps): pass
             async def health_check(self): return False
 
         assert await _Unhealthy().health_check() is False
@@ -160,7 +152,7 @@ class TestAgentPluginProtocolAbstract:
         """AgentPluginProtocol subclass missing get_adapter() raises TypeError on instantiation."""
         class _Incomplete(AgentPluginProtocol):
             def name(self): return "x"
-            async def initialize(self, db_manager, file_upload_manager=None, **deps): pass
+            async def initialize(self, db_manager, **deps): pass
 
         with pytest.raises(TypeError):
             _Incomplete()
@@ -198,7 +190,7 @@ class TestAgentPluginProtocolConfigureApp:
         class _Configuring(AgentPluginProtocol):
             configured = False
             def name(self): return "cfg"
-            async def initialize(self, db_manager, file_upload_manager=None, **deps): pass
+            async def initialize(self, db_manager, **deps): pass
             def get_adapter(self): return MagicMock()
             async def configure_app(self, app, agent): _Configuring.configured = True
 

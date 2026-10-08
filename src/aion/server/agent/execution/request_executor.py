@@ -3,7 +3,7 @@ import logging
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
-from a2a.types import Message, Task
+from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from a2a.helpers import new_task_from_user_message
 from a2a.utils.errors import (
     InternalError,
@@ -29,7 +29,7 @@ from aion.server.files.a2a import A2AFileTransformer
 from collections.abc import Callable, Iterable
 from typing import Literal, Optional, Tuple
 
-from .event_pipeline import AionEventPipeline
+from .event_pipeline import AionEventPipeline, OutboundFileNotStoredError
 from .context.attribution import callback_attribution
 from .extensions import (
     ExtensionPreflightError,
@@ -50,9 +50,13 @@ class AionAgentRequestExecutor(AgentExecutor):
 
     If an A2AFileTransformer is provided, inline (base64) file parts in
     outgoing events are stored and replaced with URL parts before being
-    enqueued. Content that could not be stored is dropped from the event: the
-    agent's answer still reaches the client, but inline bytes never reach the
-    task record.
+    enqueued. A file that could not be stored fails the task: the rest of its
+    event still reaches the client and the run stops. The handler that
+    produced the event is asked to forget it (``discard_undelivered``), so a
+    copy the framework kept cannot be read back by a later turn. A stream
+    closes with the FAILED task; a unary caller gets an InternalError naming
+    the failure in its fixed public wording. Inline bytes never reach the task
+    record.
     """
 
     def __init__(
@@ -168,10 +172,39 @@ class AionAgentRequestExecutor(AgentExecutor):
             async for agent_event in produce_events(context=context):
                 await pipeline.process(agent_event)
 
+        except OutboundFileNotStoredError as ex:
+            # Each file's reason is already logged on a line of its own; a
+            # traceback through the pipeline would add nothing to it.
+            logger.error("Execution failed: %s", ex)
+            await self._discard_undelivered(task, context, ex.event)
+            await self._close_failed_task(task_updater, pipeline)
+            raise InternalError(message=ex.public_reason) from ex
         except Exception as ex:
             logger.exception("Execution failed")
             await self._close_failed_task(task_updater, pipeline)
             raise InternalError() from ex
+
+    async def _discard_undelivered(
+            self,
+            task: Task,
+            context: RequestContext,
+            event: TaskStatusUpdateEvent | TaskArtifactUpdateEvent,
+    ) -> None:
+        """Let the producer of an event that never reached the task forget it.
+
+        Runs before the task is closed, so a turn that follows the FAILED
+        state cannot read back what the client never received. A handler
+        without ``discard_undelivered`` keeps no copy of its own. Failures are
+        logged and swallowed: the task fails either way, and the error being
+        propagated is the one the caller needs.
+        """
+        discard = getattr(self._routed_handler(task), "discard_undelivered", None)
+        if discard is None:
+            return
+        try:
+            await discard(context, event)
+        except Exception:  # noqa: BLE001 - must not mask the original failure
+            logger.exception("Could not discard an event that was not delivered")
 
     @staticmethod
     async def _close_failed_task(
@@ -317,14 +350,20 @@ class AionAgentRequestExecutor(AgentExecutor):
                         task.metadata[ROUTED_EXTENSION_METADATA_KEY] = matched
                         handler = self._extension_handlers[matched]
 
-        elif task.HasField("metadata") and ROUTED_EXTENSION_METADATA_KEY in task.metadata:
-            handler = self._extension_handlers.get(task.metadata[ROUTED_EXTENSION_METADATA_KEY], self.agent)
+        else:
+            handler = self._routed_handler(task)
 
         if operation in ("stream", "resume") and handler is not self.agent:
             preflight = getattr(handler, "preflight", None)
             if preflight is not None:
                 await preflight(context)
         return getattr(handler, operation)
+
+    def _routed_handler(self, task: Task):
+        """The extension handler a routed task is bound to, or the agent itself."""
+        if task.HasField("metadata") and ROUTED_EXTENSION_METADATA_KEY in task.metadata:
+            return self._extension_handlers.get(task.metadata[ROUTED_EXTENSION_METADATA_KEY], self.agent)
+        return self.agent
 
     @staticmethod
     async def _get_task_for_execution(context: RequestContext) -> Optional[Tuple[Task, bool]]:

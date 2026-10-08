@@ -7,11 +7,10 @@ providing a consistent contract for plugin lifecycle management across the syste
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, TYPE_CHECKING, Optional
+from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from aion.core.db import DbManagerProtocol
-    from aion.server.files.storage import FileUploadManager
 
 
 class BasePluginProtocol(ABC):
@@ -41,7 +40,6 @@ class BasePluginProtocol(ABC):
     async def initialize(
             self,
             db_manager: DbManagerProtocol,
-            file_upload_manager: Optional[FileUploadManager] = None,
             **deps: Any
     ) -> None:
         """Initialize the plugin with required dependencies.
@@ -51,7 +49,6 @@ class BasePluginProtocol(ABC):
 
         Args:
             db_manager: Infrastructure database manager
-            file_upload_manager: Infrastructure file upload manager
             **deps: Plugin dependencies (db_manager, config, etc.)
 
         Raises:

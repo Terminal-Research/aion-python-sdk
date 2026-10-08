@@ -17,7 +17,7 @@ class StubFileStorageBackend(FileStorageBackend):
     """Hands back a plausible URI without storing anything.
 
     Useful for exercising the whole conversion path - preprocessing ordering,
-    the outbound drop policy, the inline-content guard - without a storage
+    outbound conversion, the inline-content guard - without a storage
     service.
     It succeeds unconditionally, so it proves the wiring, not the failure
     handling.

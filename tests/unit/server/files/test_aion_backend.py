@@ -113,7 +113,7 @@ class TestRequestShape:
             b"%PDF", mime_type="application/pdf", name="report.pdf", file_action=action,
         )
         event = TaskArtifactUpdateEvent(task_id="task", context_id="context", artifact=artifact)
-        result = await transformer.transform_event(event, upload_context=upload_context())
+        result = (await transformer.transform_event(event, upload_context=upload_context())).event
 
         assert len(requests) == 1
         assert result.artifact.parts[0].url.endswith("?grant=secret")

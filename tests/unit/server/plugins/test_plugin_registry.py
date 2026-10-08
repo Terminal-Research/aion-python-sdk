@@ -12,7 +12,7 @@ class _StubPlugin(BasePluginProtocol):
     def name(self) -> str:
         return self._name
 
-    async def initialize(self, db_manager, file_upload_manager=None, **deps) -> None:
+    async def initialize(self, db_manager, **deps) -> None:
         pass
 
 
