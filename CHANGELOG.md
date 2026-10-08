@@ -17,6 +17,7 @@
 * **server:** drop the lease_expired, cancel_requested and cancel_timeout settlement reasons
 * **db:** migration 008 adds task_versions and task_events and drops task_claims; stop every server of an agent before migrating
 * **adk:** drop the file_uploader parameter of ADKAdapter and ADKExecutor: the agent server stores ADK artifacts with every other outbound file, and an ADKExecutor used on its own leaves their content inline
+* **server:** stop passing file_upload_manager to AgentPluginProtocol.initialize: the agent server stores every outbound file itself
 * **server:** A2AFileTransformer.transform_event returns an EventTransform (the event and a report of the files it could not store) instead of the event alone
 
 

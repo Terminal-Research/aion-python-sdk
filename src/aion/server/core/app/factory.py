@@ -125,7 +125,7 @@ class AppFactory:
         await self._build_app()
 
         # 3. Initialize plugins - Phase 1: infrastructure setup
-        await self.plugin_factory.initialize(file_upload_manager=self.upload_manager)
+        await self.plugin_factory.initialize()
 
         # 4. Build agent
         await self.agent_factory.build()
