@@ -2,6 +2,9 @@
 
 AION_SCHEMA = "aion"
 
+MIGRATION_ADVISORY_LOCK_KEY = 7_382_194_611
+"""The advisory lock every runner of the SDK migrations, and the permission check before them, takes turns under."""
+
 TASKS_TABLE = "tasks"
 TASK_MESSAGES_TABLE = "task_messages"
 TASK_ARTIFACTS_TABLE = "task_artifacts"
