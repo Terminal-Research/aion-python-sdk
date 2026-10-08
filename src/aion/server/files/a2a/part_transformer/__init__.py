@@ -1,5 +1,6 @@
 from .transformer import (
     A2AFileTransformer,
+    EventTransform,
     MessageTransform,
     TransformReport,
 )
@@ -12,6 +13,7 @@ from .rules import (
 
 __all__ = [
     "A2AFileTransformer",
+    "EventTransform",
     "MessageTransform",
     "TransformReport",
     "PartSkipRule",

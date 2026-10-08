@@ -9,7 +9,6 @@ from aion.server.agent.adapters import AgentAdapter, ExecutorAdapter
 from aion.server.agent.exceptions import AdapterConfigurationError
 from aion.core.config.models import AgentConfig
 from aion.core.db import DbManagerProtocol
-from aion.server.files.storage import FileUploadManager
 from google.adk.agents import BaseAgent
 
 from .artifacts.factory import ArtifactServiceFactory
@@ -26,7 +25,6 @@ class ADKAdapter(AgentAdapter):
             self,
             base_path: Optional[Path] = None,
             db_manager: Optional[DbManagerProtocol] = None,
-            file_uploader: Optional[FileUploadManager] = None,
     ):
         """Initialize ADK adapter.
 
@@ -36,12 +34,9 @@ class ADKAdapter(AgentAdapter):
                        If None, InMemorySessionService is used. If an initialized
                        manager is given, PostgreSQL is required and a failure to
                        initialize it stops startup.
-            file_uploader: Optional upload manager for converting inline artifact
-                           data to URI references on save.
         """
         self.base_path = base_path or Path.cwd()
         self.db_manager = db_manager
-        self.file_uploader = file_uploader
 
     @staticmethod
     def framework_name() -> str:
@@ -100,7 +95,7 @@ class ADKAdapter(AgentAdapter):
 
         session_service = await SessionServiceFactory.create(db_manager=self.db_manager)
         artifact_service = ArtifactServiceFactory.create(db_manager=self.db_manager)
-        return ADKExecutor(agent, config, session_service=session_service, artifact_service=artifact_service, file_uploader=self.file_uploader)
+        return ADKExecutor(agent, config, session_service=session_service, artifact_service=artifact_service)
 
     def validate_config(self, config: AgentConfig) -> None:
         """Raise AdapterConfigurationError if required ADK config fields are absent."""

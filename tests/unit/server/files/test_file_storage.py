@@ -1,8 +1,8 @@
 """Tests for the upload-first file storage contract.
 
 Covers the outcome contract, the verified projection that names the owning
-organization, the outbound rule that drops content which could not be stored,
-and the guard that keeps inline bytes out of the task record.
+organization, the outbound rule that drops and reports content which could
+not be stored, and the guard that keeps inline bytes out of the task record.
 
 Backend-internal behaviour (retry classification, idempotent ``operation_id``,
 authentication diagnostics) lives in ``test_aion_backend.py``; the stub used
@@ -268,19 +268,19 @@ class TestA2AFileTransformer:
     async def test_no_manager_passes_events_through(self):
         transformer = A2AFileTransformer(upload_manager=None)
         event = status_event(raw_part())
-        assert await transformer.transform_event(event) is event
+        assert (await transformer.transform_event(event)).event is event
 
     async def test_status_event_raw_becomes_url(self):
-        event = await self._transformer().transform_event(
+        event = (await self._transformer().transform_event(
             status_event(raw_part()), upload_context=upload_context()
-        )
+        )).event
         part = event.status.message.parts[0]
         assert part.url and not part.raw
 
     async def test_artifact_event_raw_becomes_url(self):
-        event = await self._transformer().transform_event(
+        event = (await self._transformer().transform_event(
             artifact_event(raw_part()), upload_context=upload_context()
-        )
+        )).event
         assert event.artifact.parts[0].url
 
     @pytest.mark.parametrize("event_builder", [status_event, artifact_event])
@@ -293,9 +293,9 @@ class TestA2AFileTransformer:
             "retentionExpiresAt": deadline,
         }})
         source = event_builder(Part(text="keep"), invalid, raw_part(name="valid.png"))
-        result = await self._transformer(backend).transform_event(
+        result = (await self._transformer(backend).transform_event(
             source, upload_context=upload_context(),
-        )
+        )).event
         parts = (result.status.message.parts if isinstance(result, TaskStatusUpdateEvent)
                  else result.artifact.parts)
         assert [p.text for p in parts if p.text] == ["keep"]
@@ -319,24 +319,24 @@ class TestA2AFileTransformer:
         part = Part(url="https://files.test/existing", metadata=
                     FileActionPayload(retention_expires_at=None).to_metadata())
         event = artifact_event(part)
-        assert await self._transformer(backend).transform_event(
+        assert (await self._transformer(backend).transform_event(
             event, upload_context=upload_context(),
-        ) is event
+        )).event is event
         assert backend.batches == []
 
     async def test_event_without_inline_parts_is_returned_unchanged(self):
         event = status_event(Part(text="hello"))
-        assert await self._transformer().transform_event(
+        assert (await self._transformer().transform_event(
             event, upload_context=upload_context()
-        ) is event
+        )).event is event
 
     async def test_card_parts_are_never_stored(self):
         """Cards are UI documents, not files - the skip rules keep them inline."""
         backend = RecordingBackend()
         event = status_event(Part(raw=b"<Card/>", media_type=CARDS_MEDIA_TYPE))
-        result = await self._transformer(backend).transform_event(
+        result = (await self._transformer(backend).transform_event(
             event, upload_context=upload_context()
-        )
+        )).event
         assert result is event
         assert backend.batches == []
 
@@ -355,15 +355,15 @@ class TestA2AFileTransformer:
         backend = OutcomeBackend(
             [UploadReceipt(uri=f"u-{i}") for i in range(4)], delay=0.01
         )
-        event = await self._transformer(backend).transform_event(
+        event = (await self._transformer(backend).transform_event(
             status_event(*(raw_part(name=f"{i}.png") for i in range(4))),
             upload_context=upload_context(),
-        )
+        )).event
         assert [p.url for p in event.status.message.parts] == [f"u-{i}" for i in range(4)]
         assert backend.concurrent_peak > 1
 
     async def test_a_failed_part_does_not_cancel_its_neighbours(self):
-        """Policy is 'let the rest arrive', so one failure keeps the others."""
+        """One failure is reported; the files beside it are still stored."""
         backend = OutcomeBackend(
             [
                 UploadReceipt(uri="u-0"),
@@ -371,28 +371,31 @@ class TestA2AFileTransformer:
                 UploadReceipt(uri="u-2"),
             ]
         )
-        event = await self._transformer(backend).transform_event(
+        transform = await self._transformer(backend).transform_event(
             status_event(*(raw_part(name=f"{i}.png") for i in range(3))),
             upload_context=upload_context(),
         )
-        parts = event.status.message.parts
+        parts = transform.event.status.message.parts
         assert [p.url for p in parts] == ["u-0", "u-2"]
+        assert [f.error_code for f in transform.report.failures] == [
+            FileUploadErrorCode.STORAGE_REJECTED
+        ]
 
     async def test_artifact_left_without_parts_is_not_sent(self, caplog):
         """An artifact with no part left is not an artifact: nothing goes out."""
         backend = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)])
         with caplog.at_level("DEBUG"):
-            event = await self._transformer(backend).transform_event(
+            event = (await self._transformer(backend).transform_event(
                 artifact_event(raw_part()), upload_context=upload_context()
-            )
+            )).event
         assert event is None
         assert "a-1" in caplog.text and "art" in caplog.text
 
     async def test_status_left_without_parts_keeps_its_state_only(self):
         backend = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)])
-        event = await self._transformer(backend).transform_event(
+        event = (await self._transformer(backend).transform_event(
             status_event(raw_part()), upload_context=upload_context()
-        )
+        )).event
         assert event.status.state == TaskState.TASK_STATE_WORKING
         assert not event.status.HasField("message")
 
@@ -405,16 +408,21 @@ class TestA2AFileTransformer:
         )
         assert backend.batches[0][0].filename == "art"
 
-    async def test_failed_part_is_dropped_and_logged(self, caplog):
-        """Never inline bytes - that is what the transformer exists to prevent."""
+    async def test_failed_part_is_dropped_logged_and_reported(self, caplog):
+        """Never inline bytes - that is what the transformer exists to prevent.
+
+        The part is gone from the event, its reason is in the log, and the
+        report hands the failure to the caller, which fails the task on it.
+        """
         backend = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_UNAVAILABLE, retryable=True)])
         with caplog.at_level("WARNING"):
-            event = await self._transformer(backend).transform_event(
+            transform = await self._transformer(backend).transform_event(
                 status_event(Part(text="answer"), raw_part(name="a.png")),
                 upload_context=upload_context(),
             )
-        parts = event.status.message.parts
+        parts = transform.event.status.message.parts
         assert [p.text for p in parts] == ["answer"]
+        assert not transform.report.ok
         assert "a.png" in caplog.text
         assert "STORAGE_UNAVAILABLE" in caplog.text
 
@@ -423,9 +431,9 @@ class TestA2AFileTransformer:
         cause = RuntimeError("https://internal.host/secret timed out")
         backend = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_REJECTED, cause=cause)])
         with caplog.at_level("WARNING"):
-            event = await self._transformer(backend).transform_event(
+            event = (await self._transformer(backend).transform_event(
                 status_event(raw_part()), upload_context=upload_context()
-            )
+            )).event
         assert "internal.host" not in event.SerializeToString().decode("latin-1")
         assert "internal.host" in caplog.text
 

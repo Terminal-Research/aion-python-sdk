@@ -189,6 +189,12 @@ class TestAionAgentNotBuiltGuard:
         with pytest.raises(RuntimeError, match="not built"):
             await agent.cancel(ctx)
 
+    async def test_discard_undelivered_raises_when_not_built(self):
+        agent = _make_agent()
+        ctx = MagicMock(task_id="t1", context_id="ctx-1")
+        with pytest.raises(RuntimeError, match="not built"):
+            await agent.discard_undelivered(ctx, MagicMock())
+
 class TestAionAgentFromAdapter:
     async def test_creates_agent_with_correct_id(self):
         """from_adapter creates an AionAgent with the specified agent id."""
@@ -364,6 +370,21 @@ class TestAionAgentExecution:
         config = agent._executor.cancel.call_args.args[0]
         assert config.task_id == "t1"
         assert config.context_id == "ctx-1"
+
+    async def test_discard_undelivered_delegates_under_the_callers_scope(self):
+        """The executor forgets the event under the scope the execution used."""
+        agent = self._built_agent()
+        agent._executor.discard_undelivered = AsyncMock()
+        ctx = MagicMock(task_id="t1", context_id="ctx-1", call_context=ServerCallContext(user=_NamedUser("alice")))
+        event = MagicMock()
+
+        await agent.discard_undelivered(ctx, event)
+
+        config, passed = agent._executor.discard_undelivered.call_args.args
+        assert passed is event
+        assert config.task_id == "t1"
+        assert config.context_id == "ctx-1"
+        assert config.state_scope == StateScope(agent_id=agent.id, owner_scope="alice")
 
     async def test_stream_delegates_to_executor(self):
         """stream on a built agent delegates to the executor's stream method."""

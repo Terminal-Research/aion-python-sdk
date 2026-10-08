@@ -273,6 +273,27 @@ class ExecutorAdapter(ABC):
         """
         raise UnsupportedOperationError()
 
+    async def discard_undelivered(
+        self,
+        config: ExecutionConfig,
+        event: TaskStatusUpdateEvent | TaskArtifactUpdateEvent,
+    ) -> None:
+        """Forget what the framework kept of an event the server could not deliver.
+
+        Called when an event this executor produced never reached the task:
+        a file in it could not be stored, so the task fails instead. A
+        framework that keeps its own copy of what it emits, such as an
+        artifact store, removes that copy here, so a later turn of the context
+        cannot read back what the client never received. Failures are logged
+        by the caller and do not change the task's outcome.
+
+        Args:
+            config: Identifies the task and context under the same state scope
+                as the execution that produced the event.
+            event: The event as the executor produced it.
+        """
+        return None
+
     async def cancel(self, config: ExecutionConfig) -> None:
         """Framework-specific cancellation hook.
 

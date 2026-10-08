@@ -4,7 +4,6 @@ import logging
 from typing import Optional, Any, override
 
 from aion.core.db import DbManagerProtocol
-from aion.server.files.storage import FileUploadManager
 from aion.core.logging import AionLogger
 from aion.server.plugins import AgentPluginProtocol
 
@@ -38,12 +37,11 @@ class ADKPlugin(AgentPluginProtocol):
     async def initialize(
             self,
             db_manager: DbManagerProtocol,
-            file_upload_manager: Optional[FileUploadManager] = None,
             **deps: Any
     ) -> None:
         """Wire up the db_manager and create the ADKAdapter instance."""
         self._db_manager = db_manager
-        self._adapter = ADKAdapter(db_manager=db_manager, file_uploader=file_upload_manager)
+        self._adapter = ADKAdapter(db_manager=db_manager)
 
     @override
     async def teardown(self) -> None:

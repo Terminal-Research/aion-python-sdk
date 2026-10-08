@@ -16,6 +16,8 @@
 * **server:** leave the tasks of a server that died in the state they had instead of settling them as FAILED (lease_expired); remove TASK_OWNERSHIP_REAPER and TASK_OWNERSHIP_LEASE_TTL_SECONDS
 * **server:** drop the lease_expired, cancel_requested and cancel_timeout settlement reasons
 * **db:** migration 008 adds task_versions and task_events and drops task_claims; stop every server of an agent before migrating
+* **adk:** drop the file_uploader parameter of ADKAdapter and ADKExecutor: the agent server stores ADK artifacts with every other outbound file, and an ADKExecutor used on its own leaves their content inline
+* **server:** A2AFileTransformer.transform_event returns an EventTransform (the event and a report of the files it could not store) instead of the event alone
 
 
 ### Features
@@ -34,6 +36,7 @@
 * **server:** follow a task running on another server through SubscribeToTask, from the stored task and the task journal
 * **server:** resume a task paused for input on any server of the agent
 * **server:** on a server the Aion platform hosts, accept only push notification URLs that resolve to public addresses, and skip deliveries to any other
+* **server:** ExecutorAdapter.discard_undelivered lets a framework executor forget an event the server could not deliver
 
 
 ### Bug Fixes
@@ -44,6 +47,8 @@
 * **server:** say why the Files API refused a file: the refused step (upload or download grant), on whose behalf, and the operation id
 * **api:** name the resource Aion reports as missing a daemon identity, such as the deployment and its id, in AionDaemonIdentityRequired
 * **server:** fail a file that cannot be stored for lack of a daemon identity as NO_DAEMON_IDENTITY instead of STORAGE_FORBIDDEN: the log line names the step, its behalf and the operation id, and the sender of a rejected inbound file reads that the agent has no daemon identity
+* **server:** fail the task when a file the agent produced cannot be stored instead of completing it without the file: what the agent sent beside the file is still delivered, the run stops, a message/send caller gets InternalError (-32603) with the failure's public reason, and the log keeps a WARNING per file with its cause
+* **adk:** remove an artifact the server could not store from the ADK artifact service, so a later turn of the context cannot load what the client never received
 * **server:** start several servers of an agent together on a fresh PostgreSQL: the LangGraph checkpoint, ADK session and push notification config table setup takes turns under advisory locks instead of failing all but one server, and the push config table is created at startup rather than in the first request
 * **server:** keep in-memory ListTasks page tokens valid when the task they name changes or is deleted
 * **server:** check the push URL validator before every push delivery

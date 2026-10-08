@@ -55,9 +55,10 @@ AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 class TransformReport:
     """What one transform did, for the caller that has to answer for it.
 
-    ``failures`` is what an inbound caller rejects on; an outbound caller has
-    already dropped the parts they describe. A context failure appears once,
-    not once per file.
+    ``failures`` is what the caller acts on: an inbound caller rejects the
+    request, an outbound one fails the task. Either way the parts they
+    describe are already gone from the transformed message or event. A context
+    failure appears once, not once per file.
     """
 
     receipts: list[UploadReceipt] = field(default_factory=list)
@@ -75,6 +76,18 @@ class MessageTransform:
     """A transformed message paired with its report."""
 
     message: Message
+    report: TransformReport
+
+
+@dataclass
+class EventTransform:
+    """A transformed event paired with its report.
+
+    ``event`` is ``None`` when it was an artifact update whose every part was
+    dropped: an artifact with no part is not sent at all.
+    """
+
+    event: AgentEvent | None
     report: TransformReport
 
 
@@ -118,15 +131,17 @@ class A2AFileTransformer:
         event: AgentEvent,
         *,
         upload_context: UploadContextResolution | None = None,
-    ) -> AgentEvent | None:
-        """Return a transformed copy of ``event``, or the original if unchanged.
+    ) -> EventTransform:
+        """Transform inline parts in an outbound status or artifact update.
 
         Outbound content never falls back to inline bytes: what could not be
-        stored is dropped from the event, so the agent's answer survives while
-        the file does not. An event left with nothing to say loses what is
-        empty rather than going out hollow: an artifact update with no part
-        left is not sent at all (``None``), and a status update keeps its state
-        but not an empty message.
+        stored is dropped from the event and named in the report, and the
+        caller decides what that means for the task. The rest of the event is
+        kept, so an answer sent alongside a file can still reach the client. An
+        event left with nothing to say loses what is empty rather than going
+        out hollow: an artifact update with no part left is not sent at all
+        (``None``), and a status update keeps its state but not an empty
+        message.
 
         A part without a filename of its own is uploaded under its artifact's
         name, which is where ``file_artifact()`` puts it.
@@ -137,25 +152,26 @@ class A2AFileTransformer:
                 the one projected from the active runtime context.
 
         Returns:
-            The event, transformed when it carried inline content; ``None``
-            when it was an artifact update whose every part was dropped.
+            The event, transformed when it carried inline content, and a
+            report of what happened. The event is the original object when
+            nothing changed.
         """
         if self._upload_manager is None:
-            return event
+            return EventTransform(event, TransformReport())
 
         default_filename = None
         if isinstance(event, TaskStatusUpdateEvent):
             message = event.status.message
             if not message or not message.parts:
-                return event
+                return EventTransform(event, TransformReport())
             source = list(message.parts)
         elif isinstance(event, TaskArtifactUpdateEvent):
             if not event.artifact.parts:
-                return event
+                return EventTransform(event, TransformReport())
             source = list(event.artifact.parts)
             default_filename = event.artifact.name or None
         else:
-            return event
+            return EventTransform(event, TransformReport())
 
         resolution = upload_context or self._current_context(
             context_id=event.context_id, task_id=event.task_id
@@ -164,13 +180,13 @@ class A2AFileTransformer:
             source, resolution, default_filename=default_filename, outbound=True
         )
         if not report.changed:
-            return event
+            return EventTransform(event, report)
 
         new_event = copy.deepcopy(event)
         if isinstance(new_event, TaskStatusUpdateEvent):
             if not new_parts:
                 new_event.status.ClearField("message")
-                return new_event
+                return EventTransform(new_event, report)
             target = new_event.status.message.parts
         else:
             if not new_parts:
@@ -179,11 +195,11 @@ class A2AFileTransformer:
                     new_event.artifact.artifact_id,
                     new_event.artifact.name,
                 )
-                return None
+                return EventTransform(None, report)
             target = new_event.artifact.parts
         del target[:]
         target.extend(new_parts)
-        return new_event
+        return EventTransform(new_event, report)
 
     async def transform_message(
         self,
@@ -193,9 +209,8 @@ class A2AFileTransformer:
     ) -> MessageTransform:
         """Transform inline parts in a standalone message.
 
-        Unlike the event path this reports rather than decides: an inbound
-        caller rejects the request on any failure and discards the message
-        returned here.
+        An inbound caller rejects the request on any failure and discards the
+        message returned here.
 
         Args:
             message: Message whose parts are transformed.

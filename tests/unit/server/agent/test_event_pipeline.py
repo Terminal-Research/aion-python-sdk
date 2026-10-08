@@ -35,12 +35,17 @@ from a2a.types import (
 
 from aion.server.a2a.response_extensions import ResponseServiceParameters
 from aion.server.a2a.utils import mark_status_event_ephemeral
-from aion.server.agent.execution.event_pipeline import AionEventPipeline
+from aion.server.agent.execution.event_pipeline import (
+    AionEventPipeline,
+    OutboundFileNotStoredError,
+)
 from aion.server.agent.execution.scope import (
     clear_execution_scope,
     init_execution_scope,
     set_task_manager,
 )
+from aion.server.files.a2a import EventTransform, TransformReport
+from aion.server.files.storage import FileUploadErrorCode, UploadFailure
 from aion.server.tasks.task_manager import AionTaskManager
 from tests.unit.support.events import RecordingQueue
 
@@ -63,7 +68,7 @@ class ReplacingTransformer:
         self.seen.append(event)
         if isinstance(event, TaskStatusUpdateEvent) and event.status.HasField("message"):
             event.status.message.parts[0].text = "transformed"
-        return event
+        return EventTransform(event, TransformReport())
 
 
 @pytest.fixture(autouse=True)
@@ -364,22 +369,76 @@ async def test_the_transformer_runs_before_the_event_is_routed(manager, queue) -
     assert _status_events(queue)[0].status.message.parts[0].text == "transformed"
 
 
-class DroppingTransformer:
-    """A file transformer that could store none of an artifact's parts."""
+class RefusingTransformer:
+    """A file transformer whose storage refuses every inline file.
+
+    Like the real one, it takes the files out of the event, reports each one,
+    and leaves an artifact with nothing else in it unsent.
+    """
 
     async def transform_event(self, event):
-        return None if isinstance(event, TaskArtifactUpdateEvent) else event
+        parts = (event.status.message.parts if isinstance(event, TaskStatusUpdateEvent)
+                 else event.artifact.parts)
+        refused = [part for part in parts if part.raw]
+        if not refused:
+            return EventTransform(event, TransformReport())
+        kept = [part for part in parts if not part.raw]
+        del parts[:]
+        parts.extend(kept)
+        report = TransformReport(
+            failures=[UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN) for _ in refused],
+            changed=True,
+        )
+        if isinstance(event, TaskArtifactUpdateEvent) and not kept:
+            return EventTransform(None, report)
+        return EventTransform(event, report)
 
 
-async def test_an_event_the_transformer_drops_reaches_no_one(manager, queue) -> None:
-    """An artifact whose every file failed to store is not sent hollow."""
-    pipeline = _pipeline(queue, task_started=True, transformer=DroppingTransformer())
+def _file_part() -> Part:
+    return Part(raw=b"%PDF", media_type="application/pdf", filename="report.pdf")
 
-    await pipeline.process(_artifact_update("file"))
-    await pipeline.process(_status("answer"))
 
-    assert not [e for e in queue.events if isinstance(e, TaskArtifactUpdateEvent)]
-    assert _status_events(queue)[0].status.message.parts[0].text == "answer"
+async def test_a_file_that_could_not_be_stored_fails_the_turn(manager, queue) -> None:
+    """The pipeline raises, and the executor turns that into a FAILED task."""
+    pipeline = _pipeline(queue, task_started=True, transformer=RefusingTransformer())
+    event = _artifact_update("unused")
+    event.artifact.parts[0].CopyFrom(_file_part())
+
+    with pytest.raises(OutboundFileNotStoredError) as raised:
+        await pipeline.process(event)
+
+    assert not queue.events, "an artifact with no part left is not sent hollow"
+    assert raised.value.public_reason == FileUploadErrorCode.STORAGE_FORBIDDEN.public_reason
+    assert "STORAGE_FORBIDDEN" in str(raised.value)
+
+
+async def test_an_answer_sent_with_the_file_reaches_the_client_first(manager, queue) -> None:
+    """The text beside a file that failed is delivered before the turn fails."""
+    pipeline = _pipeline(queue, task_started=True, transformer=RefusingTransformer())
+    event = _status("here is the report")
+    event.status.message.parts.append(_file_part())
+
+    with pytest.raises(OutboundFileNotStoredError):
+        await pipeline.process(event)
+
+    (delivered,) = _status_events(queue)
+    assert [part.text for part in delivered.status.message.parts] == ["here is the report"]
+
+
+@pytest.mark.parametrize("state", [TaskState.TASK_STATE_COMPLETED, TaskState.TASK_STATE_INPUT_REQUIRED])
+async def test_an_event_with_a_file_that_failed_does_not_end_the_turn(manager, queue, state) -> None:
+    """Its text still goes out, but the outcome is the FAILED that follows."""
+    pipeline = _pipeline(queue, task_started=True, transformer=RefusingTransformer())
+    event = _status("done", state=state)
+    event.status.message.parts.append(_file_part())
+
+    with pytest.raises(OutboundFileNotStoredError):
+        await pipeline.process(event)
+
+    (delivered,) = _status_events(queue)
+    assert delivered.status.state == TaskState.TASK_STATE_WORKING
+    assert delivered.status.message.parts[0].text == "done"
+    assert pipeline.terminal_seen is False
 
 
 async def test_without_a_task_manager_the_stream_still_works(queue) -> None:

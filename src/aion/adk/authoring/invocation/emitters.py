@@ -138,9 +138,9 @@ async def emit_artifact(
 
     Saves the artifact part to artifact_service, then emits an ADK Event
     with EventActions(artifact_delta=...) — the standard ADK artifact path.
-    The aion:output hint carries artifact_id, name, and any file action so
-    the converter can apply retention when it uploads bytes and emits the
-    TaskArtifactUpdateEvent.
+    The aion:output hint carries artifact_id, name, and any file action, which
+    the converter puts on the TaskArtifactUpdateEvent it emits; the server
+    applies that retention when it stores the bytes.
 
     Args:
         emitter: ADK event emitter callable from the invocation ContextVar

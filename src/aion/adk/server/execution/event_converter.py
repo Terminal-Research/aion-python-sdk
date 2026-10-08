@@ -27,8 +27,6 @@ from aion.core.agent.invocation.card.utils import build_card_a2a_part
 from aion.core.constants import CARDS_EXTENSION_URI_V1, MESSAGE_ACTION_PAYLOAD_SCHEMA_V1, MESSAGING_EXTENSION_URI_V1, \
     REACTION_ACTION_PAYLOAD_SCHEMA_V1, STREAM_DELTA_PAYLOAD_SCHEMA_V1
 from aion.server.a2a.constants import TRANSIENT_ARTIFACT_IDS
-from aion.server.files.a2a.part_transformer import A2AFileTransformer
-from aion.server.files.storage import FileUploadManager
 from google.adk.events import Event
 from google.protobuf import json_format, struct_pb2
 
@@ -52,14 +50,10 @@ class ADKToA2AEventConverter:
             task_id: str,
             context_id: str,
             ctx: AionInvocationContext | None = None,
-            file_uploader: FileUploadManager | None = None,
     ):
         self._task_id = task_id
         self._context_id = context_id
         self._ctx = ctx
-        self._file_transformer = (
-            A2AFileTransformer(file_uploader) if file_uploader is not None else None
-        )
         self._streaming_started = False
 
     async def convert(self, adk_event: Event) -> list[AgentEvent]:
@@ -355,10 +349,7 @@ class ADKToA2AEventConverter:
                 append=False,
                 last_chunk=True,
             )
-            if self._file_transformer is not None:
-                event = await self._file_transformer.transform_event(event)
-            if event is not None:
-                results.append(event)
+            results.append(event)
         return results
 
     def finalize_stream(self, delta_text: str) -> list[AgentEvent]:

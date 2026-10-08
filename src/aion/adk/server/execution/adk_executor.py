@@ -22,7 +22,6 @@ from google.adk.sessions import Session, BaseSessionService
 from aion.adk.server.invocation import AionInvocationContextFactory
 from aion.adk.server.artifacts import ArtifactServiceFactory
 from aion.adk.server.constants import DEFAULT_USER_ID
-from aion.server.files.storage import FileUploadManager
 from aion.adk.server.session import SessionServiceFactory
 from aion.adk.server.state.converter import StateConverter
 from aion.adk.server.transformers.a2a_to_adk import ADKTransformer
@@ -49,14 +48,12 @@ class ADKExecutor(ExecutorAdapter):
             session_service: Optional[BaseSessionService] = None,
             artifact_service: Optional[BaseArtifactService] = None,
             result_handler: Optional[ADKExecutionResultHandler] = None,
-            file_uploader: Optional[FileUploadManager] = None,
     ):
         self.agent = agent
         self.config = config
         self._session_service = session_service or SessionServiceFactory().create()
         self._artifact_service = artifact_service or ArtifactServiceFactory.create()
         self._result_handler = result_handler or ADKExecutionResultHandler()
-        self._file_uploader = file_uploader
         self._state_converter = StateConverter()
         self._invocation_context_factory = AionInvocationContextFactory(
             agent=agent,
@@ -80,7 +77,7 @@ class ADKExecutor(ExecutorAdapter):
         """
         task_id = context.task_id or str(uuid.uuid4())
         context_id = ADKTransformer.to_session_id(config) or str(uuid.uuid4())
-        converter = ADKToA2AEventConverter(task_id=task_id, context_id=context_id, file_uploader=self._file_uploader)
+        converter = ADKToA2AEventConverter(task_id=task_id, context_id=context_id)
         start = time.monotonic()
 
         try:
@@ -172,6 +169,40 @@ class ADKExecutor(ExecutorAdapter):
             await self._session_service.delete_session(
                 app_name=scope.agent_id, user_id=scope.state_owner, session_id=session_id
             )
+
+    async def discard_undelivered(
+            self,
+            config: ExecutionConfig,
+            event: AgentEvent,
+    ) -> None:
+        """Remove an artifact that never reached the task from the artifact service.
+
+        The converter loads every artifact it emits from the artifact service,
+        which keeps the bytes in memory for a while after the run. An artifact
+        the server could not store must not be readable from there by a later
+        turn, since the client never received it.
+
+        ``delete_artifact`` is the only removal the ADK interface offers, and
+        it takes every version of the name the service holds. In
+        ``A2AArtifactService`` that is the in-memory copy alone: versions that
+        reached the task are still read back from the task tables, and the
+        next save numbers its version after them. Without a database those
+        versions are gone with it, as they would be once their time in memory
+        ran out.
+        """
+        if not isinstance(event, TaskArtifactUpdateEvent) or not event.artifact.name:
+            return
+        scope = config.require_state_scope()
+        await self._artifact_service.delete_artifact(
+            app_name=scope.agent_id,
+            user_id=scope.state_owner,
+            filename=event.artifact.name,
+            session_id=ADKTransformer.to_session_id(config),
+        )
+        logger.info(
+            "Removed artifact %r from the artifact service: it never reached the task",
+            event.artifact.name,
+        )
 
     async def get_state(self, config: ExecutionConfig) -> ExecutionSnapshot:
         """Retrieve the current execution state snapshot from ADK session.

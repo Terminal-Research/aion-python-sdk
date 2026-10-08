@@ -383,6 +383,30 @@ class AionAgent:
 
         await self._executor.cancel(config)
 
+    async def discard_undelivered(
+        self,
+        context: "RequestContext",
+        event: TaskStatusUpdateEvent | TaskArtifactUpdateEvent,
+    ) -> None:
+        """Let the framework executor forget an event the server could not deliver.
+
+        Args:
+            context: A2A request context of the execution that produced the event
+            event: The event as the agent produced it
+
+        Raises:
+            RuntimeError: If agent is not built yet
+        """
+        if not self._is_built:
+            raise RuntimeError(f"Agent '{self._id}' is not built yet.")
+
+        config = ExecutionConfig(
+            task_id=context.task_id,
+            context_id=context.context_id,
+            state_scope=StateScope.for_call(self._id, context.call_context, self._owner_resolver),
+        )
+        await self._executor.discard_undelivered(config, event)
+
     # ===== Factory Methods =====
 
     @classmethod
