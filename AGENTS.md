@@ -38,8 +38,8 @@ contracts; reconcile this file with them when behavior changes.
   the SDK can notice in `CHANGELOG.md`, under `## Unreleased`, in the
   a2a-python changelog format: `### ⚠ BREAKING CHANGES`, `### Features` and
   `### Bug Fixes`, one short `* **scope:** description` line each. Before a
-  release the section must be complete and renamed to the released version;
-  see `RELEASE.md`.
+  final release the section must be complete and renamed to the released
+  version; a pre-release leaves it under `## Unreleased`. See `RELEASE.md`.
 - Running a task across several instances is a2a-sdk's cluster mode, not an
   Aion mechanism: with PostgreSQL the handler gets a `VersionedTaskStore`
   (`PostgresVersionedTaskStore`) and a2a-sdk's `DatabaseTaskEventStream`.

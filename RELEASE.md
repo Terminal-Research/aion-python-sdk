@@ -14,9 +14,10 @@ Make sure that:
 - you are on `main`, and it is what is on GitHub: `git checkout main && git pull`;
 - `[project].version` in `pyproject.toml` is the version you mean to release,
   and it is not on PyPI yet: <https://pypi.org/project/aionto-sdk/#history>;
-- `CHANGELOG.md` lists every client-visible change since the last release,
-  and its `Unreleased` heading is renamed to that version, for example
-  `## 0.2.0 (2026-10-20)`.
+- `CHANGELOG.md` lists every client-visible change since the last final
+  release under `## Unreleased`. For a final release, that heading is renamed
+  to the version, for example `## 0.2.0 (2026-10-20)`. A pre-release leaves
+  it as it is, so the final release's section covers its pre-releases too.
 
 Then:
 
@@ -24,8 +25,9 @@ Then:
 make release
 ```
 
-It checks both of those for you, runs every check a release has to pass, and
-asks - here for a `0.2.0` in `pyproject.toml`:
+It checks the first two for you - the changelog is yours to get right - runs
+every check a release has to pass, and asks - here for a `0.2.0` in
+`pyproject.toml`:
 
 ```text
 Release aionto-sdk 0.2.0 as py-v0.2.0 (final release). Are you sure? [y/N]
