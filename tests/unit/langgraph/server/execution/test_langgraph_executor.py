@@ -2,13 +2,19 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from a2a.types import Message, Part, Role, TaskState, TaskStatusUpdateEvent
-from aion.server.agent.adapters import ExecutionSnapshot, ExecutionStatus
+from aion.server.agent.adapters import LegacyStateError
 from aion.server.agent.exceptions import ExecutionError, StateRetrievalError
 
+from aion.langgraph.server.execution.event_converter import LangGraphA2AConverter
 from aion.langgraph.server.execution.langgraph_executor import LangGraphExecutor
 from aion.langgraph.server.execution.stream_executor import StreamResult
 
-from ..helpers import make_execution_config, make_mock_request_context
+from ..helpers import (
+    make_execution_config,
+    make_graph_snapshot,
+    make_interrupt,
+    make_mock_request_context,
+)
 
 
 async def make_astream(*events):
@@ -28,12 +34,8 @@ def make_config(context_id="ctx-1"):
     return make_execution_config(context_id=context_id)
 
 
-def make_snapshot(interrupted=False, metadata=None):
-    return ExecutionSnapshot(
-        state={},
-        status=ExecutionStatus.INTERRUPTED if interrupted else ExecutionStatus.COMPLETE,
-        metadata=metadata or {},
-    )
+def make_interrupted_snapshot(value="Need input"):
+    return make_graph_snapshot(interrupts=[make_interrupt(id="i-1", value=value)], next=("ask",))
 
 
 class TestStream:
@@ -45,16 +47,12 @@ class TestStream:
         )
         graph = Mock()
         graph.astream.return_value = make_astream(("custom", object()))
-        graph.aget_state = AsyncMock(return_value=Mock())
+        graph.aget_state = AsyncMock(return_value=make_graph_snapshot())
         executor = LangGraphExecutor(compiled_graph=graph, config=Mock())
 
         with patch(
             "aion.langgraph.server.execution.event_converter.LangGraphA2AConverter.convert",
             return_value=[stream_event],
-        ), patch.object(
-            executor._state_adapter,
-            "get_state_from_snapshot",
-            return_value=make_snapshot(interrupted=False),
         ), patch.object(
             executor._result_handler,
             "handle",
@@ -75,14 +73,10 @@ class TestStream:
         )
         graph = Mock()
         graph.astream.return_value = make_astream()
-        graph.aget_state = AsyncMock(return_value=Mock())
+        graph.aget_state = AsyncMock(return_value=make_graph_snapshot())
         executor = LangGraphExecutor(compiled_graph=graph, config=Mock())
 
         with patch.object(
-            executor._state_adapter,
-            "get_state_from_snapshot",
-            return_value=make_snapshot(interrupted=False),
-        ), patch.object(
             executor._result_handler,
             "handle",
             return_value=[result_message],
@@ -111,18 +105,10 @@ class TestResume:
     async def test_resume_interrupted_state_uses_resume_command(self):
         graph = Mock()
         graph.astream.return_value = make_astream()
-        graph.aget_state = AsyncMock(return_value=Mock())
+        graph.aget_state = AsyncMock(return_value=make_interrupted_snapshot())
         executor = LangGraphExecutor(compiled_graph=graph, config=Mock())
-        interrupted = make_snapshot(
-            interrupted=True,
-            metadata={"interrupt_data": [{"id": "i-1", "value": "Need input"}]},
-        )
 
         with patch.object(
-            executor._state_adapter,
-            "get_state_from_snapshot",
-            return_value=interrupted,
-        ), patch.object(
             executor._result_handler,
             "handle",
             return_value=[],
@@ -136,7 +122,7 @@ class TestResume:
     async def test_resume_non_interrupted_state_with_input_delegates_to_stream(self):
         executor = LangGraphExecutor(compiled_graph=Mock(), config=Mock())
 
-        with patch.object(executor, "get_state", new=AsyncMock(return_value=make_snapshot())), \
+        with patch.object(executor, "_graph_state", new=AsyncMock(return_value=make_graph_snapshot())), \
              patch.object(executor, "stream", return_value=make_astream("event")) as stream:
             events = [event async for event in executor.resume(make_context(), make_config())]
 
@@ -148,52 +134,69 @@ class TestResume:
         context = make_context()
         context.get_user_input.return_value = ""
 
-        with patch.object(executor, "get_state", new=AsyncMock(return_value=make_snapshot())):
+        with patch.object(executor, "_graph_state", new=AsyncMock(return_value=make_graph_snapshot())):
             with pytest.raises(ExecutionError):
                 [event async for event in executor.resume(context, make_config())]
 
 
-class TestGetStateAndFinalize:
-    async def test_get_state_converts_graph_snapshot(self):
-        graph_snapshot = Mock()
+class TestGraphStateAndFinalize:
+    async def test_graph_state_returns_the_langgraph_snapshot(self):
+        graph_snapshot = make_graph_snapshot()
         graph = Mock()
         graph.aget_state = AsyncMock(return_value=graph_snapshot)
         executor = LangGraphExecutor(compiled_graph=graph, config=Mock())
-        expected = make_snapshot()
 
-        with patch.object(executor._state_adapter, "get_state_from_snapshot", return_value=expected):
-            result = await executor.get_state(make_config())
+        result = await executor._graph_state(make_config())
 
-        assert result is expected
+        assert result is graph_snapshot
 
-    async def test_get_state_wraps_graph_errors(self):
+    async def test_graph_state_requires_context_id(self):
+        executor = LangGraphExecutor(compiled_graph=Mock(), config=Mock())
+
+        with pytest.raises(ValueError):
+            await executor._graph_state(make_config(context_id=None))
+
+    async def test_graph_state_wraps_graph_errors(self):
         graph = Mock()
         graph.aget_state = AsyncMock(side_effect=RuntimeError("state failed"))
         executor = LangGraphExecutor(compiled_graph=graph, config=Mock())
 
         with pytest.raises(StateRetrievalError):
-            await executor.get_state(make_config())
+            await executor._graph_state(make_config())
 
-    async def test_finalize_emits_interrupt_for_input_required_snapshot(self):
+    async def test_graph_state_refuses_state_saved_under_the_context_alone(self):
+        """An empty scoped thread beside a legacy one is refused, not read as empty."""
+        graph = Mock()
+        graph.aget_state = AsyncMock(side_effect=[
+            make_graph_snapshot(values={}),
+            make_graph_snapshot(values={"messages": ["legacy"]}),
+        ])
+        executor = LangGraphExecutor(compiled_graph=graph, config=Mock())
+
+        with pytest.raises(StateRetrievalError) as raised:
+            await executor._graph_state(make_config())
+
+        assert isinstance(raised.value.__cause__, LegacyStateError)
+        legacy_config = graph.aget_state.call_args_list[1].args[0]
+        assert legacy_config == {"configurable": {"thread_id": "ctx-1"}}
+
+    async def test_finalize_emits_interrupt_for_an_interrupted_graph(self):
         executor = LangGraphExecutor(compiled_graph=Mock(), config=Mock())
-        interrupted = make_snapshot(
-            interrupted=True,
-            metadata={"interrupt_data": [{"id": "i-1", "value": "Need input"}]},
-        )
+        interrupted = make_interrupted_snapshot(value="Need input")
 
-        with patch.object(executor, "get_state", new=AsyncMock(return_value=interrupted)), \
-             patch.object(executor._result_handler, "handle", return_value=[]):
+        with patch.object(executor, "_graph_state", new=AsyncMock(return_value=interrupted)), \
+             patch.object(executor._result_handler, "handle", return_value=[]) as handle:
             events = [
                 event
                 async for event in executor._finalize(
                     StreamResult(delta_text=""),
                     make_config(),
                     make_context(),
-                    converter=Mock(wraps=__import__(
-                        "aion.langgraph.server.execution.event_converter",
-                        fromlist=["LangGraphA2AConverter"],
-                    ).LangGraphA2AConverter(task_id="task-1", context_id="ctx-1")),
+                    converter=LangGraphA2AConverter(task_id="task-1", context_id="ctx-1"),
                 )
             ]
 
+        assert handle.call_args.args[1] is interrupted
         assert events[-1].status.state == TaskState.TASK_STATE_INPUT_REQUIRED
+        assert events[-1].status.message.parts[0].text == "Need input"
+        assert events[-1].status.message.metadata["interruptId"] == "i-1"

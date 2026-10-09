@@ -13,7 +13,6 @@ from .execution import (
 )
 from .session import SessionServiceFactory
 from .artifacts import ArtifactServiceFactory
-from .state import StateConverter
 from aion.adk.authoring.invocation import AionInvocationContext
 
 __all__ = [
@@ -28,6 +27,5 @@ __all__ = [
     "ADKExecutionResultHandler",
     "SessionServiceFactory",
     "ArtifactServiceFactory",
-    "StateConverter",
     "AionInvocationContext",
 ]

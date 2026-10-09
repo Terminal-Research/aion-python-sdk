@@ -123,14 +123,23 @@ def _langgraph_result_events(
 ) -> list:
     from aion.langgraph.server.execution.result_handler import ExecutionResultHandler
     from aion.langgraph.server.execution.stream_executor import StreamResult
-    from aion.server.agent.adapters import ExecutionSnapshot, ExecutionStatus
+    from langgraph.types import StateSnapshot
 
     # A node's write reaches the adapter through the run's "updates" stream;
     # the checkpoint holds the last value written in the context, whichever
     # turn wrote it.
     saved = outbox if outbox is not None else saved_outbox
-    state = {} if saved is None else {"a2a_outbox": saved}
-    snapshot = ExecutionSnapshot(state=state, status=ExecutionStatus.COMPLETE, metadata={})
+    values = {} if saved is None else {"a2a_outbox": saved}
+    snapshot = StateSnapshot(
+        values=values,
+        next=(),
+        config={},
+        metadata=None,
+        created_at=None,
+        parent_config=None,
+        tasks=(),
+        interrupts=(),
+    )
     return ExecutionResultHandler().handle(
         StreamResult(delta_text=delta_text, outbox=outbox),
         snapshot,

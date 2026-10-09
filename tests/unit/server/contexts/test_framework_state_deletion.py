@@ -120,9 +120,6 @@ async def test_an_executor_that_does_not_implement_deletion_says_so():
         async def stream(self, context, config=None):  # pragma: no cover - not exercised
             yield None
 
-        async def get_state(self, config):  # pragma: no cover - not exercised
-            return None
-
         async def resume(self, context, config=None):  # pragma: no cover - not exercised
             yield None
 

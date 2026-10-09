@@ -8,7 +8,7 @@ here is the one thing only LangGraph has: an interrupt.
 
 from aion.langgraph.server.execution.result_handler import ExecutionResultHandler
 
-from ..helpers import make_execution_snapshot, make_stream_result
+from ..helpers import make_graph_snapshot, make_interrupt, make_stream_result
 
 
 class TestInterrupt:
@@ -24,7 +24,7 @@ class TestInterrupt:
         Emitting it would answer the caller with the beginning of a sentence
         and then ask them a question.
         """
-        snapshot = make_execution_snapshot(interrupted=True)
+        snapshot = make_graph_snapshot(interrupts=[make_interrupt("Shall I go on?")])
         stream = make_stream_result(delta_text="I need to know whether ")
 
         events = ExecutionResultHandler().handle(stream, snapshot, None, "t-1", "c-1")

@@ -30,9 +30,10 @@ from aion.langgraph.authoring.events.custom_events import (
     MessageCustomEvent,
     ReactionCustomEvent,
 )
-from aion.server.agent.adapters import InterruptInfo
+from collections.abc import Sequence
 from google.protobuf import json_format, struct_pb2
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
+from langgraph.types import Interrupt
 from typing import Any, Optional
 
 from ..converters.lc_to_a2a import LcToA2AConverter
@@ -390,24 +391,28 @@ class LangGraphA2AConverter:
             last_chunk=True,
         )]
 
-    def convert_interrupt(self, interrupts: list[InterruptInfo]) -> TaskStatusUpdateEvent:
-        """Produce an input_required status event from a list of interrupt infos.
+    def convert_interrupt(self, interrupts: Sequence[Interrupt]) -> TaskStatusUpdateEvent:
+        """Produce an input_required status event from the graph's pending interrupts.
 
         Uses the first interrupt to build the prompt message and attaches its id
         as message metadata so the client can resume the correct thread.
+
+        Args:
+            interrupts: What the graph stopped on, as LangGraph reports it in
+                ``StateSnapshot.interrupts``.
         """
         message: Optional[Message] = None
         interrupt_id: Optional[str] = None
 
         if interrupts:
-            info = interrupts[0]
-            interrupt_id = info.id
+            interrupt = interrupts[0]
+            interrupt_id = interrupt.id
             message = Message(
                 context_id=self._context_id,
                 task_id=self._task_id,
                 message_id=str(uuid.uuid4()),
                 role=Role.ROLE_AGENT,
-                parts=[Part(text=info.get_prompt_text())],
+                parts=[Part(text=self._interrupt_prompt(interrupt.value))],
                 metadata={"interruptId": interrupt_id},
             )
 
@@ -422,6 +427,19 @@ class LangGraphA2AConverter:
             context_id=self._context_id,
             status=TaskStatus(state=TaskState.TASK_STATE_INPUT_REQUIRED, message=message),
         )
+
+    @staticmethod
+    def _interrupt_prompt(value: Any) -> str:
+        """The question the client sees for an ``interrupt()`` value.
+
+        A string is the question itself. A dict names it under ``"prompt"``.
+        Any other value - or a dict without a prompt - asks generically.
+        """
+        if isinstance(value, str):
+            return value
+        if isinstance(value, dict) and value.get("prompt"):
+            return value["prompt"]
+        return "Agent requires input"
 
     def convert_complete(self) -> TaskStatusUpdateEvent:
         """Produce a final TaskStatusUpdateEvent with state=completed.

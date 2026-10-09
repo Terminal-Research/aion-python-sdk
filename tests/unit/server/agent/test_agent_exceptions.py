@@ -81,7 +81,7 @@ class TestUnsupportedOperationError:
 
     def test_different_operations(self):
         """UnsupportedOperationError message includes the operation name for various operations."""
-        for op in ("cancel", "get_state", "resume"):
+        for op in ("cancel", "delete_state", "resume"):
             exc = UnsupportedOperationError(operation=op, framework="fw")
             assert op in str(exc)
 

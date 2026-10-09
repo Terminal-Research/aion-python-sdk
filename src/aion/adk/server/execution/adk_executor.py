@@ -10,10 +10,9 @@ from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from aion.server.agent.adapters import (
     LegacyStateError,
     ExecutionConfig,
-    ExecutionSnapshot,
     ExecutorAdapter,
 )
-from aion.server.agent.exceptions import ExecutionError, StateRetrievalError
+from aion.server.agent.exceptions import ExecutionError
 from aion.core.config.models import AgentConfig
 from google.adk.artifacts import BaseArtifactService
 from google.adk.events import Event
@@ -23,7 +22,6 @@ from aion.adk.server.invocation import AionInvocationContextFactory
 from aion.adk.server.artifacts import ArtifactServiceFactory
 from aion.adk.server.constants import DEFAULT_USER_ID
 from aion.adk.server.session import SessionServiceFactory
-from aion.adk.server.state.converter import StateConverter
 from aion.adk.server.transformers.a2a_to_adk import ADKTransformer
 from aion.server.a2a.utils import empty_input_warning, extract_input_preview
 from .event_converter import ADKToA2AEventConverter
@@ -54,7 +52,6 @@ class ADKExecutor(ExecutorAdapter):
         self._session_service = session_service or SessionServiceFactory().create()
         self._artifact_service = artifact_service or ArtifactServiceFactory.create()
         self._result_handler = result_handler or ADKExecutionResultHandler()
-        self._state_converter = StateConverter()
         self._invocation_context_factory = AionInvocationContextFactory(
             agent=agent,
             session_service=self._session_service,
@@ -203,49 +200,6 @@ class ADKExecutor(ExecutorAdapter):
             "Removed artifact %r from the artifact service: it never reached the task",
             event.artifact.name,
         )
-
-    async def get_state(self, config: ExecutionConfig) -> ExecutionSnapshot:
-        """Retrieve the current execution state snapshot from ADK session.
-
-        Args:
-            config: Execution configuration with context_id
-
-        Returns:
-            ExecutionSnapshot: Unified execution snapshot with state and messages
-
-        Raises:
-            ValueError: If context_id is not provided
-            StateRetrievalError: If state retrieval fails
-        """
-        if not config or not config.context_id:
-            raise ValueError("context_id is required to get state")
-
-        try:
-            logger.debug(f"Getting ADK state for context: {config.context_id}")
-
-            scope = config.require_state_scope()
-            session = await self._session_service.get_session(
-                app_name=scope.agent_id,
-                user_id=scope.state_owner,
-                session_id=config.context_id,
-            )
-
-            if not session:
-                await self._refuse_legacy_session(config.context_id)
-                raise StateRetrievalError(
-                    f"Session not found: {config.context_id}"
-                )
-
-            execution_state = self._state_converter.from_adk_session(session)
-            logger.debug(
-                f"State retrieved: {len(execution_state.messages)} messages, "
-                f"{len(execution_state.state)} state keys"
-            )
-            return execution_state
-
-        except Exception as e:
-            logger.error(f"Failed to get ADK state: {e}")
-            raise StateRetrievalError(f"Failed to retrieve state: {e}") from e
 
     async def resume(
             self,

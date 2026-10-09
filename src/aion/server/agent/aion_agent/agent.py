@@ -13,7 +13,6 @@ from a2a.types import TaskStatusUpdateEvent, TaskArtifactUpdateEvent
 from aion.server.agent.adapters import (
     ExecutionConfig,
     AgentAdapter,
-    ExecutionSnapshot,
     ExecutorAdapter,
     StateScope,
 )
@@ -29,7 +28,6 @@ from .models import AgentMetadata
 if TYPE_CHECKING:
     from aion.core.logging.base import AionLogger
     from a2a.server.agent_execution import RequestContext
-    from a2a.server.context import ServerCallContext
     from a2a.server.events import EventQueue
 
 
@@ -229,48 +227,6 @@ class AionAgent:
 
         async for event in self._executor.stream(context, config):
             yield event
-
-    async def get_state(
-            self,
-            context_id: str,
-            task_id: Optional[str] = None,
-            *,
-            call_context: "ServerCallContext",
-    ) -> ExecutionSnapshot:
-        """Get the current execution state snapshot for a context.
-
-        The state read is the caller's own: ``context_id`` is chosen by
-        clients, so the snapshot is keyed by this agent and the user of
-        ``call_context`` as well (see ``StateScope``).
-
-        Args:
-            context_id: Context identifier (A2A context_id)
-            task_id: Optional task identifier (A2A task.id)
-            call_context: The request's call context, whose user owns the state.
-
-        Returns:
-            ExecutionSnapshot: Current execution snapshot including state, messages, status, and metadata
-
-        Raises:
-            RuntimeError: If the agent is not built yet
-            StateRetrievalError: If state cannot be retrieved
-        """
-        if not self._is_built:
-            raise RuntimeError(
-                f"Agent '{self._id}' is not built yet. Call build() before accessing state."
-            )
-
-        config = ExecutionConfig(
-            task_id=task_id,
-            context_id=context_id,
-            state_scope=StateScope.for_call(self._id, call_context, self._owner_resolver),
-        )
-
-        self.logger.debug(
-            f"Getting state for agent '{self.id}', task_id={task_id}, context_id={context_id}"
-        )
-
-        return await self._executor.get_state(config)
 
     async def resume(
             self,

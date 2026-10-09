@@ -11,15 +11,11 @@ The adapter architecture allows for flexible framework support by:
 
 from .interfaces import (
     AgentAdapter,
-    ExecutionSnapshot,
-    ExecutionStatus,
     ExecutionConfig,
     ExecutorAdapter,
     LegacyStateError,
     StateScope,
     is_state_key,
-    InterruptInfo,
-    StateExtractor,
     normalize_role_to_a2a,
     create_message_from_parts,
 )
@@ -28,15 +24,11 @@ from .registry import AdapterRegistry, adapter_registry
 __all__ = [
     # Interfaces
     "AgentAdapter",
-    "ExecutionSnapshot",
-    "ExecutionStatus",
     "ExecutionConfig",
     "ExecutorAdapter",
     "LegacyStateError",
     "StateScope",
     "is_state_key",
-    "InterruptInfo",
-    "StateExtractor",
     "normalize_role_to_a2a",
     "create_message_from_parts",
     # Registry

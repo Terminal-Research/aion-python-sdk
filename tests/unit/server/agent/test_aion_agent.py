@@ -3,7 +3,7 @@
 Focus areas:
   - AionAgent init and property access
   - Port validation (type, range)
-  - stream/get_state/resume/cancel raise RuntimeError when not built
+  - stream/resume/cancel raise RuntimeError when not built
   - from_adapter() factory: validates config, initializes, creates executor
   - build() factory: already-built guard, missing path, no adapter, adapter discovery
   - AgentManager: create_agent, set_agent_config, get_agent, clear, Singleton guard
@@ -35,7 +35,6 @@ class _NamedUser(User):
     def user_name(self) -> str:
         return self._name
 from aion.server.agent.adapters.interfaces.agent import AgentAdapter
-from aion.server.agent.adapters.interfaces.state import ExecutionSnapshot
 from aion.server.agent.aion_agent.agent import AionAgent
 from aion.server.agent.aion_agent.manager import AgentManager
 from aion.server.agent.aion_agent.models import AgentMetadata
@@ -69,7 +68,6 @@ def _make_mock_executor() -> MagicMock:
         yield  # make it an async generator
 
     executor.stream = MagicMock(side_effect=_stream)
-    executor.get_state = AsyncMock(return_value=MagicMock(spec=ExecutionSnapshot))
     executor.resume = MagicMock(side_effect=_stream)
     executor.cancel = AsyncMock(return_value=None)
     return executor
@@ -167,12 +165,6 @@ class TestAionAgentNotBuiltGuard:
         with pytest.raises(RuntimeError, match="not built"):
             async for _ in agent.stream(ctx):
                 pass
-
-    async def test_get_state_raises_when_not_built(self):
-        """get_state raises RuntimeError with 'not built' message on an unbuilt agent."""
-        agent = _make_agent()
-        with pytest.raises(RuntimeError, match="not built"):
-            await agent.get_state(context_id="ctx-1", call_context=ServerCallContext())
 
     async def test_resume_raises_when_not_built(self):
         """resume raises RuntimeError with 'not built' message on an unbuilt agent."""
@@ -340,24 +332,6 @@ class TestAionAgentExecution:
         agent._is_built = True
         agent._logger = MagicMock()
         return agent
-
-    async def test_get_state_delegates_to_executor(self):
-        """get_state on a built agent delegates to the executor and returns its snapshot."""
-        agent = self._built_agent()
-        snapshot = MagicMock(spec=ExecutionSnapshot)
-        agent._executor.get_state = AsyncMock(return_value=snapshot)
-
-        result = await agent.get_state(
-            context_id="ctx-1", task_id="t-1", call_context=ServerCallContext(user=_NamedUser("alice"))
-        )
-
-        assert result is snapshot
-        agent._executor.get_state.assert_called_once()
-        config = agent._executor.get_state.call_args.args[0]
-        assert config.context_id == "ctx-1"
-        assert config.task_id == "t-1"
-        # The state read is the caller's: keyed by this agent and that user.
-        assert config.state_scope == StateScope(agent_id=agent.id, owner_scope="alice")
 
     async def test_cancel_delegates_to_executor(self):
         """cancel on a built agent delegates to the executor's cancel method."""
