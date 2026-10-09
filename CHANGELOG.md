@@ -52,6 +52,7 @@
 * **server:** fail the task when a file the agent produced cannot be stored instead of completing it without the file: what the agent sent beside the file is still delivered, the run stops, a message/send caller gets InternalError (-32603) with the failure's public reason, and the log keeps a WARNING per file with its cause
 * **adk:** remove an artifact the server could not store from the ADK artifact service, so a later turn of the context cannot load what the client never received
 * **server:** record the extension a task is routed to under the server-owned aion:routedExtension task metadata key, and ignore a routing key sent in request metadata
+* **server:** attribute the Codex model calls of behaviour evolution under CODEX_PROVIDER=aion with the request's callback attribution (Aion-Usage-Attribution or Aion-Caller-Id) instead of Aion-Principal-Selector; a daemon agent identity in the request is no longer required
 * **server:** start several servers of an agent together on a fresh PostgreSQL: the permission check before the SDK migrations and the LangGraph checkpoint, ADK session and push notification config table setups take turns under advisory locks instead of failing all but one server, and the push config table is created at startup rather than in the first request
 * **server:** keep in-memory ListTasks page tokens valid when the task they name changes or is deleted
 * **server:** check the push URL validator before every push delivery

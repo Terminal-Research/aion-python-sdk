@@ -9,21 +9,13 @@ Codex credentials follow the toolkit's own DI: ``credentials_provider`` is
 optional, and this wrapper decides whether to attach one, based on the
 required ``CODEX_PROVIDER``:
 
-  * ``aion`` - the Aion model service (aion.api's
-    ``aion_model_base_url()``) with a token resolver that mints a fresh
-    short-lived Aion JWT per call plus the agent's daemon-identity principal
-    (``Aion-Principal-Selector`` header, from the request's
-    ``environment.daemon_agent_identity_id``) - secret and principal travel
-    per-call and are never stored.
-
-    NOT YET DEPLOYABLE (2026-08-27): ``aion_model_base_url()`` resolves to
-    ``AION_API_HOST`` - the same host used for the platform's GraphQL/WS
-    traffic, with no endpoint of its own carved out for Codex model calls -
-    and no ``AION_API_HOST`` has been provisioned/agreed for this deployment
-    yet. Until that URL exists (and it's decided whether Codex gets a
-    dedicated model-service endpoint or shares the platform host as-is),
-    ``CODEX_PROVIDER=aion`` has nothing to talk to. Use ``local_session`` or
-    ``custom`` until this is resolved.
+  * ``aion`` - the Aion model service at ``aion_model_base_url()``
+    (``{AION_API_HOST}/v1``, its Responses endpoint), called the way every
+    other SDK callback calls Aion: a fresh short-lived Aion JWT from the
+    deployment's credentials per call, and the request's callback attribution
+    (``Aion-Usage-Attribution`` or ``Aion-Caller-Id``, see
+    ``aion.api.callback_attribution``) so the usage is attributed. The secret
+    is never stored.
   * ``local_session`` - the operator's own logged-in Codex CLI session
     (``~/.codex/auth.json``, or ``CODEX_HOME``) - usage counts against their
     personal subscription limits, not this deployment's Aion model service
@@ -66,10 +58,8 @@ Env:
                                         custom - decides whose credentials and
                                         quota pay for the model calls; no
                                         default, an unset value fails the run.
-                                        NOT YET DEPLOYABLE: no AION_API_HOST has
-                                        been provisioned for this deployment, so
-                                        aion has nothing to talk to yet - see the
-                                        module docstring's `aion` bullet
+                                        aion needs AION_CLIENT_ID and
+                                        AION_CLIENT_SECRET
     CODEX_BASE_URL                      required by CODEX_PROVIDER=custom,
                                         ignored otherwise - the OpenAI-Responses
                                         -compatible endpoint to call
@@ -162,10 +152,10 @@ SPECS_ROOT_CONFIG_KEY = "evolution_specs_root"
 _BRANCH_STRATEGY_CONFIG_KEY = "evolution_branch_strategy"
 
 
-def check_environment(daemon: Optional["DaemonExtensionPayload"]) -> None:
-    """The subset of build_worker()'s checks that need only `daemon`, not a
-    parsed directive - safe to run as a per-request preflight before a task
-    exists (see EvolutionTaskHandler.preflight). Deliberately duplicated
+def check_environment() -> None:
+    """The subset of build_worker()'s checks that need no parsed directive -
+    safe to run as a per-request preflight before a task exists (see
+    EvolutionTaskHandler.preflight). Deliberately duplicated
     rather than factored out of build_worker(): build_worker() still runs its
     own copy of each check regardless, since not every caller goes through
     preflight first (a resumed task, a test calling build_worker directly),
@@ -184,11 +174,8 @@ def check_environment(daemon: Optional["DaemonExtensionPayload"]) -> None:
     provider = resolve_provider(settings)
     if provider == CUSTOM and not settings.codex_base_url:
         raise ExtensionSetupError("CODEX_BASE_URL is not set - required by CODEX_PROVIDER=custom")
-    if provider not in (LOCAL_SESSION, CUSTOM) and _daemon_principal_selector(daemon) is None:
-        raise ExtensionSetupError(
-            "daemon request carries no environment.daemonAgentIdentityId - "
-            "model usage cannot be attributed to a principal"
-        )
+    if provider not in (LOCAL_SESSION, CUSTOM):
+        _request_attribution()
 
 
 def build_worker(
@@ -200,7 +187,7 @@ def build_worker(
     Args:
         parsed: Validated directive off the routed request.
         daemon: The request's verified daemon payload - source of the model
-            name and of the principal that model usage is attributed to.
+            name and of configuration fallbacks.
 
     Raises:
         ExtensionSetupError: required environment is missing, or the directive is not
@@ -339,8 +326,8 @@ def _codex_access(
     `CODEX_PROVIDER` picks one of three mutually exclusive modes:
 
       * `aion` - the Aion model service. Endpoint comes from api settings, a
-        fresh short-lived JWT is minted per call, and the daemon identity is
-        attached as the principal so usage is attributed. Takes no operator
+        fresh short-lived JWT is minted per call, and the request's callback
+        attribution rides along so usage is attributed. Takes no operator
         knobs at all.
       * `local_session` - the operator's own logged-in Codex CLI session
         (`auth.json`, optionally from `CODEX_HOME`). No endpoint, no key; usage
@@ -392,33 +379,19 @@ def _codex_access(
     else:  # AION
         # Imported lazily: the other providers never touch api settings/JWT
         # infrastructure.
-        from aion.api.control_plane import AION_PRINCIPAL_SELECTOR_HEADER
         from aion.api.model_service_client import aion_jwt_api_key, aion_model_base_url
 
-        principal = _daemon_principal_selector(daemon)
-        if principal is None:
-            raise ExtensionSetupError(
-                "daemon request carries no environment.daemonAgentIdentityId - "
-                "model usage cannot be attributed to a principal"
-            )
-
-        # TODO(2026-08-27): aion_model_base_url() resolves to AION_API_HOST,
-        # the same host used for the platform's GraphQL/WS traffic - there is
-        # no endpoint of its own carved out for Codex model calls yet, and no
-        # AION_API_HOST has been provisioned/agreed for this deployment. This
-        # provider has nothing to talk to until that's resolved - see the
-        # module docstring. Not a code bug: the wiring below is correct once
-        # the URL exists.
+        # Read now, while the request scope is current: Codex calls the
+        # service later, from a run that outlives the request.
+        attribution_header, attribution = _request_attribution()
         model_access = RemoteAccess(
             base_url=aion_model_base_url(),
-            principal_header=AION_PRINCIPAL_SELECTOR_HEADER,
+            principal_header=attribution_header,
         )
 
         async def credentials_provider() -> RemoteCredentials:
-            # Secret is minted per Codex call and never stored; principal
-            # attributes the usage to the agent's daemon identity (policy
-            # enforcement lands on the service side later).
-            return RemoteCredentials(secret=await aion_jwt_api_key(), principal=principal)
+            # Secret is minted per Codex call and never stored.
+            return RemoteCredentials(secret=await aion_jwt_api_key(), principal=attribution)
 
     codex_config = CodexConfig(
         model_access=model_access,
@@ -477,11 +450,30 @@ def _daemon_config_var(daemon, key: str) -> Optional[str]:
     return daemon.environment.configuration_variables.get(key)
 
 
-def _daemon_principal_selector(daemon) -> Optional[str]:
-    """Header-ready identity selector for the agent's daemon identity."""
-    if daemon is None:
-        return None
-    identity_id = daemon.environment.daemon_agent_identity_id
-    if not identity_id:
-        return None
-    return f"aion://agent/identity/{identity_id}"
+def _request_attribution() -> tuple[Optional[str], Optional[str]]:
+    """The callback attribution of the current request, as a header name and value.
+
+    Codex calls the model service with the same attribution every other SDK
+    callback sends (see ``aion.api.callback_attribution.callback_headers``):
+    the signed usage-attribution carrier the request brought, or its directly
+    reported caller. Outside a request there is none, and Aion attributes the
+    call to the deployment's daemon.
+
+    Returns:
+        ``(None, None)`` outside a request, else the one attribution header.
+
+    Raises:
+        ExtensionSetupError: the request carries no attribution a model call
+            can use.
+    """
+    from aion.api.callback_attribution import callback_headers
+    from aion.core.exceptions import AionAuthenticationError
+
+    try:
+        headers = callback_headers()
+    except AionAuthenticationError as error:
+        raise ExtensionSetupError(f"model usage cannot be attributed: {error}") from error
+    if not headers:
+        return None, None
+    ((name, value),) = headers.items()
+    return name, value

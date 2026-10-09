@@ -378,7 +378,7 @@ class TestPreflight:
             "aion.server.agent.execution.extensions.evolution.tools_factory"
         )
 
-        def _check_environment(daemon):
+        def _check_environment():
             raise ExtensionSetupError("GITHUB_TOKEN is not set - required to push the evolution branch")
 
         fake_tools_factory.check_environment = _check_environment
