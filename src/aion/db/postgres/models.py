@@ -55,7 +55,6 @@ class TaskRecordModel(BaseModel):
     agent_id = Column(
         Text,
         nullable=False,
-        index=True,
         doc="Identity of the agent this task belongs to, scoping every query.")
 
     owner_scope = Column(
@@ -66,7 +65,6 @@ class TaskRecordModel(BaseModel):
     context_id = Column(
         String,
         nullable=False,
-        index=True,
         doc="A2A context ID grouping related tasks together.")
 
     status = Column(

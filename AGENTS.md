@@ -69,7 +69,12 @@ contracts; reconcile this file with them when behavior changes.
   The previous release must keep working on the new schema: servers roll out
   one at a time, and a release can be rolled back onto a migrated database.
   Removing a table or column takes two releases - one where the code stops
-  using it, then a later revision that drops it.
+  using it, then a later revision that drops it, listed in
+  `TWO_RELEASE_REMOVALS` of `tests/unit/db/test_migrations_only_add.py`,
+  which fails on any other revision that drops, renames, retypes or tightens
+  a table or column. The models in `aion.db.postgres.models` describe the
+  columns the migrations build; `tests/integration/db/test_models_match_migrations.py`
+  compares the two.
 - Leave a `TODO` in Python code only as a one-line `TODO(<slug>)`. Its
   context goes into a `## <slug>` section of `docs/development/open-items.md`:
   status, the code it concerns, what works meanwhile. The repository is
