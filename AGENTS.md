@@ -34,9 +34,11 @@ contracts; reconcile this file with them when behavior changes.
   when applicable; `A2AError` subclasses remain in the a2a-sdk hierarchy.
 - No general formatter or type checker is configured for this Python project.
   Follow surrounding style and do not introduce unrelated tooling changes.
-- Record every change a client of an agent's server or a project installing
-  the SDK can notice in `CHANGELOG.md`, under `## Unreleased`, in the
-  a2a-python changelog format: `### ⚠ BREAKING CHANGES`, `### Features` and
+- Until the first final release, `CHANGELOG.md` stays empty under
+  `## Unreleased`: there is no earlier release to list changes against. From
+  that release on, record every change a client of an agent's server or a
+  project installing the SDK can notice in `CHANGELOG.md`, under
+  `## Unreleased`, in the a2a-python changelog format: `### ⚠ BREAKING CHANGES`, `### Features` and
   `### Bug Fixes`, one short `* **scope:** description` line each. Before a
   final release the section must be complete and renamed to the released
   version; a pre-release leaves it under `## Unreleased`. See `RELEASE.md`.
