@@ -12,12 +12,14 @@ from a2a.utils.errors import (
 )
 
 from aion.server.agent.execution import AionAgentRequestExecutor
-from aion.server.agent.execution.extensions.base import ROUTED_EXTENSION_METADATA_KEY
+from aion.core.a2a.enums import A2AMetadataKey
 from aion.server.agent.execution.extensions.errors import ExtensionPreflightError
 from aion.server.agent.execution.scope import init_execution_scope
 from aion.core.runtime.context.models import AionRuntimeContext
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.agent.execution.context.providers import RequestScopeRuntimeContextProvider
+
+ROUTED = A2AMetadataKey.ROUTED_EXTENSION.value
 
 
 @pytest.fixture(autouse=True)
@@ -302,7 +304,7 @@ class TestCancel:
         executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[handler])
         task = _make_real_task(
             state=TaskState.TASK_STATE_WORKING,
-            metadata={ROUTED_EXTENSION_METADATA_KEY: handler.uri},
+            metadata={ROUTED: handler.uri},
         )
         ctx = _make_context(task=task)
 
@@ -325,7 +327,7 @@ class TestCancel:
         executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[handler])
         task = _make_real_task(
             state=TaskState.TASK_STATE_WORKING,
-            metadata={ROUTED_EXTENSION_METADATA_KEY: handler.uri},
+            metadata={ROUTED: handler.uri},
         )
         ctx = _make_context(task=task)
 
@@ -380,7 +382,7 @@ class TestResolve:
             resolved = await executor._resolve(task, "stream")
 
         assert resolved is handler.stream
-        assert task.metadata[ROUTED_EXTENSION_METADATA_KEY] == handler.uri
+        assert task.metadata[ROUTED] == handler.uri
 
     @pytest.mark.anyio
     async def test_resolve_stream_falls_back_to_agent_without_match(self):
@@ -393,10 +395,31 @@ class TestResolve:
         assert resolved is agent.stream
 
     @pytest.mark.anyio
+    async def test_resolve_stream_drops_a_routing_key_the_request_carried(self):
+        """A new task's metadata starts as a copy of the request's, so a client
+        could otherwise name the handler that resumes and cancels its task."""
+        handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0")
+        agent = _make_agent()
+        executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[handler])
+        task = _make_real_task(metadata={ROUTED: handler.uri})
+        runtime_context = MagicMock()
+        runtime_context.is_extension_active.return_value = False
+
+        with patch(
+            "aion.server.agent.execution.request_executor.AionRuntimeContextRegistry"
+        ) as MockRegistry:
+            MockRegistry.aget_current_context = AsyncMock(return_value=runtime_context)
+            resolved = await executor._resolve(task, "stream")
+
+        assert resolved is agent.stream
+        assert ROUTED not in task.metadata
+        assert executor._routed_handler(task) is agent
+
+    @pytest.mark.anyio
     async def test_resolve_resume_recalls_routed_handler(self):
         handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0")
         executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[handler])
-        task = _make_real_task(metadata={ROUTED_EXTENSION_METADATA_KEY: handler.uri})
+        task = _make_real_task(metadata={ROUTED: handler.uri})
 
         resolved = await executor._resolve(task, "resume")
 
@@ -429,7 +452,7 @@ class TestResolve:
         before task creation, so cancel must not require preflight at all."""
         handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0")
         executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[handler])
-        task = _make_real_task(metadata={ROUTED_EXTENSION_METADATA_KEY: handler.uri})
+        task = _make_real_task(metadata={ROUTED: handler.uri})
 
         await executor._resolve(task, "cancel")
 
@@ -462,7 +485,7 @@ class TestResolve:
     async def test_resolve_cancel_recalls_routed_handler(self):
         handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0")
         executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[handler])
-        task = _make_real_task(metadata={ROUTED_EXTENSION_METADATA_KEY: handler.uri})
+        task = _make_real_task(metadata={ROUTED: handler.uri})
 
         resolved = await executor._resolve(task, "cancel")
 
@@ -517,7 +540,7 @@ class TestExecuteViaResolve:
                     with patch("aion.server.agent.execution.request_executor.AionEventPipeline"):
                         await executor.execute(ctx, event_queue)
 
-        assert task.metadata[ROUTED_EXTENSION_METADATA_KEY] == handler.uri
+        assert task.metadata[ROUTED] == handler.uri
         event_queue.enqueue_event.assert_awaited_once_with(task)
 
     @pytest.mark.anyio
@@ -544,7 +567,7 @@ class TestExecuteViaResolve:
         executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[handler])
         task = _make_real_task(
             state=TaskState.TASK_STATE_INPUT_REQUIRED,
-            metadata={ROUTED_EXTENSION_METADATA_KEY: handler.uri},
+            metadata={ROUTED: handler.uri},
         )
         ctx = _make_context(task=task)
         event_queue = AsyncMock(spec=EventQueue)
