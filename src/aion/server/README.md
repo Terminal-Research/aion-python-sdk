@@ -282,8 +282,8 @@ writes takes that shape, so two servers reserving a new context cannot
 disagree about it.
 
 Upgrading follows one order: stop every process of the previous version,
-run the migration (a server starting against the database runs it), then
-start the new version. An old process still writing during or after the
+run the migration (`aion db migrate`, or a server starting against the
+database with `DB_MIGRATE_ON_START`), then start the new version. An old process still writing during or after the
 migration creates tasks and state no reservation knows about, and the check
 at first use cannot make up for it.
 

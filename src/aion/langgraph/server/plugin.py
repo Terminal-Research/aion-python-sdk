@@ -5,6 +5,7 @@ from typing import Any, Optional, override
 
 from aion.core.db import DbManagerProtocol
 from aion.core.logging import AionLogger
+from aion.db.postgres.migrations import SchemaCheck
 from aion.server.plugins import AgentPluginProtocol
 
 from .adapter import LangGraphAdapter
@@ -38,6 +39,20 @@ class LangGraphPlugin(AgentPluginProtocol):
         """Wire up the db_manager and create the LangGraphAdapter instance."""
         self._db_manager = db_manager
         self._adapter = LangGraphAdapter(db_manager=db_manager)
+
+    @override
+    async def migrate_database(self, db_manager: DbManagerProtocol) -> None:
+        """Run LangGraph's checkpoint migrations in the checkpoint schema."""
+        from .checkpoint.backends.postgres import migrate_checkpoint_tables
+
+        await migrate_checkpoint_tables(db_manager)
+
+    @override
+    async def check_database(self, db_manager: DbManagerProtocol) -> Optional[SchemaCheck]:
+        """Report whether LangGraph's checkpoint migrations are applied."""
+        from .checkpoint.backends.postgres import check_checkpoint_tables
+
+        return await check_checkpoint_tables(db_manager)
 
     @override
     async def teardown(self) -> None:

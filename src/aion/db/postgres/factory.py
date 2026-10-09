@@ -1,7 +1,7 @@
 """Database factory for managing database initialization and cleanup.
 
-This module provides DbFactory which handles database connection setup,
-migrations, and resource cleanup.
+This module provides DbFactory which handles database connection setup and
+resource cleanup. Migrations are ``aion.server.database``'s.
 """
 
 import logging
@@ -9,7 +9,6 @@ from aion.db.settings import db_settings
 
 from aion.db.postgres.utils import verify_connection
 from aion.db.postgres.manager import DbManager
-from aion.db.postgres.migrations import upgrade_to_head
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +19,6 @@ class DbFactory:
     Handles:
     - Database connection verification
     - DbManager initialization
-    - Database migrations
     - Resource cleanup
     """
 
@@ -33,7 +31,7 @@ class DbFactory:
         self.db_manager = db_manager
 
     async def initialize(self) -> bool:
-        """Initialize database connection and run migrations.
+        """Verify the database connection and initialize the manager on it.
 
         Returns:
             bool: True if PostgreSQL is ready, False only when ``POSTGRES_URL``
@@ -41,7 +39,7 @@ class DbFactory:
 
         Raises:
             RuntimeError: ``POSTGRES_URL`` is set but the connection cannot be
-                verified, the manager fails to initialize, or migrations fail.
+                verified, or the manager fails to initialize.
                 A configured PostgreSQL that turns out unreachable must stop
                 startup rather than silently degrade to an in-memory store
                 that one server instance alone can serve.
@@ -72,18 +70,7 @@ class DbFactory:
                 "fall back to an in-memory store"
             ) from exc
 
-        # Run migrations
-        try:
-            await upgrade_to_head()
-            logger.info("Database migrations completed successfully")
-            return True
-        except Exception as exc:
-            logger.error("Migration failed: %s", exc, exc_info=True)
-            await self.cleanup()
-            raise RuntimeError(
-                "Database migration failed; refusing to fall back to an "
-                "in-memory store"
-            ) from exc
+        return True
 
     async def cleanup(self) -> None:
         """Close database connections if initialized."""

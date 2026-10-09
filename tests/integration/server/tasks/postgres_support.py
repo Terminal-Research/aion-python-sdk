@@ -31,7 +31,7 @@ from aion.db.settings import db_settings  # noqa: E402
 from aion.db.postgres.migrations.env import config as alembic_config  # noqa: E402
 from aion.db.postgres.utils import convert_pg_url  # noqa: E402
 from aion.db.postgres.manager import db_manager  # noqa: E402
-from aion.db.postgres.migrations import upgrade_to_head  # noqa: E402
+from aion.server.database import migrate_database  # noqa: E402
 from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore  # noqa: E402
 from aion.server.tasks.stores.postgres_versioned_task_store import PostgresVersionedTaskStore  # noqa: E402
 
@@ -49,7 +49,10 @@ __all__ = [
 
 @asynccontextmanager
 async def prepared_database():
-    """Migrate the test database and open the singleton manager on it.
+    """Open the singleton manager on the test database and migrate all of it.
+
+    The SDK's tables and every installed framework's, as ``aion db migrate``
+    does.
 
     Yields:
         The initialized process-wide ``db_manager``.
@@ -62,9 +65,9 @@ async def prepared_database():
         "sqlalchemy.url",
         convert_pg_url(POSTGRES_TEST_URL, driver="psycopg"),
     )
-    await upgrade_to_head()
     await db_manager.initialize(POSTGRES_TEST_URL)
     try:
+        await migrate_database(db_manager)
         yield db_manager
     finally:
         await db_manager.close()

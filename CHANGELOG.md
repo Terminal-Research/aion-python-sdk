@@ -5,6 +5,9 @@
 
 ### ⚠ BREAKING CHANGES
 
+* **db:** DbFactory.initialize only connects to the database; migrations run through aion.server.database, by aion db migrate or a server starting with DB_MIGRATE_ON_START
+* **langgraph:** the PostgreSQL checkpointer backend no longer creates its tables; aion db migrate and a starting server do
+* **adk:** the PostgreSQL session service backend no longer creates its tables; aion db migrate and a starting server do
 * **deps:** require a2a-sdk >=1.2.2,<1.3.0
 * **server:** require a verified caller on every endpoint except the agent card, health and configuration schema; refuse others with 401 (JSON-RPC error -32051)
 * **server:** replace the per-method GetContext/GetContexts extensions with the unified Context extension
@@ -23,6 +26,8 @@
 
 ### Features
 
+* **cli:** aion db migrate applies the SDK's and the installed frameworks' migrations; aion db check reports whether they are applied and exits non-zero when the database is behind
+* **server:** DB_MIGRATE_ON_START=false makes a server only check the migrations and refuse to start while the database is behind, so its database user needs no right to change the schema
 * **server:** verify Aion invocation and session tokens and serve each task as its caller
 * **server:** implement the Context extension (GetContexts, GetContext, DeleteContext) over JSON-RPC and HTTP+JSON
 * **server:** accept deployment-initiated callbacks and scope callback attribution per request
@@ -43,6 +48,7 @@
 
 ### Bug Fixes
 
+* **server:** start on a database migrated by a newer SDK version with a warning instead of failing on an unknown migration revision
 * **server:** assign missing task status timestamps before storage, streaming and push delivery, and preserve explicit timestamps
 * **server:** keep thinking deltas out of stored tasks
 * **server:** wait for the platform WebSocket to actually close

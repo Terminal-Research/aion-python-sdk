@@ -19,6 +19,25 @@ from aion.core.utils.optional_deps import is_own_module
 from fastapi import FastAPI
 
 
+PLUGIN_MODULES = (
+    ("aion.langgraph.server", "LangGraphPlugin", "LangGraph", "langgraph-server"),
+    ("aion.adk.server", "ADKPlugin", "ADK", "adk-server"),
+)
+"""The framework plugins the server knows: module, class, display name and install extra."""
+
+
+async def discover_installed_plugins() -> list[BasePluginProtocol]:
+    """Construct the framework plugins whose libraries are installed.
+
+    Nothing is registered or initialized, and no agent code runs: this is how
+    the database migrations learn which frameworks keep tables here.
+
+    Returns:
+        One plugin per framework whose extra is installed.
+    """
+    return await PluginFactory(registry=PluginRegistry())._discover_plugins()
+
+
 class PluginFactory:
     """Factory for plugin initialization and lifecycle management.
 
@@ -226,13 +245,8 @@ class PluginFactory:
 
     async def _discover_plugins(self) -> list[BasePluginProtocol]:
         """Discover available plugins by attempting imports."""
-        plugin_configs = [
-            ("aion.langgraph.server", "LangGraphPlugin", "LangGraph", "langgraph-server"),
-            ("aion.adk.server", "ADKPlugin", "ADK", "adk-server"),
-        ]
-
         plugins = []
-        for module_name, class_name, display_name, extra in plugin_configs:
+        for module_name, class_name, display_name, extra in PLUGIN_MODULES:
             plugin = await self._try_load_plugin(
                 module_name, class_name, display_name, extra
             )

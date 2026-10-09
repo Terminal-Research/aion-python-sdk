@@ -1,7 +1,6 @@
 """PostgreSQL checkpointer backend."""
 
 import asyncio
-import logging
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -10,18 +9,17 @@ from psycopg.pq import TransactionStatus
 from psycopg_pool import AsyncConnectionPool
 
 from aion.db.postgres.constants import AION_SCHEMA
+from aion.db.postgres.migrations import SchemaCheck, SchemaState
 from aion.core.db import DbManagerProtocol
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from aion.langgraph.server.constants import AION_LANGGRAPH_SCHEMA
 from .base import CheckpointerBackend
 
-logger = logging.getLogger(__name__)
-
-# Every server of an agent runs the checkpoint setup on start, and in cluster
-# mode they share one database. The setup checks for its schema and tables and
-# then creates them, so servers starting together against a fresh database
-# would all create, and all but one would fail on PostgreSQL's catalog
+# Every server of an agent may run the checkpoint migrations on start, and in
+# cluster mode they share one database. The setup checks for its schema and
+# tables and then creates them, so servers starting together against a fresh
+# database would all create, and all but one would fail on PostgreSQL's catalog
 # constraints. They take turns under this session-level advisory lock, which
 # is distinct from the SDK migration lock so neither setup waits on the other.
 CHECKPOINT_SETUP_LOCK_KEY = 7_382_194_612
@@ -118,12 +116,56 @@ class AionAsyncPostgresSaver(AsyncPostgresSaver):
                 await self._set_search_path(cur, self._restore_schema)
 
 
+CHECKPOINT_SCHEMA_NAME = "LangGraph checkpoint tables"
+
+
+async def migrate_checkpoint_tables(db_manager: DbManagerProtocol) -> None:
+    """Create the checkpoint schema and run LangGraph's checkpoint migrations in it."""
+    checkpointer = AionAsyncPostgresSaver(
+        conn=db_manager.get_pool(),
+        schema=AION_LANGGRAPH_SCHEMA,
+        restore_schema=AION_SCHEMA,
+    )
+    await checkpointer.setup()
+
+
+async def check_checkpoint_tables(db_manager: DbManagerProtocol) -> SchemaCheck:
+    """Compare the applied checkpoint migrations with the installed LangGraph's.
+
+    LangGraph records each migration it applies as a row of
+    ``checkpoint_migrations``; ``AsyncPostgresSaver.MIGRATIONS`` is the list
+    the installed version knows. Read-only.
+    """
+    latest = len(AsyncPostgresSaver.MIGRATIONS) - 1
+    async with db_manager.get_pool().connection() as conn:
+        cursor = await conn.execute(
+            "SELECT to_regclass(%s)", (f"{AION_LANGGRAPH_SCHEMA}.checkpoint_migrations",)
+        )
+        row = await cursor.fetchone()
+        if row is None or row[0] is None:
+            return SchemaCheck(CHECKPOINT_SCHEMA_NAME, SchemaState.BEHIND, "not migrated")
+        cursor = await conn.execute(
+            sql.SQL("SELECT max(v) FROM {}.checkpoint_migrations").format(
+                sql.Identifier(AION_LANGGRAPH_SCHEMA)
+            )
+        )
+        row = await cursor.fetchone()
+    applied = -1 if row is None or row[0] is None else row[0]
+    detail = f"migration {applied} applied; the installed LangGraph's newest is {latest}"
+    if applied > latest:
+        return SchemaCheck(CHECKPOINT_SCHEMA_NAME, SchemaState.AHEAD, detail)
+    if applied < latest:
+        return SchemaCheck(CHECKPOINT_SCHEMA_NAME, SchemaState.BEHIND, detail)
+    return SchemaCheck(CHECKPOINT_SCHEMA_NAME, SchemaState.CURRENT, detail)
+
+
 class PostgresBackend(CheckpointerBackend):
     """PostgreSQL checkpointer backend using a shared connection pool.
 
     Creates an AionAsyncPostgresSaver scoped to the dedicated LangGraph schema
     (AION_LANGGRAPH_SCHEMA), reusing the application's existing connection pool
-    without allocating additional connections.
+    without allocating additional connections. Its tables come from the
+    database migrations (``migrate_checkpoint_tables``), not from here.
 
     Attributes:
         _db_manager: Database manager providing the shared connection pool.
@@ -137,29 +179,25 @@ class PostgresBackend(CheckpointerBackend):
         return self._db_manager is not None and self._db_manager.is_initialized
 
     async def create(self) -> AionAsyncPostgresSaver:
-        """Initialize and return a configured AionAsyncPostgresSaver.
-
-        Runs LangGraph migrations in the target schema on first call,
-        then returns a checkpointer bound to the shared pool.
+        """Return an AionAsyncPostgresSaver bound to the shared pool.
 
         Returns:
             AionAsyncPostgresSaver instance bound to the shared pool.
 
         Raises:
-            Exception: Propagated from pool acquisition or the migration run.
-                A configured PostgreSQL that fails here must stop startup
-                rather than silently degrade to an in-memory store.
+            Exception: Propagated from pool acquisition. A configured
+                PostgreSQL that fails here must stop startup rather than
+                silently degrade to an in-memory store.
         """
-        pool = self._db_manager.get_pool()
-
-        checkpointer = AionAsyncPostgresSaver(
-            conn=pool,
+        return AionAsyncPostgresSaver(
+            conn=self._db_manager.get_pool(),
             schema=AION_LANGGRAPH_SCHEMA,
             restore_schema=AION_SCHEMA,
         )
-        await checkpointer.setup()
-        logger.info("LangGraph checkpointer tables setup completed")
-        return checkpointer
 
 
-__all__ = ["PostgresBackend"]
+__all__ = [
+    "PostgresBackend",
+    "check_checkpoint_tables",
+    "migrate_checkpoint_tables",
+]

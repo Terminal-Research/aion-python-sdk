@@ -58,7 +58,18 @@ contracts; reconcile this file with them when behavior changes.
   - check whether upstream now offers what cluster mode lacks here - a wait
     hook in `DatabaseTaskEventStream`, remote cancellation that runs
     `AgentExecutor.cancel`, detection of a dead instance, journal cleanup -
-    and adopt it rather than writing an Aion version.
+    and adopt it rather than writing an Aion version;
+  - when `tests/unit/db/test_a2a_migration_registry.py` fails, a2a-sdk has a
+    new revision of its own migrations: write the SDK revision that makes the
+    same change, or mark it `not applied` with the reason, and add its rows
+    to "Database migrations" in `docs/development/a2a-sdk-mapping.md`.
+- Database migrations only add. Every table in the `aion` schema, those on
+  a2a-sdk's models included, comes from `aion.db.postgres.migrations`, and
+  `aion.server.database` runs it with the installed frameworks' migrations.
+  The previous release must keep working on the new schema: servers roll out
+  one at a time, and a release can be rolled back onto a migrated database.
+  Removing a table or column takes two releases - one where the code stops
+  using it, then a later revision that drops it.
 - Keep unrelated user changes intact. Commit messages must read like ordinary
   developer messages, without AI attribution, `Co-Authored-By`, or generated-by
   markers. If a commit is blocked, preserve the staged state and give the exact

@@ -31,6 +31,18 @@ class DatabaseSettings(BaseSettings):
         description="Postgres connection URL"
     )
 
+    migrate_on_start: bool = Field(
+        default=True,
+        alias="DB_MIGRATE_ON_START",
+        description=(
+            "Whether a server applies the database migrations when it starts. "
+            "With false it only checks them and refuses to start while the "
+            "database is behind; apply them beforehand with `aion db migrate`, "
+            "and the server's database user then needs no right to change the "
+            "schema."
+        ),
+    )
+
     # Two separate pools sit in front of one PostgreSQL: SQLAlchemy serves
     # ``tasks`` and ADK, raw psycopg serves the LangGraph saver. Both are
     # sized from the same two knobs so the deployer reasons about one
