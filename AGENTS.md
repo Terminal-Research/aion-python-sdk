@@ -70,6 +70,12 @@ contracts; reconcile this file with them when behavior changes.
   one at a time, and a release can be rolled back onto a migrated database.
   Removing a table or column takes two releases - one where the code stops
   using it, then a later revision that drops it.
+- Leave a `TODO` in Python code only as a one-line `TODO(<slug>)`. Its
+  context goes into a `## <slug>` section of `docs/development/open-items.md`:
+  status, the code it concerns, what works meanwhile. The repository is
+  public, so the section describes the gap, not whom or what it waits on.
+  Remove the comment and the section together when the item is done;
+  `tests/unit/test_open_items.py` checks that they match.
 - Keep unrelated user changes intact. Commit messages must read like ordinary
   developer messages, without AI attribution, `Co-Authored-By`, or generated-by
   markers. If a commit is blocked, preserve the staged state and give the exact

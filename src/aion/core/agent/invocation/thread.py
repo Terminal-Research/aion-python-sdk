@@ -142,10 +142,10 @@ class BaseThread(ABC):
 
     @staticmethod
     async def history(limit: int = 20, offset=None) -> List:
-        """Request recent conversation history through the control plane."""
-        logger.warning(
-            "Thread.history() is not yet implemented. "
-            "Returning empty list. "
-            "TODO: implement via aion.api control plane API."
-        )
+        """Request recent conversation history through the control plane.
+
+        Not supported yet: it returns an empty list.
+        """
+        # TODO(conversation-history): see docs/development/open-items.md.
+        logger.warning("Thread.history() is not supported yet and returns an empty list")
         return []

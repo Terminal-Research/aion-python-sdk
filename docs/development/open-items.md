@@ -35,3 +35,13 @@ the request's callback attribution. The unit tests cover the wiring; a run
 against a live deployment has not been checked yet, including whether the
 signed usage-attribution carrier stays valid for the length of a long run.
 Until then, `local_session` and `custom` are the providers known to work.
+
+## conversation-history
+
+- **Status:** Not supported yet
+- **Code:** `src/aion/core/agent/invocation/thread.py`
+
+`Thread.history()` is meant to return the recent messages of the
+conversation. It returns an empty list and logs a warning. An agent that needs
+earlier turns reads them from its framework's own state, which the server
+keeps per conversation: the LangGraph checkpoint or the ADK session.
