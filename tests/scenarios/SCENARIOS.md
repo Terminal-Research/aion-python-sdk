@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-164 scenarios in 32 files, 368 runs across 2 frameworks: 337 run, 31 skipped.
+169 scenarios in 33 files, 377 runs across 2 frameworks: 345 run, 31 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -75,7 +75,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `config` | aion.yaml configuration and deployment variants | 7 | `make tests-scenarios TAGS=config` |
 | `lifecycle` | cancel, concurrency, push notifications, startup | 5 | `make tests-scenarios TAGS=lifecycle` |
 | `contexts` | Context extension: list, read and delete conversations | 5 | `make tests-scenarios TAGS=contexts` |
-| `persistence` | needs POSTGRES_TEST_URL; survives a server restart | 10 | `make tests-scenarios-persistence` |
+| `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 15 | `make tests-scenarios-persistence` |
 | `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 13 | `make tests-scenarios-distributed` |
 | `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 29 | `make tests-scenarios TAGS=native` |
 
@@ -448,6 +448,18 @@ The native scenarios run the native agent, and the one the run asked for.
 |---|---|---|---|---|---|
 | [The deployment the server was started from names the native agent.](native/test_selection.py#L13 "test_the_server_runs_the_native_agent_of_this_framework") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
 
+### `tests/scenarios/persistence/test_database_migrations.py`
+
+Migrating the database: `aion db migrate`, `aion db check` and DB_MIGRATE_ON_START.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [A server migrates an empty database when it starts](persistence/test_database_migrations.py#L63 "test_a_server_migrates_an_empty_database_when_it_starts") | `persistence` | `echo` | `default` | ✓ | ✓ |
+| [A server that may not migrate refuses an empty database](persistence/test_database_migrations.py#L77 "test_a_server_that_may_not_migrate_refuses_an_empty_database") | `persistence` | `echo` | `default` | ✓ | ✓ |
+| [Every turn writes the task and the framework's conversation state.](persistence/test_database_migrations.py#L85 "test_a_server_without_schema_rights_serves_a_database_migrated_beforehand") | `persistence` | `echo` | `default` | ✓ | ✓ |
+| [What a rollback leaves behind: migrations only add, so the older code runs on it.](persistence/test_database_migrations.py#L106 "test_a_database_newer_than_the_code_is_reported_and_served") | `persistence` | `echo` | `default` | ✓ | ✓ |
+| [Aion db check finds an empty database behind until aion db migrate](persistence/test_database_migrations.py#L51 "test_aion_db_check_finds_an_empty_database_behind_until_aion_db_migrate") | `persistence` | — | `default` | any | any |
+
 ### `tests/scenarios/persistence/test_restart.py`
 
 What a server restart does to the tasks the previous process held.
@@ -476,7 +488,7 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | Command | Summary | Tags | Scenarios | langgraph | adk |
 |---|---|---|---|---|---|
 | `help` | Show this menu | `smoke` | 1 | ✓ | ✓ |
-| `echo <text>` | Reply with the argument, unchanged | `smoke`, `events` | 18 | ✓ | ✓ |
+| `echo <text>` | Reply with the argument, unchanged | `smoke`, `events` | 22 | ✓ | ✓ |
 | `stream <n>` | Reply in n chunks of one message | `streaming` | 10 | ✓ | ✓ |
 | `typing` | Send an ephemeral typing status, then a reply | `streaming`, `events` | 3 | ✓ | ✓ |
 | `steps <n>` | Emit n working statuses, then complete | `events` | 2 | ✓ | ✓ |
