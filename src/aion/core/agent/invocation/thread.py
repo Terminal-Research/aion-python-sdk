@@ -5,22 +5,19 @@ conversation state and provide message/artifact emission interfaces.
 """
 
 from __future__ import annotations
-import logging
 
 from abc import ABC, abstractmethod
-from typing import Any, ClassVar, List, Optional, Type
+from typing import Any, ClassVar, Optional, Type
 
 from aion.core.runtime.context import AionRuntimeContext
 from aion.core.a2a.extensions.messaging import MessageActionPayload
-
-logger = logging.getLogger(__name__)
 
 
 class BaseThread(ABC):
     """Conversation thread bound to the current invocation.
 
     Provides common thread metadata, shared routing helpers, and a consistent
-    public API (reply, post, typing, history). Concrete implementations supply
+    public API (reply, post, typing). Concrete implementations supply
     the framework-specific transport for post() and typing().
 
     Attributes:
@@ -139,13 +136,3 @@ class BaseThread(ABC):
     async def typing(self, content: str, *, metadata: dict | None = None) -> None:
         """Emit an ephemeral typing/progress indicator via the framework-specific transport."""
         ...
-
-    @staticmethod
-    async def history(limit: int = 20, offset=None) -> List:
-        """Request recent conversation history through the control plane.
-
-        Not supported yet: it returns an empty list.
-        """
-        # TODO(conversation-history): see docs/development/open-items.md.
-        logger.warning("Thread.history() is not supported yet and returns an empty list")
-        return []

@@ -5,6 +5,7 @@
 
 ### ⚠ BREAKING CHANGES
 
+* **core:** remove Thread.history(), which always returned an empty list
 * **db:** DbFactory.initialize only connects to the database; migrations run through aion.server.database, by aion db migrate or a server starting with DB_MIGRATE_ON_START
 * **langgraph:** the PostgreSQL checkpointer backend no longer creates its tables; aion db migrate and a starting server do
 * **adk:** the PostgreSQL session service backend no longer creates its tables; aion db migrate and a starting server do

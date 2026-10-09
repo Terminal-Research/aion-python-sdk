@@ -38,10 +38,10 @@ Until then, `local_session` and `custom` are the providers known to work.
 
 ## conversation-history
 
-- **Status:** Not supported yet
-- **Code:** `src/aion/core/agent/invocation/thread.py`
+- **Status:** Planned
+- **Code:** none
 
-`Thread.history()` is meant to return the recent messages of the
-conversation. It returns an empty list and logs a warning. An agent that needs
-earlier turns reads them from its framework's own state, which the server
-keeps per conversation: the LangGraph checkpoint or the ADK session.
+Agents have no SDK call that reads the recent messages of the conversation.
+An agent that needs earlier turns reads them from its framework's own state,
+which the server keeps per conversation: the LangGraph checkpoint or the ADK
+session.
