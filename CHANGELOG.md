@@ -38,6 +38,7 @@
 * **server:** resume a task paused for input on any server of the agent
 * **server:** on a server the Aion platform hosts, accept only push notification URLs that resolve to public addresses, and skip deliveries to any other
 * **server:** ExecutorAdapter.discard_undelivered lets a framework executor forget an event the server could not deliver
+* **server:** accept several comma-separated keys in ENCRYPTION_KEY: the first encrypts, every key decrypts, so the key can be rotated
 
 
 ### Bug Fixes
