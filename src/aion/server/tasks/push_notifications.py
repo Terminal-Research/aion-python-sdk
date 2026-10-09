@@ -124,8 +124,8 @@ class PushNotificationFactory:
 
         Returns:
             The database-backed config store, encrypting at rest when
-            ``ENCRYPTION_KEY`` is configured. Its table is created by
-            :meth:`prepare`, not here.
+            ``ENCRYPTION_KEY`` is configured. Its table is created by the SDK
+            migrations.
         """
         from .push_config_store import AionDatabasePushNotificationConfigStore
         engine = db_manager.get_engine().execution_options(
@@ -153,22 +153,6 @@ class PushNotificationFactory:
             encryption_keys=encryption_keys,
             owner_resolver=owner_resolver,
         )
-
-    @staticmethod
-    async def prepare(config_store: PushNotificationConfigStore) -> None:
-        """Create the database config table while the server starts.
-
-        a2a-sdk would otherwise create it inside the first request that reaches
-        the store, where a failure is a client's InternalError. An in-memory
-        store needs nothing.
-
-        Args:
-            config_store: The store :meth:`create` returned.
-        """
-        from .push_config_store import AionDatabasePushNotificationConfigStore
-
-        if isinstance(config_store, AionDatabasePushNotificationConfigStore):
-            await config_store.initialize()
 
     @staticmethod
     def _create_memory_store(owner_resolver: OwnerResolver) -> PushNotificationConfigStore:

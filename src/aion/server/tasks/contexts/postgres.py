@@ -5,9 +5,9 @@ from __future__ import annotations
 import uuid
 from typing import Optional
 
-from a2a.server.models import TaskVersionModel
+from a2a.server.models import PushNotificationConfigModel, TaskVersionModel
 from a2a.types import TaskStatus
-from sqlalchemy import Text, and_, cast, delete, desc, func, literal_column, or_, select, text
+from sqlalchemy import Text, and_, cast, delete, desc, func, literal_column, or_, select
 
 from aion.core.a2a import A2AMetadataKey, MessageType
 from aion.db.postgres import DbManager
@@ -35,8 +35,6 @@ from .catalog import (
 )
 
 __all__ = ["PostgresContextCatalog"]
-
-_PUSH_CONFIGS_TABLE = "push_notification_configs"
 
 _MESSAGE_TYPE = literal_column(
     f"{TaskMessageModel.__tablename__}.payload -> 'metadata' ->> '{A2AMetadataKey.MESSAGE_TYPE.value}'"
@@ -253,11 +251,11 @@ class PostgresContextCatalog:
                             TaskVersionModel.task_id.in_([str(task_id) for task_id in task_ids])
                         )
                     )
-                    if await session.scalar(text("SELECT to_regclass(:table) IS NOT NULL"), {"table": _PUSH_CONFIGS_TABLE}):
-                        await session.execute(
-                            text(f"DELETE FROM {_PUSH_CONFIGS_TABLE} WHERE task_id = ANY(:task_ids)"),
-                            {"task_ids": [str(task_id) for task_id in task_ids]},
+                    await session.execute(
+                        delete(PushNotificationConfigModel).where(
+                            PushNotificationConfigModel.task_id.in_([str(task_id) for task_id in task_ids])
                         )
+                    )
                     # Messages and artifacts cascade with their task.
                     await session.execute(delete(TaskRecordModel).where(TaskRecordModel.id.in_(task_ids)))
                 await reservations.mark_deleted(self._agent_id, context_id)

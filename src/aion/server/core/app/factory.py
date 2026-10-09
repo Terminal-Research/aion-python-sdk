@@ -208,7 +208,6 @@ class AppFactory:
             owner_resolver=self.aion_agent.owner_resolver,
             push_url_validator=url_validator,
         )
-        await PushNotificationFactory.prepare(push_config_store)
         self._push_sender = push_sender
 
         return AionRequestHandler(

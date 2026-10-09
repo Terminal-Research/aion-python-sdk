@@ -53,7 +53,8 @@
 * **adk:** remove an artifact the server could not store from the ADK artifact service, so a later turn of the context cannot load what the client never received
 * **server:** record the extension a task is routed to under the server-owned aion:routedExtension task metadata key, and ignore a routing key sent in request metadata
 * **server:** attribute the Codex model calls of behaviour evolution under CODEX_PROVIDER=aion with the request's callback attribution (Aion-Usage-Attribution or Aion-Caller-Id) instead of Aion-Principal-Selector; a daemon agent identity in the request is no longer required
-* **server:** start several servers of an agent together on a fresh PostgreSQL: the permission check before the SDK migrations and the LangGraph checkpoint, ADK session and push notification config table setups take turns under advisory locks instead of failing all but one server, and the push config table is created at startup rather than in the first request
+* **server:** start several servers of an agent together on a fresh PostgreSQL: the permission check before the SDK migrations and the LangGraph checkpoint and ADK session table setups take turns under advisory locks instead of failing all but one server
+* **db:** migration 009 creates push_notification_configs, or adds the owner and protocol_version columns and the owner index an existing table lacks; the server no longer creates that table itself, so a2a-sdk changes to it arrive as SDK migrations
 * **server:** keep in-memory ListTasks page tokens valid when the task they name changes or is deleted
 * **server:** check the push URL validator before every push delivery
 * **server:** load the in-memory task store on Python 3.12 and 3.13
