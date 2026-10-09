@@ -188,6 +188,32 @@ poetry run aion logs --since 2026-05-14T15:00:00Z
 poetry run aion logs --properties
 ```
 
+---
+
+### `aion db migrate` and `aion db check`
+
+Apply or check the migrations of the PostgreSQL database at `POSTGRES_URL`:
+the SDK's tables, then those of every installed framework (LangGraph's
+checkpoints, ADK's sessions). Frameworks come from the installed extras; no
+agent code runs, and `aion.yaml` is not read.
+
+`aion db migrate` is safe to run while servers start. `aion db check` changes
+nothing; it prints one line per set of tables and exits non-zero when the
+database is behind this SDK version. A database migrated by a newer SDK
+version is reported and accepted, since migrations only add.
+
+A server applies the migrations itself when it starts. With
+`DB_MIGRATE_ON_START=false` it only checks them and refuses to start while the
+database is behind; run `aion db migrate` before the servers start, and their
+database user needs no right to change the schema.
+
+**Usage:**
+
+```bash
+poetry run aion db migrate
+poetry run aion db check
+```
+
 ## Configuration
 
 The CLI reads configuration from your `aion.yaml` file. The configuration must include:

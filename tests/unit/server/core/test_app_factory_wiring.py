@@ -180,6 +180,7 @@ async def test_the_registered_routes_are_the_applications_and_the_rest_stays_clo
     factory.token_verifier = Mock(load=AsyncMock(), trust_application_users=False)
     for step in (factory.db_factory, factory.agent_factory, factory.plugin_factory):
         step.initialize = AsyncMock()
+    factory.db_factory.initialize.return_value = False  # no POSTGRES_URL
     factory.agent_factory.build = AsyncMock()
     factory.plugin_factory.configure_app = AsyncMock()
 

@@ -29,9 +29,12 @@ from sqlalchemy import text
 
 from .postgres_support import POSTGRES_TEST_URL, prepared_database, truncate
 
-from aion.adk.server.session.backends.postgres import PostgresBackend as AdkSessions
+from aion.adk.server.session.backends.postgres import PostgresBackend as AdkSessions, migrate_session_tables
 from aion.db.postgres.migrations.env import config as alembic_config
-from aion.langgraph.server.checkpoint.backends.postgres import PostgresBackend as LangGraphCheckpoints
+from aion.langgraph.server.checkpoint.backends.postgres import (
+    PostgresBackend as LangGraphCheckpoints,
+    migrate_checkpoint_tables,
+)
 from aion.server.agent.adapters import StateScope
 from aion.server.tasks.admission import ContextHolder, PostgresContextAdmission
 from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore
@@ -101,12 +104,14 @@ async def _task(context_id: str, owner: str, agent_id: str = AGENT) -> None:
 
 
 async def _checkpoint(db, thread_id: str) -> None:
+    await migrate_checkpoint_tables(db)
     saver = await LangGraphCheckpoints(db).create()
     config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
     await saver.aput(config, empty_checkpoint(), {"source": "input", "step": -1}, {})
 
 
 async def _session(db, app_name: str, user_id: str, session_id: str) -> None:
+    await migrate_session_tables(db)
     sessions = await AdkSessions(db).create()
     await sessions.create_session(app_name=app_name, user_id=user_id, session_id=session_id)
 

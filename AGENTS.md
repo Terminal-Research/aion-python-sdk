@@ -34,9 +34,11 @@ contracts; reconcile this file with them when behavior changes.
   when applicable; `A2AError` subclasses remain in the a2a-sdk hierarchy.
 - No general formatter or type checker is configured for this Python project.
   Follow surrounding style and do not introduce unrelated tooling changes.
-- Record every change a client of an agent's server or a project installing
-  the SDK can notice in `CHANGELOG.md`, under `## Unreleased`, in the
-  a2a-python changelog format: `### ⚠ BREAKING CHANGES`, `### Features` and
+- Until the first final release, `CHANGELOG.md` stays empty under
+  `## Unreleased`: there is no earlier release to list changes against. From
+  that release on, record every change a client of an agent's server or a
+  project installing the SDK can notice in `CHANGELOG.md`, under
+  `## Unreleased`, in the a2a-python changelog format: `### ⚠ BREAKING CHANGES`, `### Features` and
   `### Bug Fixes`, one short `* **scope:** description` line each. Before a
   final release the section must be complete and renamed to the released
   version; a pre-release leaves it under `## Unreleased`. See `RELEASE.md`.
@@ -58,7 +60,29 @@ contracts; reconcile this file with them when behavior changes.
   - check whether upstream now offers what cluster mode lacks here - a wait
     hook in `DatabaseTaskEventStream`, remote cancellation that runs
     `AgentExecutor.cancel`, detection of a dead instance, journal cleanup -
-    and adopt it rather than writing an Aion version.
+    and adopt it rather than writing an Aion version;
+  - when `tests/unit/db/test_a2a_migration_registry.py` fails, a2a-sdk has a
+    new revision of its own migrations: write the SDK revision that makes the
+    same change, or mark it `not applied` with the reason, and add its rows
+    to "Database migrations" in `docs/development/a2a-sdk-mapping.md`.
+- Database migrations only add. Every table in the `aion` schema, those on
+  a2a-sdk's models included, comes from `aion.db.postgres.migrations`, and
+  `aion.server.database` runs it with the installed frameworks' migrations.
+  The previous release must keep working on the new schema: servers roll out
+  one at a time, and a release can be rolled back onto a migrated database.
+  Removing a table or column takes two releases - one where the code stops
+  using it, then a later revision that drops it, listed in
+  `TWO_RELEASE_REMOVALS` of `tests/unit/db/test_migrations_only_add.py`,
+  which fails on any other revision that drops, renames, retypes or tightens
+  a table or column. The models in `aion.db.postgres.models` describe the
+  columns the migrations build; `tests/integration/db/test_models_match_migrations.py`
+  compares the two.
+- Leave a `TODO` in Python code only as a one-line `TODO(<slug>)`. Its
+  context goes into a `## <slug>` section of `docs/development/open-items.md`:
+  status, the code it concerns, what works meanwhile. The repository is
+  public, so the section describes the gap, not whom or what it waits on.
+  Remove the comment and the section together when the item is done;
+  `tests/unit/test_open_items.py` checks that they match.
 - Keep unrelated user changes intact. Commit messages must read like ordinary
   developer messages, without AI attribution, `Co-Authored-By`, or generated-by
   markers. If a commit is blocked, preserve the staged state and give the exact

@@ -60,6 +60,7 @@ class A2AMetadataKey(str, Enum):
     NETWORK = "aion:network"
     DISTRIBUTION = "aion:distribution"
     SETTLED_REASON = "aion:settledReason"
+    ROUTED_EXTENSION = "aion:routedExtension"
 
 
 class TaskSettlementReason(str, Enum):

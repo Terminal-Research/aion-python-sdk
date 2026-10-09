@@ -47,12 +47,16 @@ class AppSettings(BaseEnvSettings):
         default=None,
         alias="ENCRYPTION_KEY",
         description=(
-            "Fernet key used to encrypt sensitive data at rest. It is deliberately "
-            "one key for the deployment rather than one per subsystem: every "
-            "consumer added later reads this same variable. Today it is applied to "
-            "stored push-notification configurations, which carry the callback URL "
-            "together with the credentials the receiver expects back — with no key "
-            "set those credentials sit in the database as plaintext JSON. Must be a "
+            "Fernet keys used to encrypt sensitive data at rest, separated by "
+            "commas. The first key encrypts; every key in the list decrypts, so a "
+            "key can be rotated without losing what an older one encrypted: deploy "
+            "`old,new`, then `new,old`, then `new` once nothing encrypted with "
+            "`old` is needed. It is deliberately one setting for the deployment "
+            "rather than one per subsystem: every consumer added later reads this "
+            "same variable. Today it is applied to stored push-notification "
+            "configurations, which carry the callback URL together with the "
+            "credentials the receiver expects back — with no key set those "
+            "credentials sit in the database as plaintext JSON. Each key must be a "
             "URL-safe base64-encoded 32-byte key; generate one with "
             "`python -c \"from cryptography.fernet import Fernet; "
             "print(Fernet.generate_key().decode())\"`. Only persistent storage is "
@@ -128,22 +132,24 @@ class AppSettings(BaseEnvSettings):
     def validate_encryption_key(cls, value: Optional[str]) -> Optional[str]:
         """Rejects a key Fernet cannot use, at startup rather than at first write.
 
-        The key is otherwise only exercised when a store that uses it is built,
+        A key is otherwise only exercised when a store that uses it is built,
         and a truncated or non-base64 value surfaces there as a bare
         ``ValueError`` raised from inside the A2A SDK, naming neither the
         variable nor the expected format.
 
         Args:
-            value: The configured key, or None/empty when encryption is off.
+            value: The configured comma-separated keys, or None/empty when
+                encryption is off.
 
         Returns:
-            The validated key, or None when encryption is off.
+            The keys joined by commas without surrounding whitespace, or None
+            when encryption is off.
 
         Raises:
-            ValueError: If the key is set but unusable, or if the optional
-                cryptography dependency it needs is not installed.
+            ValueError: If an entry is empty or unusable, or if the optional
+                cryptography dependency the keys need is not installed.
         """
-        if not value:
+        if not value or not value.strip():
             return None
 
         try:
@@ -154,16 +160,31 @@ class AppSettings(BaseEnvSettings):
                 "reads it is not installed.\n" + server_extras_hint()
             ) from error
 
-        try:
-            Fernet(value.encode("utf-8"))
-        except Exception as error:
-            raise ValueError(
-                "ENCRYPTION_KEY must be a URL-safe base64-encoded 32-byte key. "
-                "Generate one with: python -c \"from cryptography.fernet import "
-                "Fernet; print(Fernet.generate_key().decode())\""
-            ) from error
+        keys = [key.strip() for key in value.split(",")]
+        for position, key in enumerate(keys, start=1):
+            if not key:
+                raise ValueError(
+                    f"ENCRYPTION_KEY entry {position} is empty. Separate keys with "
+                    "single commas, the encrypting key first."
+                )
+            try:
+                Fernet(key.encode("utf-8"))
+            except Exception as error:
+                raise ValueError(
+                    f"ENCRYPTION_KEY entry {position} must be a URL-safe "
+                    "base64-encoded 32-byte key. Generate one with: python -c "
+                    "\"from cryptography.fernet import Fernet; "
+                    "print(Fernet.generate_key().decode())\""
+                ) from error
 
-        return value
+        return ",".join(keys)
+
+    @property
+    def encryption_keys(self) -> tuple[str, ...]:
+        """The configured encryption keys, the encrypting key first; empty when off."""
+        if not self.encryption_key:
+            return ()
+        return tuple(self.encryption_key.split(","))
 
     @property
     def is_logstash_configured(self) -> bool:

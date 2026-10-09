@@ -29,7 +29,7 @@ from .events import (
     reaction_event,
 )
 from .recorder import Ev, final_task, record_stream, replies, reply_texts, stored_texts
-from .serve import ServeProcess, ServeVariant
+from .serve import ServeProcess, ServeVariant, run_aion
 from .shape import (
     ANY,
     SKIP,
@@ -75,6 +75,7 @@ __all__ = [
     "ScenarioClient",
     "ServeProcess",
     "ServeVariant",
+    "run_aion",
     "artifact",
     "assert_shape",
     "card_action_event",

@@ -132,6 +132,33 @@ class TestEncryptionKey:
             with pytest.raises(ValueError, match="URL-safe base64-encoded 32-byte key"):
                 AppSettings()
 
+    def test_several_keys_list_the_encrypting_key_first(self):
+        """Rotation lists the new key first and keeps the old one for reading."""
+        new, old = Fernet.generate_key().decode(), Fernet.generate_key().decode()
+
+        with patch.dict(os.environ, {"ENCRYPTION_KEY": f" {new} , {old} "}):
+            settings = AppSettings()
+
+        assert settings.encryption_keys == (new, old)
+
+    def test_no_key_means_no_keys(self):
+        assert AppSettings().encryption_keys == ()
+
+    def test_an_empty_entry_is_rejected(self):
+        """A stray comma is a typo, not an extra key."""
+        key = Fernet.generate_key().decode()
+
+        with patch.dict(os.environ, {"ENCRYPTION_KEY": f"{key},"}):
+            with pytest.raises(ValueError, match="entry 2 is empty"):
+                AppSettings()
+
+    def test_a_malformed_later_key_is_named_by_position(self):
+        key = Fernet.generate_key().decode()
+
+        with patch.dict(os.environ, {"ENCRYPTION_KEY": f"{key},not-base64!"}):
+            with pytest.raises(ValueError, match="entry 2 must be"):
+                AppSettings()
+
 
 class TestApiSettings:
     """Test suite for API connection settings."""

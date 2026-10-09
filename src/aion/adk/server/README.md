@@ -10,7 +10,6 @@ This subpackage provides the server-side plugin for running Google ADK agents wi
 - **Execution** — `ADKExecutor` / `ADKStreamExecutor` for streaming ADK agent runs
 - **Session management** — Memory and PostgreSQL backends via `SessionServiceFactory`
 - **Artifact storage** — Memory and A2A-backed artifact service via `ArtifactServiceFactory`
-- **State conversion** — `StateConverter` mapping ADK session state to `ExecutionSnapshot`
 - **Transformers** — Bidirectional A2A ↔ ADK format conversion
 
 ## Inbound and outbound

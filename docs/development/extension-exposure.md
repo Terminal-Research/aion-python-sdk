@@ -151,6 +151,24 @@ flag to the descriptor: it would be imprecise about what it claims and
 duplicate something the handler already answers exactly — and the two could
 then disagree.
 
+A task keeps the handler it was routed to for its whole life. The first turn
+decides: when the request activates an extension that has a handler, the
+executor gives the task to that handler and records the extension URI in the
+task metadata under `aion:routedExtension` (`A2AMetadataKey.ROUTED_EXTENSION`).
+A follow-up turn or a cancel reads that record instead of deciding again,
+because neither has to activate the extension: a cancel carries no message at
+all. Without a record the task belongs to the agent's framework adapter.
+
+The record is the server's alone:
+
+- A new task's metadata starts as a copy of the request's, so the executor
+  drops any `aion:routedExtension` the request carried before it decides.
+- The key is in the platform metadata namespace, so `A2ATaskDeduplicator`
+  removes it from the agent's task patches.
+- Clients see it in the task metadata, but it is not part of the client
+  contract and is not described in the public docs. A client knows which
+  extension it activated.
+
 ## The Context extension
 
 `GetContexts`, `GetContext` and `DeleteContext` belong to one extension,

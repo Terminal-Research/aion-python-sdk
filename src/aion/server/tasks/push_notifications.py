@@ -117,38 +117,29 @@ class PushNotificationFactory:
 
         A stored configuration is the callback URL plus the credentials the
         receiver expects to see on the webhook call. Handing the store the
-        deployment's encryption key makes it Fernet-encrypt that payload before
-        it reaches the ``config_data`` column; without one the credentials are
-        persisted as plaintext JSON. The key is opt-in because encryption is not
-        free to adopt: see the rotation note below.
+        deployment's encryption keys makes it Fernet-encrypt that payload with
+        the first key before it reaches the ``config_data`` column, and read a
+        config written under any of them; without keys the credentials are
+        persisted as plaintext JSON.
 
         Returns:
             The database-backed config store, encrypting at rest when
-            ``ENCRYPTION_KEY`` is configured. Its table is created by
-            :meth:`prepare`, not here.
+            ``ENCRYPTION_KEY`` is configured. Its table is created by the SDK
+            migrations.
         """
         from .push_config_store import AionDatabasePushNotificationConfigStore
         engine = db_manager.get_engine().execution_options(
             schema_translate_map={None: AION_SCHEMA}
         )
-        encryption_key = app_settings.encryption_key
+        encryption_keys = app_settings.encryption_keys
 
-        # TODO(encryption): support rotating ENCRYPTION_KEY. The SDK store takes
-        #  a single Fernet key and reads every row with it, so changing the
-        #  value strands configs written under the old one: decryption fails, the
-        #  plaintext-JSON fallback fails too, and ``get_info_for_dispatch``
-        #  raises out of ``send_notification`` — deliveries break for tasks
-        #  registered before the change, rather than degrading. Enabling
-        #  encryption on an existing database is safe (rows written as plaintext
-        #  still parse through that same fallback); it is only key *changes*
-        #  that are unsupported. Fix by passing a MultiFernet built from a
-        #  primary plus retired keys via ``core_to_model_conversion`` /
-        #  ``model_to_core_conversion``, or by re-encrypting the table on
-        #  rotation.
-        if encryption_key:
+        # TODO(push-key-reencryption): a config keeps the key it was written
+        #  under; see docs/development/open-items.md.
+        if encryption_keys:
             logger.info(
                 "Push-notification configs will be encrypted at rest with "
-                "ENCRYPTION_KEY."
+                "ENCRYPTION_KEY (%d key(s)).",
+                len(encryption_keys),
             )
         else:
             logger.warning(
@@ -159,25 +150,9 @@ class PushNotificationFactory:
 
         return AionDatabasePushNotificationConfigStore(
             engine=engine,
-            encryption_key=encryption_key,
+            encryption_keys=encryption_keys,
             owner_resolver=owner_resolver,
         )
-
-    @staticmethod
-    async def prepare(config_store: PushNotificationConfigStore) -> None:
-        """Create the database config table while the server starts.
-
-        a2a-sdk would otherwise create it inside the first request that reaches
-        the store, where a failure is a client's InternalError. An in-memory
-        store needs nothing.
-
-        Args:
-            config_store: The store :meth:`create` returned.
-        """
-        from .push_config_store import AionDatabasePushNotificationConfigStore
-
-        if isinstance(config_store, AionDatabasePushNotificationConfigStore):
-            await config_store.initialize()
 
     @staticmethod
     def _create_memory_store(owner_resolver: OwnerResolver) -> PushNotificationConfigStore:

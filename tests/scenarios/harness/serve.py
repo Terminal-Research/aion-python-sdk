@@ -165,6 +165,27 @@ def _aion_executable() -> Path:
     return executable
 
 
+def run_aion(*args: str, env: Mapping[str, str]) -> subprocess.CompletedProcess[str]:
+    """Run one `aion` command to completion, as an operator would, and return what it said.
+
+    Args:
+        *args: The command line after ``aion``, such as ``("db", "check")``.
+        env: Extra environment, such as ``POSTGRES_URL``.
+
+    Returns:
+        The finished process, its stdout and stderr merged into ``stdout``.
+    """
+    return subprocess.run(
+        [str(_aion_executable()), *args],
+        env=_server_env(ServeVariant(name="command", env=env)),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=READY_TIMEOUT_SECONDS,
+        check=False,
+    )
+
+
 class ServeProcess:
     """A running `aion serve` and the URLs it answers on.
 

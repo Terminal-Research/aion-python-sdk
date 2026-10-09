@@ -201,7 +201,7 @@ class EvolutionTaskHandler:
         before its task is created - see ExtensionPreflightError.
 
         Runs only tools_factory.check_environment()'s checks - the subset of
-        build_worker()'s that need just `daemon`, not a parsed directive.
+        build_worker()'s that need no parsed directive.
         Directive validity itself is still discovered in stream(), which
         already reports it as a FAILED task naming the offending request
         field: that's the caller's request being wrong, not the deployment,
@@ -213,10 +213,8 @@ class EvolutionTaskHandler:
             from .tools_factory import check_environment
         except ModuleNotFoundError:
             return  # availability() already rejects an enabled-but-missing toolkit
-        runtime_context = await AionRuntimeContextRegistry.aget_current_context()
-        daemon = runtime_context.get_daemon() if runtime_context is not None else None
         try:
-            check_environment(daemon)
+            check_environment()
         except ExtensionSetupError as ex:
             logger.warning("evolution preflight rejected [%s]: %s", ex.code, ex)
             raise ExtensionPreflightError(ex.client_text) from ex
@@ -374,10 +372,9 @@ class EvolutionTaskHandler:
 
     async def _make_worker(self, parsed: ParsedDirective) -> "EvolutionWorker":
         # The daemon payload rides along: it names the model (environment's
-        # `llm` configuration variable) and the principal that Codex usage is
-        # attributed to (environment.daemon_agent_identity_id). A resumed run
-        # may still carry no daemon scope — the factory then falls back to env
-        # overrides and fails precisely when it cannot.
+        # `llm` configuration variable) and configuration fallbacks. A resumed
+        # run may still carry no daemon scope — the factory then falls back to
+        # env overrides and fails precisely when it cannot.
         runtime_context = await AionRuntimeContextRegistry.aget_current_context()
         daemon = runtime_context.get_daemon() if runtime_context is not None else None
         if self._build_worker is not None:

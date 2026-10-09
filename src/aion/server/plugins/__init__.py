@@ -5,13 +5,14 @@ with the server's systems. It builds on top of the shared plugin protocols and
 registry to provide full plugin lifecycle support.
 """
 
-from .factory import PluginFactory
+from .factory import PluginFactory, discover_installed_plugins
 from .base import BasePluginProtocol
 from .agent import AgentPluginProtocol
 from .registry import PluginRegistry
 
 __all__ = [
     "PluginFactory",
+    "discover_installed_plugins",
     "BasePluginProtocol",
     "AgentPluginProtocol",
     "PluginRegistry",

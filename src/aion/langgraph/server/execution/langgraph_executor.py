@@ -1,4 +1,4 @@
-"""LangGraph executor — orchestrates stream, state retrieval, and result handling."""
+"""LangGraph executor — orchestrates stream, resume, and result handling."""
 from __future__ import annotations
 import logging
 import time
@@ -6,12 +6,12 @@ import time
 from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from aion.core.config.models import AgentConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.types import Command, StateSnapshot
 from collections.abc import AsyncIterator
 from typing import Any, Optional, TYPE_CHECKING
 
 from aion.server.agent.adapters import (
     ExecutionConfig,
-    ExecutionSnapshot,
     ExecutorAdapter,
     LegacyStateError,
 )
@@ -23,7 +23,6 @@ from .event_preprocessor import LangGraphEventPreprocessor
 from .result_handler import ExecutionResultHandler
 from .stream_executor import StreamExecutor, StreamResult
 from .transformer import LangGraphTransformer
-from ..state import LangGraphStateAdapter
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
@@ -52,7 +51,6 @@ class LangGraphExecutor(ExecutorAdapter):
         """
         self.compiled_graph = compiled_graph
         self.config = config
-        self._state_adapter = LangGraphStateAdapter()
         self._result_handler = result_handler or ExecutionResultHandler()
         self._preprocessor = LangGraphEventPreprocessor()
 
@@ -115,9 +113,9 @@ class LangGraphExecutor(ExecutorAdapter):
 
         try:
             logger.info(f"Resuming execution for context: {config.context_id}")
-            state = await self.get_state(config)
+            snapshot = await self._graph_state(config)
 
-            if not state.requires_input():
+            if not snapshot.interrupts:
                 logger.warning(
                     f"Attempted to resume non-interrupted execution: {config.context_id}"
                 )
@@ -136,7 +134,7 @@ class LangGraphExecutor(ExecutorAdapter):
                 context_id=context.context_id,
             )
             lg_inputs = LangGraphTransformer.generate_langgraph_inputs(context)
-            resume_command = self._state_adapter.create_resume_input(lg_inputs, state)
+            resume_command = Command(resume=lg_inputs)
             lg_config = LangGraphTransformer.generate_langgraph_config(config)
 
             logger.debug(f"Resuming task")
@@ -178,8 +176,19 @@ class LangGraphExecutor(ExecutorAdapter):
         thread_id = config.require_state_scope().key_for(config.context_id)
         await checkpointer.adelete_thread(thread_id)
 
-    async def get_state(self, config: ExecutionConfig) -> ExecutionSnapshot:
-        """Return the current graph state as an ExecutionSnapshot."""
+    async def _graph_state(self, config: ExecutionConfig) -> StateSnapshot:
+        """Read the graph's state for this context under the caller's state scope.
+
+        The snapshot is LangGraph's own: ``interrupts`` holds what the graph
+        stopped on, empty once a run has finished. When the scoped thread is
+        empty, state saved under the bare ``context_id`` is refused as in
+        ``stream``.
+
+        Raises:
+            ValueError: The configuration names no ``context_id``.
+            StateRetrievalError: The state could not be read, or the context
+                holds state that predates scoped keys.
+        """
         if not config or not config.context_id:
             raise ValueError("context_id is required to get state")
 
@@ -188,7 +197,7 @@ class LangGraphExecutor(ExecutorAdapter):
             snapshot = await self.compiled_graph.aget_state(lg_config)
             if not snapshot.values and not snapshot.next:
                 await self._refuse_legacy_state(config)
-            return self._state_adapter.get_state_from_snapshot(snapshot)
+            return snapshot
 
         except Exception as e:
             logger.error(f"Failed to get state: {e}")
@@ -223,7 +232,7 @@ class LangGraphExecutor(ExecutorAdapter):
             converter: LangGraphA2AConverter,
     ) -> AsyncIterator[AgentEvent]:
         """Emit result events and the terminal complete or interrupt event."""
-        snapshot = await self.get_state(config)
+        snapshot = await self._graph_state(config)
 
         for a2a_event in self._result_handler.handle(
                 stream_result, snapshot, context,
@@ -232,10 +241,8 @@ class LangGraphExecutor(ExecutorAdapter):
         ):
             yield a2a_event
 
-        if snapshot.requires_input():
-            yield converter.convert_interrupt(
-                self._state_adapter.extract_all_interrupts(snapshot)
-            )
+        if snapshot.interrupts:
+            yield converter.convert_interrupt(snapshot.interrupts)
         else:
             yield converter.convert_complete()
 

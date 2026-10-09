@@ -9,6 +9,7 @@ Everything you need to start contributing to the Aion Python SDK.
 - **[Extension exposure](extension-exposure.md)** — Known, active, advertised, unavailable, and which extension owns a task
 - **[Scenario tests](../../tests/scenarios/README.md)** — The suite that starts a real `aion serve` and drives it over A2A
 - **[Continuous integration](ci.md)** — Full pull request checks and the GitHub ruleset that makes them required
+- **[Open items](open-items.md)** — Known gaps that remain open on purpose, one section per `TODO(<slug>)`
 
 This directory contains repository-level maintainer guides. Other Markdown in
 the repository is scoped to where it sits — the root `README.md` and

@@ -28,18 +28,7 @@ __all__ = [
     "ExtensionPreflightError",
     "ExtensionTaskHandler",
     "discover_extension_task_handlers",
-    "ROUTED_EXTENSION_METADATA_KEY",
 ]
-
-# Platform-owned task metadata key recording which extension handler a task
-# was routed to at creation time. Prefixed under the platform metadata
-# namespace (see aion.core.a2a.metadata.PLATFORM_METADATA_PREFIX) so
-# A2ATaskDeduplicator protects it from being overwritten by incoming task
-# patches - the routing decision must persist unchanged for the task's
-# lifetime, see resume-routing rationale in
-# TODO: this concept is not yet finalized - reconcile it with the extension
-# docs once the design settles.
-ROUTED_EXTENSION_METADATA_KEY = "https://docs.aion.to/a2a/task#routedExtension"
 
 
 class ExtensionTaskHandler(Protocol):

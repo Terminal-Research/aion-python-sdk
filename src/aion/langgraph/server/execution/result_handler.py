@@ -22,7 +22,7 @@ from .stream_executor import StreamResult
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
-    from aion.server.agent.adapters import ExecutionSnapshot
+    from langgraph.types import StateSnapshot
 
 AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent | Task | Message
 
@@ -44,7 +44,7 @@ class ExecutionResultHandler:
     def handle(
             self,
             stream_result: StreamResult,
-            snapshot: "ExecutionSnapshot",
+            snapshot: "StateSnapshot",
             context: "RequestContext",
             task_id: str,
             context_id: str,
@@ -53,7 +53,10 @@ class ExecutionResultHandler:
 
         Args:
             stream_result: Accumulated state from the stream cycle.
-            snapshot: Authoritative execution snapshot from aget_state.
+            snapshot: The graph's state after the run, LangGraph's own
+                ``StateSnapshot`` from ``aget_state``. A non-empty
+                ``interrupts`` means the graph stopped on ``interrupt()``
+                and waits for input.
             context: A2A request context (current_task, task_id, etc.).
             task_id: Current task ID (used to construct A2A events).
             context_id: Current context ID (used to construct A2A events).
@@ -68,7 +71,7 @@ class ExecutionResultHandler:
                 return result
 
         # Fallback: no outbox or outbox type not yet handled
-        if stream_result.delta_text and not snapshot.requires_input():
+        if stream_result.delta_text and not snapshot.interrupts:
             msg = Message(
                 context_id=context_id,
                 task_id=task_id,

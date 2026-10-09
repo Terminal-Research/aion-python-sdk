@@ -1,9 +1,9 @@
 from unittest.mock import Mock
 
 from a2a.types import Message, Part, Role, Task
-from aion.server.agent.adapters import ExecutionSnapshot, ExecutionStatus, InterruptInfo
 from aion.langgraph.server.execution.stream_executor import StreamResult
 from langchain_core.messages import AIMessage, AIMessageChunk
+from langgraph.types import Interrupt, StateSnapshot
 
 
 def make_ai_message(content="Hello", id=None):
@@ -26,13 +26,30 @@ def make_execution_config(context_id=None):
     return config
 
 
-def make_execution_snapshot(state=None, interrupted=False, metadata=None):
-    """Create an ExecutionSnapshot with controlled status."""
-    status = ExecutionStatus.INTERRUPTED if interrupted else ExecutionStatus.COMPLETE
-    return ExecutionSnapshot(
-        state=state or {},
-        status=status,
-        metadata=metadata or {},
+def make_interrupt(value="Input needed", id="interrupt-1"):
+    """Create a LangGraph Interrupt, as an interrupt() call leaves it in the graph state."""
+    return Interrupt(value=value, id=id)
+
+
+def make_graph_snapshot(values=None, interrupts=(), next=()):
+    """Create a LangGraph StateSnapshot, as aget_state returns it.
+
+    A snapshot with interrupts is a graph stopped on interrupt(); one without
+    is a finished run. Non-empty ``values`` or ``next`` mark a thread that
+    holds state, so the executor does not look for state under the bare
+    context_id.
+    """
+    if values is None:
+        values = {"messages": []}
+    return StateSnapshot(
+        values=values,
+        next=tuple(next),
+        config={},
+        metadata=None,
+        created_at=None,
+        parent_config=None,
+        tasks=(),
+        interrupts=tuple(interrupts),
     )
 
 
@@ -53,11 +70,6 @@ def make_a2a_part(text=None, url=None, raw=None, media_type=None):
     if media_type is not None:
         kwargs["media_type"] = media_type
     return Part(**kwargs)
-
-
-def make_interrupt_info(id="interrupt-1", value="Input needed", prompt=None):
-    """Create an InterruptInfo object."""
-    return InterruptInfo(id=id, value=value, prompt=prompt)
 
 
 def make_a2a_message(task_id="task-1", context_id="ctx-1", message_id="msg-1", parts=None):

@@ -72,7 +72,7 @@ against them.
 | `VersionedTaskStore` contract | as is | `PostgresVersionedTaskStore` implements it | The contract is a2a-sdk's: version per task, compare-and-swap, `CANCELED` overwrites a non-terminal task, event journaled in the same transaction. |
 | `VersionedDatabaseTaskStore` | not used | `PostgresVersionedTaskStore` | It stores a task as one row with JSON columns; Aion's `tasks` keeps history and artifacts in `task_messages` and `task_artifacts`, with `agent_id` and `owner_scope`, and contexts reference it. The version and journal tables are a2a-sdk's own models. |
 | `TaskVersionModel`, `TaskEventModel` (`task_versions`, `task_events`) | as is | written by `PostgresVersionedTaskStore`, created by migration `008` | Same columns as a2a-sdk's revision `b5e3d1c8a2f7`, in Aion's schema and migration chain. |
-| `a2a/migrations` | not used | `aion.db.postgres.migrations` | All of the SDK's tables come from one migration chain. |
+| `a2a/migrations` | not used | `aion.db.postgres.migrations` | All of the SDK's tables come from one migration chain; see [Database migrations](#database-migrations). |
 | `DatabaseTaskEventStream` | as is | `StoreManager`, `create_table=False` | Polls the journal every 0.5 s. |
 | `LegacyTaskStoreAdapter` | as is | in-memory store | a2a-sdk applies it to any plain store. |
 | `TaskVersion`, `StoredTask`, `ConcurrentTaskModificationError` | as is | stores, task manager, registry | `ConcurrentTaskModificationError` is also the refusal of a write into a context being deleted, and of a write that would move a terminal task to another state. |
@@ -148,6 +148,34 @@ What Aion adds on top of cluster mode:
 | `PostgresVersionedTaskStore.delete` | `VersionedTaskStore.delete` | replaced | Delegates to `PostgresTaskStore.delete`. | `test_versioned_store_postgres.py` |
 | `PostgresVersionedTaskStore.list` | `VersionedTaskStore.list` | replaced | Delegates to `PostgresTaskStore.list`. | `test_store_owner_parity.py` |
 
+## Database migrations
+
+a2a-sdk ships Alembic migrations for its tables in `a2a/migrations`, run by its
+`a2a-db` command. The SDK never runs them. Every table in the `aion` schema,
+the ones built on a2a-sdk's models included, comes from the SDK's own chain in
+`aion.db.postgres.migrations`, so one `alembic_version` says where a database
+stands.
+
+Every a2a-sdk revision is listed below, one row per table it touches, with the
+SDK revision that makes the same change or `not applied` and the reason.
+`tests/unit/db/test_a2a_migration_registry.py` fails when the installed
+a2a-sdk has a revision this table does not list, or lists one it does not
+have. `tests/integration/db/test_a2a_tables_match_models.py` compares the
+tables after the SDK migrations with a2a-sdk's models: columns, types,
+nullability, keys and indexes.
+
+| a2a-sdk revision | Change | Aion revision | Why |
+|---|---|---|---|
+| `6419d2d130f6` | `tasks`: `owner`, `last_updated`, index on both | not applied | Aion's `tasks` is its own table, scoped by `owner_scope`. |
+| `6419d2d130f6` | `push_notification_configs`: `owner`, index on `owner` | `009` | Created with both; added to a table a2a-sdk's store created without them. |
+| `38ce57e08137` | `tasks`: `protocol_version` | not applied | Aion's `tasks` is its own table. |
+| `38ce57e08137` | `push_notification_configs`: `protocol_version` | `009` | Created with it; added to a table that lacks it. |
+| `b5e3d1c8a2f7` | `task_versions`, `task_events`, index on `task_events.task_id` | `008` | Same columns. |
+
+When an a2a-sdk upgrade brings a revision, write an SDK revision that makes
+the same change to the tables Aion keeps on a2a-sdk's models, or mark the part
+`not applied` with the reason, and add its rows here in the same change.
+
 ## Used as is
 
 | a2a-sdk | Where |
@@ -156,7 +184,8 @@ What Aion adds on top of cluster mode:
 | `TaskUpdater`, `EventQueue` | `AionAgentRequestExecutor`, `AionEventPipeline` |
 | `add_a2a_routes_to_fastapi`, `create_agent_card_routes` | `AppFactory._build_app` |
 | A2A 0.3 compatibility (`enable_v0_3_compat=True`) | `AionJsonRpcDispatcher`, which installs `AionJSONRPC03Adapter` as the adapter |
-| `DatabasePushNotificationConfigStore`, `InMemoryPushNotificationConfigStore` | `PushNotificationFactory` |
+| `InMemoryPushNotificationConfigStore` | `PushNotificationFactory` |
+| `DatabasePushNotificationConfigStore` | `AionDatabasePushNotificationConfigStore`, built by `PushNotificationFactory`: a `MultiFernet` of every `ENCRYPTION_KEY` in place of the single key, and `create_table=False`, since the table comes from migration `009` |
 | `validate_push_notification_url` as `push_url_validator` of `DefaultRequestHandlerV2` and `BasePushNotificationSender` | `AppFactory`, on a server the platform hosts only (`push_url_validator()`) |
 | `resolve_user_scope`, `OwnerResolver` | default owner resolver of the stores and the agent |
 

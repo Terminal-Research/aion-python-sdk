@@ -5,8 +5,9 @@ one database - can present the same one. The tasks table already keys every
 row by agent and ``owner_scope``; this module holds the framework state kept
 beside it to the same rule, on a real PostgreSQL:
 
-* the LangGraph checkpoint, through ``stream``, ``resume`` and ``get_state``;
-* the ADK session, through the same three;
+* the LangGraph checkpoint, through ``stream`` and ``resume``, and the
+  thread it is saved under;
+* the ADK session, through ``stream``, and the session it is saved as;
 * the ADK artifact service's fallback to the tasks table.
 
 ``owner_scope`` here is the trusted user of ``ServerCallContext`` - not the
@@ -136,6 +137,11 @@ async def _built(agent_id: str, adapter, native) -> AionAgent:
     return agent
 
 
+def _scope(agent: AionAgent, user: ServerCallContext) -> StateScope:
+    """The state scope the agent gives a request from ``user``."""
+    return StateScope.for_call(agent.id, user, agent.owner_resolver)
+
+
 # ---------------------------------------------------------------- LangGraph
 
 
@@ -191,17 +197,17 @@ async def test_langgraph_resume_does_not_reach_another_users_interrupt(db) -> No
     assert await _answer(agent.resume(_request(ALICE, context_id, "yes"))) == "answered=yes"
 
 
-async def test_langgraph_get_state_reads_only_the_callers_state(db) -> None:
+async def test_langgraph_checkpoint_is_saved_under_the_callers_key(db) -> None:
     agent = await _langgraph(db)
     context_id = str(uuid.uuid4())
     await _answer(agent.stream(_request(ALICE, context_id, "a1")))
 
-    own = await agent.get_state(context_id, call_context=ALICE)
-    theirs = await agent.get_state(context_id, call_context=MALLORY)
+    graph = agent._executor.compiled_graph
+    own = await graph.aget_state({"configurable": {"thread_id": _scope(agent, ALICE).key_for(context_id)}})
+    theirs = await graph.aget_state({"configurable": {"thread_id": _scope(agent, MALLORY).key_for(context_id)}})
 
-    # The snapshot's own channels; its message list is not extracted.
-    assert own.state["turns"] == 1
-    assert "turns" not in theirs.state
+    assert own.values["turns"] == 1
+    assert theirs.values == {}
 
 
 async def test_langgraph_state_saved_under_the_context_alone_is_refused(db) -> None:
@@ -260,15 +266,20 @@ async def test_adk_two_agents_with_one_context_keep_their_own_memory(db) -> None
     assert await _answer(second.stream(_request(ALICE, context_id, "b1"))) == "turns=1"
 
 
-async def test_adk_get_state_reads_only_the_callers_session(db) -> None:
+async def test_adk_session_is_saved_under_the_callers_owner(db) -> None:
     agent = await _adk(db)
     context_id = str(uuid.uuid4())
     await _answer(agent.stream(_request(ALICE, context_id, "a1")))
 
-    own = await agent.get_state(context_id, call_context=ALICE)
-    assert len(own.messages) >= 1
-    with pytest.raises(Exception, match="Session not found"):
-        await agent.get_state(context_id, call_context=MALLORY)
+    async def session_of(user: ServerCallContext):
+        scope = _scope(agent, user)
+        return await agent._executor._session_service.get_session(
+            app_name=scope.agent_id, user_id=scope.state_owner, session_id=context_id
+        )
+
+    own = await session_of(ALICE)
+    assert [event.content.parts[0].text for event in own.events if event.author == "user"] == ["a1"]
+    assert await session_of(MALLORY) is None
 
 
 async def test_adk_session_saved_under_the_shared_user_is_refused(db) -> None:

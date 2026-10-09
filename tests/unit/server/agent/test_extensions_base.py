@@ -1,10 +1,9 @@
 import pytest
 
 from aion.core.runtime import aion_a2a_extension_registry
-from aion.server.agent.execution.extensions.base import (
-    ROUTED_EXTENSION_METADATA_KEY,
-    discover_extension_task_handlers,
-)
+from aion.core.a2a.enums import A2AMetadataKey
+from aion.core.a2a.metadata import is_platform_metadata_key
+from aion.server.agent.execution.extensions.base import discover_extension_task_handlers
 from aion.server.agent.execution.extensions import base as extensions_base_module
 from aion.server.agent.execution.extensions.evolution import EvolutionTaskHandler
 
@@ -83,10 +82,7 @@ class TestHandlersAgainstTheRegistry:
 
 class TestRoutedExtensionMetadataKey:
     def test_is_platform_owned(self):
-        """Must stay under the platform metadata prefix so
-        A2ATaskDeduplicator protects it from being overwritten by incoming
-        task patches. See aion.core.a2a.metadata.PLATFORM_METADATA_PREFIX.
+        """Must stay in a platform metadata namespace so A2ATaskDeduplicator
+        protects it from being overwritten by incoming task patches.
         """
-        from aion.core.a2a.metadata import PLATFORM_METADATA_PREFIX
-
-        assert ROUTED_EXTENSION_METADATA_KEY.startswith(PLATFORM_METADATA_PREFIX)
+        assert is_platform_metadata_key(A2AMetadataKey.ROUTED_EXTENSION.value)

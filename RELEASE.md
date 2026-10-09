@@ -15,7 +15,8 @@ Make sure that:
 - `[project].version` in `pyproject.toml` is the version you mean to release,
   and it is not on PyPI yet: <https://pypi.org/project/aionto-sdk/#history>;
 - `CHANGELOG.md` lists every client-visible change since the last final
-  release under `## Unreleased`. For a final release, that heading is renamed
+  release under `## Unreleased`; before the first final release it stays
+  empty. For a final release, that heading is renamed
   to the version, for example `## 0.2.0 (2026-10-20)`. A pre-release leaves
   it as it is, so the final release's section covers its pre-releases too.
 

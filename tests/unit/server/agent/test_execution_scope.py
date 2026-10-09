@@ -1,4 +1,4 @@
-"""Tests for execution scope functions.
+"""Tests for execution scope functions and the trace and request types a scope carries.
 
 The critical property being tested is ContextVar isolation: a scope set in one
 async task must not bleed into another task running concurrently. Every other
@@ -259,3 +259,39 @@ class TestContextVarIsolation:
         asyncio.run(run())
         assert captured["child_after_clear"] is None
         assert captured["parent_after_child_clear"] is not None
+
+
+class TestTraceDataParsing:
+    def test_traceparent_parsed_correctly(self):
+        """TraceData parses a valid W3C traceparent string into version, trace_id, span_id, and flags."""
+        from aion.server.agent.execution.scope.types import TraceData
+        td = TraceData(traceparent="00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+        assert td.version == "00"
+        assert td.trace_id == "4bf92f3577b34da6a3ce929d0e0e4736"
+        assert td.span_id == "00f067aa0ba902b7"
+        assert td.trace_flags == "01"
+
+    def test_none_traceparent_returns_none_for_all_fields(self):
+        """TraceData with None traceparent has None for all parsed fields."""
+        from aion.server.agent.execution.scope.types import TraceData
+        td = TraceData(traceparent=None)
+        assert td.version is None
+        assert td.trace_id is None
+        assert td.span_id is None
+        assert td.trace_flags is None
+
+
+class TestProtocolScopeTransactionName:
+    def test_without_jrpc_method(self):
+        """transaction_name is 'METHOD /path' when no jrpc_method is set."""
+        from aion.server.agent.execution.scope.types import ProtocolScope, RequestData
+        scope = ProtocolScope(request=RequestData(method="POST", path="/rpc"))
+        assert scope.transaction_name == "POST /rpc"
+
+    def test_with_jrpc_method(self):
+        """transaction_name appends the jrpc_method in brackets when one is set."""
+        from aion.server.agent.execution.scope.types import ProtocolScope, RequestData
+        scope = ProtocolScope(
+            request=RequestData(method="POST", path="/rpc", jrpc_method="tasks/send")
+        )
+        assert scope.transaction_name == "POST /rpc [tasks/send]"

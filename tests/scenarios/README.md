@@ -81,7 +81,10 @@ make scenarios-matrix                      # rewrite SCENARIOS.md
 
 `make tests-scenarios-persistence` runs the scenarios under `persistence/`,
 which restart a server and ask what became of the tasks it was holding, once
-per framework. `make tests-scenarios-distributed` runs those under
+per framework. Its migration scenarios each create an empty database of their
+own and drop it afterwards: they check `aion db migrate`, `aion db check`,
+`DB_MIGRATE_ON_START` and a server whose database user cannot change the
+schema. `make tests-scenarios-distributed` runs those under
 `distributed/`, which start two servers of one agent over one database - a2a-sdk's
 cluster mode - and ask whether one of them follows, continues and cancels a task
 the other is running, and what becomes of the tasks of a server that died. Both

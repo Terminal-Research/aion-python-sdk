@@ -87,8 +87,7 @@ Slack token, app provisioning logic, or direct Web API client belongs in agent
 code.
 
 Use `Thread.reply`, `Thread.post`, and the streaming helpers for outbound
-messages. Use distribution-bound MCP tools for provider history;
-`Thread.history()` remains unimplemented and should not be used for Slack.
+messages. Use distribution-bound MCP tools for provider history.
 
 ---
 

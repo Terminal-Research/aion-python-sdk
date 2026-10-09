@@ -13,6 +13,7 @@ from a2a.utils.errors import (
     UnsupportedOperationError,
 )
 from a2a.utils.telemetry import trace_function
+from aion.core.a2a.enums import A2AMetadataKey
 from aion.core.runtime import (
     AionRuntimeContextBuilder,
     ExtensionActivationError,
@@ -34,11 +35,14 @@ from .context.attribution import callback_attribution
 from .extensions import (
     ExtensionPreflightError,
     ExtensionTaskHandler,
-    ROUTED_EXTENSION_METADATA_KEY,
     discover_extension_task_handlers,
 )
 
 logger = logging.getLogger(__name__)
+
+# Task metadata key recording the extension handler a task is routed to. See
+# docs/development/extension-exposure.md, "Task-routing".
+_ROUTED_EXTENSION = A2AMetadataKey.ROUTED_EXTENSION.value
 
 
 class AionAgentRequestExecutor(AgentExecutor):
@@ -324,6 +328,10 @@ class AionAgentRequestExecutor(AgentExecutor):
         instead of re-deciding it. Either way, falls back to the agent's own
         framework adapter when no extension is routed for the task.
 
+        A new task's metadata starts as a copy of the request's, so "stream"
+        first drops any routing key the request carried: only the server
+        decides which handler a task belongs to.
+
         Routing itself is a plain lookup against
         AionRuntimeContext.extensions - the set of extensions already
         collected and verified (schema + co-activation requirements) during
@@ -339,6 +347,8 @@ class AionAgentRequestExecutor(AgentExecutor):
         """
         handler = self.agent
         if operation == "stream":
+            if task.HasField("metadata") and _ROUTED_EXTENSION in task.metadata:
+                del task.metadata[_ROUTED_EXTENSION]
             if self._extension_handlers:
                 runtime_context = await AionRuntimeContextRegistry.aget_current_context()
                 if runtime_context is not None:
@@ -347,7 +357,7 @@ class AionAgentRequestExecutor(AgentExecutor):
                         None,
                     )
                     if matched:
-                        task.metadata[ROUTED_EXTENSION_METADATA_KEY] = matched
+                        task.metadata[_ROUTED_EXTENSION] = matched
                         handler = self._extension_handlers[matched]
 
         else:
@@ -361,8 +371,8 @@ class AionAgentRequestExecutor(AgentExecutor):
 
     def _routed_handler(self, task: Task):
         """The extension handler a routed task is bound to, or the agent itself."""
-        if task.HasField("metadata") and ROUTED_EXTENSION_METADATA_KEY in task.metadata:
-            return self._extension_handlers.get(task.metadata[ROUTED_EXTENSION_METADATA_KEY], self.agent)
+        if task.HasField("metadata") and _ROUTED_EXTENSION in task.metadata:
+            return self._extension_handlers.get(task.metadata[_ROUTED_EXTENSION], self.agent)
         return self.agent
 
     @staticmethod

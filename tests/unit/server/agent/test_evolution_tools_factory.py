@@ -22,6 +22,12 @@ from aion.server.agent.execution.extensions.evolution.tools_factory import (  # 
     build_worker,
     check_environment,
 )
+from aion.core.runtime.context import (  # noqa: E402
+    AionRuntimeContext,
+    DirectAttribution,
+    ForwardedAttribution,
+)
+from aion.core.principal import Principal  # noqa: E402
 from aion.toolkits.behaviour_evolution import LocalAccess, RemoteAccess  # noqa: E402
 
 from tests.unit.support.daemon import daemon_payload  # noqa: E402
@@ -66,6 +72,14 @@ def _daemon(
     )
 
 
+def _request(monkeypatch, attribution=ForwardedAttribution("signed-carrier")):
+    """Make the current request's runtime context carry this callback attribution."""
+    context = AionRuntimeContext(callback_attribution=attribution)
+    monkeypatch.setattr(
+        "aion.api.callback_attribution.get_aion_runtime_context", lambda: context
+    )
+
+
 def _set_env(monkeypatch, **overrides):
     values = {
         "CODEX_PROVIDER": "custom",
@@ -95,42 +109,45 @@ def _set_env(monkeypatch, **overrides):
 
 class TestCheckEnvironment:
     """check_environment() is build_worker()'s per-request preflight subset
-    (see EvolutionTaskHandler.preflight) - only the checks that need just
-    `daemon`, not a parsed directive."""
+    (see EvolutionTaskHandler.preflight) - only the checks that need no
+    parsed directive."""
 
     def test_passes_with_valid_environment(self, monkeypatch):
         _set_env(monkeypatch)
-        result = check_environment(_daemon())
+        result = check_environment()
         assert result is None
 
     def test_missing_github_token_raises_setup_error(self, monkeypatch):
         _set_env(monkeypatch, GITHUB_TOKEN=None)
         with pytest.raises(ExtensionSetupError, match="GITHUB_TOKEN"):
-            check_environment(_daemon())
+            check_environment()
 
     def test_missing_codex_provider_raises_setup_error(self, monkeypatch):
         _set_env(monkeypatch, CODEX_PROVIDER=None)
         with pytest.raises(ExtensionSetupError, match="CODEX_PROVIDER"):
-            check_environment(_daemon())
+            check_environment()
 
     def test_custom_provider_without_base_url_raises_setup_error(self, monkeypatch):
         _set_env(monkeypatch, CODEX_BASE_URL=None)
         with pytest.raises(ExtensionSetupError, match="CODEX_BASE_URL"):
-            check_environment(_daemon())
+            check_environment()
 
-    def test_aion_provider_without_daemon_identity_raises_setup_error(self, monkeypatch):
+    def test_aion_provider_without_request_attribution_raises_setup_error(self, monkeypatch):
         _set_env(monkeypatch, CODEX_PROVIDER="aion", CODEX_BASE_URL=None)
-        with pytest.raises(ExtensionSetupError, match="daemonAgentIdentityId"):
-            check_environment(_daemon(identity_id=None))
+        _request(monkeypatch, attribution=None)
+        with pytest.raises(ExtensionSetupError, match="cannot be attributed"):
+            check_environment()
 
-    def test_aion_provider_with_daemon_identity_passes(self, monkeypatch):
+    def test_aion_provider_with_request_attribution_passes(self, monkeypatch):
         _set_env(monkeypatch, CODEX_PROVIDER="aion", CODEX_BASE_URL=None)
-        result = check_environment(_daemon(identity_id="daemon-1"))
+        _request(monkeypatch)
+        result = check_environment()
         assert result is None
 
-    def test_local_session_provider_needs_no_daemon(self, monkeypatch):
+    def test_local_session_provider_needs_no_attribution(self, monkeypatch):
         _set_env(monkeypatch, CODEX_PROVIDER="local_session", CODEX_BASE_URL=None)
-        result = check_environment(None)
+        _request(monkeypatch, attribution=None)
+        result = check_environment()
         assert result is None
 
 
@@ -278,30 +295,47 @@ class TestBuildWorker:
 
         assert worker._tools.codex.config.model == "qwen"
 
-    def test_aion_provider_uses_model_service_with_token_resolver(self, monkeypatch):
-        from aion.api.control_plane import AION_PRINCIPAL_SELECTOR_HEADER
-
+    async def test_aion_provider_forwards_the_requests_usage_attribution(self, monkeypatch):
+        """Codex is attributed like every other SDK callback: the signed
+        carrier the request brought, beside a fresh deployment token."""
         _set_env(monkeypatch, CODEX_PROVIDER="aion", CODEX_BASE_URL=None)
+        _request(monkeypatch, ForwardedAttribution("signed-carrier"))
         monkeypatch.setattr(
             "aion.api.model_service_client.aion_model_base_url",
             lambda: "https://api.aion.example/v1",
         )
-        worker = build_worker(_parsed(), _daemon(llm="qwen"))
+
+        async def _token():
+            return "version-jwt"
+
+        monkeypatch.setattr("aion.api.model_service_client.aion_jwt_api_key", _token)
+        worker = build_worker(_parsed(), _daemon(llm="qwen", identity_id=None))
 
         codex = worker._tools.codex
         assert codex.config.model_access == RemoteAccess(
             base_url="https://api.aion.example/v1",
-            principal_header=AION_PRINCIPAL_SELECTOR_HEADER,
+            principal_header="Aion-Usage-Attribution",
         )
         assert codex.config.model == "qwen"
-        assert codex._credentials_provider is not None
+        creds = await codex._credentials_provider()
+        assert creds.secret == "version-jwt"
+        assert creds.principal == "signed-carrier"
 
-    def test_aion_mode_requires_daemon_identity(self, monkeypatch):
-        """Going to the model service without a principal would leave usage
+    def test_aion_provider_forwards_a_directly_reported_caller(self, monkeypatch):
+        _set_env(monkeypatch, CODEX_PROVIDER="aion", CODEX_BASE_URL=None)
+        caller = Principal.from_subject("aion:v1:AionUser:dXNlci0x")
+        _request(monkeypatch, DirectAttribution(caller))
+        worker = build_worker(_parsed(), _daemon())
+
+        assert worker._tools.codex.config.model_access.principal_header == "Aion-Caller-Id"
+
+    def test_aion_mode_requires_request_attribution(self, monkeypatch):
+        """Going to the model service without attribution would leave usage
         unattributed - reject before the run starts."""
         _set_env(monkeypatch, CODEX_PROVIDER="aion", CODEX_BASE_URL=None)
-        with pytest.raises(ExtensionSetupError, match="daemonAgentIdentityId"):
-            build_worker(_parsed(), _daemon(identity_id=None))
+        _request(monkeypatch, attribution=None)
+        with pytest.raises(ExtensionSetupError, match="cannot be attributed"):
+            build_worker(_parsed(), _daemon())
 
     def test_missing_provider_raises_setup_error(self, monkeypatch):
         _set_env(monkeypatch, CODEX_PROVIDER=None)

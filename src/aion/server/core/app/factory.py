@@ -8,6 +8,7 @@ import logging
 from a2a.server.routes import add_a2a_routes_to_fastapi, create_agent_card_routes
 from a2a.utils.constants import DEFAULT_RPC_URL
 from aion.db.postgres import DbFactory
+from aion.server.database import prepare_database
 from aion.server.agent.aion_agent import AionAgent
 from aion.server.auth import AuthConfigurationError, TokenVerifier, build_token_verifier
 from aion.server.files.a2a import A2AFileTransformer
@@ -118,8 +119,10 @@ class AppFactory:
             self.token_verifier = build_token_verifier()
         await self.token_verifier.load()
 
-        # 1. Initialize database
-        await self.db_factory.initialize()
+        # 1. Initialize database, then migrate or check it as
+        #    DB_MIGRATE_ON_START says
+        if await self.db_factory.initialize():
+            await prepare_database(self.db_factory.db_manager)
 
         # 2. Build FastAPI application
         await self._build_app()
@@ -208,7 +211,6 @@ class AppFactory:
             owner_resolver=self.aion_agent.owner_resolver,
             push_url_validator=url_validator,
         )
-        await PushNotificationFactory.prepare(push_config_store)
         self._push_sender = push_sender
 
         return AionRequestHandler(

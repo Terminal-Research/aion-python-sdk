@@ -4,7 +4,7 @@ This module defines ExecutorAdapter and related classes for executing agents
 in a framework-agnostic way. It provides abstractions for:
 - Synchronous and asynchronous agent invocation
 - Streaming execution with events
-- State retrieval and persistence
+- Keying framework state by agent and owner, and deleting it
 - Resume/recovery from interrupts
 """
 
@@ -19,8 +19,6 @@ from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from a2a.utils.errors import UnsupportedOperationError
 
 from aion.server.auth import CredentialKind, verified_caller
-
-from .state import ExecutionSnapshot
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
@@ -176,12 +174,13 @@ class ExecutorAdapter(ABC):
     """Abstract base for framework-specific agent execution.
 
     Subclasses must implement all abstract methods to provide framework-specific
-    execution, streaming, and state management capabilities.
+    streaming and resume; the remaining hooks have defaults.
 
     The ExecutorAdapter handles:
     - Streaming execution with real-time events
-    - State retrieval and management
     - Resume/recovery from interrupts
+    - Deleting a context's framework state
+    - Cancellation
 
     Note: This adapter is designed for A2A protocol which always uses streaming
     execution. All execution flows use the stream() method to generate events
@@ -206,21 +205,6 @@ class ExecutorAdapter(ABC):
         Raises:
             TimeoutError: If execution exceeds configured timeout
             Exception: Any framework-specific errors during execution
-        """
-        pass
-
-    @abstractmethod
-    async def get_state(self, config: ExecutionConfig) -> ExecutionSnapshot:
-        """Retrieve the current execution state snapshot.
-
-        Args:
-            config: Execution configuration specifying which execution to retrieve
-
-        Returns:
-            ExecutionSnapshot: Current execution snapshot including state, messages, status, and metadata
-
-        Raises:
-            KeyError: If execution not found
         """
         pass
 

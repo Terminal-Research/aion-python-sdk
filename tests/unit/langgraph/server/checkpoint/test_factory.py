@@ -34,15 +34,14 @@ class TestCheckpointerFactory:
         assert isinstance(result, InMemorySaver)
         mock_create.assert_not_called()
 
-    async def test_postgres_setup_failure_raises_runtime_error(self):
-        """A configured postgres checkpointer that fails setup stops startup."""
+    async def test_postgres_backend_failure_raises_runtime_error(self):
+        """A configured postgres checkpointer that cannot be built stops startup."""
         db = Mock()
         db.is_initialized = True
-        db.get_pool.return_value = Mock()
-        failure = RuntimeError("setup failed")
-        with patch.object(AionAsyncPostgresSaver, "setup", new=AsyncMock(side_effect=failure)):
-            with pytest.raises(RuntimeError) as exc_info:
-                await CheckpointerFactory.create(db_manager=db)
+        failure = RuntimeError("pool failed")
+        db.get_pool.side_effect = failure
+        with pytest.raises(RuntimeError) as exc_info:
+            await CheckpointerFactory.create(db_manager=db)
         assert "refusing to fall back" in str(exc_info.value)
         assert exc_info.value.__cause__ is failure
 
@@ -98,10 +97,10 @@ class TestPostgresBackend:
             result = await PostgresBackend(db).create()
         assert isinstance(result, AionAsyncPostgresSaver)
 
-    async def test_create_calls_setup_on_saver(self):
-        """create() always calls setup() to run LangGraph migrations."""
+    async def test_create_leaves_the_tables_to_the_migrations(self):
+        """create() only connects: the tables come from ``aion db migrate``."""
         db = Mock()
         db.get_pool.return_value = Mock()
         with patch.object(AionAsyncPostgresSaver, "setup", new=AsyncMock()) as mock_setup:
             await PostgresBackend(db).create()
-        mock_setup.assert_called_once()
+        mock_setup.assert_not_called()

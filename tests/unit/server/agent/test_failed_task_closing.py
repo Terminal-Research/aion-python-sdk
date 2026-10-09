@@ -37,8 +37,8 @@ from aion.core.runtime.context import (
 from aion.server.a2a.response_extensions import ResponseServiceParameters
 from aion.server.agent.execution.context.providers import RequestScopeRuntimeContextProvider
 from aion.server.agent.execution.event_pipeline import AionEventPipeline
-from aion.server.agent.execution.extensions import ROUTED_EXTENSION_METADATA_KEY
 from aion.server.agent.execution.request_executor import AionAgentRequestExecutor
+from aion.core.a2a.enums import A2AMetadataKey
 from aion.server.agent.execution.scope import (
     clear_execution_scope,
     init_execution_scope,
@@ -296,7 +296,7 @@ async def test_an_extension_handler_without_a_copy_is_not_asked(queue, runtime_c
         agent,
         queue,
         extension_handlers=[_Handler()],
-        metadata={ROUTED_EXTENSION_METADATA_KEY: _Handler.uri},
+        metadata={A2AMetadataKey.ROUTED_EXTENSION.value: _Handler.uri},
     )
 
     assert error.message == FileUploadErrorCode.STORAGE_FORBIDDEN.public_reason

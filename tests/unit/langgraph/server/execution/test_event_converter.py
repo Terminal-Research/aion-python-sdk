@@ -7,7 +7,6 @@ from aion.langgraph.authoring.events.custom_events import (
     MessageCustomEvent,
     ReactionCustomEvent,
 )
-from aion.server.agent.adapters import InterruptInfo
 from aion.core.constants import MESSAGING_EXTENSION_URI_V1
 from aion.core.a2a import ArtifactId
 from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
@@ -15,7 +14,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from aion.langgraph.server.execution.event_converter import LangGraphA2AConverter
 
-from ..helpers import make_ai_message, make_interrupt_info, make_mock_chunk
+from ..helpers import make_ai_message, make_interrupt, make_mock_chunk
 
 LC_CONVERTER_PATH = "aion.langgraph.server.execution.event_converter.LcToA2AConverter.from_message"
 
@@ -222,18 +221,40 @@ class TestTerminalEvents:
         assert event.status.state == TaskState.TASK_STATE_INPUT_REQUIRED
         assert not event.status.HasField("message")
 
-    def test_convert_interrupt_with_info_includes_message(self, converter):
-        """Single InterruptInfo produces INPUT_REQUIRED with a message."""
-        info = make_interrupt_info(id="i-1", value="Need input", prompt="Please answer:")
-        event = converter.convert_interrupt([info])
+    def test_convert_interrupt_with_an_interrupt_includes_message(self, converter):
+        """A pending interrupt produces INPUT_REQUIRED with its question as the message."""
+        event = converter.convert_interrupt((make_interrupt(id="i-1", value="Please answer:"),))
         assert event.status.state == TaskState.TASK_STATE_INPUT_REQUIRED
-        assert "Please answer:" in event.status.message.parts[0].text
+        assert event.status.message.parts[0].text == "Please answer:"
 
     def test_convert_interrupt_embeds_interrupt_id_in_metadata(self, converter):
-        """interrupt_id from InterruptInfo is embedded in message metadata."""
-        info = make_interrupt_info(id="my-interrupt-id")
-        event = converter.convert_interrupt([info])
+        """The interrupt's id is embedded in message metadata."""
+        event = converter.convert_interrupt([make_interrupt(id="my-interrupt-id")])
         assert event.status.message.metadata["interruptId"] == "my-interrupt-id"
+
+    def test_convert_interrupt_asks_the_first_of_several(self, converter):
+        """Only the first pending interrupt becomes the message."""
+        event = converter.convert_interrupt([
+            make_interrupt(id="first", value="First?"),
+            make_interrupt(id="second", value="Second?"),
+        ])
+        assert event.status.message.parts[0].text == "First?"
+        assert event.status.message.metadata["interruptId"] == "first"
+
+    @pytest.mark.parametrize(
+        ("value", "prompt"),
+        [
+            pytest.param("Please confirm the action.", "Please confirm the action.", id="string-value"),
+            pytest.param({"prompt": "What is your name?", "options": ["a"]}, "What is your name?", id="dict-prompt"),
+            pytest.param({"type": "approval", "choices": ["yes", "no"]}, "Agent requires input", id="dict-without-prompt"),
+            pytest.param({"prompt": ""}, "Agent requires input", id="dict-empty-prompt"),
+            pytest.param(42, "Agent requires input", id="other-value"),
+        ],
+    )
+    def test_convert_interrupt_prompt_text(self, converter, value, prompt):
+        """The question is a string value, else a dict's "prompt", else a generic request."""
+        event = converter.convert_interrupt([make_interrupt(value=value)])
+        assert event.status.message.parts[0].text == prompt
 
     def test_convert_complete_returns_completed_status(self, converter):
         """convert_complete() produces state=COMPLETED."""
