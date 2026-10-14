@@ -17,7 +17,10 @@ protocol leaves to the server:
   writes are numbered per context and ``find_artifact`` reads them back
   (``TurnArtifacts``);
 * **cancellation** - ``Toolkit.cancel`` and a bounded wait for the running
-  turn to end, after which the executor writes ``CANCELED``;
+  turn to end with its own outcome; the executor writes ``CANCELED`` only
+  for a turn that did not; a turn torn down before its outcome - its
+  producer cancelled after another server cancelled the task - asks the
+  toolkit to stop as well;
 * **stopping** - at a server shutdown, ``Toolkit.cancel`` with ``SHUTDOWN``
   for every turn running here at once and one bounded wait for them all;
   when the run's event queue has lost its consumer, ``Toolkit.cancel`` once
@@ -27,6 +30,7 @@ protocol leaves to the server:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import logging
 from collections.abc import AsyncIterator, Callable, Iterable, Mapping
@@ -58,7 +62,7 @@ from aion.core.toolkit import (
     codes,
 )
 from aion.core.utils.protobuf import proto_to_dict
-from aion.server.a2a.constants import ACTIVE_TASK_STATES
+from aion.server.a2a.constants import ACTIVE_TASK_STATES, TERMINAL_TASK_STATES
 from aion.server.auth import CredentialKind, verified_caller
 from aion.server.tasks.admission import holder_of
 from aion.server.tasks.context_artifacts import ContextArtifacts
@@ -139,10 +143,13 @@ class _Turn:
         finished: Set once the turn has ended, however it ended.
         stop_reason: The reason the toolkit was asked to stop the turn with,
             once it was asked; it is asked at most once per turn.
+        outcome: The state of the final status the turn handed on, once it
+            did; None for a turn that ended without one.
     """
 
     finished: asyncio.Event = dataclasses.field(default_factory=asyncio.Event)
     stop_reason: Optional[str] = None
+    outcome: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -326,7 +333,7 @@ class ToolkitTaskHandler:
         ``event_queue`` is the run's queue the executor writes what this
         yields to; while it has a consumer the turn goes on (see ``_turn``).
         """
-        async for event in self._turn(
+        turn = self._turn(
             context,
             self.toolkit.start,
             admission.request,
@@ -334,8 +341,10 @@ class ToolkitTaskHandler:
             admission.model_service,
             task_metadata={},
             event_queue=event_queue,
-        ):
-            yield event
+        )
+        async with contextlib.aclosing(turn):
+            async for event in turn:
+                yield event
 
     async def resume(
             self, context: "RequestContext", event_queue: Optional["EventQueue"] = None
@@ -343,7 +352,7 @@ class ToolkitTaskHandler:
         """Run the next turn of a task, with the toolkit's object as the task holds it."""
         runtime = await AionRuntimeContextRegistry.aget_current_context() or AionRuntimeContext()
         task = context.current_task
-        async for event in self._turn(
+        turn = self._turn(
             context,
             self.toolkit.resume,
             toolkit_request(context.message, runtime.extensions, self.uri),
@@ -351,8 +360,10 @@ class ToolkitTaskHandler:
             model_service_access(runtime),
             task_metadata=_stored_object(task, self.uri),
             event_queue=event_queue,
-        ):
-            yield event
+        )
+        async with contextlib.aclosing(turn):
+            async for event in turn:
+                yield event
 
     async def _turn(
             self,
@@ -373,6 +384,15 @@ class ToolkitTaskHandler:
         a client any more. The toolkit is then asked to stop (``CANCEL``),
         as for a cancel nobody is waiting for, and the turn ends without
         writing; the task keeps whatever a2a-sdk wrote for it.
+
+        A turn torn down before it hands on its final status - its producer
+        cancelled, its stream closed by the executor - asks the toolkit to
+        stop (``CANCEL``) besides closing the toolkit's stream; a toolkit
+        whose own await the cancellation reached has seen its stream end
+        first. That is how a cancel made on another server reaches the
+        toolkit: a2a-sdk notices it when this server's next write meets a
+        version conflict, cancels the producer, and nothing is written into
+        the task after its terminal state.
         """
         task = context.current_task
         masker = SecretMasker([*self._secret_values(), *deployment_secret_values(variables)])
@@ -428,16 +448,29 @@ class ToolkitTaskHandler:
             except Exception:
                 logger.exception("Toolkit %s failed in task %s", self.uri, task.id)
                 closing = translator.failure()
+            except (asyncio.CancelledError, GeneratorExit):
+                await self._torn_down(task.id, turn)
+                raise
             finally:
                 await _close(outputs)
             for event in closing:
                 if not await self._consumed(task.id, turn, event_queue):
                     return
+                if event is closing[-1]:
+                    turn.outcome = event.status.state
                 yield event
         finally:
+            if turn.outcome is None:
+                await self._torn_down(task.id, turn)
             turn.finished.set()
             if self._turns.get(task.id) is turn:
                 del self._turns[task.id]
+
+    async def _torn_down(self, task_id: str, turn: _Turn) -> None:
+        """Ask the toolkit to stop a turn that ends before its final status, unless it was asked already."""
+        if turn.stop_reason is None:
+            logger.info("The turn of task %s ended before its outcome; toolkit %s is asked to stop", task_id, self.uri)
+        await self._stop(task_id, turn, CANCEL)
 
     async def _consumed(self, task_id: str, turn: _Turn, event_queue: Optional["EventQueue"]) -> bool:
         """Whether what the turn yields next still reaches the task; asks the toolkit to stop when it does not."""
@@ -476,32 +509,38 @@ class ToolkitTaskHandler:
 
     # -- cancellation -------------------------------------------------------
 
-    async def cancel(self, context: "RequestContext", event_queue: "EventQueue") -> Optional[Message]:
-        """Ask the toolkit to stop, and give the running turn a bounded time to end.
+    async def cancel(self, context: "RequestContext", event_queue: "EventQueue") -> bool:
+        """Ask the toolkit to stop the task, and give a turn running here a bounded time to end.
 
-        The turn may still yield artifacts and a ``canceled`` result in that
-        time; they reach the task as any turn's would. The executor writes
-        ``CANCELED`` once this returns, whether the turn ended or not.
+        Within ``CANCEL_GRACE_SECONDS`` the turn may still yield artifacts
+        and its result - ``canceled``, or ``completed`` for work it had
+        already delivered - which reach the task through the run's queue
+        like any turn's. The wait holds a2a-sdk's lock on the task, which is
+        why it is short.
 
         Returns:
-            None: the executor's ``CANCELED`` carries no message of its own.
+            True when the turn ended in time with a terminal status of its
+            own: the task is closed and nothing more is to be written. False
+            when no turn of the task runs here, the turn did not end in time,
+            or it ended waiting for input: the executor writes ``CANCELED``.
         """
         task_id = context.task_id or (context.current_task.id if context.current_task else "")
         turn = self._turns.get(task_id)
         await self._stop(task_id, turn, CANCEL)
         if turn is None:
-            return None
+            return False
         try:
             await asyncio.wait_for(turn.finished.wait(), CANCEL_GRACE_SECONDS)
         except TimeoutError:
             logger.warning(
                 "Toolkit %s did not end the turn of task %s within %.0fs of the cancel; "
-                "the task is cancelled without it",
+                "the task is cancelled without it and the toolkit's report goes to its log",
                 self.uri,
                 task_id,
                 CANCEL_GRACE_SECONDS,
             )
-        return None
+            return False
+        return turn.outcome in TERMINAL_TASK_STATES
 
     async def shutdown(self) -> None:
         """Stop every turn running here for a server shutdown, at once, and wait for them together.

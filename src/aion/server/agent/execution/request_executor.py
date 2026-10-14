@@ -325,8 +325,9 @@ class AionAgentRequestExecutor(AgentExecutor):
                 + ([task.status.message.message_id] if task.status.HasField('message') else [])
             ),
         )
+        agent_events = produce_events(context=context)
         try:
-            async for agent_event in produce_events(context=context):
+            async for agent_event in agent_events:
                 await pipeline.process(agent_event)
 
         except OutboundFileNotStoredError as ex:
@@ -349,6 +350,15 @@ class AionAgentRequestExecutor(AgentExecutor):
             crash = CRASH_REASON.format(task_id=task.id)
             await self._close_failed_task(task_updater, pipeline, reason=crash)
             raise InternalError(message=crash) from ex
+        finally:
+            if routed_extension_of(task) in self._extension_handlers:
+                # An extension handler's turn is closed here, however the
+                # loop ended: a cancelled producer - a cancel, another
+                # server's cancel, a shutdown - must reach the handler at
+                # once, so it asks its toolkit to stop.
+                aclose = getattr(agent_events, "aclose", None)
+                if aclose is not None:
+                    await aclose()
 
     async def _discard_undelivered(
             self,
@@ -408,19 +418,48 @@ class AionAgentRequestExecutor(AgentExecutor):
     async def cancel(
             self, context: RequestContext, event_queue: EventQueue
     ) -> None:
-        """Cancel with the current request's attribution, restoring any parent scope."""
+        """Cancel with the current request's caller attribution, restoring any parent scope.
+
+        A cancel activates none of the request's extensions: it carries no
+        message for their payloads, and an extension declared in its
+        ``A2A-Extensions`` header - a daemon, say - must not fail it, which
+        a2a-sdk would record as a ``FAILED`` task.
+        """
         previous = await AionRuntimeContextRegistry.aget_current_context()
         try:
-            await self._setup_runtime_context(context)
+            await AionRuntimeContextRegistry.aset_current_context(self._cancel_runtime_context(context))
             await self._cancel(context, event_queue)
         finally:
             await AionRuntimeContextRegistry.aset_current_context(previous)
 
+    @staticmethod
+    def _cancel_runtime_context(context: RequestContext) -> AionRuntimeContext:
+        """The runtime context a cancel runs in: the caller's attribution when it has one, no extensions."""
+        runtime_context = AionRuntimeContext()
+        try:
+            attribution = callback_attribution(context.call_context, runtime_context)
+        except (AionAuthenticationError, InvalidPrincipalError) as error:
+            logger.debug("A cancel without callback attribution: %s", error)
+            return runtime_context
+        return AionRuntimeContext(callback_attribution=attribution)
+
     async def _cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         """Request cancellation of an ongoing task.
 
-        Resolves the task from context, validates it is in a cancelable state,
-        delegates to the framework adapter, and emits a terminal CANCELED event.
+        Resolves the task from context, validates it is in a cancelable
+        state, and delegates to the task's handler.
+
+        A task routed to an extension handler has one writer of its terminal
+        state, the run's queue: the handler asks the turn running here to
+        stop and waits for it a bounded time, and when the turn closed the
+        task with its own outcome - ``CANCELED``, or ``COMPLETED`` for work
+        that was already delivered - nothing more is written. Otherwise, with
+        no turn here, a turn past the grace period or one that stopped to
+        wait for input, ``CANCELED`` is written into the same queue, where a
+        stream open on the task receives it.
+
+        The framework adapter's hook is called, and ``CANCELED`` written
+        after it, with the hook's closing message.
 
         Args:
             context: A2A request context with task to cancel
@@ -429,7 +468,6 @@ class AionAgentRequestExecutor(AgentExecutor):
         Raises:
             TaskNotFoundError: if context carries no task
             TaskNotCancelableError: if the task is already in a terminal state
-            UnsupportedOperationError: if the framework does not support cancellation
         """
         task = context.current_task
         if task is None:
@@ -440,7 +478,18 @@ class AionAgentRequestExecutor(AgentExecutor):
                 message=f"Task {task.id} cannot be canceled - current state: {task.status.state}"
             )
 
-        cancel = await self._resolve(task, "cancel")
+        task_updater = TaskUpdater(event_queue, task.id, task.context_id)
+        handler = self._routed_handler(task)
+        if handler is not self.agent:
+            closed = False
+            try:
+                closed = await handler.cancel(context=context, event_queue=event_queue)
+            except UnsupportedOperationError:
+                logger.debug("Handler does not support cancellation, proceeding with A2A cancel")
+            if closed is not True:
+                await task_updater.cancel()
+            return
+
         cancel_queue = (
             _FileStoringEventQueue(event_queue, self._file_transformer)
             if self._file_transformer is not None
@@ -448,26 +497,23 @@ class AionAgentRequestExecutor(AgentExecutor):
         )
         cancel_message = None
         try:
-            cancel_message = await cancel(context=context, event_queue=cancel_queue)
+            cancel_message = await self.agent.cancel(context=context, event_queue=cancel_queue)
         except UnsupportedOperationError:
             logger.debug("Handler does not support cancellation, proceeding with A2A cancel")
 
-        # The request's queue was already handed to the extension handler
-        # above, so any artifact it needed to publish (e.g. undelivered work
-        # rescued as a bundle) went out before this point, its files stored on
-        # the way - the event consumer stops accepting events the moment a
-        # terminal state lands, so anything queued after
+        # The request's queue was already handed to the hook above, so any
+        # artifact it needed to publish went out before this point, its files
+        # stored on the way - the event consumer stops accepting events the
+        # moment a terminal state lands, so anything queued after
         # `task_updater.cancel()` below would be dropped. The returned message
         # is the closing text/data for that terminal event itself, and its
-        # files are stored the same way. Framework adapters return None, so
-        # this is inert for them; anything that is not a Message is ignored
-        # rather than trusted into the A2A event.
+        # files are stored the same way; anything that is not a Message is
+        # ignored rather than trusted into the A2A event.
         if not isinstance(cancel_message, Message):
             cancel_message = None
         elif self._file_transformer is not None:
             cancel_message = (await self._file_transformer.transform(cancel_message)).event
 
-        task_updater = TaskUpdater(event_queue, task.id, task.context_id)
         await task_updater.cancel(message=cancel_message)
 
     @staticmethod

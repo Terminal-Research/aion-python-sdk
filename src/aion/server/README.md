@@ -402,9 +402,11 @@ this section says otherwise.
 - **A message to a task that already has an outcome** is refused with
   `UnsupportedOperationError` (`-32004`), naming the state:
   `Task <id> is in terminal state: TASK_STATE_COMPLETED`.
-- **`CancelTask`** on a task that already has an outcome answers
-  `TaskNotCancelableError` (`-32002`); a missing task, or another caller's,
-  answers `TaskNotFoundError` (`-32001`).
+- **`CancelTask`** answers with the task's outcome: `CANCELED`, or the
+  outcome its running turn reached in the meantime. It activates none of the
+  extensions named in `A2A-Extensions`, nor does `GetTask`. On a task that
+  already has an outcome it answers `TaskNotCancelableError` (`-32002`); a
+  missing task, or another caller's, answers `TaskNotFoundError` (`-32001`).
 - **`SubscribeToTask`** on a task that already has an outcome answers
   `UnsupportedOperationError` (`-32004`), as in a2a-sdk; the result is read
   with `GetTask`.
@@ -470,9 +472,10 @@ servers of one agent can share the database. The rules are a2a-sdk's:
   without it - another image during a rollout - refuses a message into the
   task with `extension_unavailable` and leaves the task as it was.
 - `CancelTask` for a task this server holds cancels it through its executor.
-  For any other task it writes `CANCELED` over the stored version and answers
-  at once; the server executing the task stops it at its next write, without
-  calling `AgentExecutor.cancel` there.
+  For any other task it writes `CANCELED` over the stored version, sends its
+  push notification and answers at once; the server executing the task stops
+  it at its next write, without calling `AgentExecutor.cancel` there. A
+  toolkit's turn stopped that way calls `Toolkit.cancel`.
 - A server that dies leaves its tasks in the state they had; nothing settles
   them. Any server can cancel such a task.
 - An orderly shutdown stops accepting requests, then asks every toolkit turn

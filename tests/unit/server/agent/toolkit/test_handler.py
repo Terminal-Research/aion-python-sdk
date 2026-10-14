@@ -321,9 +321,9 @@ async def test_cancel_stops_the_running_turn_and_waits_for_it() -> None:
     running = asyncio.create_task(drive())
     await started.wait()
 
-    answer = await toolkit_handler.cancel(request_context(current), event_queue=None)
+    closed = await toolkit_handler.cancel(request_context(current), event_queue=None)
 
-    assert answer is None
+    assert closed is True
     assert toolkit.cancels == [(TASK_ID, CANCEL)]
     assert running.done()
     assert final_state(events) == TaskState.TASK_STATE_CANCELED
@@ -333,7 +333,7 @@ async def test_cancel_of_a_task_not_running_here_still_tells_the_toolkit() -> No
     toolkit = scripted()
     toolkit_handler = ToolkitTaskHandler(toolkit, secret_values=lambda: ())
 
-    assert await toolkit_handler.cancel(request_context(task()), event_queue=None) is None
+    assert await toolkit_handler.cancel(request_context(task()), event_queue=None) is False
     assert toolkit.cancels == [(TASK_ID, CANCEL)]
 
 
@@ -356,12 +356,111 @@ async def test_cancel_gives_up_waiting_after_the_grace_period(monkeypatch, caplo
     await started.wait()
 
     with caplog.at_level(logging.WARNING):
-        assert await toolkit_handler.cancel(request_context(current), event_queue=None) is None
+        assert await toolkit_handler.cancel(request_context(current), event_queue=None) is False
 
     assert "did not end the turn" in caplog.text
     running.cancel()
     with pytest.raises(asyncio.CancelledError):
         await running
+
+
+class _Answering(ScriptedToolkit):
+    """Says it is busy, then answers a ``cancel()`` with the result ``answer``."""
+
+    def __init__(self, answer: ToolkitState) -> None:
+        super().__init__()
+        self.answer = answer
+
+    async def _turn(self, kind, request, context):
+        yield ToolkitMessageEvent(message=Message(parts=[TextPart(text="busy")]))
+        await self._cancel_event(context.task_id).wait()
+        yield ToolkitResult(state=self.answer)
+
+
+@pytest.mark.parametrize(
+    ("answer", "closed"),
+    [(ToolkitState.COMPLETED, True), (ToolkitState.INPUT_REQUIRED, False)],
+    ids=["delivered-before-the-cancel", "waits-for-input"],
+)
+async def test_a_cancel_reports_whether_the_turn_closed_the_task(answer, closed) -> None:
+    """Work already delivered closes the task ``COMPLETED``; a turn that waits for input leaves it to the executor."""
+    toolkit = _Answering(answer)
+    toolkit_handler = ToolkitTaskHandler(toolkit, secret_values=lambda: ())
+    events, runs = await _running(toolkit_handler, TASK_ID)
+
+    assert await toolkit_handler.cancel(request_context(task()), event_queue=None) is closed
+
+    await runs[0]
+    assert final_state(events[TASK_ID]) == {
+        ToolkitState.COMPLETED: TaskState.TASK_STATE_COMPLETED,
+        ToolkitState.INPUT_REQUIRED: TaskState.TASK_STATE_INPUT_REQUIRED,
+    }[answer]
+
+
+# -- a turn torn down before its outcome -------------------------------------------------
+
+
+class _Recording(ScriptedToolkit):
+    """Records, in order, the ``cancel()`` calls and the close of its turn's stream."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls: list[str] = []
+
+    async def cancel(self, task_id: str, reason: str) -> None:
+        self.calls.append(f"cancel {reason}")
+        await super().cancel(task_id, reason)
+
+    async def _turn(self, kind, request, context):
+        try:
+            yield ToolkitMessageEvent(message=Message(parts=[TextPart(text="busy")]))
+            await asyncio.Event().wait()
+        finally:
+            self.calls.append("stream closed")
+
+
+async def test_a_turn_whose_producer_is_cancelled_asks_the_toolkit_to_stop() -> None:
+    """How a cancel made on another server reaches the toolkit: a2a-sdk cancels the producer.
+
+    The cancellation reaches the toolkit's own await first, so its stream has
+    ended by the time it is asked.
+    """
+    toolkit = _Recording()
+    toolkit_handler = ToolkitTaskHandler(toolkit, secret_values=lambda: ())
+    _events, runs = await _running(toolkit_handler, TASK_ID)
+
+    runs[0].cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await runs[0]
+
+    assert toolkit.calls == ["stream closed", f"cancel {CANCEL}"]
+    assert toolkit.cancels == [(TASK_ID, CANCEL)]
+
+
+async def test_a_turn_closed_at_an_event_asks_the_toolkit_to_stop_before_closing_its_stream() -> None:
+    """The executor closes the handler's turn when its own loop ends early - cancelled while it delivered an event."""
+    toolkit = _Recording()
+    toolkit_handler = ToolkitTaskHandler(toolkit, secret_values=lambda: ())
+    turn = toolkit_handler.stream(request_context(task()), admission())
+
+    await turn.__anext__()
+    await turn.aclose()
+
+    assert toolkit.calls == [f"cancel {CANCEL}", "stream closed"]
+
+
+async def test_a_turn_torn_down_after_a_cancel_does_not_ask_again(monkeypatch) -> None:
+    monkeypatch.setattr(handler_module, "CANCEL_GRACE_SECONDS", 0.05)
+    toolkit = _Recording()
+    toolkit_handler = ToolkitTaskHandler(toolkit, secret_values=lambda: ())
+    _events, runs = await _running(toolkit_handler, TASK_ID)
+
+    assert await toolkit_handler.cancel(request_context(task()), event_queue=None) is False
+    runs[0].cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await runs[0]
+
+    assert toolkit.cancels == [(TASK_ID, CANCEL)]
 
 
 # -- admission ------------------------------------------------------------------

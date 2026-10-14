@@ -31,8 +31,8 @@ from google.protobuf.json_format import MessageToDict
 
 from tests.scenarios.harness import ScenarioClient, ServeProcess, ServeVariant, final_task
 from tests.scenarios.harness.pg import postgres_env
-from tests.scenarios.harness.recorder import Ev, _payload_of, to_event
-from tests.scenarios.toolkits import COMPLETED, TOOLKIT, data_parts, reports, run_script, start_working
+from tests.scenarios.harness.recorder import _payload_of, to_event
+from tests.scenarios.toolkits import COMPLETED, TOOLKIT, data_parts, reports, rest_of, run_script, start_working
 from tests.support.scripted_toolkit.contract import URI
 
 pytestmark = [pytest.mark.persistence]
@@ -130,15 +130,6 @@ async def test_artifact_versions_continue_across_a_restart(
     assert (version_of(first), version_of(second)) == ("0", "1")
     [found] = [data for data in data_parts(second) if "found" in data]
     assert found == {"found": True, "task_id": first.id, "version": 0, "text": "plan one"}
-
-
-async def rest_of(stream) -> list[Ev]:
-    """Every event a stream still delivers; a stream the server cuts off ends the list."""
-    events: list[Ev] = []
-    with contextlib.suppress(Exception):
-        async for response in stream:
-            events.append(to_event(_payload_of(response)))
-    return events
 
 
 @pytest.mark.variant("toolkit")

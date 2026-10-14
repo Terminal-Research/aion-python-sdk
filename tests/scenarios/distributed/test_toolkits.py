@@ -11,10 +11,15 @@ which not every server runs the same image yet.
 * A toolkit's task is served by the toolkit and by nothing else: a server
   without it refuses a message into the task with ``extension_unavailable``,
   and the task is left as it was, rather than handed to the agent's framework.
+* A cancel sent to another server is answered at once with ``CANCELED``. The
+  server running the turn learns of it at its next write, which meets a
+  version conflict: its stream closes ``CANCELED``, the toolkit is asked to
+  stop, and nothing more is written into the task.
 """
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import dataclasses
 import uuid
@@ -23,11 +28,21 @@ from typing import AsyncIterator, Iterator
 import pytest
 import pytest_asyncio
 from a2a.types import TaskState
+from google.protobuf.json_format import MessageToDict
 
 from tests.scenarios.frameworks import Framework
-from tests.scenarios.harness import ScenarioClient, ServeProcess, ServeVariant
+from tests.scenarios.harness import ScenarioClient, ServeProcess, ServeVariant, final_task
 from tests.scenarios.harness.pg import postgres_env
-from tests.scenarios.toolkits import COMPLETED, EXCLUSIVE_URI, TOOLKIT, rpc_script, run_script, start_working
+from tests.scenarios.toolkits import (
+    COMPLETED,
+    EXCLUSIVE_URI,
+    TOOLKIT,
+    reported,
+    rest_of,
+    rpc_script,
+    run_script,
+    start_working,
+)
 from tests.support.scripted_toolkit.contract import URI
 
 pytestmark = [pytest.mark.distributed]
@@ -122,3 +137,30 @@ async def test_a_server_without_the_toolkit_refuses_a_message_into_its_task(
 
     assert _refusal(response) == {"code": "extension_unavailable", "retryable": "true"}
     assert await without.get_task(waiting.id) == waiting
+
+
+async def test_a_cancel_on_the_other_server_reaches_the_toolkit_at_the_owners_next_write(
+    pod_clients: tuple[ScenarioClient, ScenarioClient, ScenarioClient],
+) -> None:
+    """``CANCELED`` at once from the other server; the owner's stream closes with it and its toolkit is asked to stop."""
+    owner, other, _ = pod_clients
+    task_id, stream = await start_working(owner, URI, tick_seconds=0.5)
+
+    answered = await other.cancel(task_id)
+    streamed = await rest_of(stream)
+
+    assert answered.status.state == TaskState.TASK_STATE_CANCELED
+    assert final_task(streamed).state == "CANCELED"
+    asked = []
+    for _ in range(20):
+        asked = [item for item in (await reported(owner))["cancels"] if item["task_id"] == task_id]
+        if asked:
+            break
+        await asyncio.sleep(0.25)
+    assert asked == [{"task_id": task_id, "reason": "cancel"}]
+
+    settled = await owner.get_task(task_id)
+    await asyncio.sleep(1.5)
+    later = await other.get_task(task_id)
+    assert later.status.state == TaskState.TASK_STATE_CANCELED
+    assert MessageToDict(later.metadata) == MessageToDict(settled.metadata), "the turn wrote after the cancel"

@@ -65,6 +65,7 @@ OVERRIDES = [
     (AionRequestHandler, DefaultRequestHandlerV2, "on_get_task"),
     (AionRequestHandler, DefaultRequestHandlerV2, "on_list_tasks"),
     (AionRequestHandler, DefaultRequestHandlerV2, "on_cancel_task"),
+    (AionRequestHandler, DefaultRequestHandlerV2, "_write_cancel"),
     (AionRequestHandler, DefaultRequestHandlerV2, "on_message_send"),
     (AionRequestHandler, DefaultRequestHandlerV2, "on_message_send_stream"),
     (AionRequestHandler, DefaultRequestHandlerV2, "on_subscribe_to_task"),

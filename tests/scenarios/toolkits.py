@@ -12,6 +12,7 @@ takes the URI of the one it addresses.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import uuid
 from typing import Any, AsyncIterator, Optional
@@ -19,7 +20,7 @@ from typing import Any, AsyncIterator, Optional
 from google.protobuf.json_format import MessageToDict
 
 from tests.scenarios.harness import ScenarioClient, ServeVariant, event_envelope, final_task
-from tests.scenarios.harness.recorder import _payload_of, to_event
+from tests.scenarios.harness.recorder import Ev, _payload_of, to_event
 from tests.support.scripted_toolkit.contract import EXCLUSIVE_URI, SITE, URI, script_contract
 
 __all__ = [
@@ -30,6 +31,7 @@ __all__ = [
     "data_parts",
     "reported",
     "reports",
+    "rest_of",
     "rpc_script",
     "run_script",
     "script",
@@ -123,6 +125,15 @@ async def start_working(
         if event.state == "WORKING" and event.text == "Working" and task_id:
             return task_id, stream
     raise AssertionError("the turn ended before it said it was working")
+
+
+async def rest_of(stream) -> list[Ev]:
+    """Every event a stream still delivers; a stream the server cuts off ends the list."""
+    events: list[Ev] = []
+    with contextlib.suppress(Exception):
+        async for response in stream:
+            events.append(to_event(_payload_of(response)))
+    return events
 
 
 def data_parts(stored) -> list[dict]:

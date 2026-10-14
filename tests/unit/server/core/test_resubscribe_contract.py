@@ -4,11 +4,14 @@ A task that already has an outcome is refused with ``UnsupportedOperationError``
 as a2a-sdk refuses it, and the refusal is not turned into a replay of the
 stored task. A task running on another instance is served by a2a-sdk as a
 snapshot followed by the task's journal; the handler closes that stream with
-the stored task, withholding the journal's own closing status update.
+the stored task, withholding the journal's own closing status update. A task
+this instance is cancelling is not left to wait on the cancel: its snapshot
+goes out at once, and the task with its outcome once the cancel is over.
 """
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import AsyncGenerator
 from unittest.mock import Mock
@@ -17,7 +20,9 @@ import pytest
 from a2a.auth.user import User
 from a2a.server.cluster import StoredTask, TaskEventStream, TaskVersion, VersionedEvent, VersionedTaskStore
 from a2a.server.context import ServerCallContext
+from a2a.server.request_handlers import DefaultRequestHandlerV2
 from a2a.types import (
+    CancelTaskRequest,
     Message,
     Part,
     Role,
@@ -160,3 +165,31 @@ async def test_a_task_running_elsewhere_is_followed_from_the_journal_and_closed_
     assert events[1] == progress
     assert isinstance(events[-1], Task) and events[-1].status.state == TaskState.TASK_STATE_COMPLETED
     assert closing not in events, "the journal's closing status reached the client as well as the Task"
+
+
+@pytest.mark.anyio
+async def test_a_subscription_during_a_cancel_here_is_served_at_once_and_closed_with_the_outcome(monkeypatch) -> None:
+    """a2a-sdk's cancel holds the task's lock while the turn gets its grace period; the subscriber does not wait on it."""
+    store = InMemoryTaskStore()
+    await store.save(_task(TaskState.TASK_STATE_WORKING, "busy"), CONTEXT)
+    release = asyncio.Event()
+
+    async def cancel_waiting_for_the_turn(self, params, context):
+        await release.wait()
+        await store.save(_task(TaskState.TASK_STATE_CANCELED), CONTEXT)
+        return await store.get(params.id, context)
+
+    monkeypatch.setattr(DefaultRequestHandlerV2, "on_cancel_task", cancel_waiting_for_the_turn)
+    handler = AionRequestHandler(agent_executor=Mock(), task_store=store, agent_card=_card())
+    cancelling = asyncio.create_task(handler.on_cancel_task(CancelTaskRequest(id=TASK_ID), CONTEXT))
+    await asyncio.sleep(0)
+
+    subscription = handler.on_subscribe_to_task(SubscribeToTaskRequest(id=TASK_ID), CONTEXT)
+    opening = await asyncio.wait_for(subscription.__anext__(), timeout=1)
+    release.set()
+    rest = [event async for event in subscription]
+
+    assert isinstance(opening, Task) and opening.status.state == TaskState.TASK_STATE_WORKING
+    assert isinstance(rest[-1], Task) and rest[-1].status.state == TaskState.TASK_STATE_CANCELED
+    assert (await cancelling).status.state == TaskState.TASK_STATE_CANCELED
+    assert handler._cancels == {}

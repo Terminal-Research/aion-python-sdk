@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-192 scenarios in 36 files, 435 runs across 2 frameworks: 402 run, 32 skipped, 1 independent of the framework.
+196 scenarios in 36 files, 443 runs across 2 frameworks: 410 run, 32 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -70,14 +70,14 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `artifacts` | artifact and card emission | 4 | `make tests-scenarios TAGS=artifacts` |
 | `files` | inline file parts: stored, rejected, or passed through | 12 | `make tests-scenarios TAGS=files` |
 | `extensions` | extension activation and payload delivery | 12 | `make tests-scenarios TAGS=extensions` |
-| `daemon` | daemon extension identity and environment | 6 | `make tests-scenarios TAGS=daemon` |
+| `daemon` | daemon extension identity and environment | 7 | `make tests-scenarios TAGS=daemon` |
 | `authentication` | bearer tokens: required, verified, and naming the caller | 6 | `make tests-scenarios TAGS=authentication` |
 | `config` | aion.yaml configuration and deployment variants | 8 | `make tests-scenarios TAGS=config` |
 | `lifecycle` | cancel, concurrency, push notifications, startup | 5 | `make tests-scenarios TAGS=lifecycle` |
 | `contexts` | Context extension: list, read and delete conversations | 5 | `make tests-scenarios TAGS=contexts` |
-| `toolkits` | toolkit plugins: a turn translated into A2A, a refusal before the task exists, a cancel | 11 | `make tests-scenarios TAGS=toolkits` |
+| `toolkits` | toolkit plugins: a turn translated into A2A, a refusal before the task exists, a cancel | 13 | `make tests-scenarios TAGS=toolkits` |
 | `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 20 | `make tests-scenarios-persistence` |
-| `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 15 | `make tests-scenarios-distributed` |
+| `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 16 | `make tests-scenarios-distributed` |
 | `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 29 | `make tests-scenarios TAGS=native` |
 
 ## Scenarios by file
@@ -160,12 +160,13 @@ Daemon-scoped requests: who the platform says is asking, and about what.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [Every field of the daemon payload arrives as the platform sent it.](core/test_daemon.py#L69 "test_the_daemon_payload_reaches_the_agent_whole") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
-| [The requester is optional; the daemon it is addressed to is not.](core/test_daemon.py#L87 "test_a_daemon_request_without_a_requester_is_still_addressed") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
-| [Two payloads on one request stay two payloads: the daemon answers for itself.](core/test_daemon.py#L104 "test_the_daemon_identity_is_not_the_distribution_principal") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
-| [Declaring the extension is a promise to carry it; an empty request breaks it.](core/test_daemon.py#L126 "test_a_declared_daemon_extension_without_a_payload_is_refused") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
-| [A payload that does not validate names the field, and opens no task.](core/test_daemon.py#L145 "test_a_malformed_daemon_payload_is_refused_by_field") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
-| [Co-activation satisfied: the request is served, not refused.](core/test_daemon.py#L168 "test_an_extension_gets_what_it_requires_when_both_are_declared") | `extensions`, `daemon` | `whoami` | `daemon` | ✓ | ✓ |
+| [Every field of the daemon payload arrives as the platform sent it.](core/test_daemon.py#L72 "test_the_daemon_payload_reaches_the_agent_whole") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
+| [The requester is optional; the daemon it is addressed to is not.](core/test_daemon.py#L90 "test_a_daemon_request_without_a_requester_is_still_addressed") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
+| [Two payloads on one request stay two payloads: the daemon answers for itself.](core/test_daemon.py#L107 "test_the_daemon_identity_is_not_the_distribution_principal") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
+| [Declaring the extension is a promise to carry it; an empty request breaks it.](core/test_daemon.py#L129 "test_a_declared_daemon_extension_without_a_payload_is_refused") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
+| [A payload that does not validate names the field, and opens no task.](core/test_daemon.py#L148 "test_a_malformed_daemon_payload_is_refused_by_field") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
+| [Co-activation satisfied: the request is served, not refused.](core/test_daemon.py#L171 "test_an_extension_gets_what_it_requires_when_both_are_declared") | `extensions`, `daemon` | `whoami` | `daemon` | ✓ | ✓ |
+| [``A2A-Extensions`` naming the daemon on ``GetTask`` and ``CancelTask``: no payload is looked for, nothing fails.](core/test_daemon.py#L188 "test_reading_and_cancelling_a_task_with_the_daemon_declared_activates_nothing") | `daemon` | `slow` | `daemon` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_errors.py`
 
@@ -343,17 +344,19 @@ A toolkit plugin served by a real ``aion serve``: a turn on the wire, artifact v
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [Messages, deltas, details and an artifact on the stream; the object whole in the task.](core/test_toolkits.py#L116 "test_a_toolkit_turn_streams_and_completes_with_its_object") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [Details without a message change the object, not what the task last said.](core/test_toolkits.py#L147 "test_a_status_update_keeps_the_status_line") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [The server numbers a toolkit's artifact per context, and ``find_artifact`` reads the latest back.](core/test_toolkits.py#L168 "test_the_tasks_of_a_context_write_numbered_versions_of_an_artifact_and_find_the_latest") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [The toolkit's refusal is the JSON-RPC error, with its code; no task was opened for it.](core/test_toolkits.py#L212 "test_a_refused_request_is_an_error_with_its_code_and_leaves_no_task") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [The toolkit is asked once, with the task's id; the task ends ``CANCELED`` on the stream and in the store.](core/test_toolkits.py#L279 "test_a_cancel_ends_the_turn_canceled_and_tells_the_toolkit") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [The repeat is an error, the task stays as it was, and the toolkit is not asked again.](core/test_toolkits.py#L295 "test_a_second_cancel_of_the_finished_task_is_refused_and_does_not_reach_the_toolkit") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [An installed toolkit the agent enables is an extension the card announces.](core/test_toolkits.py#L311 "test_the_card_offers_the_enabled_toolkit") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [A second directive, and a message into the running task, get ``context_busy`` naming the task.](core/test_toolkits.py#L327 "test_an_exclusive_toolkit_refuses_a_second_task_in_a_context_until_the_first_ends") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [The limit is per context: two contexts each hold a running task of the toolkit.](core/test_toolkits.py#L352 "test_an_exclusive_toolkit_runs_in_several_contexts_at_once") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [The directive is not taken as the answer: a toolkit task starts, and the question keeps waiting for it.](core/test_toolkits.py#L368 "test_a_directive_beside_the_agents_waiting_question_starts_its_own_task") | `toolkits` | `ask` | `toolkit` | ✓ | [skip](#frameworks) |
-| [A directive without a task id resumes the toolkit's waiting task in the context.](core/test_toolkits.py#L392 "test_a_toolkit_that_waits_for_input_continues_its_own_task") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [Messages, deltas, details and an artifact on the stream; the object whole in the task.](core/test_toolkits.py#L124 "test_a_toolkit_turn_streams_and_completes_with_its_object") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [Details without a message change the object, not what the task last said.](core/test_toolkits.py#L155 "test_a_status_update_keeps_the_status_line") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The server numbers a toolkit's artifact per context, and ``find_artifact`` reads the latest back.](core/test_toolkits.py#L176 "test_the_tasks_of_a_context_write_numbered_versions_of_an_artifact_and_find_the_latest") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The toolkit's refusal is the JSON-RPC error, with its code; no task was opened for it.](core/test_toolkits.py#L220 "test_a_refused_request_is_an_error_with_its_code_and_leaves_no_task") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The toolkit is asked once, with the task's id; the task ends ``CANCELED`` on the stream and in the store.](core/test_toolkits.py#L287 "test_a_cancel_ends_the_turn_canceled_and_tells_the_toolkit") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The repeat is an error, the task stays as it was, and the toolkit is not asked again.](core/test_toolkits.py#L303 "test_a_second_cancel_of_the_finished_task_is_refused_and_does_not_reach_the_toolkit") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The cancel waits out the grace period; the stream and a subscription made meanwhile both close ``CANCELED``.](core/test_toolkits.py#L319 "test_a_turn_past_the_grace_period_is_cancelled_without_it_and_a_subscription_is_not_held") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The turn's own outcome stands: the cancel answers with it, and so does the stream.](core/test_toolkits.py#L343 "test_a_cancel_after_the_work_was_delivered_answers_completed") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [An installed toolkit the agent enables is an extension the card announces.](core/test_toolkits.py#L356 "test_the_card_offers_the_enabled_toolkit") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [A second directive, and a message into the running task, get ``context_busy`` naming the task.](core/test_toolkits.py#L372 "test_an_exclusive_toolkit_refuses_a_second_task_in_a_context_until_the_first_ends") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The limit is per context: two contexts each hold a running task of the toolkit.](core/test_toolkits.py#L397 "test_an_exclusive_toolkit_runs_in_several_contexts_at_once") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The directive is not taken as the answer: a toolkit task starts, and the question keeps waiting for it.](core/test_toolkits.py#L413 "test_a_directive_beside_the_agents_waiting_question_starts_its_own_task") | `toolkits` | `ask` | `toolkit` | ✓ | [skip](#frameworks) |
+| [A directive without a task id resumes the toolkit's waiting task in the context.](core/test_toolkits.py#L437 "test_a_toolkit_that_waits_for_input_continues_its_own_task") | `toolkits` | — | `toolkit` | ✓ | ✓ |
 
 ### `tests/scenarios/distributed/test_cancel.py`
 
@@ -393,8 +396,9 @@ A toolkit's tasks across the servers of one agent.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The second server refuses a second task, and a message into the running one, with ``context_busy``.](distributed/test_toolkits.py#L80 "test_a_busy_context_is_refused_on_the_other_server") | `distributed` | — | `default` | ✓ | ✓ |
-| [``extension_unavailable``, and the waiting task keeps its state and its history.](distributed/test_toolkits.py#L104 "test_a_server_without_the_toolkit_refuses_a_message_into_its_task") | `distributed` | — | `default` | ✓ | ✓ |
+| [The second server refuses a second task, and a message into the running one, with ``context_busy``.](distributed/test_toolkits.py#L95 "test_a_busy_context_is_refused_on_the_other_server") | `distributed` | — | `default` | ✓ | ✓ |
+| [``extension_unavailable``, and the waiting task keeps its state and its history.](distributed/test_toolkits.py#L119 "test_a_server_without_the_toolkit_refuses_a_message_into_its_task") | `distributed` | — | `default` | ✓ | ✓ |
+| [``CANCELED`` at once from the other server; the owner's stream closes with it and its toolkit is asked to stop.](distributed/test_toolkits.py#L142 "test_a_cancel_on_the_other_server_reaches_the_toolkit_at_the_owners_next_write") | `distributed` | — | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/native/test_distributed.py`
 
@@ -522,9 +526,9 @@ What a toolkit's task keeps across a server restart, on a real database.
 |---|---|---|---|---|---|
 | [A turn that waits for input, a restart, and the answer: the new toolkit instance gets the object back.](persistence/test_toolkits.py#L80 "test_the_object_of_a_waiting_task_survives_a_restart_and_is_handed_back_on_resume") | `persistence` | — | `toolkit` | ✓ | ✓ |
 | [The first task of a context numbers its artifact 0, the first task after a restart 1, and finds the first.](persistence/test_toolkits.py#L116 "test_artifact_versions_continue_across_a_restart") | `persistence` | — | `toolkit` | ✓ | ✓ |
-| [The open stream receives the outcome, and the stored task is the toolkit's, not a settlement.](persistence/test_toolkits.py#L144 "test_a_shutdown_closes_a_running_turn_with_the_toolkits_server_shutdown_result") | `persistence` | — | `toolkit` | ✓ | ✓ |
-| [The grace period runs out; the server settles the task as ``FAILED`` with ``server_shutdown``.](persistence/test_toolkits.py#L165 "test_a_turn_that_does_not_stop_in_time_is_settled_by_the_shutdown") | `persistence` | — | `toolkit` | ✓ | ✓ |
-| [A stream on a turn that would run for minutes ends within the shutdown's bounded wait.](persistence/test_toolkits.py#L183 "test_an_open_stream_does_not_hold_the_shutdown") | `persistence` | `slow` | `toolkit` | ✓ | ✓ |
+| [The open stream receives the outcome, and the stored task is the toolkit's, not a settlement.](persistence/test_toolkits.py#L135 "test_a_shutdown_closes_a_running_turn_with_the_toolkits_server_shutdown_result") | `persistence` | — | `toolkit` | ✓ | ✓ |
+| [The grace period runs out; the server settles the task as ``FAILED`` with ``server_shutdown``.](persistence/test_toolkits.py#L156 "test_a_turn_that_does_not_stop_in_time_is_settled_by_the_shutdown") | `persistence` | — | `toolkit` | ✓ | ✓ |
+| [A stream on a turn that would run for minutes ends within the shutdown's bounded wait.](persistence/test_toolkits.py#L174 "test_an_open_stream_does_not_hold_the_shutdown") | `persistence` | `slow` | `toolkit` | ✓ | ✓ |
 
 ## Commands
 
@@ -537,7 +541,7 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | `stream <n>` | Reply in n chunks of one message | `streaming` | 10 | ✓ | ✓ |
 | `typing` | Send an ephemeral typing status, then a reply | `streaming`, `events` | 3 | ✓ | ✓ |
 | `steps <n>` | Emit n working statuses, then complete | `events` | 2 | ✓ | ✓ |
-| `slow <sec>` | Reply after n seconds | `lifecycle` | 18 | ✓ | ✓ |
+| `slow <sec>` | Reply after n seconds | `lifecycle` | 19 | ✓ | ✓ |
 | `artifacts` | Emit a two-part data artifact, an inline file and a url | `artifacts`, `files` | 2 | ✓ | [skip](#frameworks) |
 | `send-file <route>` | Send one inline file: artifact \| reply \| outbox-message \| outbox-task | `files` | 2 | ✓ | ✓ |
 | `card` | Emit one card | `artifacts` | 4 | ✓ | ✓ |

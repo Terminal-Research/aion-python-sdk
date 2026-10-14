@@ -167,6 +167,14 @@ whose error has an empty code, or an exception out of the toolkit ends the
 turn `FAILED` with `internal_error` and the generic `CRASH_MESSAGE`; the
 details go to the log only, and what the turn already delivered stays.
 
+The host asks the toolkit for its next value once it has put the previous
+one on the run's queue; a2a-sdk stores it afterwards, on its own schedule.
+So a toolkit that waits for the host to take an event knows the event is
+queued, not stored: a server that stops in between loses it. A toolkit that
+announces an external action (a push) before taking it keeps the action's
+outcome recoverable outside the task (the pushed branch), not only in the
+announcement.
+
 ### Translation
 
 `TurnTranslator` turns each value into the events the executor's pipeline
@@ -236,8 +244,9 @@ number; a toolkit that needs one run per context sets
 
 ### Invariants
 
-- One terminal status per turn, written by the server: from the result, from
-  a broken turn, or by the executor on cancel.
+- One terminal status per turn, written by the server through the run's
+  queue: from the result, from a broken turn, or by the executor on a cancel
+  the turn did not close itself.
 - Every string a toolkit yields - text, data, metadata, the object, names,
   URLs, error messages - is masked: each secret value the server knows is
   replaced with `[REDACTED]`. The values are the deployment's
@@ -259,11 +268,34 @@ number; a toolkit that needs one run per context sets
 
 ### Cancel
 
-`cancel` calls `Toolkit.cancel(task_id, "cancel")` and waits up to
-`CANCEL_GRACE_SECONDS` for the turn running in this process to end. The
-toolkit may still yield artifacts and a `canceled` result in that time, and
-they reach the task as any turn's would. Then the executor writes
-`CANCELED`, whether the turn ended or not.
+`CancelTask` always answers with a task that has an outcome, as in a2a-sdk,
+and the task has one writer of its terminal state: the run's queue.
+
+- **The turn runs on this server.** a2a-sdk calls the executor's `cancel`
+  under its lock on the task; `ToolkitTaskHandler.cancel` calls
+  `Toolkit.cancel(task_id, "cancel")` and waits up to `CANCEL_GRACE_SECONDS`
+  for the turn to end. In that time the toolkit may still yield artifacts and
+  its result - `canceled`, or `completed` for work it had already delivered,
+  which `CancelTask` then answers with. They reach the task, and the stream
+  open on it, as any turn's would, and nothing more is written. Past the
+  grace period, or for a turn that stopped to wait for input, the executor
+  writes `CANCELED` into the same queue, so the open stream still closes
+  with it; a2a-sdk then cancels the turn, and what the toolkit does after
+  that goes to its log only. The wait is short because it holds the lock: a
+  `SubscribeToTask` that arrives meanwhile is answered without the lock
+  (`AionRequestHandler.on_subscribe_to_task`) - the stored task at once, the
+  task with its outcome once the cancel is over.
+- **The turn runs on another server, or nowhere.** a2a-sdk writes
+  `CANCELED` over the stored version and answers at once;
+  `AionRequestHandler._write_cancel` sends its push notification. The server
+  running the turn learns of it at its next durable write: the version
+  conflict makes a2a-sdk cancel its producer, and the turn, torn down before
+  its outcome, calls `Toolkit.cancel(task_id, "cancel")`. Nothing more is
+  written into the task. Until that write the turn goes on: the delay is up
+  to the toolkit's next durable event.
+- **No extension is activated.** The executor's `cancel` runs with the
+  caller's attribution and none of the request's extensions: a daemon named
+  in `A2A-Extensions` has no payload on a cancel and must not fail it.
 
 ### Stopping
 
@@ -303,7 +335,9 @@ built with in a unit test, or the `ScriptPayload` a request carries - an
 event of type `SCRIPT_EVENT_TYPE` with a data part of schema `SCRIPT_SCHEMA`
 whose `outputs` are protocol values in JSON. A script can also refuse or
 crash in `preflight`, crash after some outputs, look an artifact up in its
-context, or wait for `cancel()`. The toolkit records what the server handed
+context, or wait for `cancel()` - writing on a tick meanwhile, and then
+ending `canceled`, `completed`, `failed` with `server_shutdown` for a
+shutdown, or not at all. The toolkit records what the server handed
 it, and a script with `report` has a turn say it in a message: how the turn
 began, its task, the object the task held and every `cancel()` the toolkit was
 asked for - which is how a scenario, whose server is another process, reads
@@ -320,15 +354,17 @@ nothing installed.
 | --- | --- | --- |
 | unit | `tests/unit/server/agent/toolkit/` | discovery, every translation row, the object's patches, masking, limits, lifecycle violations, admission, one task per context, the context's generation, resume, cancel, a run without a consumer, shutdown, artifact versions and `find_artifact` |
 | unit | `tests/unit/server/test_server.py`, `tests/unit/server/utils/test_process_manager.py`, `tests/unit/cli/test_serve_handler.py` | the order of a shutdown, the agent's shutdown budget, agents stopped side by side within it |
+| unit | `tests/unit/server/agent/test_request_executor.py`, `tests/unit/server/core/test_resubscribe_contract.py`, `tests/unit/server/core/test_remote_cancel_push.py` | one writer of a cancel's outcome, no extension activated on a cancel, a subscription not held by a cancel, the push of a remote cancel |
 | unit | `tests/unit/server/core/test_preprocessor_ordering.py`, `tests/unit/server/agent/test_request_executor.py` | the route of a continued task: its handler's check, `extension_unavailable` without the handler, the waiting task of the addressed handler named on the message |
 | unit | `tests/unit/server/tasks/test_context_artifacts.py` | the in-memory reader of an artifact's versions: order, holder scoping, shared contexts |
 | unit | `tests/unit/server/tasks/test_task_manager.py` | the status line a details update keeps |
 | integration | `tests/integration/server/tasks/test_toolkit_admission_postgres.py` | a refused request leaves no row in `tasks`, `task_versions` or `task_events`, and the error carries `code` and `retryable`; one task per context across two servers of the agent; a message into a toolkit's task on a server without the toolkit refused, the task unchanged |
 | integration | `tests/integration/server/tasks/test_context_runs_parity.py` | the generation, the unfinished task of a handler and the caller's newest task of a handler - on the in-memory store and on PostgreSQL |
 | integration | `tests/integration/server/tasks/test_context_artifacts_parity.py` | versions 0, 1, 2 across tasks, the latest found, another holder seeing nothing, shared contexts - on the in-memory store and on PostgreSQL |
-| scenarios | `tests/scenarios/core/test_toolkits.py` (`TAGS=toolkits`) | a turn through a real `aion serve` on the `toolkit` deployment, numbered artifact versions with `find_artifact`, a refusal with no task, a cancel that reaches the toolkit once and ends the task `CANCELED`, `context_busy` until the blocking task ends, a directive beside the agent's waiting question, a toolkit continuing its own waiting task |
+| scenarios | `tests/scenarios/core/test_toolkits.py` (`TAGS=toolkits`) | a turn through a real `aion serve` on the `toolkit` deployment, numbered artifact versions with `find_artifact`, a refusal with no task, a cancel that reaches the toolkit once and ends the task `CANCELED`, `context_busy` until the blocking task ends, a directive beside the agent's waiting question, a toolkit continuing its own waiting task, a cancel past the grace period with a subscription not held by it, a cancel answered `COMPLETED` for delivered work |
 | scenarios | `tests/scenarios/persistence/test_toolkits.py` (`make tests-scenarios-persistence`) | on a real database: the toolkit's object handed back to a resumed turn after a restart, artifact version numbering continuing across it, a shutdown closing a turn with the toolkit's `server_shutdown` on its open stream, a turn that does not stop in time settled, an open stream not holding the shutdown |
-| scenarios | `tests/scenarios/distributed/test_toolkits.py` (`make tests-scenarios-distributed`) | two servers with the toolkits and one without on one database: `context_busy` on the other server, `extension_unavailable` and an unchanged task on the server without the toolkit |
+| scenarios | `tests/scenarios/distributed/test_toolkits.py` (`make tests-scenarios-distributed`) | two servers with the toolkits and one without on one database: `context_busy` on the other server, `extension_unavailable` and an unchanged task on the server without the toolkit, a cancel on the other server reaching the toolkit at the owner's next write |
+| scenarios | `tests/scenarios/core/test_daemon.py` (`TAGS=daemon`) | `GetTask` and `CancelTask` with the daemon named in `A2A-Extensions` |
 
 A real toolkit is checked against the SDK by its own CI; see
 [Continuous integration](ci.md#toolkits).

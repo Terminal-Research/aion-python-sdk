@@ -479,12 +479,62 @@ class TestCancel:
             updater_instance.cancel.assert_awaited_once()
 
 
+class TestCancelWritesOneOutcome:
+    """A routed task's terminal state has one writer: its own turn, or the executor when the turn did not close it."""
+
+    @pytest.mark.anyio
+    async def test_a_turn_that_closed_the_task_leaves_nothing_to_write(self, agent, event_queue):
+        handler = _make_handler(uri="https://example.invalid/toolkits/scripted/1.0.0")
+        handler.cancel = AsyncMock(return_value=True)
+        executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[handler])
+        task = _make_real_task(state=TaskState.TASK_STATE_WORKING, metadata={ROUTED: handler.uri})
+
+        await executor.cancel(_make_context(task=task), event_queue)
+
+        event_queue.enqueue_event.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_a_turn_that_did_not_close_the_task_is_closed_canceled_in_the_runs_queue(self, agent, event_queue):
+        handler = _make_handler(uri="https://example.invalid/toolkits/scripted/1.0.0")
+        executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[handler])
+        task = _make_real_task(state=TaskState.TASK_STATE_WORKING, metadata={ROUTED: handler.uri})
+
+        await executor.cancel(_make_context(task=task), event_queue)
+
+        [canceled] = [call.args[0] for call in event_queue.enqueue_event.await_args_list]
+        assert canceled.status.state == TaskState.TASK_STATE_CANCELED
+
+    @pytest.mark.anyio
+    async def test_a_cancel_activates_none_of_the_declared_extensions(self, daemon_enabled, event_queue):
+        """A daemon declared in ``A2A-Extensions`` has no payload on a cancel, and must not fail it."""
+        agent = _make_agent()
+        executor = AionAgentRequestExecutor(aion_agent=agent)
+        task = _make_real_task(state=TaskState.TASK_STATE_WORKING)
+        call_context = ServerCallContext(requested_extensions={DAEMON_EXTENSION_URI_V1})
+        context = RequestContext(call_context, task_id=task.id, context_id=task.context_id, task=task)
+        seen = []
+
+        async def cancel(context, event_queue):
+            seen.append(await AionRuntimeContextRegistry.aget_current_context())
+
+        agent.cancel = cancel
+
+        await executor.cancel(context, event_queue)
+
+        [runtime] = seen
+        assert runtime.extensions.activated_uris == ()
+        assert runtime.callback_attribution is not None
+        [canceled] = [call.args[0] for call in event_queue.enqueue_event.await_args_list]
+        assert canceled.status.state == TaskState.TASK_STATE_CANCELED
+
+
 class TestCancelFiles:
     """What a cancel hook hands back reaches the client with its files stored.
 
-    The hook publishes straight to the request's queue - a rescued bundle, for
-    instance - and closes the CANCELED with a message of its own; neither
-    passes through the event pipeline, and neither may carry inline bytes.
+    The framework adapter's hook publishes straight to the request's queue - a
+    rescued bundle, for instance - and closes the CANCELED with a message of its
+    own; neither passes through the event pipeline, and neither may carry
+    inline bytes.
     """
 
     @staticmethod
@@ -512,16 +562,12 @@ class TestCancelFiles:
             await event_queue.enqueue_event(bundle)
             return closing
 
-        handler = _make_handler(uri="https://example.invalid/toolkits/scripted/1.0.0")
-        handler.cancel = AsyncMock(side_effect=cancel)
-        return handler
+        return AsyncMock(side_effect=cancel)
 
     async def _cancel(self, agent, transformer) -> RecordingQueue:
-        handler = self._handing_back_files()
-        executor = AionAgentRequestExecutor(
-            aion_agent=agent, file_transformer=transformer, extension_handlers=[handler]
-        )
-        task = _make_real_task(state=TaskState.TASK_STATE_WORKING, metadata={ROUTED: handler.uri})
+        agent.cancel = self._handing_back_files()
+        executor = AionAgentRequestExecutor(aion_agent=agent, file_transformer=transformer)
+        task = _make_real_task(state=TaskState.TASK_STATE_WORKING)
         queue = RecordingQueue()
         await executor.cancel(_make_context(task=task), queue)
         return queue
@@ -576,7 +622,7 @@ def _make_handler(uri="https://example.invalid/toolkits/fake/1.0.0"):
     handler.uri = uri
     handler.stream = MagicMock(name="stream")
     handler.resume = MagicMock(name="resume")
-    handler.cancel = AsyncMock(name="cancel")
+    handler.cancel = AsyncMock(name="cancel", return_value=False)
     handler.admit = AsyncMock(name="admit")
     return handler
 

@@ -133,7 +133,7 @@ class _ToolkitHandler:
     async def admit(self, message, extensions, call_context):
         return None
 
-    async def stream(self, context, admission):
+    async def stream(self, context, admission, event_queue=None):
         yield _completed(context, metadata={TOOLKIT: PROGRESS})
 
 

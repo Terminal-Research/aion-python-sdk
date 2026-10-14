@@ -5,10 +5,11 @@ A turn's script comes from the request when its message carries a
 and otherwise from the ``Script`` the toolkit was built with (how a unit test
 drives it). A script names the protocol values to yield, a refusal or a crash
 in ``preflight``, a crash in the middle of the turn, a lookup of an artifact
-in the context, a turn that waits for ``cancel()`` and then ends - ``failed``
-with ``server_shutdown`` when the server is stopping, ``canceled`` otherwise,
-or never at all - or a turn that reports what the toolkit has been handed so
-far.
+in the context, a turn that waits for ``cancel()`` - writing a status update
+on a tick while it waits, if asked - and then ends: ``failed`` with
+``server_shutdown`` when the server is stopping, ``completed`` as work
+delivered before the cancel, ``canceled`` otherwise, or never at all. A turn
+can also report what the toolkit has been handed so far.
 The toolkit records every call, so a unit test can read what the server handed
 it, and a scenario - whose server is another process - can read it from the
 report.
@@ -33,6 +34,7 @@ from aion.core.toolkit import (
     ToolkitError,
     ToolkitMessageEvent,
     ToolkitOutput,
+    ToolkitStatusEvent,
     ToolkitRequest,
     ToolkitResult,
     ToolkitState,
@@ -87,6 +89,8 @@ class ScriptPayload(BaseModel):
     crash_after: Optional[int] = None
     wait_for_cancel: bool = False
     hang_on_cancel: bool = False
+    completes_on_cancel: bool = False
+    tick_seconds: Optional[float] = None
     find_artifact: Optional[str] = None
     report: bool = False
 
@@ -115,6 +119,12 @@ class Script:
             does, and with a ``canceled`` result otherwise.
         hang_on_cancel: With ``wait_for_cancel``, the turn does not end after
             ``cancel()`` either: it runs until the server tears it down.
+        completes_on_cancel: With ``wait_for_cancel``, a ``cancel()`` ends the
+            turn ``completed``, as work already delivered does.
+        tick_seconds: With ``wait_for_cancel``, the turn writes a status
+            update, ``{"ticks": n}`` in its object, every this many seconds
+            while it waits: a durable write, which is where a server learns
+            that another one cancelled the task.
         find_artifact: Before the outputs, the turn looks this artifact id up
             in its context and says what it found in a message whose data part
             is ``{"found": false}`` or ``{"found": true, "task_id", "version",
@@ -133,6 +143,8 @@ class Script:
     crash_after: Optional[int] = None
     wait_for_cancel: bool = False
     hang_on_cancel: bool = False
+    completes_on_cancel: bool = False
+    tick_seconds: Optional[float] = None
     find_artifact: Optional[str] = None
     report: bool = False
 
@@ -146,6 +158,8 @@ class Script:
             crash_after=payload.crash_after,
             wait_for_cancel=payload.wait_for_cancel,
             hang_on_cancel=payload.hang_on_cancel,
+            completes_on_cancel=payload.completes_on_cancel,
+            tick_seconds=payload.tick_seconds,
             find_artifact=payload.find_artifact,
             report=payload.report,
         )
@@ -228,10 +242,22 @@ class ScriptedToolkit:
         if script.crash_after is not None and script.crash_after >= len(script.outputs):
             raise RuntimeError("scripted crash")
         if script.wait_for_cancel:
-            await self._cancel_event(context.task_id).wait()
+            cancelled = self._cancel_event(context.task_id)
+            ticks = 0
+            while not cancelled.is_set():
+                if script.tick_seconds is None:
+                    await cancelled.wait()
+                    break
+                try:
+                    await asyncio.wait_for(cancelled.wait(), script.tick_seconds)
+                except TimeoutError:
+                    ticks += 1
+                    yield ToolkitStatusEvent(task_metadata={"ticks": ticks})
             if script.hang_on_cancel:
                 await asyncio.Event().wait()
-            if self._reasons.get(context.task_id) == SHUTDOWN:
+            if script.completes_on_cancel:
+                yield ToolkitResult(state=ToolkitState.COMPLETED)
+            elif self._reasons.get(context.task_id) == SHUTDOWN:
                 yield ToolkitResult(
                     state=ToolkitState.FAILED,
                     error=ToolkitError(

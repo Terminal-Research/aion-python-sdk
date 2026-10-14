@@ -16,8 +16,13 @@ refuses before its task exists is a JSON-RPC error carrying the refusal's
 code, and leaves no task.
 
 A cancel reaches the toolkit once, with the task's id, and the task ends
-``CANCELED``. What the toolkit was asked is read from the report a later turn
-of the toolkit makes: the server is another process.
+``CANCELED``; the turn's own result is the one outcome, so the open stream
+closes with it. A turn that does not stop within the grace period is
+cancelled without it, its open stream closing ``CANCELED`` all the same, and
+a subscription made while the cancel waits opens at once. Work the toolkit
+had delivered before the cancel answers ``COMPLETED``. What the toolkit was
+asked is read from the report a later turn of the toolkit makes: the server
+is another process.
 
 A toolkit that runs one task per context refuses a second one there with
 ``context_busy`` naming the task that holds it, a message into its running
@@ -30,7 +35,9 @@ question.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
+import time
 import uuid
 from typing import Any, AsyncIterator
 
@@ -61,6 +68,7 @@ from tests.scenarios.toolkits import (
     TOOLKIT,
     reported,
     reports,
+    rest_of,
     rpc_script,
     run_script,
     script,
@@ -306,6 +314,43 @@ async def test_a_second_cancel_of_the_finished_task_is_refused_and_does_not_reac
     assert await toolkit_client.get_task(task_id) == before
     report = await reported(toolkit_client)
     assert [item["task_id"] for item in report["cancels"]].count(task_id) == 1
+
+
+@pytest.mark.variant("toolkit")
+async def test_a_turn_past_the_grace_period_is_cancelled_without_it_and_a_subscription_is_not_held(
+    toolkit_client: ScenarioClient,
+) -> None:
+    """The cancel waits out the grace period; the stream and a subscription made meanwhile both close ``CANCELED``."""
+    task_id, stream = await start_working(toolkit_client, URI, hang_on_cancel=True)
+    cancelling = asyncio.create_task(toolkit_client.cancel(task_id))
+    await asyncio.sleep(1)
+
+    asked = time.monotonic()
+    subscription = toolkit_client.subscribe_stream(task_id)
+    opening = to_event(_payload_of(await anext(subscription)))
+    opened_after = time.monotonic() - asked
+    subscribed = [opening, *await rest_of(subscription)]
+    streamed = await rest_of(stream)
+    answered = await cancelling
+
+    assert opened_after < 5, f"the subscription waited {opened_after:.0f}s on the cancel"
+    assert (opening.kind, opening.state) == ("task", "WORKING")
+    assert answered.status.state == TaskState.TASK_STATE_CANCELED
+    assert final_task(subscribed).state == "CANCELED"
+    assert final_task(streamed).state == "CANCELED"
+
+
+@pytest.mark.variant("toolkit")
+async def test_a_cancel_after_the_work_was_delivered_answers_completed(toolkit_client: ScenarioClient) -> None:
+    """The turn's own outcome stands: the cancel answers with it, and so does the stream."""
+    task_id, stream = await start_working(toolkit_client, URI, completes_on_cancel=True)
+
+    answered = await toolkit_client.cancel(task_id)
+    streamed = await rest_of(stream)
+
+    assert answered.status.state == TaskState.TASK_STATE_COMPLETED
+    assert final_task(streamed).state == "COMPLETED"
+    assert (await toolkit_client.get_task(task_id)).status.state == TaskState.TASK_STATE_COMPLETED
 
 
 @pytest.mark.variant("toolkit")

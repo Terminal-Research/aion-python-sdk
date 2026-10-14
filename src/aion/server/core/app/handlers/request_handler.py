@@ -1,9 +1,12 @@
 """Aion request handler extending the default A2A handler with preprocessors and Aion methods."""
 
+import asyncio
+import contextlib
 import logging
 from a2a.server.agent_execution import RequestContext
 from a2a.server.agent_execution.active_task import ActiveTask
 from a2a.server.cluster.task_store import LegacyTaskStoreAdapter
+from a2a.server.cluster.version import TaskVersion
 from a2a.server.context import ServerCallContext
 from a2a.server.events import Event
 from a2a.server.request_handlers import DefaultRequestHandlerV2
@@ -42,7 +45,7 @@ from aion.core.a2a import (
 )
 from aion.core.runtime import ExtensionActivationError, aion_a2a_extension_registry
 from aion.core.runtime.context.extensions import AionRuntimeExtensions
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from google.protobuf import json_format
 from types import SimpleNamespace
 from typing import override
@@ -120,6 +123,9 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             event_stream=self._event_stream,
         )
         self._tasks = _unversioned(self._versioned_store)
+        # The cancels this server is handling, each task's own; see
+        # on_subscribe_to_task.
+        self._cancels: dict[str, list[asyncio.Event]] = {}
         self._preprocessors = preprocessors or []
         if (admission is None) != (context_catalog is None):
             raise ValueError("admission and context_catalog are chosen together; pass both or neither")
@@ -473,7 +479,8 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         Raises:
             TaskNotCancelableError: If the task already has an outcome.
         """
-        local = await self._active_task_registry.cancel_local_as_owner(task_id)
+        async with self._cancelling(task_id):
+            local = await self._active_task_registry.cancel_local_as_owner(task_id)
         if local is not None:
             return local
         stored = await self._versioned_store.get(task_id, None)
@@ -570,16 +577,57 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             params: CancelTaskRequest,
             context: ServerCallContext,
     ) -> Task:
-        """Cancel a task; only its initiator may.
+        """Cancel a task; only its initiator may. The answer is always a task with an outcome.
 
         A caller without individual access cancels nothing: the task answers
         as if it did not exist. The rest is a2a-sdk's: a task this instance
         holds is cancelled through its executor, any other gets ``CANCELED``
         written over its stored version, and the instance executing it stops
-        at its next write.
+        at its next write. The answer is the task's outcome - ``CANCELED``,
+        or the outcome its own turn reached in the meantime.
         """
         _require_individual_access(context, params.id)
-        return await super().on_cancel_task(params, context)
+        async with self._cancelling(params.id):
+            return await super().on_cancel_task(params, context)
+
+    @override
+    async def _write_cancel(
+            self,
+            task_id: str,
+            current: Task,
+            version: TaskVersion,
+            context: ServerCallContext | None,
+    ) -> Task:
+        """a2a-sdk's remote cancel: ``CANCELED`` written over the stored version, then pushed.
+
+        The server executing the task learns of the cancel at its next write
+        and stops without writing, and nothing on this server delivers the
+        outcome either, so the push notification of the ``CANCELED`` task is
+        sent here, once, by the writer of the state. A failed delivery is
+        logged and does not undo the cancel.
+        """
+        cancelled = await super()._write_cancel(task_id, current, version, context)
+        if self._push_sender is not None:
+            try:
+                await self._push_sender.send_notification(task_id, cancelled)
+            except Exception:
+                logger.exception("Could not push the cancellation of task %s", task_id)
+        return cancelled
+
+    @contextlib.asynccontextmanager
+    async def _cancelling(self, task_id: str) -> AsyncIterator[None]:
+        """Record a cancel of ``task_id`` in progress here, for subscribers to wait on."""
+        done = asyncio.Event()
+        self._cancels.setdefault(task_id, []).append(done)
+        try:
+            yield
+        finally:
+            done.set()
+            waiting = self._cancels.get(task_id, [])
+            if done in waiting:
+                waiting.remove(done)
+            if not waiting:
+                self._cancels.pop(task_id, None)
 
     @validate_request_params
     @validate(
@@ -604,6 +652,12 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         ``UnsupportedOperationError``, as a2a-sdk refuses it. The check runs
         before the projection, because the projection would otherwise answer
         the refusal with the stored Task.
+
+        While this server is cancelling the task, a2a-sdk holds the task's
+        lock for as long as the executor's cancel waits for the running turn,
+        and a subscription would wait with it. Such a subscription is served
+        here instead: the stored task at once, then, once the cancel is over,
+        the task with its outcome.
         """
         _require_individual_access(context, params.id)
         stored = await self._versioned_store.get(params.id, context)
@@ -615,10 +669,22 @@ class AionRequestHandler(DefaultRequestHandlerV2):
                 f'{TaskState.Name(stored.task.status.state)}'
             )
 
+        cancels = list(self._cancels.get(params.id, ()))
+        source = (
+            self._while_cancelling(stored.task, cancels)
+            if cancels
+            else super().on_subscribe_to_task(params, context)
+        )
         projection = TerminalTaskProjection(
             task_store=self._tasks,
             call_context=context,
             task_id=params.id,
         )
-        async for event in projection.project(super().on_subscribe_to_task(params, context)):
+        async for event in projection.project(source):
             yield event
+
+    @staticmethod
+    async def _while_cancelling(task: Task, cancels: list[asyncio.Event]) -> AsyncGenerator[Event]:
+        """The subscription to a task being cancelled here: its snapshot, until the cancels are over."""
+        yield task
+        await asyncio.gather(*(done.wait() for done in cancels))

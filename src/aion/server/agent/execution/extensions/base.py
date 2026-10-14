@@ -117,15 +117,19 @@ class ExtensionTaskHandler(Protocol):
 
     async def cancel(
         self, context: "RequestContext", event_queue: "EventQueue"
-    ) -> Optional["Message"]:
+    ) -> bool:
         """Cancel a task routed to this extension.
 
         Called in place of the agent's framework-adapter cancel hook when the
-        task being cancelled was routed to this handler. The executor writes
-        the terminal CANCELED after it returns; a returned message becomes
-        that status's message. Raise UnsupportedOperationError (see
-        a2a.utils.errors) when there is nothing to stop - the executor still
-        writes CANCELED.
+        task being cancelled was routed to this handler. The handler stops
+        its work for the task; a turn running in this process may still
+        close the task through the run's queue.
+
+        Returns:
+            True when the task's own turn wrote its terminal status into the
+            run's queue; the executor writes nothing more. False otherwise,
+            and the executor writes ``CANCELED`` into the same queue. Raising
+            UnsupportedOperationError (see a2a.utils.errors) counts as False.
         """
         ...
 
