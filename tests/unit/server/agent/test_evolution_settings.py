@@ -20,7 +20,7 @@ from aion.server.agent.execution.extensions.evolution.settings import EvolutionS
 VARIABLES = (
     "CODEX_API_KEY", "CODEX_BASE_URL", "CODEX_BIN", "CODEX_HOME",
     "CODEX_MODEL_CATALOG_JSON", "CODEX_PROVIDER",
-    "EVOLUTION_EXECUTOR_NETWORK", "EVOLUTION_SETUP_COMMAND",
+    "EVOLUTION_EXECUTOR_ENV", "EVOLUTION_EXECUTOR_NETWORK", "EVOLUTION_SETUP_COMMAND",
     "EVOLUTION_SETUP_TIMEOUT", "EVOLUTION_SPECS_ROOT",
     "EVOLUTION_WORKDIR_ROOT", "GITHUB_TOKEN",
 )
@@ -245,7 +245,7 @@ class TestEveryVariableIsReachable:
             ("CODEX_BIN", "codex_bin", "/usr/local/bin/codex"),
             ("CODEX_HOME", "codex_home", "/var/lib/codex"),
             ("CODEX_MODEL_CATALOG_JSON", "codex_model_catalog_json", "{}"),
-            ("EVOLUTION_SPECS_ROOT", "specs_root", "/srv/specs"),
+            ("EVOLUTION_SPECS_ROOT", "specs_root", "docs/specs"),
             ("EVOLUTION_WORKDIR_ROOT", "workdir_root", "/srv/work"),
             ("GITHUB_TOKEN", "github_token", "ghp_test"),
         ],
@@ -254,3 +254,43 @@ class TestEveryVariableIsReachable:
         self, variable: str, attribute: str, value: str
     ) -> None:
         assert getattr(_settings(**{variable: value}), attribute) == value
+
+
+class TestSpecsRoot:
+    """The toolkit writes the specification outside the sandbox, so the root
+    may only name a place inside the repository."""
+
+    @pytest.mark.parametrize("raw", ["/srv/specs", "../outside", "docs/../../x"])
+    def test_a_root_that_can_leave_the_repository_fails_naming_the_variable(
+        self, raw: str
+    ) -> None:
+        with pytest.raises(ExtensionSetupError) as failure:
+            _settings(EVOLUTION_SPECS_ROOT=raw)
+
+        assert "EVOLUTION_SPECS_ROOT" in str(failure.value)
+
+    def test_a_blank_root_is_no_override(self) -> None:
+        assert _settings(EVOLUTION_SPECS_ROOT="  ").specs_root is None
+
+
+class TestExecutorEnv:
+    """Names of server variables the run's subprocesses may see."""
+
+    def test_unset_allows_nothing_beyond_the_minimal_set(self) -> None:
+        assert _settings().executor_env == ()
+
+    @pytest.mark.parametrize(
+        "raw", ["HTTPS_PROXY,NO_PROXY SSL_CERT_FILE", " HTTPS_PROXY , NO_PROXY,,SSL_CERT_FILE "]
+    )
+    def test_names_are_separated_by_commas_or_spaces(self, raw: str) -> None:
+        assert _settings(EVOLUTION_EXECUTOR_ENV=raw).executor_env == (
+            "HTTPS_PROXY",
+            "NO_PROXY",
+            "SSL_CERT_FILE",
+        )
+
+    def test_a_value_instead_of_a_name_fails_naming_the_variable(self) -> None:
+        with pytest.raises(ExtensionSetupError) as failure:
+            _settings(EVOLUTION_EXECUTOR_ENV="HTTPS_PROXY=http://proxy:3128")
+
+        assert "EVOLUTION_EXECUTOR_ENV" in str(failure.value)

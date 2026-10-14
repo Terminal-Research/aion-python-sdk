@@ -96,6 +96,7 @@ def _set_env(monkeypatch, **overrides):
         "CODEX_BIN",
         "GITHUB_TOKEN",
         "EVOLUTION_SPECS_ROOT",
+        "EVOLUTION_EXECUTOR_ENV",
         "EVOLUTION_EXECUTOR_NETWORK",
         "EVOLUTION_WORKDIR_ROOT",
         "EVOLUTION_SETUP_COMMAND",
@@ -171,12 +172,36 @@ class TestBuildWorker:
         worker = build_worker(_parsed(), _daemon())
         assert worker._config.specs_root == ".evolution-specs"
 
-    def test_specs_root_from_daemon_config_var(self, monkeypatch):
+    def test_specs_root_never_comes_from_the_request(self, monkeypatch):
+        """The toolkit writes the specification outside the executor sandbox;
+        where it goes is the operator's decision, not the caller's."""
         _set_env(monkeypatch)
         daemon = _daemon()
-        daemon.environment.configuration_variables["evolution_specs_root"] = "docs/specs"
+        daemon.environment.configuration_variables["evolution_specs_root"] = "/home"
         worker = build_worker(_parsed(), daemon)
-        assert worker._config.specs_root == "docs/specs"
+        assert worker._config.specs_root == ".aion"
+
+    def test_executor_env_reaches_every_subprocess(self, monkeypatch):
+        _set_env(monkeypatch, EVOLUTION_EXECUTOR_ENV="HTTPS_PROXY,SSL_CERT_FILE")
+        worker = build_worker(_parsed(), _daemon())
+
+        expected = ("HTTPS_PROXY", "SSL_CERT_FILE")
+        assert worker._config.env_passthrough == expected
+        assert worker._tools.git._env_passthrough == expected
+        assert tuple(worker._tools.codex.config.env_passthrough) == expected
+
+    def test_the_deployments_secrets_are_kept_out_of_the_run_output(self, monkeypatch):
+        _set_env(
+            monkeypatch,
+            GITHUB_TOKEN="ghp_deployment_token",
+            POSTGRES_URL="postgresql://aion:db-password-1@db.internal:5432/aion",
+        )
+        worker = build_worker(_parsed(), _daemon())
+
+        redacted = worker._tools.secrets.redact_text(
+            "ghp_deployment_token and db-password-1"
+        )
+        assert redacted == "[REDACTED] and [REDACTED]"
 
     def test_executor_network_off_by_default(self, monkeypatch):
         _set_env(monkeypatch)

@@ -36,6 +36,13 @@ credentials, binaries, host filesystem paths, sandbox/network grants, build
 hooks) stay in the environment - GITHUB_TOKEN in particular never comes from
 the request: a token in the directive would leak into Codex prompts and logs.
 
+None of the run's subprocesses inherits this server's environment: Codex and
+the commands it runs, git, gh and the setup command each get a minimal one
+from the toolkit, plus the names EVOLUTION_EXECUTOR_ENV allows. And every
+value this environment holds that looks like a secret is handed to the
+toolkit to replace in whatever the run reports (see `secret_values`): the
+executor can still read files on this host.
+
 Everything else about how a run behaves lives in the directive itself:
 per-run model tuning (``EvolutionDirectiveEventPayload.model`` - name,
 reasoning effort, context window), the branch strategy (``branch_strategy``),
@@ -75,14 +82,23 @@ Env:
     CODEX_MODEL_CATALOG_JSON            optional catalog for local models;
                                         deployment env only, never the request -
                                         it names a path on the host filesystem
-    CODEX_BIN                           optional, default "codex"; deployment
-                                        env only, never the request - it names
-                                        the executable that gets exec'd
+    CODEX_BIN                           optional, default "codex", looked up
+                                        on this server's PATH; or a path.
+                                        Deployment env only, never the request
+                                        - it names the executable that gets
+                                        exec'd
     GITHUB_TOKEN                        required, injected JIT into git calls
-    EVOLUTION_SPECS_ROOT                optional spec-convention root override;
-                                        deployment env only, never the request -
-                                        it can name a write path on the host
-                                        filesystem outside the cloned workdir
+    EVOLUTION_SPECS_ROOT                optional spec-convention root override,
+                                        relative to the repository root and
+                                        inside it; deployment env only, never
+                                        the request - the toolkit writes there
+                                        outside the executor sandbox
+    EVOLUTION_EXECUTOR_ENV              optional, comma- or space-separated
+                                        names of this server's environment
+                                        variables the run's subprocesses may
+                                        see (a proxy, a CA bundle); never a
+                                        credential - the executor's commands
+                                        see whatever Codex sees
     EVOLUTION_EXECUTOR_NETWORK          optional, "1"/"true" grants the executor
                                         sandbox network access (installs allowed,
                                         briefing demands manifest declaration);
@@ -93,9 +109,11 @@ Env:
     EVOLUTION_WORKDIR_ROOT               optional workdir root override
     EVOLUTION_SETUP_COMMAND             optional, shell-quoted argv run in the
                                         workdir after the overlay venv, WITH
-                                        network (e.g. ".venv/bin/pip install -e .
-                                        --no-deps"); runs build hooks outside the
-                                        sandbox - trusted targets only
+                                        network but without this server's
+                                        environment (e.g. ".venv/bin/pip install
+                                        -e . --no-deps"); runs build hooks
+                                        outside the sandbox - trusted targets
+                                        only
     EVOLUTION_SETUP_TIMEOUT              optional, timeout for EVOLUTION_SETUP_COMMAND (s)
 
 A malformed EVOLUTION_SETUP_TIMEOUT fails the run with a named
@@ -124,6 +142,7 @@ from aion.toolkits.behaviour_evolution import (
 
 from .directive import ParsedDirective
 from .errors import ExtensionSetupError, UnsupportedDirectiveError
+from .secret_values import deployment_secret_values
 from .settings import EvolutionSettings
 from .provider import CUSTOM, LOCAL_SESSION, resolve_provider, warn_ignored_keys
 
@@ -135,7 +154,6 @@ if TYPE_CHECKING:
 
 __all__ = [
     "LLM_CONFIG_KEY",
-    "SPECS_ROOT_CONFIG_KEY",
     "build_worker",
     "check_environment",
 ]
@@ -144,7 +162,6 @@ __all__ = [
 # into daemon requests as
 # DaemonExtensionPayload.environment.configuration_variables[<key>].
 LLM_CONFIG_KEY = "llm"
-SPECS_ROOT_CONFIG_KEY = "evolution_specs_root"
 
 # Kept only as the fallback default for directives that predate `branch_strategy`
 # on the payload; new callers set the field directly. Not exported: nothing
@@ -225,11 +242,8 @@ def build_worker(
         raise UnsupportedDirectiveError(_unsupported_directive_message(ex)) from ex
 
     config_kwargs = {}
-    specs_root = settings.specs_root or _daemon_config_var(
-        daemon, SPECS_ROOT_CONFIG_KEY
-    )
-    if specs_root:
-        config_kwargs["specs_root"] = specs_root
+    if settings.specs_root:
+        config_kwargs["specs_root"] = settings.specs_root
 
     limits = parsed.payload.limits
     config = EvolutionConfig(
@@ -246,6 +260,7 @@ def build_worker(
         codex_timeout=_limit(limits, "codex_timeout"),
         setup_command=settings.setup_command,
         setup_timeout=settings.setup_timeout,
+        env_passthrough=settings.executor_env,
         **config_kwargs,
     )
 
@@ -282,6 +297,7 @@ def build_worker(
         codex_config=codex_config,
         token_provider=_token,
         credentials_provider=credentials_provider,
+        secret_values=deployment_secret_values(),
     )
     return EvolutionWorker(directive, config, tools=tools)
 

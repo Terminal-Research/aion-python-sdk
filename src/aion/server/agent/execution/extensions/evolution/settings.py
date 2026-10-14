@@ -1,6 +1,6 @@
 """The deployment environment the behaviour-evolution extension reads.
 
-Twelve variables decide where an evolution run gets its model, its
+Thirteen variables decide where an evolution run gets its model, its
 credentials and its working directories, and until this module they were read
 one `os.environ.get` at a time across five functions of `tools_factory`. Two
 of them were checked twice in different places with the same message, and
@@ -46,11 +46,13 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shlex
-from typing import Optional
+from pathlib import PurePath
+from typing import Annotated, Optional
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from .errors import ExtensionSetupError
 
@@ -64,6 +66,8 @@ _FALSY = ("0", "false", "no", "off")
 GITHUB_TOKEN_ENV_VAR = "GITHUB_TOKEN"
 CODEX_API_KEY_ENV_VAR = "CODEX_API_KEY"
 """Named once each, so a field and its re-read cannot name different things."""
+
+_ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 def _current(variable: str) -> Optional[str]:
@@ -118,15 +122,31 @@ class EvolutionSettings(BaseSettings):
     codex_bin: str = Field(
         default="codex",
         alias="CODEX_BIN",
-        description="Codex executable to run.",
+        description=(
+            "Codex executable to run: a name looked up on the server's PATH, "
+            "or a path."
+        ),
     )
 
     specs_root: Optional[str] = Field(
         default=None,
         alias="EVOLUTION_SPECS_ROOT",
         description=(
-            "Where evolution specifications are written. Falls back to the "
-            "request's own daemon configuration when unset."
+            "Where evolution specifications are written, relative to the "
+            "repository root and inside it. The toolkit's own default applies "
+            "when unset."
+        ),
+    )
+
+    executor_env: Annotated[tuple[str, ...], NoDecode] = Field(
+        default=(),
+        alias="EVOLUTION_EXECUTOR_ENV",
+        description=(
+            "Server environment variables the run's subprocesses may see - "
+            "Codex and the commands it runs, git, gh, the setup command - "
+            "beyond the minimal set every one of them gets. Comma- or "
+            "space-separated names, such as a proxy or a CA bundle; never a "
+            "credential."
         ),
     )
 
@@ -179,6 +199,54 @@ class EvolutionSettings(BaseSettings):
                 ", ".join(_TRUTHY),
             )
         return False
+
+    @field_validator("specs_root", mode="before")
+    @classmethod
+    def _check_specs_root(cls, value: object) -> Optional[str]:
+        """Accept only a path that stays inside the repository.
+
+        The toolkit writes the specification outside the executor sandbox, so
+        an absolute path or one climbing out with `..` would let this setting
+        name any place on the host.
+
+        Raises:
+            ExtensionSetupError: The path is absolute or contains `..`.
+        """
+        if value is None:
+            return None
+        raw = str(value).strip()
+        if not raw:
+            return None
+        path = PurePath(raw)
+        if path.is_absolute() or ".." in path.parts:
+            raise ExtensionSetupError(
+                "EVOLUTION_SPECS_ROOT must be a path relative to the repository "
+                f"root, without '..': got {raw!r}"
+            )
+        return raw
+
+    @field_validator("executor_env", mode="before")
+    @classmethod
+    def _split_names(cls, value: object) -> tuple[str, ...]:
+        """Read a list of variable names, naming this setting when one is not.
+
+        Raises:
+            ExtensionSetupError: An entry is not an environment variable name.
+        """
+        if value is None:
+            return ()
+        names = (
+            tuple(value)
+            if isinstance(value, (list, tuple))
+            else tuple(re.split(r"[\s,]+", str(value).strip()))
+        )
+        names = tuple(name for name in names if name)
+        for name in names:
+            if not _ENV_NAME.fullmatch(name):
+                raise ExtensionSetupError(
+                    f"EVOLUTION_EXECUTOR_ENV: {name!r} is not an environment variable name"
+                )
+        return names
 
     @field_validator("setup_command", mode="before")
     @classmethod
