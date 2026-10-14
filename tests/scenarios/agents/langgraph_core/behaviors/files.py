@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import base64
+from typing import Optional
 from uuid import uuid4
 
-from a2a.types import Artifact, Part
-from aion.core.a2a import FileActionPayload, file_artifact
+from a2a.types import Artifact, Message, Part, Role, Task
+from aion.core.a2a import A2AOutbox, FileActionPayload, file_artifact
+from langchain_core.messages import AIMessage
 from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf.struct_pb2 import Value
 
@@ -17,12 +20,16 @@ from tests.scenarios.commands import (
     ARTIFACT_FILE_NAME,
     ARTIFACT_URL,
     ARTIFACT_URL_NAME,
+    SEND_FILE_BYTES,
+    SEND_FILE_MEDIA_TYPE,
+    SEND_FILE_NAME,
+    SEND_FILE_TEXT,
     artifacts_data_parts,
     artifacts_text,
     parts_text,
 )
 
-__all__ = ["parts", "artifacts"]
+__all__ = ["parts", "artifacts", "send_file"]
 
 
 async def parts(invocation: Invocation) -> None:
@@ -76,3 +83,44 @@ async def artifacts(invocation: Invocation) -> None:
         )
     )
     await thread.reply(artifacts_text())
+
+
+def _file_part() -> Part:
+    return Part(raw=SEND_FILE_BYTES, media_type=SEND_FILE_MEDIA_TYPE, filename=SEND_FILE_NAME)
+
+
+async def send_file(invocation: Invocation) -> Optional[dict]:
+    """Send one inline file by the route the argument names.
+
+    ``reply`` is a model's answer with the file in it - an ``AIMessage``
+    whose content blocks hold text and the file - so the file takes the road
+    a model's attachment takes. The outbox routes return the payload as the
+    graph's output.
+    """
+    route = invocation.command.argument.strip()
+    if route == "artifact":
+        await invocation.thread.post(
+            file_artifact(SEND_FILE_BYTES, mime_type=SEND_FILE_MEDIA_TYPE, name=SEND_FILE_NAME)
+        )
+        return None
+    if route == "reply":
+        await invocation.thread.post(AIMessage(content=[
+            {"type": "text", "text": SEND_FILE_TEXT},
+            {"type": "file", "base64": base64.b64encode(SEND_FILE_BYTES).decode(),
+             "mime_type": SEND_FILE_MEDIA_TYPE, "filename": SEND_FILE_NAME},
+        ]))
+        return None
+    message = Message(
+        message_id=uuid4().hex,
+        role=Role.ROLE_AGENT,
+        parts=[Part(text=SEND_FILE_TEXT), _file_part()],
+    )
+    if route == "outbox-message":
+        return {"a2a_outbox": A2AOutbox(message=message)}
+    if route == "outbox-task":
+        return {"a2a_outbox": A2AOutbox(task=Task(
+            history=[message],
+            artifacts=[Artifact(artifact_id=uuid4().hex, name=SEND_FILE_NAME, parts=[_file_part()])],
+        ))}
+    await invocation.thread.reply(f"unknown route {route!r}")
+    return None

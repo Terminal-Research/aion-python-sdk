@@ -57,6 +57,11 @@ __all__ = [
     "ARTIFACT_URL",
     "artifacts_data_parts",
     "artifacts_text",
+    "SEND_FILE_ROUTES",
+    "SEND_FILE_NAME",
+    "SEND_FILE_BYTES",
+    "SEND_FILE_MEDIA_TYPE",
+    "SEND_FILE_TEXT",
     "CARD_TITLE",
     "card_jsx",
     "card_text",
@@ -68,6 +73,7 @@ __all__ = [
     "FAIL_MODES",
     "FAIL_REPLY_TEXT",
     "FAIL_MESSAGE",
+    "FAIL_REASON_TEXT",
 ]
 
 
@@ -183,13 +189,15 @@ COMMANDS: tuple[Command, ...] = (
     Command("slow", "Reply after n seconds", "<sec>", ("lifecycle",)),
     Command("artifacts", "Emit a two-part data artifact, an inline file and a url",
             tags=("artifacts", "files")),
+    Command("send-file", "Send one inline file: artifact | reply | outbox-message | outbox-task",
+            "<route>", ("files",)),
     Command("card", "Emit one card", tags=("artifacts",)),
     Command("outbox-task", "Return an A2A Task through the outbox", tags=("events",)),
     Command("outbox-message", "Return an A2A Message through the outbox", tags=("events",)),
     Command("ask", "Ask a question, then quote the answer", tags=("interrupts",)),
     Command("ask-twice", "Ask two questions in a row", tags=("interrupts",)),
     Command("ask-fail", "Ask a question, then fail on the answer", tags=("interrupts", "errors")),
-    Command("fail", "Fail on purpose: exception | after-reply", "<mode>",
+    Command("fail", "Fail on purpose: exception | after-reply | reason", "<mode>",
             ("errors", "terminal_states")),
     Command("ext", "Report active and unknown extensions", tags=("extensions",),
             response_model=ExtResponse),
@@ -348,6 +356,17 @@ def artifacts_text() -> str:
     return "3 artifacts sent"
 
 
+# What ``send-file`` sends, and every route an agent can hand the server a file
+# by: an artifact posted to the thread, a reply that carries the file beside
+# its text, and the message or task returned through the outbox. With a
+# storage backend each route has to deliver a URL; without one, the bytes.
+SEND_FILE_ROUTES = ("artifact", "reply", "outbox-message", "outbox-task")
+SEND_FILE_NAME = "sent-file.txt"
+SEND_FILE_BYTES = b"file sent by the agent\n"
+SEND_FILE_MEDIA_TYPE = "text/plain"
+SEND_FILE_TEXT = "file attached"
+
+
 # The card ``card`` emits. Written out here rather than built from the SDK's
 # component classes: the agent passes this document to ``Card(jsx=...)``
 # unchanged, so the string below is both what the agent sends and what the
@@ -440,7 +459,8 @@ OUTBOX_TASK_METADATA = {"scenario": "outbox-task"}
 
 
 # How `fail <mode>` fails: before saying anything, or with a reply already
-# delivered. Those are the two an agent can produce. A failure on the resume
+# delivered - the two points an agent can crash at - or on purpose, raising
+# `TaskFailedError` with a reason its caller is meant to read. A failure on the resume
 # of a paused task is its own command, `ask-fail`, rather than a third mode:
 # only LangGraph can pause, and `UNSUPPORTED` is keyed by command, so a mode
 # could not be skipped on ADK without skipping every other mode with it.
@@ -451,9 +471,10 @@ OUTBOX_TASK_METADATA = {"scenario": "outbox-task"}
 # terminal state: `a2a_outbox` is read from the final state, which a crash
 # never reaches. It is a unit test on the executor instead
 # (tests/unit/server/agent/test_failed_task_closing.py).
-FAIL_MODES = ("exception", "after-reply")
+FAIL_MODES = ("exception", "after-reply", "reason")
 FAIL_REPLY_TEXT = "about to fail"
 FAIL_MESSAGE = "scenario failure"
+FAIL_REASON_TEXT = "The scenario service is unavailable; try again later."
 
 
 NOT_IMPLEMENTED_PREFIX = "not implemented: "

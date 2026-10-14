@@ -28,6 +28,12 @@ hierarchy:
   are a2a-sdk's vocabulary, and a client catching them is catching a protocol
   error, not an SDK one.
 
+An error that fails an agent's task can say why to whoever reads the task:
+:attr:`AionError.public_reason` is that sentence, written so a caller may read
+it, and ``None`` when the error's own text is internal detail.
+:class:`TaskFailedError` is the one an agent raises to fail its task with a
+reason of its own.
+
 ``aion`` is a namespace package with no ``__init__.py`` (a second distribution
 shares the namespace — see ``scripts/packaging/check.py``), so a top-level
 ``aion.exceptions`` facade is not available. ``aion.core`` is the layer
@@ -40,6 +46,7 @@ from typing import Optional
 
 __all__ = [
     "AionError",
+    "TaskFailedError",
     "MissingOptionalDependency",
     "ConfigurationError",
     "AionAuthenticationError",
@@ -52,6 +59,50 @@ __all__ = [
 
 class AionError(Exception):
     """Root of every exception the SDK raises on its own behalf."""
+
+    @property
+    def public_reason(self) -> Optional[str]:
+        """Why this error failed a task, in words the task's caller may read.
+
+        When an agent's turn ends on this error, the server puts the sentence
+        on the task's FAILED status, where the stream, the unary answer and a
+        later ``tasks/get`` all show it. ``None`` - the default - keeps the
+        error's text out of the task: it names paths, hosts or identities
+        the caller has no business seeing, and the task fails with a generic
+        sentence instead.
+        """
+        return None
+
+
+class TaskFailedError(AionError):
+    """Raise from an agent to fail its task with a reason the caller reads.
+
+    The reason becomes the message of the task's FAILED status as it is
+    written, so it is for the agent's caller: what went wrong in their terms,
+    and what to do about it, without internal detail. The turn ends there;
+    what the agent sent before raising has already been delivered. Raised
+    from a framework callback or tool, it may reach the server wrapped by the
+    framework - the server looks for it along the chain of causes.
+
+    Example:
+        from aion.core.exceptions import TaskFailedError
+
+        async def forecast(state):
+            if not weather_service.available():
+                raise TaskFailedError("The weather service is unavailable; try again in a few minutes.")
+
+    Args:
+        reason: The sentence the task's caller reads.
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+    @property
+    def public_reason(self) -> str:
+        """The reason the agent gave, as it gave it."""
+        return self.reason
 
 
 class InvalidPrincipalError(AionError, ValueError):
@@ -104,6 +155,11 @@ class AionAuthenticationError(AionError):
         super().__init__(message)
         self.status_code = status_code
 
+    @property
+    def public_reason(self) -> str:
+        """That the agent could not authenticate, without the endpoint's answer."""
+        return "The agent could not authenticate with the Aion platform."
+
 
 class AionDaemonIdentityRequired(ConfigurationError):
     """A callback needs an explicitly assigned daemon, not different credentials.
@@ -120,6 +176,15 @@ class AionDaemonIdentityRequired(ConfigurationError):
 
     code = "daemon_identity_required"
     retryable = False
+
+    @property
+    def public_reason(self) -> str:
+        """What is missing and where it is fixed, naming the kind of resource but not its id."""
+        resource = self.resource_type or "deployment"
+        return (
+            f"The agent has no daemon identity assigned to its {resource}; "
+            "an administrator assigns one in its Identity tab."
+        )
 
     def __init__(self, resource_type: str | None = None, resource_id: str | None = None):
         self.resource_type = resource_type
@@ -157,3 +222,8 @@ class AionModelPrincipalError(AionAuthenticationError):
     def __init__(self, message: str, selector: Optional[str] = None) -> None:
         super().__init__(message)
         self.selector = selector
+
+    @property
+    def public_reason(self) -> str:
+        """That the model call has no principal, without the selector it resolved to."""
+        return "The agent's model call has no principal the Aion model service will run work for."

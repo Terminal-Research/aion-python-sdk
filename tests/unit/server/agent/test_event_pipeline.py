@@ -44,10 +44,11 @@ from aion.server.agent.execution.scope import (
     init_execution_scope,
     set_task_manager,
 )
-from aion.server.files.a2a import EventTransform, TransformReport
-from aion.server.files.storage import FileUploadErrorCode, UploadFailure
+from aion.server.files.a2a import Transform, TransformReport
+from aion.server.files.storage import FileUploadErrorCode, StubFileStorageBackend, UploadFailure
 from aion.server.tasks.task_manager import AionTaskManager
 from tests.unit.support.events import RecordingQueue
+from tests.unit.support.files import OutcomeBackend, StoringTransformer
 
 TASK_ID = "task-1"
 CONTEXT_ID = "ctx-1"
@@ -64,11 +65,11 @@ class ReplacingTransformer:
     def __init__(self) -> None:
         self.seen: list[object] = []
 
-    async def transform_event(self, event):
+    async def transform(self, event):
         self.seen.append(event)
         if isinstance(event, TaskStatusUpdateEvent) and event.status.HasField("message"):
             event.status.message.parts[0].text = "transformed"
-        return EventTransform(event, TransformReport())
+        return Transform(event, TransformReport())
 
 
 @pytest.fixture(autouse=True)
@@ -376,12 +377,12 @@ class RefusingTransformer:
     and leaves an artifact with nothing else in it unsent.
     """
 
-    async def transform_event(self, event):
+    async def transform(self, event):
         parts = (event.status.message.parts if isinstance(event, TaskStatusUpdateEvent)
                  else event.artifact.parts)
         refused = [part for part in parts if part.raw]
         if not refused:
-            return EventTransform(event, TransformReport())
+            return Transform(event, TransformReport())
         kept = [part for part in parts if not part.raw]
         del parts[:]
         parts.extend(kept)
@@ -390,8 +391,8 @@ class RefusingTransformer:
             changed=True,
         )
         if isinstance(event, TaskArtifactUpdateEvent) and not kept:
-            return EventTransform(None, report)
-        return EventTransform(event, report)
+            return Transform(None, report)
+        return Transform(event, report)
 
 
 def _file_part() -> Part:
@@ -438,6 +439,109 @@ async def test_an_event_with_a_file_that_failed_does_not_end_the_turn(manager, q
     (delivered,) = _status_events(queue)
     assert delivered.status.state == TaskState.TASK_STATE_WORKING
     assert delivered.status.message.parts[0].text == "done"
+    assert pipeline.terminal_seen is False
+
+
+FILE_ROUTES = ("status-update", "artifact-update", "outbox-message", "outbox-task")
+"""Every way a file reaches the pipeline: the updates an agent streams, and the
+message or task it returns through its outbox."""
+
+
+def _carrying_a_file(route: str, *, state: TaskState = TaskState.TASK_STATE_WORKING):
+    """An event of the route, saying something and carrying one inline file."""
+    file = _file_part()
+    if route == "status-update":
+        event = _status("here is the report", state=state)
+        event.status.message.parts.append(file)
+    elif route == "artifact-update":
+        event = _artifact_update("unused")
+        event.artifact.parts[0].CopyFrom(file)
+    elif route == "outbox-message":
+        event = _message("here is the report")
+        event.parts.append(file)
+    else:
+        event = _task(state=state, history=[_message("here is the report")])
+        event.artifacts.append(Artifact(artifact_id="report", name="report", parts=[file]))
+    return event
+
+
+async def _everything_delivered(queue: RecordingQueue, store, call_context) -> list[Part]:
+    """Every part that reached the client or the task record."""
+    parts: list[Part] = []
+    for event in queue.events:
+        if isinstance(event, TaskStatusUpdateEvent) and event.status.HasField("message"):
+            parts.extend(event.status.message.parts)
+        elif isinstance(event, TaskArtifactUpdateEvent):
+            parts.extend(event.artifact.parts)
+    stored = await store.get(TASK_ID, call_context)
+    if stored is not None:
+        if stored.status.HasField("message"):
+            parts.extend(stored.status.message.parts)
+        parts.extend(part for message in stored.history for part in message.parts)
+        parts.extend(part for artifact in stored.artifacts for part in artifact.parts)
+    return parts
+
+
+@pytest.mark.parametrize("route", FILE_ROUTES)
+async def test_a_file_is_delivered_as_a_url_whatever_carried_it(
+    manager, queue, store, call_context, route
+) -> None:
+    """No route to the client or the task record skips storage.
+
+    A streamed update reaches the client, an outbox message or task the
+    store; either way the file arrives as a URL and the bytes go nowhere.
+    """
+    pipeline = _pipeline(queue, task_started=True, transformer=StoringTransformer())
+
+    await pipeline.process(_carrying_a_file(route))
+
+    delivered = await _everything_delivered(queue, store, call_context)
+    assert not [part for part in delivered if part.raw]
+    (file,) = [part for part in delivered if part.url]
+    assert file.url.startswith(StubFileStorageBackend.BASE_URI)
+    assert file.filename == "report.pdf"
+
+
+@pytest.mark.parametrize("route", ["outbox-message", "outbox-task"])
+async def test_an_outbox_file_that_could_not_be_stored_fails_the_turn(
+    manager, queue, store, call_context, route
+) -> None:
+    """The outbox answers to the same rule as a streamed file: no file, no success.
+
+    What the agent said beside the file is still stored, so the reply is not
+    lost with it, and the bytes are not.
+    """
+    refused = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)])
+    pipeline = _pipeline(queue, task_started=True, transformer=StoringTransformer(refused))
+    produced = _carrying_a_file(route)
+
+    with pytest.raises(OutboundFileNotStoredError) as raised:
+        await pipeline.process(produced)
+
+    assert raised.value.event is produced
+    delivered = await _everything_delivered(queue, store, call_context)
+    assert [part.text for part in delivered] == ["here is the report"]
+
+
+async def test_an_outbox_task_with_an_outcome_and_a_failed_file_does_not_end_the_turn(
+    manager, queue, store, call_context
+) -> None:
+    """A task that declares itself done, with a file that failed, is not done.
+
+    Its state is held at WORKING so the FAILED that follows is the outcome,
+    exactly as for a status update.
+    """
+    refused = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)])
+    pipeline = _pipeline(queue, task_started=True, transformer=StoringTransformer(refused))
+
+    with pytest.raises(OutboundFileNotStoredError):
+        await pipeline.process(
+            _carrying_a_file("outbox-task", state=TaskState.TASK_STATE_COMPLETED)
+        )
+
+    stored = await store.get(TASK_ID, call_context)
+    assert stored.status.state == TaskState.TASK_STATE_WORKING
+    assert not stored.artifacts
     assert pipeline.terminal_seen is False
 
 

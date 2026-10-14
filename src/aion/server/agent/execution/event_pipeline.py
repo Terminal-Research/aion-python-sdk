@@ -2,7 +2,7 @@
 
 import logging
 import copy
-from a2a.server.events import EventQueue
+from a2a.server.events import Event, EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
 
@@ -35,7 +35,7 @@ class OutboundFileNotStoredError(AionError):
     def __init__(
             self,
             failures: list[UploadFailure],
-            event: TaskStatusUpdateEvent | TaskArtifactUpdateEvent,
+            event: Event,
     ) -> None:
         """Initialize the error.
 
@@ -128,7 +128,7 @@ class AionEventPipeline:
         produced = event
         event, failures = await self._prepare_event(event)
         if event is not None:
-            if failures and self._is_non_active_status(event):
+            if failures and self._declares_outcome(event):
                 # The FAILED that follows is the task's outcome, not the state
                 # this event declared with the file still in it.
                 event.status.state = TaskState.TASK_STATE_WORKING
@@ -159,9 +159,10 @@ class AionEventPipeline:
             self._deduplicator.apply_processed_item(event)
 
     @staticmethod
-    def _is_non_active_status(event) -> bool:
+    def _declares_outcome(event) -> bool:
+        """Whether the event ends the turn: a status update or a task in a non-active state."""
         return (
-            isinstance(event, TaskStatusUpdateEvent)
+            isinstance(event, (Task, TaskStatusUpdateEvent))
             and event.status.state in NON_ACTIVE_TASK_STATES
         )
 
@@ -233,7 +234,7 @@ class AionEventPipeline:
         event = self._response_parameters.annotate(event, self._prior_message_ids)
         if not self._file_transformer:
             return event, []
-        transform = await self._file_transformer.transform_event(event)
+        transform = await self._file_transformer.transform(event)
         return transform.event, transform.report.failures
 
     async def _deduplicate_event(self, event):

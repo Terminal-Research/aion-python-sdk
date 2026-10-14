@@ -37,8 +37,13 @@ from aion.core.runtime.context import (
 from aion.server.a2a.response_extensions import ResponseServiceParameters
 from aion.server.agent.execution.context.providers import RequestScopeRuntimeContextProvider
 from aion.server.agent.execution.event_pipeline import AionEventPipeline
-from aion.server.agent.execution.request_executor import AionAgentRequestExecutor
+from aion.server.agent.execution.request_executor import (
+    CRASH_REASON,
+    AionAgentRequestExecutor,
+    public_reason_of,
+)
 from aion.core.a2a.enums import A2AMetadataKey
+from aion.core.exceptions import AionDaemonIdentityRequired, TaskFailedError
 from aion.server.agent.execution.scope import (
     clear_execution_scope,
     init_execution_scope,
@@ -111,6 +116,7 @@ async def test_a_crash_with_nothing_reported_closes_the_task_as_failed(
     await AionAgentRequestExecutor._close_failed_task(updater, pipeline)
 
     assert _terminal_states(queue) == [TaskState.TASK_STATE_FAILED]
+    assert not queue.events[-1].status.HasField("message"), "a crash's text is internal"
 
 
 async def test_a_reported_outcome_is_not_overwritten(queue, updater, pipeline) -> None:
@@ -196,7 +202,12 @@ class _Agent:
 
 
 async def _run_refused(agent, queue, *, extension_handlers=(), metadata=None):
-    """Run one resumed turn of ``agent`` against storage that refuses every file."""
+    """Run one resumed turn of ``agent`` against storage that refuses every file.
+
+    Returns the reason the FAILED status gives, and the request context. The
+    turn ends without raising: a file that could not be stored is the task's
+    outcome, not a crash of the request.
+    """
     backend = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)])
     executor = AionAgentRequestExecutor(
         agent,
@@ -210,48 +221,53 @@ async def _run_refused(agent, queue, *, extension_handlers=(), metadata=None):
         metadata=metadata,
     )
     context = RequestContext(ServerCallContext(), task_id=TASK_ID, context_id=CONTEXT_ID, task=task)
-    with (
-        patch.object(
-            AionAgentRequestExecutor,
-            "_setup_runtime_context",
-            AsyncMock(return_value=ResponseServiceParameters()),
-        ),
-        pytest.raises(InternalError) as raised,
+    with patch.object(
+        AionAgentRequestExecutor,
+        "_setup_runtime_context",
+        AsyncMock(return_value=ResponseServiceParameters()),
     ):
         await executor.execute(context, queue)
-    return raised.value, context
+    (failed,) = [
+        event for event in queue.events
+        if isinstance(event, (Task, TaskStatusUpdateEvent))
+        and event.status.state == TaskState.TASK_STATE_FAILED
+    ]
+    return " ".join(part.text for part in failed.status.message.parts), context
 
 
 async def test_a_file_that_could_not_be_stored_fails_the_task(queue, runtime_context, caplog) -> None:
     """The agent's answer goes out, the file does not, and the task is FAILED.
 
-    The caller is told why in the fixed public wording of the failure. What
-    the storage service actually answered stays in the log: one WARNING per
-    file, and one ERROR line for the failed execution.
+    The FAILED status says why in the fixed public wording of the failure,
+    and the request itself ends without an error: nothing crashed, so
+    nothing is logged as an error. What the storage service actually
+    answered stays in the log, one WARNING line per file.
     """
     agent = _Agent()
 
     with caplog.at_level(logging.WARNING):
-        error, _ = await _run_refused(agent, queue)
+        reason, _ = await _run_refused(agent, queue)
 
-    assert error.message == FileUploadErrorCode.STORAGE_FORBIDDEN.public_reason
+    assert reason == FileUploadErrorCode.STORAGE_FORBIDDEN.public_reason
     assert not agent.reached_the_end, "the run stops at the file it could not deliver"
     replies = [
         [part.text for part in event.status.message.parts]
         for event in queue.events
-        if isinstance(event, TaskStatusUpdateEvent) and event.status.HasField("message")
+        if isinstance(event, TaskStatusUpdateEvent)
+        and event.status.state == TaskState.TASK_STATE_WORKING
+        and event.status.HasField("message")
     ]
     assert replies == [["here is the report"]]
     assert _terminal_states(queue) == [TaskState.TASK_STATE_FAILED]
+    (failed,) = [e for e in queue.events if e.status.state == TaskState.TASK_STATE_FAILED]
+    assert [part.text for part in failed.status.message.parts] == [
+        FileUploadErrorCode.STORAGE_FORBIDDEN.public_reason
+    ], "every reader of the task - stream, unary, tasks/get - learns why it failed"
 
-    warning = next(r for r in caplog.records if r.levelno == logging.WARNING)
+    (warning,) = [r for r in caplog.records if r.levelno >= logging.WARNING]
     assert "report.pdf" in warning.getMessage()
     assert "STORAGE_FORBIDDEN" in warning.getMessage()
-    errors = [r for r in caplog.records if r.levelno == logging.ERROR]
-    assert [r.getMessage() for r in errors] == [
-        "Execution failed: 1 outbound file(s) could not be stored: STORAGE_FORBIDDEN"
-    ]
-    assert errors[0].exc_info is None
+    assert warning.exc_info is None
 
 
 async def test_the_agent_forgets_the_undelivered_event_before_the_task_fails(queue, runtime_context) -> None:
@@ -274,9 +290,9 @@ async def test_a_failure_to_forget_does_not_change_the_outcome(queue, runtime_co
     agent = _Agent()
     agent.discard_undelivered.side_effect = RuntimeError("artifact service is gone")
 
-    error, _ = await _run_refused(agent, queue)
+    reason, _ = await _run_refused(agent, queue)
 
-    assert error.message == FileUploadErrorCode.STORAGE_FORBIDDEN.public_reason
+    assert reason == FileUploadErrorCode.STORAGE_FORBIDDEN.public_reason
     assert _terminal_states(queue) == [TaskState.TASK_STATE_FAILED]
     assert "Could not discard" in caplog.text
 
@@ -292,13 +308,133 @@ async def test_an_extension_handler_without_a_copy_is_not_asked(queue, runtime_c
 
     agent = _Agent()
 
-    error, _ = await _run_refused(
+    reason, _ = await _run_refused(
         agent,
         queue,
         extension_handlers=[_Handler()],
         metadata={A2AMetadataKey.ROUTED_EXTENSION.value: _Handler.uri},
     )
 
-    assert error.message == FileUploadErrorCode.STORAGE_FORBIDDEN.public_reason
+    assert reason == FileUploadErrorCode.STORAGE_FORBIDDEN.public_reason
     agent.discard_undelivered.assert_not_called()
     assert _terminal_states(queue) == [TaskState.TASK_STATE_FAILED]
+
+
+# --------------------------------------------------------------------------
+# Why a failed task failed
+# --------------------------------------------------------------------------
+
+class _FailingAgent:
+    """An agent whose turn says something, then raises ``error``."""
+
+    def __init__(self, error: BaseException) -> None:
+        self._error = error
+
+    async def resume(self, *, context):
+        yield TaskStatusUpdateEvent(
+            task_id=TASK_ID,
+            context_id=CONTEXT_ID,
+            status=TaskStatus(
+                state=TaskState.TASK_STATE_WORKING,
+                message=Message(message_id="m-1", role=Role.ROLE_AGENT, parts=[Part(text="working on it")]),
+            ),
+        )
+        raise self._error
+
+
+def _wrapped(error: BaseException) -> BaseException:
+    """``error`` as a framework adapter hands it on: as the cause of its own."""
+    try:
+        try:
+            raise error
+        except BaseException as inner:
+            raise RuntimeError(f"Failed to stream agent: {inner}") from inner
+    except RuntimeError as outer:
+        return outer
+
+
+async def _run_failing(error: BaseException, queue: RecordingQueue):
+    """Run one resumed turn that ends on ``error``; return what it raised, if anything."""
+    executor = AionAgentRequestExecutor(_FailingAgent(error))
+    task = Task(id=TASK_ID, context_id=CONTEXT_ID, status=TaskStatus(state=TaskState.TASK_STATE_WORKING))
+    context = RequestContext(ServerCallContext(), task_id=TASK_ID, context_id=CONTEXT_ID, task=task)
+    with patch.object(
+        AionAgentRequestExecutor,
+        "_setup_runtime_context",
+        AsyncMock(return_value=ResponseServiceParameters()),
+    ):
+        try:
+            await executor.execute(context, queue)
+        except Exception as raised:  # noqa: BLE001 - what the request ends on is the subject
+            return raised
+    return None
+
+
+def _failed_reason(queue: RecordingQueue) -> str:
+    (failed,) = [
+        event for event in queue.events
+        if isinstance(event, (Task, TaskStatusUpdateEvent))
+        and event.status.state == TaskState.TASK_STATE_FAILED
+    ]
+    return " ".join(part.text for part in failed.status.message.parts)
+
+
+@pytest.mark.parametrize("error", [
+    TaskFailedError("The weather service is unavailable."),
+    _wrapped(TaskFailedError("The weather service is unavailable.")),
+], ids=["raised", "wrapped-by-the-framework"])
+async def test_an_agents_own_reason_is_what_the_failed_task_says(queue, runtime_context, caplog, error) -> None:
+    """The agent put the failure in words for its caller; the task carries them.
+
+    Not a crash: the request ends normally, so a2a-sdk logs no traceback,
+    and the log has one WARNING line saying the task failed.
+    """
+    with caplog.at_level(logging.WARNING):
+        raised = await _run_failing(error, queue)
+
+    assert raised is None
+    assert _failed_reason(queue) == "The weather service is unavailable."
+    (line,) = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert line.levelno == logging.WARNING and line.exc_info is None
+
+
+async def test_an_sdk_error_naming_what_is_missing_says_so_without_ids(queue, runtime_context) -> None:
+    """A deployment without a daemon identity is told what to fix, not which resource id."""
+    raised = await _run_failing(_wrapped(AionDaemonIdentityRequired("AgentEnvironment", "01a13ac7")), queue)
+
+    assert raised is None
+    reason = _failed_reason(queue)
+    assert "AgentEnvironment" in reason and "Identity tab" in reason
+    assert "01a13ac7" not in reason
+
+
+async def test_a_crash_says_it_crashed_and_where_to_look(queue, runtime_context) -> None:
+    """The exception's text stays in the log; the task names the crash and its task id."""
+    raised = await _run_failing(RuntimeError("secret at https://internal.host"), queue)
+
+    assert isinstance(raised, InternalError)
+    reason = _failed_reason(queue)
+    assert reason == CRASH_REASON.format(task_id=TASK_ID)
+    assert "internal.host" not in reason
+    assert raised.message == reason
+
+
+@pytest.mark.parametrize("error,expected", [
+    (TaskFailedError("why"), "why"),
+    (_wrapped(TaskFailedError("why")), "why"),
+    (RuntimeError("no reason here"), None),
+    (_wrapped(RuntimeError("nor here")), None),
+], ids=["direct", "as-cause", "plain", "plain-as-cause"])
+def test_the_reason_is_found_along_the_chain_of_causes(error, expected) -> None:
+    assert public_reason_of(error) == expected
+
+
+def test_a_suppressed_context_is_not_searched() -> None:
+    """``raise X from None`` says the earlier error is not this one's story."""
+    try:
+        try:
+            raise TaskFailedError("hidden")
+        except TaskFailedError:
+            raise RuntimeError("unrelated") from None
+    except RuntimeError as error:
+        assert public_reason_of(error) is None

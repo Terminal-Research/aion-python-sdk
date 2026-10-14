@@ -15,6 +15,7 @@ from typing import Any, Optional, TYPE_CHECKING
 from urllib.parse import quote
 
 
+from a2a.server.events import Event
 from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from a2a.utils.errors import UnsupportedOperationError
 
@@ -260,7 +261,7 @@ class ExecutorAdapter(ABC):
     async def discard_undelivered(
         self,
         config: ExecutionConfig,
-        event: TaskStatusUpdateEvent | TaskArtifactUpdateEvent,
+        event: Event,
     ) -> None:
         """Forget what the framework kept of an event the server could not deliver.
 

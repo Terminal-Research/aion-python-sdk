@@ -12,6 +12,7 @@ from aion.core.runtime.context import AionRuntimeContext
 from aion.server.agent.execution.context.attribution import callback_attribution
 from aion.server.files.a2a import A2AFileTransformer
 from aion.server.files.storage import (
+    FileRetentionDefault,
     UploadFailure,
     UploadReceipt,
     resolve_upload_context,
@@ -82,8 +83,10 @@ class FilePartPreprocessor:
             task_id=message.task_id or None,
         )
 
-        transform = await self._transformer.transform_message(
-            message, upload_context=resolution
+        # The caller's files are kept for the provider's default: a request
+        # does not get to book storage the deployment pays for.
+        transform = await self._transformer.transform(
+            message, retention=FileRetentionDefault.PROVIDER, upload_context=resolution
         )
         # Recorded before the rejection check: a batch can be half-stored when
         # one file fails, and those receipts still need compensating.
@@ -96,7 +99,7 @@ class FilePartPreprocessor:
         if not transform.report.changed:
             return
 
-        request_obj.message.CopyFrom(transform.message)
+        request_obj.message.CopyFrom(transform.event)
 
     async def rollback(self) -> None:
         """Compensate uploads made for a request that was rejected afterwards."""

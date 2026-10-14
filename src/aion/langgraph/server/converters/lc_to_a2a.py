@@ -87,19 +87,58 @@ class LcToA2AConverter:
 
     @classmethod
     def _from_data_content(cls, block: ContentBlock) -> Part:
-        """Handle image / audio / video / file blocks, dispatching by source_type."""
-        source_type: str = block.get("source_type", "")
+        """Handle image / audio / video / file blocks by where their content is.
+
+        ``message.content_blocks`` yields langchain's standard blocks, which
+        name the content by key: inline ``base64``, a ``url``, or a provider
+        ``file_id``. A block built by hand may still use the legacy
+        ``source_type`` form, which is read when present. Inline content
+        becomes ``Part(raw=...)``, which the server stores and replaces with a
+        URL like any other outbound file; the block's ``filename``, at the top
+        level or in ``extras``, names the file.
+        """
         mime_type: str | None = block.get("mime_type")
+        filename: str | None = block.get("filename") or (block.get("extras") or {}).get("filename")
+
+        if "source_type" in block:
+            return cls._from_legacy_data_content(block, mime_type, filename)
+
+        if block.get("base64"):
+            return Part(
+                raw=base64.b64decode(block["base64"]),
+                media_type=mime_type or "application/octet-stream",
+                filename=filename,
+            )
+
+        if block.get("url"):
+            return Part(url=block["url"], media_type=mime_type, filename=filename)
+
+        if block.get("file_id"):
+            return Part(url=block["file_id"], media_type=mime_type, filename=filename)
+
+        logger.warning("Block type %r carries no base64, url or file_id", block.get("type"))
+        return cls._fallback(block)
+
+    @classmethod
+    def _from_legacy_data_content(
+        cls, block: ContentBlock, mime_type: str | None, filename: str | None
+    ) -> Part:
+        """Handle a data block in the legacy form, dispatching by ``source_type``."""
+        source_type: str = block.get("source_type", "")
 
         if source_type == "url":
-            return Part(url=block.get("url", ""), media_type=mime_type)
+            return Part(url=block.get("url", ""), media_type=mime_type, filename=filename)
 
         if source_type == "base64":
             raw_bytes = base64.b64decode(block.get("data", ""))
-            return Part(raw=raw_bytes, media_type=mime_type or "application/octet-stream")
+            return Part(
+                raw=raw_bytes,
+                media_type=mime_type or "application/octet-stream",
+                filename=filename,
+            )
 
         if source_type == "id":
-            return Part(url=block.get("id", ""), media_type=mime_type)
+            return Part(url=block.get("id", ""), media_type=mime_type, filename=filename)
 
         if source_type == "plain_text":
             return Part(text=block.get("text", ""))

@@ -101,9 +101,25 @@ def my_node(state: State) -> State:
 
 `A2AOutbox` accepts either `message` or `task`. It answers the run whose node wrote it: the server reads it from that run's own updates, so the value the checkpoint keeps in the channel afterwards is not applied to later turns of the same context. When no node wrote `a2a_outbox` during the run, the server falls back to the accumulated `STREAM_DELTA` text from the current run as the final response message.
 
+With a file storage backend configured, an inline file part (`Part(raw=...)`) anywhere in the outbox - the message, or the task's status message, history and artifacts - is stored and replaced with a URL part before the response is delivered, as every outbound file is. A file that cannot be stored fails the task. The checkpoint still holds the outbox as the node returned it, bytes included; to keep file content out of graph state, send the file with `thread.post(file_artifact(...))` instead.
+
 For full outbound precedence rules, see [Message Mapping](https://docs.aion.to/sdk/python/frameworks/langgraph/message-mapping).
 
 ---
+
+## Failing a task
+
+A node that raises ends the turn with the task `FAILED`, and the status message says why, the same on the stream, in the unary answer and in a later `tasks/get`. To give the caller a reason of your own, raise `TaskFailedError`; its text is the message, as written:
+
+```python
+from aion.core.exceptions import TaskFailedError
+
+async def forecast(state: State) -> State:
+    if not weather_service.available():
+        raise TaskFailedError("The weather service is unavailable; try again in a few minutes.")
+```
+
+An SDK error that names something the deployment lacks, such as a daemon identity, gives its own sentence the same way. Any other exception is a crash: the task says the agent stopped on an unexpected error and names the task to look up in the log, and the exception's text stays in the log.
 
 ## Checkpointing
 

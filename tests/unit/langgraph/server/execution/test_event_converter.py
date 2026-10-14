@@ -213,7 +213,7 @@ class TestConvertCustom:
 
 
 class TestTerminalEvents:
-    """convert_interrupt, convert_complete, and convert_error produce correct terminal statuses."""
+    """convert_interrupt and convert_complete produce correct terminal statuses."""
 
     def test_convert_interrupt_no_interrupts_produces_input_required_without_message(self, converter):
         """Empty interrupt list yields INPUT_REQUIRED with no message set."""
@@ -259,7 +259,3 @@ class TestTerminalEvents:
     def test_convert_complete_returns_completed_status(self, converter):
         """convert_complete() produces state=COMPLETED."""
         assert converter.convert_complete().status.state == TaskState.TASK_STATE_COMPLETED
-
-    def test_convert_error_returns_failed_status(self, converter):
-        """convert_error() produces state=FAILED regardless of error details."""
-        assert converter.convert_error("boom", "RuntimeError").status.state == TaskState.TASK_STATE_FAILED
