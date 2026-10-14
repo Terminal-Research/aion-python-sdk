@@ -6,16 +6,22 @@ is stored in ``tasks``, its every write is journaled in ``task_events``, which
 nothing prunes, and both are read back by whoever reads the task. So the
 request's metadata stays on the request: the stored task holds only what the
 server and the extension handler wrote.
+
+``strip_request_metadata`` is the clean-up behind ``aion db
+strip-request-metadata``: it removes inbound extension payloads from the tasks
+and journal snapshots a database already holds, and leaves every other key.
 """
 
 from __future__ import annotations
 
+import json
 import uuid
 
 import pytest
 import pytest_asyncio
 from a2a.auth.user import User
 from a2a.server.cluster import DatabaseTaskEventStream
+from a2a.server.cluster.version import TaskVersion
 from a2a.server.context import ServerCallContext
 from a2a.types import (
     GetTaskRequest,
@@ -34,7 +40,11 @@ from sqlalchemy import text
 from unittest.mock import Mock
 
 from aion.core.a2a.enums import A2AMetadataKey
-from aion.core.constants.a2a import BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1, DAEMON_EXTENSION_URI_V1
+from aion.core.constants.a2a import (
+    BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1,
+    DAEMON_EXTENSION_URI_V1,
+    DISTRIBUTION_EXTENSION_URI_V1,
+)
 from aion.core.runtime import aion_a2a_extension_registry
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.agent.execution import AionAgentRequestExecutor
@@ -44,6 +54,8 @@ from aion.server.agent.execution.scope import init_execution_scope
 from aion.server.core.app.handlers.request_handler import AionRequestHandler
 from aion.server.tasks.admission import PostgresContextAdmission
 from aion.server.tasks.contexts import PostgresContextCatalog
+from aion.server.tasks import request_metadata
+from aion.server.tasks.request_metadata import strip_request_metadata
 
 from .postgres_support import POSTGRES_TEST_URL, prepared_database, stores, truncate
 from .postgres_support import db_manager as _db_manager
@@ -240,3 +252,96 @@ async def test_a_task_of_the_agent_holds_no_metadata_and_is_routed_nowhere(handl
     assert not any(SECRET.encode() in data or SETTLED.encode() in data for data in journal)
     read = await handler.on_get_task(GetTaskRequest(id=closing.id), ALICE)
     assert MessageToDict(read.metadata) == {}
+
+
+# --------------------------------------------------------------------------
+# Cleaning up a database that already holds request metadata
+# --------------------------------------------------------------------------
+
+async def _store_with_metadata(metadata: dict) -> str:
+    """Write a task holding ``metadata``, journaled as its Task snapshot, then a status update.
+
+    The status update names the daemon extension in its message's extensions,
+    so its bytes contain a request key although it holds no metadata at all.
+    """
+    _, versioned = stores("metadata-agent")
+    task = Task(
+        id=str(uuid.uuid4()),
+        context_id=str(uuid.uuid4()),
+        status=TaskStatus(state=TaskState.TASK_STATE_SUBMITTED),
+    )
+    task.metadata.update(metadata)
+    version = await versioned.save(task, event=task, prev_version=TaskVersion.MISSING, context=ALICE)
+
+    update = TaskStatusUpdateEvent(
+        task_id=task.id,
+        context_id=task.context_id,
+        status=TaskStatus(
+            state=TaskState.TASK_STATE_WORKING,
+            message=Message(
+                message_id=uuid.uuid4().hex,
+                role=Role.ROLE_AGENT,
+                parts=[Part(text="working")],
+                extensions=[DAEMON_EXTENSION_URI_V1],
+            ),
+        ),
+    )
+    task.status.CopyFrom(update.status)
+    await versioned.save(task, event=update, prev_version=version, context=ALICE)
+    return task.id
+
+
+@pytest_asyncio.fixture(loop_scope="module")
+async def stored(_database):
+    """Two tasks as a database may hold them: one with server keys beside the request's, one with only the request's."""
+    await truncate()
+    mixed = await _store_with_metadata({
+        DAEMON_EXTENSION_URI_V1: _daemon(),
+        DISTRIBUTION_EXTENSION_URI_V1: {"senderId": "aion:user:1"},
+        ROUTED: EVOLUTION,
+        SETTLED: "server_shutdown",
+        EVOLUTION: PROGRESS,
+        "agent-key": "kept",
+    })
+    request_only = await _store_with_metadata({DAEMON_EXTENSION_URI_V1: _daemon()})
+    return mixed, request_only
+
+
+def _counts(findings) -> dict[str, tuple[int, int]]:
+    return {finding.table: (finding.rows, finding.keys) for finding in findings}
+
+
+async def test_a_dry_run_counts_the_request_keys_and_changes_nothing(stored) -> None:
+    before = (await _journal(), [await _stored_metadata(task_id) for task_id in stored])
+
+    findings = await strip_request_metadata(_db_manager, apply=False)
+
+    assert _counts(findings) == {"tasks": (2, 3), "task_events": (2, 3)}
+    assert (await _journal(), [await _stored_metadata(task_id) for task_id in stored]) == before
+
+
+async def test_apply_removes_the_request_keys_and_keeps_every_other(stored, monkeypatch) -> None:
+    """One journal row per batch, so every row is reached across batches."""
+    mixed, request_only = stored
+    status_updates_before = [data for data in await _journal() if not _snapshots([data])]
+    monkeypatch.setattr(request_metadata, "_EVENT_BATCH_SIZE", 1)
+
+    findings = await strip_request_metadata(_db_manager, apply=True)
+
+    assert _counts(findings) == {"tasks": (2, 3), "task_events": (2, 3)}
+    server_keys = {ROUTED: EVOLUTION, SETTLED: "server_shutdown", EVOLUTION: PROGRESS, "agent-key": "kept"}
+    assert await _stored_metadata(mixed) == server_keys
+    assert await _stored_metadata(request_only) is None
+    journal = await _journal()
+    assert not any(SECRET.encode() in data for data in journal)
+    assert [MessageToDict(snapshot.metadata) for snapshot in _snapshots(await _journal(mixed))] == [server_keys]
+    assert [snapshot.HasField("metadata") for snapshot in _snapshots(await _journal(request_only))] == [False]
+    assert [data for data in journal if not _snapshots([data])] == status_updates_before
+
+    store, _ = stores("metadata-agent")
+    read = await store.get(request_only, ALICE)
+    assert MessageToDict(read.metadata) == {}
+    assert json.loads(MessageToJson(await store.get(mixed, ALICE)))["metadata"] == server_keys
+
+    again = await strip_request_metadata(_db_manager, apply=True)
+    assert _counts(again) == {"tasks": (0, 0), "task_events": (0, 0)}
