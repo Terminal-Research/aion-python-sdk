@@ -134,6 +134,7 @@ COPIED_BODIES = {
 AION_TASK_STORE_EXTENSIONS = [
     "get_context_tasks",
     "get_context_last_task",
+    "get_context_last_routed_task",
     "write",
     "get_in_session",
     "tasks_in_context",

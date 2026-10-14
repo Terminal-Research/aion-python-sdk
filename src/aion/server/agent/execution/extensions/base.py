@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional, Protocol
 
-from a2a.types import Message, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
+from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
@@ -84,6 +84,18 @@ class ExtensionTaskHandler(Protocol):
         Raises:
             a2a.utils.errors.A2AError: The request is refused; the caller
                 gets this JSON-RPC error.
+        """
+        ...
+
+    def admit_continuation(self, task: Task) -> None:
+        """Check a message that continues ``task``, before the task is changed.
+
+        Called by the request handler for a message that names a task of this
+        handler, or that the request handler hands to one waiting for input.
+
+        Raises:
+            a2a.utils.errors.A2AError: The message is refused; the caller
+                gets this JSON-RPC error and the task is left as it is.
         """
         ...
 

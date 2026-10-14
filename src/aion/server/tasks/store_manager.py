@@ -9,6 +9,7 @@ from a2a.server.owner_resolver import OwnerResolver, resolve_user_scope
 from aion.db.postgres import db_manager
 from .admission import ContextAdmission, InMemoryContextAdmission, PostgresContextAdmission
 from .context_artifacts import ContextArtifacts, InMemoryContextArtifacts, PostgresContextArtifacts
+from .context_runs import ContextRuns, InMemoryContextRuns, PostgresContextRuns
 from .contexts import ContextCatalog, InMemoryContextCatalog, PostgresContextCatalog
 from .stores import (
     BaseTaskStore,
@@ -43,6 +44,7 @@ class StoreManager:
         self._admission: Optional[ContextAdmission] = None
         self._context_catalog: Optional[ContextCatalog] = None
         self._context_artifacts: Optional[ContextArtifacts] = None
+        self._context_runs: Optional[ContextRuns] = None
 
     def initialize(
             self,
@@ -88,6 +90,7 @@ class StoreManager:
             admission = PostgresContextAdmission(agent_id, db_manager)
             context_catalog = PostgresContextCatalog(agent_id, db_manager)
             context_artifacts = PostgresContextArtifacts(agent_id, db_manager)
+            context_runs = PostgresContextRuns(agent_id, db_manager)
         else:
             task_store = InMemoryTaskStore(owner_resolver, guard_inline_files=guard_inline_files)
             versioned_store = None
@@ -95,6 +98,7 @@ class StoreManager:
             admission = InMemoryContextAdmission()
             context_catalog = InMemoryContextCatalog(task_store, admission)
             context_artifacts = InMemoryContextArtifacts(task_store, admission)
+            context_runs = InMemoryContextRuns(task_store, admission)
 
         self._is_initialized = True
         self._store = task_store
@@ -103,6 +107,7 @@ class StoreManager:
         self._admission = admission
         self._context_catalog = context_catalog
         self._context_artifacts = context_artifacts
+        self._context_runs = context_runs
 
     def get_store(self) -> BaseTaskStore:
         """
@@ -176,6 +181,16 @@ class StoreManager:
         if not self._is_initialized:
             raise RuntimeError("Trying to get context artifacts without initialization")
         return self._context_artifacts
+
+    def get_context_runs(self) -> ContextRuns:
+        """Return the reader of a context's generation and unfinished tasks over the active store.
+
+        Raises:
+            RuntimeError: If called before initialization.
+        """
+        if not self._is_initialized:
+            raise RuntimeError("Trying to get context runs without initialization")
+        return self._context_runs
 
 
 store_manager = StoreManager()

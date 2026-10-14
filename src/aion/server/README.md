@@ -195,7 +195,11 @@ the client chooses, and the default resolver ignores it. There is no `/docs` or
 `/redoc`.
 
 Finding an interrupted task through its `contextId` goes through the same
-owner filter as everything else: a caller continues its own interrupted task.
+owner filter as everything else: a caller continues its own interrupted task,
+and only one of the handler its message addresses - a toolkit's directive a
+task of that toolkit, any other message a task of the agent's framework; a
+waiting task of another handler keeps waiting and the message starts a new
+task.
 The Context extension (`GetContexts`, `GetContext`, `DeleteContext`) answers
 by context binding instead - see [Contexts](#contexts) below. Only a call
 without a `ServerCallContext` - from Python code that holds the handler -
@@ -458,7 +462,13 @@ servers of one agent can share the database. The rules are a2a-sdk's:
 - Nothing stops two servers from executing one task at once - a second
   message sent to another server while the first runs is executed there. The
   version decides what lands: a write over a task that another execution has
-  already finished is dropped, and that execution stops.
+  already finished is dropped, and that execution stops. A toolkit that
+  declares `exclusive_per_context` is the exception: a message into its
+  running task, or a second task of it in the context, is refused with
+  `context_busy` on any server, because the check reads the database.
+- A task routed to a toolkit is served by that toolkit only. A server
+  without it - another image during a rollout - refuses a message into the
+  task with `extension_unavailable` and leaves the task as it was.
 - `CancelTask` for a task this server holds cancels it through its executor.
   For any other task it writes `CANCELED` over the stored version and answers
   at once; the server executing the task stops it at its next write, without

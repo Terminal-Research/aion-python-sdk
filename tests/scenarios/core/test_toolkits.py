@@ -18,6 +18,14 @@ code, and leaves no task.
 A cancel reaches the toolkit once, with the task's id, and the task ends
 ``CANCELED``. What the toolkit was asked is read from the report a later turn
 of the toolkit makes: the server is another process.
+
+A toolkit that runs one task per context refuses a second one there with
+``context_busy`` naming the task that holds it, a message into its running
+task as well, until that task ends; other contexts are not held back. A
+message without a task id continues a task waiting for input only when the
+task is the addressed handler's: a toolkit's directive starts a task of its
+own beside the agent's waiting question, and the answer still reaches the
+question.
 """
 
 from __future__ import annotations
@@ -45,8 +53,19 @@ from tests.scenarios.harness import (
     status,
     task,
 )
-from tests.scenarios.harness.recorder import _payload_of, to_event
-from tests.scenarios.toolkits import TOOLKIT, reported, script
+from tests.scenarios.commands import ask_answer_text
+from tests.scenarios.harness.recorder import _payload_of, reply_texts, to_event
+from tests.scenarios.toolkits import (
+    COMPLETED,
+    EXCLUSIVE_URI,
+    TOOLKIT,
+    reported,
+    reports,
+    rpc_script,
+    run_script,
+    script,
+    start_working,
+)
 from tests.support.scripted_toolkit.contract import URI
 
 pytestmark = pytest.mark.toolkits
@@ -295,6 +314,95 @@ def test_the_card_offers_the_enabled_toolkit(toolkit_server: ServeProcess) -> No
     card = httpx.get(f"{toolkit_server.agent_url()}/.well-known/agent-card.json", timeout=10).json()
 
     assert URI in [extension["uri"] for extension in card["capabilities"]["extensions"]]
+
+
+def _context_busy(response: dict) -> dict:
+    """The ``ErrorInfo`` metadata of a ``context_busy`` refusal."""
+    error = response.get("error")
+    assert error is not None, f"the request was served: {response}"
+    assert error["code"] == INVALID_PARAMS
+    return error["data"][0]["metadata"]
+
+
+@pytest.mark.variant("toolkit")
+async def test_an_exclusive_toolkit_refuses_a_second_task_in_a_context_until_the_first_ends(
+    toolkit_client: ScenarioClient,
+) -> None:
+    """A second directive, and a message into the running task, get ``context_busy`` naming the task."""
+    context_id = f"exclusive-{uuid.uuid4().hex}"
+    task_id, stream = await start_working(toolkit_client, EXCLUSIVE_URI, context_id=context_id)
+    try:
+        second = await rpc_script(toolkit_client, EXCLUSIVE_URI, context_id=context_id, outputs=[COMPLETED])
+        into_the_task = await rpc_script(toolkit_client, EXCLUSIVE_URI, task_id=task_id, outputs=[COMPLETED])
+
+        busy = {"code": "context_busy", "retryable": "true", "taskId": task_id}
+        assert _context_busy(second) == busy
+        assert _context_busy(into_the_task) == busy
+        assert [task.id for task in await toolkit_client.tasks_in_context(context_id)] == [task_id]
+
+        assert (await toolkit_client.cancel(task_id)).status.state == TaskState.TASK_STATE_CANCELED
+    finally:
+        with contextlib.suppress(Exception):
+            await stream.aclose()
+
+    after = await run_script(toolkit_client, EXCLUSIVE_URI, context_id=context_id, outputs=[COMPLETED])
+    assert after.status.state == TaskState.TASK_STATE_COMPLETED
+
+
+@pytest.mark.variant("toolkit")
+async def test_an_exclusive_toolkit_runs_in_several_contexts_at_once(toolkit_client: ScenarioClient) -> None:
+    """The limit is per context: two contexts each hold a running task of the toolkit."""
+    first, first_stream = await start_working(toolkit_client, EXCLUSIVE_URI)
+    second, second_stream = await start_working(toolkit_client, EXCLUSIVE_URI)
+    try:
+        assert first != second
+        for task_id in (first, second):
+            assert (await toolkit_client.get_task(task_id)).status.state == TaskState.TASK_STATE_WORKING
+    finally:
+        for task_id, stream in ((first, first_stream), (second, second_stream)):
+            await toolkit_client.cancel(task_id)
+            with contextlib.suppress(Exception):
+                await stream.aclose()
+
+
+@pytest.mark.variant("toolkit")
+@pytest.mark.command("ask")
+async def test_a_directive_beside_the_agents_waiting_question_starts_its_own_task(
+    toolkit_client: ScenarioClient,
+) -> None:
+    """The directive is not taken as the answer: a toolkit task starts, and the question keeps waiting for it."""
+    context_id = f"beside-a-question-{uuid.uuid4().hex}"
+    asked = final_task(await toolkit_client.send("ask", context_id=context_id))
+    assert asked.state == "INPUT_REQUIRED"
+
+    directive = await run_script(toolkit_client, URI, context_id=context_id, report=True, outputs=[COMPLETED])
+
+    [report] = reports(directive)
+    assert directive.id != asked.task_id
+    assert report["kind"] == "start"
+    assert directive.status.state == TaskState.TASK_STATE_COMPLETED
+    assert (await toolkit_client.get_task(asked.task_id)).status.state == TaskState.TASK_STATE_INPUT_REQUIRED
+
+    answer = await toolkit_client.send("use Python", context_id=context_id)
+    answered = final_task(answer)
+    assert (answered.task_id, answered.state) == (asked.task_id, "COMPLETED")
+    assert ask_answer_text("use Python") in reply_texts(answer)
+
+
+@pytest.mark.variant("toolkit")
+async def test_a_toolkit_that_waits_for_input_continues_its_own_task(toolkit_client: ScenarioClient) -> None:
+    """A directive without a task id resumes the toolkit's waiting task in the context."""
+    context_id = f"toolkit-waits-{uuid.uuid4().hex}"
+    waiting = await run_script(
+        toolkit_client, URI, context_id=context_id, outputs=[{"kind": "result", "state": "input-required"}]
+    )
+
+    resumed = await run_script(toolkit_client, URI, context_id=context_id, report=True, outputs=[COMPLETED])
+
+    [report] = reports(resumed)
+    assert resumed.id == waiting.id
+    assert (report["kind"], report["task_id"]) == ("resume", waiting.id)
+    assert resumed.status.state == TaskState.TASK_STATE_COMPLETED
 
 
 def _plain(struct) -> dict:

@@ -702,6 +702,42 @@ class TestAdmitNewTask:
         assert EXTENSION_ROUTE_STATE_KEY not in call_context.state
 
 
+class TestAdmitContinuation:
+    """A message into a routed task is served by the task's own handler, or refused."""
+
+    def test_a_task_of_an_extension_not_served_here_is_refused_and_left_alone(self):
+        agent = _make_agent()
+        executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[])
+        task = _make_real_task(metadata={ROUTED: "https://example.invalid/toolkits/gone/1.0.0"})
+        before = Task()
+        before.CopyFrom(task)
+
+        with pytest.raises(InvalidParamsError) as error:
+            executor.admit_continuation(task)
+
+        assert error.value.data == {"code": "extension_unavailable", "retryable": "true"}
+        assert task == before
+
+    def test_the_tasks_handler_checks_the_message(self):
+        handler = _make_handler(uri="https://example.invalid/toolkits/a/1.0.0")
+        handler.admit_continuation = MagicMock()
+        executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[handler])
+        task = _make_real_task(metadata={ROUTED: handler.uri})
+
+        executor.admit_continuation(task)
+
+        handler.admit_continuation.assert_called_once_with(task)
+
+    def test_a_task_of_the_framework_adapter_is_always_admitted(self):
+        handler = _make_handler()
+        handler.admit_continuation = MagicMock()
+        executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[handler])
+
+        executor.admit_continuation(_make_real_task())
+
+        handler.admit_continuation.assert_not_called()
+
+
 class TestExecuteViaResolve:
     @pytest.mark.anyio
     async def test_execute_routes_new_task_to_the_admitted_handler_and_persists_metadata(self):
@@ -809,14 +845,20 @@ class TestCreateFactory:
         agent.config = MagicMock()
 
         context_artifacts = MagicMock()
+        context_runs = MagicMock()
         with patch(
             "aion.server.agent.execution.request_executor.load_toolkit_handlers",
             new=AsyncMock(return_value=[handler]),
         ) as load:
-            executor = await AionAgentRequestExecutor.create(aion_agent=agent, context_artifacts=context_artifacts)
+            executor = await AionAgentRequestExecutor.create(
+                aion_agent=agent, context_artifacts=context_artifacts, context_runs=context_runs
+            )
 
         load.assert_awaited_once_with(
-            agent.config, context_artifacts=context_artifacts, owner_resolver=agent.owner_resolver
+            agent.config,
+            context_artifacts=context_artifacts,
+            context_runs=context_runs,
+            owner_resolver=agent.owner_resolver,
         )
         assert executor._extension_handlers == {handler.uri: handler}
 

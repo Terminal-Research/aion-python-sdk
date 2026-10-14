@@ -26,7 +26,10 @@ from aion.server.a2a.response_extensions import ResponseServiceParameters
 from aion.server.agent.aion_agent import AionAgent
 from aion.server.agent.execution.scope import set_task_id
 from aion.server.files.a2a import A2AFileTransformer
+from aion.core.toolkit import codes
+from aion.server.a2a.utils import routed_extension_of
 from aion.server.tasks.context_artifacts import ContextArtifacts
+from aion.server.tasks.context_runs import ContextRuns
 from collections.abc import Callable, Iterable, Mapping
 from functools import partial
 from typing import TYPE_CHECKING, Literal, Optional, Tuple
@@ -39,6 +42,7 @@ from .extensions import (
     ExtensionTaskHandler,
     load_toolkit_handlers,
 )
+from .extensions.toolkit import refusal_data
 
 if TYPE_CHECKING:
     from a2a.server.context import ServerCallContext
@@ -159,12 +163,15 @@ class AionAgentRequestExecutor(AgentExecutor):
             aion_agent: AionAgent,
             file_transformer: Optional[A2AFileTransformer] = None,
             context_artifacts: Optional[ContextArtifacts] = None,
+            context_runs: Optional[ContextRuns] = None,
     ) -> "AionAgentRequestExecutor":
         """Build the executor with a handler for every toolkit that can serve this agent.
 
         ``context_artifacts`` is how the toolkit handlers number their
-        toolkit's artifacts and find them in a context; the agent's own owner
-        resolver tells them who the caller is.
+        toolkit's artifacts and find them in a context, ``context_runs`` how
+        they read a context's generation and keep an exclusive toolkit to one
+        task per context; the agent's own owner resolver tells them who the
+        caller is.
 
         Discovery registers each installed toolkit's extension and records an
         unavailable one in the central extension registry with its reason -
@@ -178,6 +185,7 @@ class AionAgentRequestExecutor(AgentExecutor):
             extension_handlers=await load_toolkit_handlers(
                 aion_agent.config,
                 context_artifacts=context_artifacts,
+                context_runs=context_runs,
                 owner_resolver=aion_agent.owner_resolver,
             ),
         )
@@ -214,6 +222,33 @@ class AionAgentRequestExecutor(AgentExecutor):
         """
         admission = await self._extension_handlers[uri].admit(message, extensions, call_context)
         call_context.state[EXTENSION_ROUTE_STATE_KEY] = ExtensionRoute(uri, admission)
+
+    def admit_continuation(self, task: Task) -> None:
+        """Admit a message that continues ``task``, before the task is changed.
+
+        A task routed to an extension is served by that extension's handler
+        and by nothing else: on a server without the handler the message is
+        refused with ``extension_unavailable`` and the task is left as it is,
+        rather than handed to the agent's framework adapter. The handler then
+        checks the message itself (``admit_continuation``). A task without a
+        route is the framework adapter's and is always admitted.
+
+        Raises:
+            InvalidParamsError: No handler for the task's extension here
+                (``extension_unavailable``), or its handler refused the
+                message.
+        """
+        uri = routed_extension_of(task)
+        if uri is None:
+            return
+        handler = self._extension_handlers.get(uri)
+        if handler is None:
+            logger.info("Refused a message into task %s: extension %s is not served here", task.id, uri)
+            raise InvalidParamsError(
+                message=f"Task {task.id} is served by the extension {uri}, which is not available on this server.",
+                data=refusal_data(codes.EXTENSION_UNAVAILABLE),
+            )
+        handler.admit_continuation(task)
 
     @trace_function
     async def execute(

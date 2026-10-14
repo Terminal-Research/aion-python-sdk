@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import uuid
-from typing import List, NamedTuple, Type, Optional
+from typing import Iterable, List, NamedTuple, Type, Optional
 
 from sqlalchemy import select, func, asc, desc, delete, and_, or_
 from sqlalchemy.dialects.postgresql import insert
@@ -502,3 +502,65 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
         stmt = self._apply_filter(stmt, agent_id=agent_id, context_id=context_id)
         result = await self._session.execute(stmt)
         return [StoredArtifact(task_id, payload, updated_at) for task_id, payload, updated_at in result.all()]
+
+    async def find_latest_tagged(
+            self,
+            agent_id: str,
+            context_id: str,
+            metadata_key: str,
+            metadata_value: Optional[str],
+            owner_scope: Optional[str] = None,
+    ) -> Optional[TaskRecord]:
+        """The newest task of a context whose ``metadata[metadata_key]`` is ``metadata_value``.
+
+        Args:
+            agent_id: Restrict to this agent's tasks.
+            context_id: The context to search.
+            metadata_key: A top-level key of the task's metadata, read as text.
+            metadata_value: The value it must hold; None matches a task whose
+                metadata lacks the key.
+            owner_scope: Restrict to one owner's tasks; None searches every
+                owner's.
+
+        Returns:
+            The newest matching task by ``created_at``, or None.
+        """
+        tag = self.model_class.task_metadata[metadata_key].astext
+        stmt = select(self.model_class).where(tag.is_(None) if metadata_value is None else tag == metadata_value)
+        stmt = self._apply_filter(stmt, agent_id=agent_id, owner_scope=owner_scope, context_id=context_id)
+        stmt = stmt.order_by(desc(self.model_class.created_at), desc(self.model_class.id)).limit(1)
+        return await self._execute_and_convert(stmt)
+
+    async def find_oldest_tagged_id(
+            self,
+            agent_id: str,
+            context_id: str,
+            metadata_key: str,
+            metadata_value: str,
+            excluded_states: Iterable[str] = (),
+    ) -> Optional[uuid.UUID]:
+        """The id of the oldest task of a context whose ``metadata[metadata_key]`` is ``metadata_value``.
+
+        Every owner's tasks are searched: who may use the context is decided
+        before the search is made (context admission).
+
+        Args:
+            agent_id: Restrict to this agent's tasks.
+            context_id: The context to search.
+            metadata_key: A top-level key of the task's metadata, read as text.
+            metadata_value: The value it must hold.
+            excluded_states: States, by their protobuf name, a matching task
+                must not be in.
+
+        Returns:
+            The id of the oldest matching task by ``created_at``, or None.
+        """
+        stmt = select(self.model_class.id).where(
+            self.model_class.task_metadata[metadata_key].astext == metadata_value
+        )
+        excluded = list(excluded_states)
+        if excluded:
+            stmt = stmt.where(self.model_class.state.not_in(excluded))
+        stmt = self._apply_filter(stmt, agent_id=agent_id, context_id=context_id)
+        stmt = stmt.order_by(asc(self.model_class.created_at), asc(self.model_class.id)).limit(1)
+        return (await self._session.execute(stmt)).scalar_one_or_none()

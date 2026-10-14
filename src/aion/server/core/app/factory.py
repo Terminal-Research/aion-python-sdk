@@ -202,6 +202,7 @@ class AppFactory:
             self.aion_agent,
             file_transformer=self.file_transformer,
             context_artifacts=self.store_manager.get_context_artifacts(),
+            context_runs=self.store_manager.get_context_runs(),
         )
 
         # One push URL policy for the configs the handler accepts and the

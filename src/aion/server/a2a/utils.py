@@ -11,11 +11,12 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
-from aion.core.a2a.enums import ArtifactId
+from aion.core.a2a.enums import A2AMetadataKey, ArtifactId
 from aion.server.a2a.constants import EPHEMERAL_STATUS_METADATA_KEY, INTERRUPT_TASK_STATES
 
 __all__ = [
     "is_task_interrupted",
+    "routed_extension_of",
     "task_history_message_ids",
     "is_message_in_task_history",
     "extract_input_preview",
@@ -256,6 +257,19 @@ def empty_input_warning(message: Optional[Message]) -> str:
     if message is None or not message.parts:
         return ', input=<empty>'
     return ''
+
+
+def routed_extension_of(task: Task) -> Optional[str]:
+    """The extension whose handler serves the task, or None for the agent's framework adapter.
+
+    The executor records it in ``task.metadata["aion:routedExtension"]`` when
+    the task is created, and only the server writes that key.
+    """
+    key = A2AMetadataKey.ROUTED_EXTENSION.value
+    if not task.HasField("metadata") or key not in task.metadata:
+        return None
+    value = task.metadata[key]
+    return value if isinstance(value, str) and value else None
 
 
 def is_task_interrupted(task: Task) -> bool:

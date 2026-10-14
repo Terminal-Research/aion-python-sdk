@@ -40,6 +40,9 @@ from aion.server.agent.execution.extensions.toolkit import services
 from aion.server.agent.execution.extensions.toolkit.secret_values import MASK
 from aion.server.agent.execution.extensions.toolkit.translation import CRASH_MESSAGE
 from aion.server.auth import Assurance, AuthenticatedCaller, CallerCredentials, CredentialKind
+from aion.server.tasks.admission import DELETED, ContextHolder, InMemoryContextAdmission
+from aion.server.tasks.context_runs import InMemoryContextRuns
+from aion.server.tasks.stores.in_memory_task_store import InMemoryTaskStore
 
 from tests.support.scripted_toolkit.contract import SCRIPT_EVENT_TYPE, SCRIPT_SCHEMA, URI
 from tests.support.scripted_toolkit.toolkit import Refusal, Script, ScriptedToolkit, ScriptPayload
@@ -47,6 +50,7 @@ from tests.unit.support.daemon import daemon_payload
 
 TASK_ID = "task-1"
 CONTEXT_ID = "ctx-1"
+ROUTED = "aion:routedExtension"
 
 
 def task(state: TaskState = TaskState.TASK_STATE_WORKING, **metadata: Any) -> Task:
@@ -74,6 +78,7 @@ def request_context(current: Task, message: A2AMessage | None = None) -> Request
 
 def admission(text: str = "go") -> ToolkitAdmission:
     return ToolkitAdmission(request=ToolkitRequest(message_id="m-user", text=text), daemon_variables={}, model_service=None)
+
 
 
 def scripted(*outputs: Any, **script: Any) -> ScriptedToolkit:
@@ -472,3 +477,124 @@ async def test_model_service_access_carries_the_callers_attribution(monkeypatch)
     access = toolkit.preflights[0][1].model_service
     assert access.base_url == "https://api.example.test/v1"
     assert access.attribution == ("Aion-Caller-Id", caller(CredentialKind.INVOCATION).subject)
+
+
+# -- one task per context ---------------------------------------------------------
+
+EXCLUSIVE = ToolkitDescriptor(
+    uri=URI, description="one task per context", payloads=(ScriptPayload,), exclusive_per_context=True
+)
+
+
+async def runs_with(*tasks: Task) -> InMemoryContextRuns:
+    """A context reader over a store holding ``tasks``, each owned by the anonymous caller."""
+    store = InMemoryTaskStore()
+    admission = InMemoryContextAdmission()
+    for stored in tasks:
+        await store.save(stored, ServerCallContext())
+    return InMemoryContextRuns(store, admission)
+
+
+def routed_task(task_id: str, state: TaskState, uri: str = URI, context_id: str = CONTEXT_ID) -> Task:
+    built = Task(id=task_id, context_id=context_id, status=TaskStatus(state=state))
+    built.metadata[ROUTED] = uri
+    return built
+
+
+async def test_a_second_task_of_an_exclusive_toolkit_in_a_context_is_refused_with_the_blocking_task() -> None:
+    toolkit = ScriptedToolkit(descriptor=EXCLUSIVE)
+    toolkit_handler = ToolkitTaskHandler(
+        toolkit, context_runs=await runs_with(routed_task("running", TaskState.TASK_STATE_WORKING)), secret_values=lambda: ()
+    )
+
+    with pytest.raises(InvalidParamsError) as error:
+        await toolkit_handler.admit(user_message(), extensions_with(), call_context())
+
+    assert error.value.data == {"code": codes.CONTEXT_BUSY, "retryable": "true", "taskId": "running"}
+    assert toolkit.preflights == []
+
+
+@pytest.mark.parametrize(
+    "existing",
+    [
+        pytest.param(routed_task("done", TaskState.TASK_STATE_CANCELED), id="finished-task"),
+        pytest.param(routed_task("other-context", TaskState.TASK_STATE_WORKING, context_id="ctx-2"), id="other-context"),
+        pytest.param(routed_task("other-toolkit", TaskState.TASK_STATE_WORKING, uri="https://x.invalid/t"), id="other-toolkit"),
+    ],
+)
+async def test_an_exclusive_toolkit_starts_when_the_context_holds_no_unfinished_task_of_it(existing: Task) -> None:
+    toolkit = ScriptedToolkit(descriptor=EXCLUSIVE)
+    toolkit_handler = ToolkitTaskHandler(toolkit, context_runs=await runs_with(existing), secret_values=lambda: ())
+
+    await toolkit_handler.admit(user_message(), extensions_with(), call_context())
+
+    assert len(toolkit.preflights) == 1
+
+
+async def test_a_toolkit_without_the_flag_runs_any_number_of_tasks_in_a_context() -> None:
+    toolkit = scripted()
+    toolkit_handler = ToolkitTaskHandler(
+        toolkit, context_runs=await runs_with(routed_task("running", TaskState.TASK_STATE_WORKING)), secret_values=lambda: ()
+    )
+
+    await toolkit_handler.admit(user_message(), extensions_with(), call_context())
+
+    assert len(toolkit.preflights) == 1
+
+
+@pytest.mark.parametrize(
+    ("state", "refused"),
+    [
+        (TaskState.TASK_STATE_WORKING, True),
+        (TaskState.TASK_STATE_SUBMITTED, True),
+        (TaskState.TASK_STATE_INPUT_REQUIRED, False),
+        (TaskState.TASK_STATE_AUTH_REQUIRED, False),
+    ],
+)
+def test_a_message_into_a_running_task_of_an_exclusive_toolkit_is_refused(state, refused) -> None:
+    toolkit_handler = ToolkitTaskHandler(ScriptedToolkit(descriptor=EXCLUSIVE), secret_values=lambda: ())
+    running = routed_task("task-7", state)
+
+    if refused:
+        with pytest.raises(InvalidParamsError) as error:
+            toolkit_handler.admit_continuation(running)
+        assert error.value.data == {"code": codes.CONTEXT_BUSY, "retryable": "true", "taskId": "task-7"}
+    else:
+        toolkit_handler.admit_continuation(running)
+
+
+def test_a_toolkit_without_the_flag_takes_a_message_into_its_running_task() -> None:
+    toolkit_handler = ToolkitTaskHandler(scripted(), secret_values=lambda: ())
+
+    toolkit_handler.admit_continuation(routed_task("task-7", TaskState.TASK_STATE_WORKING))
+
+
+# -- the context's generation ---------------------------------------------------------
+
+
+async def test_a_turn_gets_the_generation_of_its_context_and_a_new_one_after_the_id_is_taken_again() -> None:
+    reservations = InMemoryContextAdmission()
+    holder = ContextHolder.private("owner-1")
+    await reservations.admit(CONTEXT_ID, holder, None)
+    toolkit = scripted(ToolkitResult(state=ToolkitState.COMPLETED))
+    toolkit_handler = ToolkitTaskHandler(
+        toolkit, context_runs=InMemoryContextRuns(InMemoryTaskStore(), reservations), secret_values=lambda: ()
+    )
+
+    [event async for event in toolkit_handler.stream(request_context(task()), admission())]
+    first = toolkit.turns[-1][2].context_generation
+    reservations.entries[CONTEXT_ID].state = DELETED
+    await reservations.admit(CONTEXT_ID, holder, None)
+    [event async for event in toolkit_handler.stream(request_context(task()), admission())]
+    second = toolkit.turns[-1][2].context_generation
+
+    assert first is not None and second is not None
+    assert first != second
+
+
+async def test_without_a_context_reader_the_generation_is_none() -> None:
+    toolkit = scripted(ToolkitResult(state=ToolkitState.COMPLETED))
+
+    await run(toolkit)
+
+    assert toolkit.turns[0][2].context_generation is None

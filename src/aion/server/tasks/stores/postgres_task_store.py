@@ -18,6 +18,7 @@ from opentelemetry import trace
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from aion.core.a2a.enums import A2AMetadataKey
 from aion.db.postgres.manager import db_manager
 from aion.db.postgres.types import Pagination, Sorting, SortKey
 from aion.db.postgres.repositories import (
@@ -530,3 +531,25 @@ class PostgresTaskStore(BaseTaskStore):
             context=context,
         )
         return tasks[0] if tasks else None
+
+    async def get_context_last_routed_task(
+            self,
+            context_id: str,
+            routed_extension: Optional[str],
+            context: ServerCallContext | None = None,
+    ) -> Optional[Task]:
+        """Retrieve the resolved owner's most recent task of a context that one handler serves.
+
+        Database failures propagate, as for :meth:`get_context_last_task`.
+        """
+        async with db_manager.get_session() as session:
+            async with session.begin():
+                await self._repeatable_read(session)
+                record = await TasksRepository(session).find_latest_tagged(
+                    agent_id=self.agent_id,
+                    context_id=context_id,
+                    metadata_key=A2AMetadataKey.ROUTED_EXTENSION.value,
+                    metadata_value=routed_extension,
+                    owner_scope=self._owner_filter(context),
+                )
+                return await self._hydrate(session, record) if record is not None else None

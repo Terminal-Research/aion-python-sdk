@@ -1,4 +1,4 @@
-"""Custom RequestContextBuilder that auto-discovers interrupted tasks by context_id."""
+"""Request context builder, and the query that finds the task a message without a task id continues."""
 
 from a2a.server.agent_execution import RequestContext, RequestContextBuilder
 from a2a.server.context import ServerCallContext
@@ -11,7 +11,13 @@ from aion.server.a2a.utils import is_task_interrupted
 
 
 class AionRequestContextBuilder(RequestContextBuilder):
-    """Builds request context and populates referred tasks."""
+    """Builds the request context, and finds the waiting task a message continues.
+
+    Which task a message without a task id continues is decided once, before
+    the task is set up: ``AionRequestHandler`` asks ``interrupted_task`` and
+    makes the message name the task it continues. ``build`` then takes the
+    message's task id as it is.
+    """
 
     def __init__(
             self,
@@ -20,15 +26,15 @@ class AionRequestContextBuilder(RequestContextBuilder):
             context_id_generator: IDGenerator | None = None,
             auto_discover_interrupted_task: bool = True,
     ) -> None:
-        """Initializes the SimpleRequestContextBuilder.
+        """Initializes the builder.
 
         Args:
-            task_store: The TaskStore instance to use for fetching referred tasks.
-                Required if `should_populate_referred_tasks` is True.
+            task_store: The task store ``interrupted_task`` searches.
             task_id_generator: ID generator for new task IDs. Defaults to None.
             context_id_generator: ID generator for new context IDs. Defaults to None.
-            auto_discover_interrupted_task: If True and no task_id is provided,
-                attempts to find the last interrupted task for the given context_id.
+            auto_discover_interrupted_task: If True, a message with a context
+                id and no task id continues the caller's task waiting for
+                input in that context (``interrupted_task``).
         """
         self._task_store = task_store
         self._task_id_generator = task_id_generator
@@ -43,7 +49,7 @@ class AionRequestContextBuilder(RequestContextBuilder):
             context_id: str | None = None,
             task: Task | None = None,
     ) -> RequestContext:
-        """Builds the request context for an agent execution.
+        """Builds the request context for an agent execution, without referred tasks.
 
         Args:
             context: The server call context, containing metadata about the call.
@@ -53,15 +59,8 @@ class AionRequestContextBuilder(RequestContextBuilder):
             task: The primary task object associated with the request.
 
         Returns:
-            An instance of RequestContext populated with the provided information
-            and potentially a list of related tasks.
+            An instance of RequestContext populated with the provided information.
         """
-        if not task_id and context_id:
-            discovered = await self.interrupted_task(context_id, context)
-            if discovered:
-                task_id = discovered.id
-                task = discovered
-
         return RequestContext(
             call_context=context,
             request=params,
@@ -77,8 +76,15 @@ class AionRequestContextBuilder(RequestContextBuilder):
             self,
             context_id: str,
             context: ServerCallContext,
+            routed_extension: str | None = None,
     ) -> Task | None:
-        """The caller-owned interrupted task a message to ``context_id`` without a task id continues.
+        """The caller-owned waiting task of one handler that a message to ``context_id`` without a task id continues.
+
+        It is the caller's newest task in the context of the handler the
+        message addresses - the toolkit whose extension ``routed_extension``
+        names, or the agent's framework adapter for None - when that task
+        waits for input (``INPUT_REQUIRED``, ``AUTH_REQUIRED``). A waiting
+        task of another handler is not continued by the message.
 
         None when auto-discovery is off or there is no such task. A caller
         without individual access owns none to return to: its shared
@@ -91,8 +97,9 @@ class AionRequestContextBuilder(RequestContextBuilder):
         ):
             return None
 
-        last_task = await self._task_store.get_context_last_task(
+        last_task = await self._task_store.get_context_last_routed_task(
             context_id=context_id,
+            routed_extension=routed_extension,
             context=context,
         )
         if last_task is None:

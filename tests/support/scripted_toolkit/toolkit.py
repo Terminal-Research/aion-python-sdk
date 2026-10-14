@@ -34,9 +34,24 @@ from aion.core.toolkit import (
     ToolkitState,
 )
 
-from .contract import SCRIPT_EVENT_TYPE, SCRIPT_SCHEMA, URI
+from .contract import (
+    EXCLUSIVE_SCRIPT_EVENT_TYPE,
+    EXCLUSIVE_SCRIPT_SCHEMA,
+    EXCLUSIVE_URI,
+    SCRIPT_EVENT_TYPE,
+    SCRIPT_SCHEMA,
+    URI,
+)
 
-__all__ = ["Refusal", "Script", "ScriptPayload", "ScriptedToolkit", "toolkit"]
+__all__ = [
+    "ExclusiveScriptPayload",
+    "Refusal",
+    "Script",
+    "ScriptPayload",
+    "ScriptedToolkit",
+    "exclusive_toolkit",
+    "toolkit",
+]
 
 _OUTPUTS = TypeAdapter(list[ToolkitOutput])
 
@@ -68,6 +83,13 @@ class ScriptPayload(BaseModel):
     wait_for_cancel: bool = False
     find_artifact: Optional[str] = None
     report: bool = False
+
+
+class ExclusiveScriptPayload(ScriptPayload):
+    """The script of a turn of the exclusive toolkit: the same fields, under its own event and schema."""
+
+    SCHEMA_URI: ClassVar[str] = EXCLUSIVE_SCRIPT_SCHEMA
+    EVENT_TYPE: ClassVar[str] = EXCLUSIVE_SCRIPT_EVENT_TYPE
 
 
 @dataclass
@@ -226,4 +248,14 @@ class ScriptedToolkit:
 
 
 toolkit = ScriptedToolkit()
-"""The object the ``aion.toolkits`` entry point names."""
+"""The object the ``scripted`` entry point names."""
+
+exclusive_toolkit = ScriptedToolkit(
+    descriptor=ToolkitDescriptor(
+        uri=EXCLUSIVE_URI,
+        description="Yields what its script says, one task per context at a time.",
+        payloads=(ExclusiveScriptPayload,),
+        exclusive_per_context=True,
+    )
+)
+"""The object the ``scripted-exclusive`` entry point names: the same toolkit, ``exclusive_per_context``."""

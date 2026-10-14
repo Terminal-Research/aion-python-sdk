@@ -12,6 +12,7 @@ holds no code for any particular toolkit.
 | `src/aion/core/toolkit/` | The protocol: `Toolkit`, `ToolkitDescriptor`, `ToolkitRequest`, `PreflightContext`, `ToolkitContext`, `ModelServiceAccess`, the values a toolkit yields (`models.py`) and the codes the server reserves (`codes.py`). It imports no a2a type. |
 | `src/aion/server/agent/execution/extensions/toolkit/` | The host: `discovery.py`, `handler.py` (`ToolkitTaskHandler`: admission, turns, cancel), `translation.py` (`TurnTranslator`), `artifacts.py` (`TurnArtifacts`: artifact versions of a turn), `services.py` (what the server hands a toolkit about a request), `secret_values.py` (masking). |
 | `src/aion/server/tasks/context_artifacts.py` | `ContextArtifacts`, the reader of an artifact's versions among the tasks of a context, over the in-memory store or PostgreSQL; `StoreManager.get_context_artifacts()` hands it to discovery. |
+| `src/aion/server/tasks/context_runs.py` | `ContextRuns`, the reader of a context's generation and of its unfinished task of one handler, over the in-memory store or PostgreSQL; `StoreManager.get_context_runs()` hands it to discovery. |
 | `src/aion/server/agent/execution/extensions/base.py` | `ExtensionTaskHandler`, the contract `ToolkitTaskHandler` implements, and `ExtensionRoute`, the admitted route of a new task. |
 | `tests/support/scripted_toolkit/` | The toolkit the SDK's own tests drive the host with; see [Testing](#testing). |
 
@@ -54,17 +55,37 @@ and nothing more; its `configure()` does not run.
 2. `verify_declared_extensions` - every extension the request declares is
    registered, enabled, available, has its requirements declared, and its
    payload validates;
-3. the route of a new task - `AionAgentRequestExecutor.routed_extension`
-   and `admit_new_task`;
+3. the route - which task the message belongs to, checked by that task's
+   handler (`AionRequestHandler._admit_route`);
 4. preprocessors (file uploads);
 5. a2a-sdk's own setup, which creates the `ActiveTask`.
 
-A message continues a task when it names one, or when the request context
-builder will hand it to the context's interrupted task
-(`AionRequestContextBuilder.interrupted_task`); such a message keeps the
-route its task has. Any other message starts a task: `routed_extension`
-gives it to the first toolkit whose extension it activates, or to the
-agent's framework adapter, and for a toolkit `admit_new_task` runs
+The handler a message addresses is the first toolkit whose extension it
+activates (`AionAgentRequestExecutor.routed_extension`), or the agent's
+framework adapter. The message continues a task when it names one, or when
+the addressed handler has the caller's newest task in the context and that
+task waits for input (`INPUT_REQUIRED`, `AUTH_REQUIRED`;
+`AionRequestContextBuilder.interrupted_task`): a toolkit's directive
+continues a task of that toolkit, any other message a task of the framework
+adapter. A waiting task of another handler keeps waiting, and the message
+starts a task of its own. A continued task is named on the message, so
+a2a-sdk takes the message as an explicit continuation and nothing decides
+again.
+
+A message that continues a task keeps the task's route,
+`task.metadata["aion:routedExtension"]`, and is checked by that route alone
+(`AionAgentRequestExecutor.admit_continuation`):
+
+- a task routed to an extension this server does not serve - another image
+  during a rollout, a toolkit that failed `availability()` - is refused with
+  `extension_unavailable`; the task is left as it is and never reaches the
+  framework adapter;
+- a running task (`SUBMITTED`, `WORKING`) of an `exclusive_per_context`
+  toolkit is refused with `context_busy` naming the task itself: a2a-sdk
+  would serve the message as the task's next turn, and on another server
+  alongside the running one.
+
+Any other message starts a task, and for a toolkit `admit_new_task` runs
 `ToolkitTaskHandler.admit`:
 
 - **the caller check** - a toolkit whose descriptor says `invocation_only`,
@@ -73,6 +94,15 @@ agent's framework adapter, and for a toolkit `admit_new_task` runs
   with `caller_not_allowed`. Without `AION_CLIENT_ID` nobody is refused.
   The rule follows the setting, not a successful registration with the
   platform, so an unreachable platform does not open the toolkit to all;
+- **one task per context** - a toolkit whose descriptor says
+  `exclusive_per_context` starts no task in a context that holds an
+  unfinished task of it, whoever owns that task; the request is refused with
+  `context_busy` naming the task (`ContextRuns.unfinished_task`). The check
+  reads the store, so it holds across the servers of the agent. Nothing locks
+  the context between the check and the new task's first write; the window
+  is that of two requests arriving together. A task left `WORKING` by a
+  server that died holds the context until it is cancelled, which any server
+  can do;
 - **`preflight`** - with the `ToolkitRequest` (message id, the message's
   text parts joined by newlines, the payload the registry collected with the
   id and source of its event) and a `PreflightContext` (context id, the
@@ -84,15 +114,16 @@ The admitted route is kept on the request's `ServerCallContext.state`
 the handler again without deciding anything. Nothing between admission and
 `execute` decides the route a second time.
 
-A refusal at any of these steps is raised before a2a-sdk creates the task,
-so no task, no `task_versions` row and no `task_events` row exist
-afterwards. A unary send answers with the JSON-RPC error. A streaming send
+A refusal at any of these steps is raised before a2a-sdk creates or changes
+a task, so a refused new task leaves no `tasks`, `task_versions` or
+`task_events` row, and a refused continuation leaves its task as it was. A unary send answers with the JSON-RPC error. A streaming send
 answers with the error as the stream's only event, as it does for a context
 admission refusal: the stream is open by then.
 
 ### Errors
 
-A refusal is an a2a-sdk error whose `data` carries `code` and `retryable`.
+A refusal is an a2a-sdk error whose `data` carries `code` and `retryable`,
+and for `context_busy` the unfinished task's id under `taskId`.
 a2a-sdk sends `data` as the `metadata` of a `google.rpc.ErrorInfo` detail,
 whose values are strings, so `retryable` is `"true"` or `"false"`
 (`refusal_data`).
@@ -103,6 +134,8 @@ whose values are strings, so `retryable` is `"true"` or `"false"`
 | `preflight` raised anything else (logged) | `InternalError` | `internal_error` | `"false"` |
 | the caller check | `InvalidParamsError` | `caller_not_allowed` | `"false"` |
 | an unavailable extension (`verify_declared_extensions`) | `InvalidParamsError` | `extension_unavailable` | `"true"` |
+| a message into a task whose extension this server does not serve | `InvalidParamsError` | `extension_unavailable` | `"true"` |
+| a second task of an `exclusive_per_context` toolkit in a context, or a message into its running task | `InvalidParamsError` | `context_busy`, with the unfinished task under `taskId` | `"true"` |
 
 The codes the server reserves and their fixed `retryable` live in
 `aion.core.toolkit.codes`. `InvalidParamsError` is the class for every
@@ -121,6 +154,7 @@ toolkit a `ToolkitContext`:
 | Field | What the server puts there |
 | --- | --- |
 | `task_id`, `context_id` | The task's. |
+| `context_generation` | The time the context's id was reserved (`ContextRuns.generation`), read when the turn starts: the same for every turn while the context lives, new once a deleted context's id is taken again. None for a handler built without a `ContextRuns`. |
 | `task_metadata` | The toolkit's object as the task holds it: empty for a new task, `task.metadata[<uri>]` for a resumed one. Whatever a request sent under that key is dropped when the task is created. |
 | `daemon_variables` | The request's daemon environment configuration variables. |
 | `model_service` | `ModelServiceAccess` - base URL `aion_model_base_url()`, a token minted per call by `aion_jwt_api_key`, and the request's one callback attribution header from `callback_headers()` - or None without platform credentials or without attribution a model call can use. The toolkit decides whether it needs it. |
@@ -198,7 +232,7 @@ artifacts only:
 
 Two tasks of one context that run at the same time can compute the same
 number; a toolkit that needs one run per context sets
-`exclusive_per_context`.
+`exclusive_per_context` ([Admission](#admission-before-a-task-exists)).
 
 ### Invariants
 
@@ -234,7 +268,9 @@ they reach the task as any turn's would. Then the executor writes
 ## Testing
 
 `tests/support/scripted_toolkit` is a toolkit built on the protocol models
-and nothing else. A turn yields what its script says: the `Script` it was
+and nothing else. It is installed twice: under its own URI, and under
+`EXCLUSIVE_URI` as an `exclusive_per_context` toolkit with a script event of
+its own. A turn yields what its script says: the `Script` it was
 built with in a unit test, or the `ScriptPayload` a request carries - an
 event of type `SCRIPT_EVENT_TYPE` with a data part of schema `SCRIPT_SCHEMA`
 whose `outputs` are protocol values in JSON. A script can also refuse or
@@ -254,13 +290,16 @@ nothing installed.
 
 | Suite | Where | What |
 | --- | --- | --- |
-| unit | `tests/unit/server/agent/toolkit/` | discovery, every translation row, the object's patches, masking, limits, lifecycle violations, admission, resume, cancel, artifact versions and `find_artifact` |
+| unit | `tests/unit/server/agent/toolkit/` | discovery, every translation row, the object's patches, masking, limits, lifecycle violations, admission, one task per context, the context's generation, resume, cancel, artifact versions and `find_artifact` |
+| unit | `tests/unit/server/core/test_preprocessor_ordering.py`, `tests/unit/server/agent/test_request_executor.py` | the route of a continued task: its handler's check, `extension_unavailable` without the handler, the waiting task of the addressed handler named on the message |
 | unit | `tests/unit/server/tasks/test_context_artifacts.py` | the in-memory reader of an artifact's versions: order, holder scoping, shared contexts |
 | unit | `tests/unit/server/tasks/test_task_manager.py` | the status line a details update keeps |
-| integration | `tests/integration/server/tasks/test_toolkit_admission_postgres.py` | a refused request leaves no row in `tasks`, `task_versions` or `task_events`, and the error carries `code` and `retryable` |
+| integration | `tests/integration/server/tasks/test_toolkit_admission_postgres.py` | a refused request leaves no row in `tasks`, `task_versions` or `task_events`, and the error carries `code` and `retryable`; one task per context across two servers of the agent; a message into a toolkit's task on a server without the toolkit refused, the task unchanged |
+| integration | `tests/integration/server/tasks/test_context_runs_parity.py` | the generation, the unfinished task of a handler and the caller's newest task of a handler - on the in-memory store and on PostgreSQL |
 | integration | `tests/integration/server/tasks/test_context_artifacts_parity.py` | versions 0, 1, 2 across tasks, the latest found, another holder seeing nothing, shared contexts - on the in-memory store and on PostgreSQL |
-| scenarios | `tests/scenarios/core/test_toolkits.py` (`TAGS=toolkits`) | a turn through a real `aion serve` on the `toolkit` deployment, numbered artifact versions with `find_artifact`, a refusal with no task, and a cancel that reaches the toolkit once and ends the task `CANCELED` |
+| scenarios | `tests/scenarios/core/test_toolkits.py` (`TAGS=toolkits`) | a turn through a real `aion serve` on the `toolkit` deployment, numbered artifact versions with `find_artifact`, a refusal with no task, a cancel that reaches the toolkit once and ends the task `CANCELED`, `context_busy` until the blocking task ends, a directive beside the agent's waiting question, a toolkit continuing its own waiting task |
 | scenarios | `tests/scenarios/persistence/test_toolkits.py` (`make tests-scenarios-persistence`) | on a real database: the toolkit's object handed back to a resumed turn after a restart, and artifact version numbering continuing across it |
+| scenarios | `tests/scenarios/distributed/test_toolkits.py` (`make tests-scenarios-distributed`) | two servers with the toolkits and one without on one database: `context_busy` on the other server, `extension_unavailable` and an unchanged task on the server without the toolkit |
 
 A real toolkit is checked against the SDK by its own CI; see
 [Continuous integration](ci.md#toolkits).

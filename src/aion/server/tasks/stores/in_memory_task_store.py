@@ -19,6 +19,8 @@ from a2a.utils.task import (
 )
 from typing import Callable, NamedTuple, Optional, List
 
+from aion.server.a2a.utils import routed_extension_of
+
 from .base_task_store import BaseTaskStore
 
 logger = logging.getLogger(__name__)
@@ -293,6 +295,25 @@ class InMemoryTaskStore(BaseTaskStore):
             context=context,
         )
         return tasks[0] if tasks else None
+
+    async def get_context_last_routed_task(
+            self,
+            context_id: str,
+            routed_extension: Optional[str],
+            context: ServerCallContext | None = None,
+    ) -> Optional[Task]:
+        """Retrieve the resolved owner's most recent task of a context that one handler serves."""
+        owner = self._owner_filter(context)
+        async with self.lock:
+            tasks = self._visible(owner)
+        return next(
+            (
+                task
+                for task in reversed(tasks)
+                if task.context_id == context_id and routed_extension_of(task) == routed_extension
+            ),
+            None,
+        )
 
     async def tasks_in_context(self, context_id: str) -> list[tuple[Task, datetime]]:
         """Every owner's tasks of a context with their last write time, oldest first."""

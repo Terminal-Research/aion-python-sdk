@@ -1,16 +1,23 @@
 """A request a toolkit refuses leaves nothing behind in PostgreSQL.
 
 The toolkit host decides the route of a new task and runs the toolkit's
-checks - the caller check, ``preflight`` - before a2a-sdk creates the task.
-A refusal is a JSON-RPC error whose ``ErrorInfo`` metadata carries ``code``
-and ``retryable``, and no ``tasks``, ``task_versions`` or ``task_events`` row
-exists afterwards; the same server, given a request it accepts, writes all
-three. The request path is the real one, as ``AppFactory`` wires it, with the
-scripted toolkit found through its entry point.
+checks - the caller check, one task per context, ``preflight`` - before
+a2a-sdk creates the task. A refusal is a JSON-RPC error whose ``ErrorInfo``
+metadata carries ``code`` and ``retryable``, and no ``tasks``,
+``task_versions`` or ``task_events`` row exists afterwards; the same server,
+given a request it accepts, writes all three. The request path is the real
+one, as ``AppFactory`` wires it, with the scripted toolkit found through its
+entry point.
+
+Two servers over the one database stand for two instances of the agent: one
+task per context holds across them, because the check reads the store, and a
+message into a toolkit's task on a server without the toolkit is refused with
+the task left as it was.
 """
 
 from __future__ import annotations
 
+import asyncio
 import importlib.metadata
 import json
 import uuid
@@ -44,11 +51,12 @@ from aion.server.auth import JwksKeySource, TokenVerifier
 from aion.server.core.app.handlers import AionJsonRpcDispatcher, AionRequestHandler
 from aion.server.core.middlewares import AionAuthMiddleware, AionContextMiddleware
 from aion.server.tasks.admission import PostgresContextAdmission
+from aion.server.tasks.context_runs import PostgresContextRuns
 from aion.server.tasks.contexts import PostgresContextCatalog
 
 from tests.support.aion_tokens import CLIENT_ID, ISSUER, SigningKey
 from tests.support.scripted_toolkit.contract import SCRIPT_EVENT_TYPE, SCRIPT_SCHEMA, URI
-from tests.support.scripted_toolkit.toolkit import ScriptedToolkit
+from tests.support.scripted_toolkit.toolkit import ScriptedToolkit, ScriptPayload
 
 pytestmark = [pytest.mark.asyncio(loop_scope="module")]
 
@@ -61,13 +69,19 @@ INVOCATION_ONLY = ScriptedToolkit(
     descriptor=ToolkitDescriptor(uri=URI, description="platform calls only", invocation_only=True)
 )
 NOT_CONFIGURED = ScriptedToolkit(configure_error=RuntimeError("SCRIPTED_TOKEN is not set"))
+EXCLUSIVE = ScriptedToolkit(
+    descriptor=ToolkitDescriptor(
+        uri=URI, description="one task per context", payloads=(ScriptPayload,), exclusive_per_context=True
+    )
+)
+AGENT_ID = "toolkit-agent"
 
 
 class ToolkitServer:
     """A JSON-RPC server over PostgreSQL whose executor hosts one toolkit."""
 
     def __init__(self, handlers: list) -> None:
-        store, handler_store = stores("toolkit-agent")
+        store, handler_store = stores(AGENT_ID)
         executor = AionAgentRequestExecutor(aion_agent=Mock(), extension_handlers=handlers)
         card = Mock()
         card.capabilities.streaming = True
@@ -108,23 +122,39 @@ class ToolkitServer:
         self.client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
 
     async def send(
-            self, script: dict[str, Any], *, method: str = "SendMessage", token: Optional[str] = None
+            self,
+            script: Optional[dict[str, Any]],
+            *,
+            method: str = "SendMessage",
+            token: Optional[str] = None,
+            context_id: Optional[str] = None,
+            task_id: Optional[str] = None,
     ) -> Any:
-        """Send a message to the toolkit, carrying ``script``; a stream answers with its events."""
-        message = {
-            "messageId": uuid.uuid4().hex,
-            "contextId": str(uuid.uuid4()),
-            "role": "ROLE_USER",
-            "extensions": [URI],
-            "metadata": {
+        """Send a message, as a stream answers with its events.
+
+        With a ``script`` the message activates the toolkit and carries the
+        script; without one it is plain text, which a server routes by the
+        task it names. ``task_id`` continues that task; ``context_id``
+        addresses a context, a new one by default.
+        """
+        message: dict[str, Any] = {"messageId": uuid.uuid4().hex, "role": "ROLE_USER", "parts": [{"text": "run"}]}
+        if task_id is not None:
+            message["taskId"] = task_id
+        else:
+            message["contextId"] = context_id or str(uuid.uuid4())
+        if script is not None:
+            message["extensions"] = [URI]
+            message["metadata"] = {
                 EVENT_EXTENSION_URI_V1: {"type": SCRIPT_EVENT_TYPE, "source": "aion://tests", "id": "evt-1"}
-            },
-            "parts": [
-                {"text": "run the script"},
-                {"data": script, "metadata": {EVENT_EXTENSION_URI_V1: {"schema": SCRIPT_SCHEMA}}},
-            ],
-        }
-        body = {"jsonrpc": "2.0", "id": uuid.uuid4().hex, "method": method, "params": {"message": message}}
+            }
+            message["parts"].append(
+                {"data": script, "metadata": {EVENT_EXTENSION_URI_V1: {"schema": SCRIPT_SCHEMA}}}
+            )
+        return await self.call(method, {"message": message}, token=token)
+
+    async def call(self, method: str, params: dict[str, Any], *, token: Optional[str] = None) -> Any:
+        """One JSON-RPC call; a stream answers with its events."""
+        body = {"jsonrpc": "2.0", "id": uuid.uuid4().hex, "method": method, "params": params}
         response = await self.client.post(
             DEFAULT_RPC_URL,
             json=body,
@@ -173,16 +203,25 @@ def registry(isolated_registry):
     discovery._REGISTERED_URIS.update(registered)
 
 
-async def _server(_database, attribute: str) -> ToolkitServer:
-    """A server whose toolkit is found through an entry point naming ``attribute`` of this module."""
+async def _server(_database, attribute: Optional[str], *, fresh: bool = True) -> ToolkitServer:
+    """A server whose toolkit is found through an entry point naming ``attribute`` of this module.
+
+    ``attribute`` None is a server without the toolkit. ``fresh`` empties the
+    database first; a second server of the same agent keeps what is there.
+    """
     if _database is None:
         pytest.skip("POSTGRES_TEST_URL is not set")
-    await truncate()
+    if fresh:
+        await truncate()
+    if attribute is None:
+        return ToolkitServer([])
     entry_point = importlib.metadata.EntryPoint(
         name="scripted", value=f"{__name__}:{attribute}", group=ENTRY_POINT_GROUP
     )
     handlers = await load_toolkit_handlers(
-        SimpleNamespace(enabled_extensions=[URI]), entry_points=[entry_point]
+        SimpleNamespace(enabled_extensions=[URI]),
+        entry_points=[entry_point],
+        context_runs=PostgresContextRuns(AGENT_ID, db_manager),
     )
     return ToolkitServer(handlers)
 
@@ -277,3 +316,93 @@ async def test_an_unavailable_toolkit_creates_no_task(_database, registry) -> No
         assert await rows() == NOTHING
     finally:
         await built.aclose()
+
+
+WORKING_UNTIL_CANCELLED = {
+    "outputs": [{"kind": "message", "message": {"parts": [{"kind": "text", "text": "Working"}]}}],
+    "wait_for_cancel": True,
+}
+"""A turn that says it is working, then waits for ``cancel()``."""
+
+COMPLETES = {"outputs": [{"kind": "result", "state": "completed"}]}
+"""A turn that completes at once."""
+
+
+async def stored_task(task_id: str) -> tuple[str, int]:
+    """The state and version a task has in the database."""
+    async with db_manager.get_session() as session:
+        state = (
+            await session.execute(text("SELECT state FROM tasks WHERE id = :id"), {"id": uuid.UUID(task_id)})
+        ).scalar()
+        version = (
+            await session.execute(text("SELECT version FROM task_versions WHERE task_id = :id"), {"id": task_id})
+        ).scalar()
+    return state, version
+
+
+async def working_task_in(context_id: str) -> str:
+    """The id of the context's task once it is working; fails after five seconds."""
+    for _ in range(100):
+        async with db_manager.get_session() as session:
+            found = (
+                await session.execute(
+                    text("SELECT id FROM tasks WHERE context_id = :context AND state = 'TASK_STATE_WORKING'"),
+                    {"context": context_id},
+                )
+            ).scalar()
+        if found is not None:
+            return str(found)
+        await asyncio.sleep(0.05)
+    raise AssertionError(f"no working task appeared in context {context_id}")
+
+
+async def test_one_task_per_context_holds_across_the_servers_of_the_agent(_database, registry) -> None:
+    """A second directive in a busy context is refused on any server; after the cancel it runs."""
+    first = await _server(_database, "EXCLUSIVE")
+    second = await _server(_database, "EXCLUSIVE", fresh=False)
+    context_id = str(uuid.uuid4())
+    token = SIGNER.session_token()
+    try:
+        running = asyncio.create_task(first.send(WORKING_UNTIL_CANCELLED, context_id=context_id, token=token))
+        blocking = await working_task_in(context_id)
+
+        refused = await second.send(COMPLETES, context_id=context_id, token=token)
+        into_the_task = await second.send(None, task_id=blocking, token=token)
+
+        busy = {"code": codes.CONTEXT_BUSY, "retryable": "true", "taskId": blocking}
+        assert refusal(refused) == (INVALID_PARAMS, busy)
+        assert refusal(into_the_task) == (INVALID_PARAMS, busy)
+        assert (await rows())["tasks"] == 1
+
+        cancelled = await first.call("CancelTask", {"id": blocking}, token=token)
+        assert cancelled["result"]["status"]["state"] == "TASK_STATE_CANCELED"
+        await running
+
+        served = await second.send(COMPLETES, context_id=context_id, token=token)
+        assert served["result"]["task"]["status"]["state"] == "TASK_STATE_COMPLETED"
+        other = await second.send(COMPLETES, token=token)
+        assert other["result"]["task"]["status"]["state"] == "TASK_STATE_COMPLETED"
+    finally:
+        await first.aclose()
+        await second.aclose()
+
+
+async def test_a_message_into_a_toolkits_task_on_a_server_without_the_toolkit_is_refused(
+    _database, registry
+) -> None:
+    """The task is not handed to the agent's framework: refused, and left as it was."""
+    with_toolkit = await _server(_database, "OPEN")
+    without = await _server(_database, None, fresh=False)
+    token = SIGNER.session_token()
+    try:
+        waiting = await with_toolkit.send({"outputs": [{"kind": "result", "state": "input-required"}]}, token=token)
+        task_id = waiting["result"]["task"]["id"]
+        before = await stored_task(task_id)
+
+        response = await without.send(None, task_id=task_id, token=token)
+
+        assert refusal(response) == (INVALID_PARAMS, {"code": codes.EXTENSION_UNAVAILABLE, "retryable": "true"})
+        assert await stored_task(task_id) == before == ("TASK_STATE_INPUT_REQUIRED", before[1])
+    finally:
+        await with_toolkit.aclose()
+        await without.aclose()

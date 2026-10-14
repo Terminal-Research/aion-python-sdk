@@ -156,9 +156,9 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         instead of re-reading the raw request. Unary and streaming sends, and
         every extension handler behind them, come through here.
         """
-        await self._admit(params, call_context)
+        named_task = await self._admit(params, call_context)
         extensions = self.verify_declared_extensions(params, call_context)
-        await self._admit_route(params, call_context, extensions)
+        await self._admit_route(params, call_context, extensions, named_task)
         context = PreprocessingContext(
             extensions=extensions, call_context=call_context
         )
@@ -170,7 +170,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             await self._rollback_preprocessors(len(self._preprocessors))
             raise
 
-    async def _admit(self, params: SendMessageRequest, call_context: ServerCallContext) -> None:
+    async def _admit(self, params: SendMessageRequest, call_context: ServerCallContext) -> Task | None:
         """Admit the caller into the message's context, or refuse it as if the task did not exist.
 
         A continuation's context is its task's: the task has to be the
@@ -184,10 +184,15 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         with individual access is bound to the context, which is what makes it
         visible to that caller through the Context extension.
 
+        Returns:
+            The task the message names, as the caller's store holds it; None
+            for a message that names none.
+
         Raises:
             TaskNotFoundError: The caller may not use the context or the task.
         """
         message = params.message
+        task = None
         if message.task_id:
             _require_individual_access(call_context, message.task_id)
             task = await self._tasks.get(message.task_id, call_context)
@@ -202,45 +207,77 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         if holder is None or not await self._admission.admit(message.context_id, holder, member):
             logger.info("Refused a message into a context its caller may not use")
             raise TaskNotFoundError(f'Task {message.task_id} not found' if message.task_id else 'Task not found')
+        return task
 
     async def _admit_route(
             self,
             params: SendMessageRequest,
             call_context: ServerCallContext,
             extensions: AionRuntimeExtensions,
+            named_task: Task | None = None,
     ) -> None:
-        """Decide and admit the route of a message that starts a new task, before the task exists.
+        """Decide which task the message belongs to and admit it there, before any task is created or changed.
 
-        The executor routes such a message to the toolkit whose extension it
-        activates (``AionAgentRequestExecutor.routed_extension``), after that
-        toolkit's own checks - the caller check and ``preflight`` - pass
-        (``admit_new_task``). A refusal here is a JSON-RPC error and no task
-        is created. A message that continues a task - one naming it, or one
-        the request context builder will hand to the context's interrupted
-        task - keeps the route its task already has.
+        The handler the message addresses is the toolkit whose extension it
+        activates (``AionAgentRequestExecutor.routed_extension``), or the
+        agent's framework adapter. Then:
 
-        The admitted route belongs to this request alone: a route an earlier
-        request left on a reused call context is dropped first.
+        * a message that continues a task - the one it names, or the
+          addressed handler's task waiting for input (``_continued_task``) -
+          is checked by the task's own handler
+          (``AionAgentRequestExecutor.admit_continuation``): a task routed to
+          an extension this server does not serve is refused with
+          ``extension_unavailable``, a running task of an exclusive toolkit
+          with ``context_busy``;
+        * any other message starts a task; one routed to a toolkit is checked
+          by that toolkit (``admit_new_task``: the caller check, one task per
+          context, ``preflight``).
+
+        A refusal here is a JSON-RPC error, and no task is created or
+        changed. The admitted route of a new task belongs to this request
+        alone: a route an earlier request left on a reused call context is
+        dropped first.
 
         Raises:
             a2a.utils.errors.A2AError: The route refused the request.
         """
         call_context.state.pop(EXTENSION_ROUTE_STATE_KEY, None)
-        routed_extension = getattr(self.agent_executor, "routed_extension", None)
+        executor = self.agent_executor
+        routed_extension = getattr(executor, "routed_extension", None)
         uri = routed_extension(extensions) if routed_extension is not None else None
-        if uri is None or await self._continues_task(params, call_context):
+        task = named_task or await self._continued_task(params, call_context, uri)
+        if task is not None:
+            admit_continuation = getattr(executor, "admit_continuation", None)
+            if admit_continuation is not None:
+                admit_continuation(task)
             return
-        await self.agent_executor.admit_new_task(uri, params.message, extensions, call_context)
+        if uri is not None:
+            await executor.admit_new_task(uri, params.message, extensions, call_context)
 
-    async def _continues_task(self, params: SendMessageRequest, call_context: ServerCallContext) -> bool:
-        """Whether the message continues an existing task rather than starting one."""
+    async def _continued_task(
+            self,
+            params: SendMessageRequest,
+            call_context: ServerCallContext,
+            routed_extension: str | None,
+    ) -> Task | None:
+        """The task waiting for input that a message without a task id continues, or None.
+
+        Only a task of the handler the message addresses is continued: a
+        toolkit's directive continues that toolkit's task, any other message
+        the framework adapter's (``AionRequestContextBuilder.interrupted_task``).
+        A waiting task of another handler keeps waiting, and the message
+        starts a new task. The message is made to name the task it
+        continues, so a2a-sdk and the request context builder take it as an
+        explicit continuation and nothing decides again.
+        """
         message = params.message
-        if message.task_id:
-            return True
         interrupted_task = getattr(self._request_context_builder, "interrupted_task", None)
-        if interrupted_task is None or not message.context_id:
-            return False
-        return await interrupted_task(message.context_id, call_context) is not None
+        if message.task_id or interrupted_task is None or not message.context_id:
+            return None
+        task = await interrupted_task(message.context_id, call_context, routed_extension)
+        if task is not None:
+            message.task_id = task.id
+        return task
 
     async def _run_preprocessors(
             self,

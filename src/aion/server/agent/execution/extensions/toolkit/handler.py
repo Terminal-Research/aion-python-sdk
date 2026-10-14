@@ -5,9 +5,11 @@ instance per available toolkit, built by discovery. It does what the toolkit
 protocol leaves to the server:
 
 * **admission** - before a task exists, the caller check of an
-  ``invocation_only`` toolkit and the toolkit's ``preflight``; a refusal is a
+  ``invocation_only`` toolkit, the one task per context of an
+  ``exclusive_per_context`` toolkit and the toolkit's ``preflight``; before a
+  message continues a task, the same one task per context; a refusal is a
   JSON-RPC error whose ``data`` carries ``code`` and ``retryable``, and no
-  task is created;
+  task is created or changed;
 * **turns** - ``start`` or ``resume`` with a ``ToolkitContext``, every value
   they yield translated by a ``TurnTranslator``; the turn is events, then
   exactly one result, and a turn that breaks that, yields something else or
@@ -51,9 +53,11 @@ from aion.core.toolkit import (
     codes,
 )
 from aion.core.utils.protobuf import proto_to_dict
+from aion.server.a2a.constants import ACTIVE_TASK_STATES
 from aion.server.auth import CredentialKind, verified_caller
 from aion.server.tasks.admission import holder_of
 from aion.server.tasks.context_artifacts import ContextArtifacts
+from aion.server.tasks.context_runs import ContextRuns
 
 from ...context.attribution import callback_attribution
 from .artifacts import TurnArtifacts
@@ -72,6 +76,7 @@ __all__ = [
     "PREFLIGHT_CRASH_MESSAGE",
     "ToolkitAdmission",
     "ToolkitTaskHandler",
+    "context_busy",
     "refusal_data",
 ]
 
@@ -105,6 +110,22 @@ def refusal_data(code: str, retryable: Optional[bool] = None) -> dict[str, str]:
     return {"code": code, "retryable": "true" if retryable else "false"}
 
 
+def context_busy(uri: str, context_id: str, task_id: str) -> InvalidParamsError:
+    """The refusal of a request that would run a second task of ``uri`` in a context.
+
+    ``data`` carries the code ``context_busy`` and, under ``taskId``, the
+    unfinished task that holds the context: the caller can wait for it, or
+    cancel it and send the request again.
+    """
+    return InvalidParamsError(
+        message=(
+            f"Context {context_id} already has an unfinished task of {uri} ({task_id}); "
+            "wait for it to end or cancel it, then send the request again."
+        ),
+        data={**refusal_data(codes.CONTEXT_BUSY), "taskId": task_id},
+    )
+
+
 @dataclass(frozen=True)
 class ToolkitAdmission:
     """What admission read off a request that starts a new task of a toolkit.
@@ -134,6 +155,11 @@ class ToolkitTaskHandler:
             and ``ToolkitContext.find_artifact`` finds the latest version in the
             caller's context; without it they are not numbered and nothing is
             found.
+        context_runs: Reads a context's generation and its unfinished task of
+            this toolkit. With it, ``ToolkitContext.context_generation`` is
+            filled and an ``exclusive_per_context`` toolkit runs one task per
+            context; without it the generation is None and nothing is
+            refused for a busy context.
         owner_resolver: Resolves a call's owner, as the task store does; it
             gives the context holder the caller was admitted as.
         secret_values: Returns the deployment's secret values; read at the
@@ -145,6 +171,7 @@ class ToolkitTaskHandler:
             toolkit: Toolkit,
             *,
             context_artifacts: Optional[ContextArtifacts] = None,
+            context_runs: Optional[ContextRuns] = None,
             owner_resolver: OwnerResolver = resolve_user_scope,
             secret_values: Callable[[], Iterable[str]] = deployment_secret_values,
     ) -> None:
@@ -152,6 +179,7 @@ class ToolkitTaskHandler:
         self.descriptor = toolkit.descriptor
         self.uri = self.descriptor.uri
         self._context_artifacts = context_artifacts
+        self._context_runs = context_runs
         self._owner_resolver = owner_resolver
         self._secret_values = secret_values
         # The turn each task is running in this process, set once it ends.
@@ -167,16 +195,20 @@ class ToolkitTaskHandler:
     ) -> ToolkitAdmission:
         """Check a request that starts a new task of this toolkit, before the task exists.
 
-        The caller check comes first, then the toolkit's ``preflight``.
+        The caller check comes first, then the one task per context of an
+        ``exclusive_per_context`` toolkit, then the toolkit's ``preflight``.
 
         Raises:
             InvalidParamsError: The caller may not start this toolkit
-                (``caller_not_allowed``), or ``preflight`` refused the request
-                with a ``ToolkitRejection`` (its own code and ``retryable``).
+                (``caller_not_allowed``), the context already has an
+                unfinished task of this toolkit (``context_busy``), or
+                ``preflight`` refused the request with a ``ToolkitRejection``
+                (its own code and ``retryable``).
             InternalError: ``preflight`` raised anything else
                 (``internal_error``); the exception is logged.
         """
         self._check_caller(call_context)
+        await self._check_context_free(message.context_id)
         runtime = _request_runtime(extensions, call_context)
         admission = ToolkitAdmission(
             request=toolkit_request(message, extensions, self.uri),
@@ -228,6 +260,40 @@ class ToolkitTaskHandler:
             data=refusal_data(codes.CALLER_NOT_ALLOWED),
         )
 
+    async def _check_context_free(self, context_id: str) -> None:
+        """Refuse a new task of an ``exclusive_per_context`` toolkit in a context that has an unfinished one.
+
+        The unfinished task is any owner's: a shared context's participants
+        share the toolkit's state of the context too. The check reads the
+        store, so it holds across the servers of the agent; nothing locks the
+        context between this read and the new task's first write.
+
+        Raises:
+            InvalidParamsError: ``context_busy``, naming the unfinished task.
+        """
+        if not self.descriptor.exclusive_per_context or self._context_runs is None:
+            return
+        blocking = await self._context_runs.unfinished_task(context_id, self.uri)
+        if blocking is not None:
+            logger.info("Refused a second task of toolkit %s in context %s (task %s)", self.uri, context_id, blocking)
+            raise context_busy(self.uri, context_id, blocking)
+
+    def admit_continuation(self, task: Task) -> None:
+        """Check a message that continues a task of this toolkit, before the task is changed.
+
+        A task of an ``exclusive_per_context`` toolkit that is still running
+        takes no further message: a2a-sdk would serve it as the next turn of
+        the same task, and on another server alongside the running one. A
+        task that waits for input (``INPUT_REQUIRED``, ``AUTH_REQUIRED``)
+        continues as usual.
+
+        Raises:
+            InvalidParamsError: ``context_busy``, naming the task itself.
+        """
+        if self.descriptor.exclusive_per_context and task.status.state in ACTIVE_TASK_STATES:
+            logger.info("Refused a message into the running task %s of toolkit %s", task.id, self.uri)
+            raise context_busy(self.uri, task.context_id, task.id)
+
     # -- turns --------------------------------------------------------------
 
     async def stream(
@@ -277,6 +343,9 @@ class ToolkitTaskHandler:
         toolkit_context = ToolkitContext(
             task_id=task.id,
             context_id=task.context_id,
+            context_generation=(
+                await self._context_runs.generation(task.context_id) if self._context_runs is not None else None
+            ),
             task_metadata=task_metadata,
             daemon_variables=variables,
             model_service=_masking_tokens(model_service, masker),
