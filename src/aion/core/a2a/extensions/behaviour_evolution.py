@@ -320,29 +320,31 @@ class EvolutionUsage(A2ABaseModel):
 
 
 class EvolutionError(A2ABaseModel):
-    """Why a run failed, as two axes rather than two unrelated fields.
+    """Why a run failed: a code to branch on, a sentence to show, a retry hint.
 
-    Grouped under one `error` object — like the terminal status event's
-    `error.code` — so a future field (e.g. a stable code paralleling that
-    one) has an obvious home instead of becoming a third top-level
-    `error*` field on the result payload.
+    The diagnostic detail of a failure (argv, stderr, paths) never leaves the
+    deployment: it is in the deployment's logs.
     """
 
-    details: str = Field(
+    code: Optional[str] = Field(
+        default=None,
         description=(
-            "Full diagnostic string: argv, stderr, paths - whatever the failing "
-            "step captured. For whoever debugs the run, not for display to "
-            "whoever asked for the change."
-        )
+            "Stable machine-readable name of the failure, such as "
+            "`budget_exceeded` or `plan_missing`; absent when the failing step has "
+            "no code of its own."
+        ),
     )
     reason: Optional[str] = Field(
         default=None,
         description=(
             "Short, human-safe explanation of the failure, set only when the "
-            "failing tool itself supplied one. Unlike `details`, this never "
-            "carries paths, argv, or stderr, so a UI can show it to whoever asked "
-            "for the change."
+            "failing tool itself supplied one. It never carries paths, argv, or "
+            "stderr, so a UI can show it to whoever asked for the change."
         ),
+    )
+    retryable: bool = Field(
+        default=False,
+        description="Whether repeating the same request can succeed.",
     )
 
 
@@ -445,22 +447,13 @@ class EvolutionResultActionPayload(A2ABaseModel):
             "the next run of this context resumes on it automatically."
         ),
     )
-    # No `rescue_path` field: a rescue that could not be delivered by pushing
-    # falls back to a git bundle, but that bundle is written to a temp file on
-    # the improver's own ephemeral disk — a location nothing outside that
-    # process's lifetime could ever reach, so a path naming it would be dead
-    # information from the moment it is read. When the bundle is small enough
-    # (see the improver's own size ceiling), it instead rides the task as its
-    # own `evolution-rescue-bundle` artifact — that artifact's presence is the
-    # signal a consumer acts on, not a field here.
     rescue_bundle_created: bool = Field(
         default=False,
         description=(
-            "True as soon as the rescue fallback produced a git bundle, whether or "
-            "not it was small enough to attach as the `evolution-rescue-bundle` "
-            "artifact. Distinguishes 'nothing survived the failure' (False) from "
-            "'work survived but could not be handed off' (True, with no matching "
-            "artifact — the bundle exceeded the improver's size ceiling)."
+            "True when even the rescue push failed and the undelivered work was "
+            "saved to a git bundle on the server that ran the evolution. The bundle "
+            "never leaves that server: its operator finds it through the "
+            "deployment's logs."
         ),
     )
     usage: Optional[EvolutionUsage] = Field(

@@ -60,12 +60,7 @@ spec accumulate as duplicate entries instead of superseding the previous one.
 A cancelled run reports through `cancel_result_message` rather than through
 `result_events`: its closing text/data has to ride the terminal CANCELED
 status the A2A cancel flow already owns, since anything published after a
-terminal state is dropped by the event consumer. A rescue bundle is the
-exception carved out of that constraint, not an example of it: the handler
-publishes it via `rescue_bundle_artifact_event` on the live event queue
-*before* the cancel flow closes the task, so it lands as the same kind of
-artifact the failed/completed path uses — never a bytes-carrying message part
-unique to cancellation.
+terminal state is dropped by the event consumer.
 """
 
 from __future__ import annotations
@@ -124,15 +119,12 @@ __all__ = [
     "failed_event",
     "internal_error_text",
     "map_stream_event",
-    "rescue_bundle_artifact_event",
     "result_events",
     "status_event",
 ]
 
 RESULT_ARTIFACT_NAME = "evolution-result"
 SPEC_ARTIFACT_NAME = "evolution-spec"
-RESCUE_BUNDLE_ARTIFACT_NAME = "evolution-rescue-bundle"
-RESCUE_BUNDLE_MEDIA_TYPE = "application/x-git-bundle"
 
 # Key in TaskStatusUpdateEvent.metadata carrying the machine-readable progress
 # struct. Namespaced by the extension URI so it can't collide with other
@@ -278,6 +270,15 @@ def internal_error_text(progress: Optional[dict] = None) -> str:
     )
 
 
+# The rescue push failed and the work survives only as a git bundle on the
+# server that ran the evolution. Nobody outside that server can reach the
+# file, so the sentence points at whoever can.
+_BUNDLE_ONLY_FACT = (
+    "Work completed so far could not be pushed; it was saved on the server "
+    "that ran the evolution, and its operator can restore it."
+)
+
+
 def _failed_text(result: "EvolutionResult") -> str:
     """The terminal message for a failed run.
 
@@ -288,12 +289,10 @@ def _failed_text(result: "EvolutionResult") -> str:
     appears here: it is the raw exception string, which for an executor
     failure carries the CLI flags it was invoked with and up to 1500
     characters of its stderr. That belongs to whoever is debugging the
-    deployment, and reaches them intact on the result artifact's `error`
-    field, not here.
+    deployment and stays in its logs.
     """
     reason = getattr(result, "error_reason", None)
     rescue_pushed = bool(getattr(result, "rescue_pushed", False))
-    rescue_bundle = getattr(result, "rescue_bundle", None)
     rescue_bundle_created = bool(getattr(result, "rescue_bundle_created", False))
     branch = getattr(result, "branch", None)
 
@@ -301,24 +300,8 @@ def _failed_text(result: "EvolutionResult") -> str:
     # of whether we also know *why* it failed.
     if rescue_pushed and branch:
         outcome_fact = f"Work completed so far is preserved on branch {branch}."
-    elif rescue_bundle:
-        # The bundle rides this same result as its own artifact (see
-        # `rescue_bundle_artifact_event`) — actionable by whoever reads this
-        # task, not only an operator with host access.
-        outcome_fact = (
-            "Work completed so far was saved and is attached to this task as "
-            "a downloadable bundle."
-        )
     elif rescue_bundle_created:
-        # A bundle existed — the work was real — but it exceeded the size
-        # this improver can safely hand off, and there is no path or other
-        # channel to point at instead: the file lived only on the improver's
-        # own ephemeral disk. Saying so plainly beats implying a recovery
-        # that nothing downstream of this task can perform.
-        outcome_fact = (
-            "Work completed so far exceeded the size that could be preserved "
-            "and was lost."
-        )
+        outcome_fact = _BUNDLE_ONLY_FACT
     else:
         outcome_fact = "No changes were made."
 
@@ -481,7 +464,12 @@ def status_event(
 
 
 def failed_event(
-    task: Task, *, error: str, code: str | None = None, progress: dict | None = None
+    task: Task,
+    *,
+    error: str,
+    code: str | None = None,
+    retryable: bool = False,
+    progress: dict | None = None,
 ) -> TaskStatusUpdateEvent:
     """Terminal FAILED update carrying the user-facing error message.
 
@@ -489,14 +477,13 @@ def failed_event(
     progress struct as `error.code`, so a caller branches on it instead of
     matching prose that is free to change. Nested under `error` rather than a
     flat `errorCode` key: it is terminal-only, unlike the rest of the struct's
-    accumulated run progress, and nesting leaves room for sibling fields
-    (e.g. a future `error.retryable`) without crowding the progress
-    namespace. The rejections that happen before a run starts carry no
-    accumulated progress, hence `progress` is optional.
+    accumulated run progress, and `error.retryable` sits beside it. The
+    rejections that happen before a run starts carry no accumulated progress,
+    hence `progress` is optional.
     """
     merged = dict(progress or {})
     if code:
-        merged["error"] = {"code": code}
+        merged["error"] = {"code": code, "retryable": retryable}
     return status_event(
         task,
         state=TaskState.TASK_STATE_FAILED,
@@ -940,8 +927,12 @@ def _stopped_early(result: "EvolutionResult") -> bool:
 def _result_payload(result: "EvolutionResult") -> EvolutionResultActionPayload:
     """The run result as the extension's published wire payload."""
     error = (
-        EvolutionError(details=result.error, reason=getattr(result, "error_reason", None))
-        if result.error
+        EvolutionError(
+            code=getattr(result, "error_code", None),
+            reason=getattr(result, "error_reason", None),
+            retryable=bool(getattr(result, "error_retryable", False)),
+        )
+        if result.outcome == "failed"
         else None
     )
     return EvolutionResultActionPayload(
@@ -984,61 +975,6 @@ def _result_artifact_event(task: Task, result: "EvolutionResult") -> TaskArtifac
     return artifact_event
 
 
-def rescue_bundle_artifact_event(
-    task: Task, result: "EvolutionResult"
-) -> Optional[TaskArtifactUpdateEvent]:
-    """The rescue bundle as its own downloadable artifact, or None.
-
-    Only produced when the toolkit read the bundle's own bytes back (see
-    `EvolutionResult.rescue_bundle`) — a bundle over `rescue_bundle_max_bytes`
-    leaves only `rescue_bundle_created=True` with no artifact to match, and
-    the terminal text says the work was lost instead (see `_failed_text`/
-    `cancel_result_message`).
-
-    Shared by both terminal paths: `result_events()` publishes it before the
-    failed/completed status, and `EvolutionTaskHandler.cancel()` (see
-    handler.py) publishes it directly on `event_queue` before the executor's
-    terminal CANCELED lands — a client sees the same artifact shape either
-    way, never a bundle riding as a message part on one path and an artifact
-    on the other. Public (no leading underscore) precisely because that
-    second caller lives in a different module.
-
-    A separate artifact from the result payload, same as `SPEC_ARTIFACT_NAME`:
-    different content type (binary vs. schema-tagged JSON), different
-    lifecycle. `Part(raw=...)` is exactly what `A2AFileTransformer` looks for
-    to offload to blob storage and rewrite into a URL part, once a real
-    storage backend exists — nothing here has to change for that upgrade.
-
-    `artifact.name` is the fixed `RESCUE_BUNDLE_ARTIFACT_NAME`, matching
-    `RESULT_ARTIFACT_NAME`/`SPEC_ARTIFACT_NAME` — a consumer switches on it to
-    recognize "this is the rescue bundle" the same way it does for the other
-    two. The human-facing filename is per-run (carries `context_id`), so it
-    goes on `Part.filename` instead, where it can vary without disturbing
-    that lookup.
-    """
-    data = getattr(result, "rescue_bundle", None)
-    if not data:
-        return None
-    return TaskArtifactUpdateEvent(
-        task_id=task.id,
-        context_id=task.context_id,
-        artifact=Artifact(
-            artifact_id=_stable_artifact_id(task, RESCUE_BUNDLE_ARTIFACT_NAME),
-            name=RESCUE_BUNDLE_ARTIFACT_NAME,
-            description="Committed-but-undelivered work, as a git bundle. Restore with "
-            "`git fetch <this file> <branch>` in any clone of the target.",
-            parts=[
-                Part(
-                    raw=data,
-                    media_type=RESCUE_BUNDLE_MEDIA_TYPE,
-                    filename=f"rescue-{task.context_id}.bundle",
-                )
-            ],
-        ),
-        last_chunk=True,
-    )
-
-
 def cancel_result_message(task: Task, result: "EvolutionResult") -> Message:
     """The cancelled run's result, shaped for the terminal CANCELED status.
 
@@ -1055,40 +991,17 @@ def cancel_result_message(task: Task, result: "EvolutionResult") -> Message:
     outcome survives for a `tasks/get` rather than being something only a live
     subscriber saw.
 
-    The rescue bundle itself is not on this message: `EvolutionTaskHandler.
-    cancel()` (handler.py) publishes it as its own artifact via
-    `rescue_bundle_artifact_event()` on `event_queue`, *before* calling into
-    the A2A cancel flow that lands this message — so it is already on the
-    task by the time this terminal status arrives. Same artifact shape as the
-    failed/completed path, not message-part-only cargo unique to cancellation.
-
     Carries the same schema-tagged payload the result artifact would have, so
     a consumer reads one shape for every outcome.
     """
     rescue_pushed = bool(getattr(result, "rescue_pushed", False))
-    rescue_bundle = getattr(result, "rescue_bundle", None)
     rescue_bundle_created = bool(getattr(result, "rescue_bundle_created", False))
     branch = getattr(result, "branch", None)
     if rescue_pushed and branch:
         # The one thing worth saying: the work is not lost, and where it is.
         fact = f"Cancelled — work completed so far is preserved on branch {branch}."
-    elif rescue_bundle:
-        # The bundle rides as its own artifact, published by the caller
-        # before this message lands (see this function's docstring) —
-        # actionable by whoever reads this task, not only an operator with
-        # host access. Mirrors `_failed_text`'s equivalent branch.
-        fact = (
-            "Cancelled — work completed so far was saved and is attached to "
-            "this task as a downloadable bundle."
-        )
     elif rescue_bundle_created:
-        # A bundle existed but exceeded what could be handed off, and there
-        # is no other channel to point at — same honesty as `_failed_text`'s
-        # equivalent branch, for the same reason.
-        fact = (
-            "Cancelled — work completed so far exceeded the size that could "
-            "be preserved and was lost."
-        )
+        fact = f"Cancelled — {_BUNDLE_ONLY_FACT[0].lower()}{_BUNDLE_ONLY_FACT[1:]}"
     else:
         fact = "Cancelled."
     text = fact
@@ -1197,7 +1110,13 @@ def result_events(
 
     artifact_event = _result_artifact_event(task, result)
     if result.outcome == "failed":
-        terminal = failed_event(task, error=_failed_text(result), progress=terminal_progress)
+        terminal = failed_event(
+            task,
+            error=_failed_text(result),
+            code=getattr(result, "error_code", None),
+            retryable=bool(getattr(result, "error_retryable", False)),
+            progress=terminal_progress,
+        )
     elif result.outcome == "no_change":
         # "No changes were needed" is a verdict about the work; a run that ran
         # out of budget before committing anything never reached one, so it
@@ -1244,12 +1163,4 @@ def result_events(
             text=_terminal_text(result, location),
             progress=terminal_progress,
         )
-    events_out = [artifact_event]
-    bundle_event = rescue_bundle_artifact_event(task, result)
-    if bundle_event is not None:
-        # Before `terminal`, not after: anything published once the terminal
-        # status lands is dropped by the event consumer (same rule that
-        # keeps the cancel path off a separate artifact entirely).
-        events_out.append(bundle_event)
-    events_out.append(terminal)
-    return events_out
+    return [artifact_event, terminal]

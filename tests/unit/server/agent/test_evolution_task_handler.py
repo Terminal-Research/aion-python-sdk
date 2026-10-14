@@ -864,34 +864,6 @@ class TestCancel:
         assert payload["rescuePushed"] is True
 
     @pytest.mark.anyio
-    async def test_cancel_publishes_the_rescue_bundle_as_an_artifact(self):
-        """Unified with the failed/completed path: the bundle rides on
-        `event_queue` as its own artifact, published before the terminal
-        message is returned — not as bytes riding the message itself."""
-        handler = _handler(worker=FakeWorker(_result()))
-        _inflight(
-            handler,
-            _result(
-                "cancelled",
-                rescue_pushed=False,
-                branch=None,
-                rescue_bundle_created=True,
-                rescue_bundle=b"PACK-git-bundle-bytes",
-            ),
-        )
-        queue = _FakeEventQueue()
-
-        message = await handler.cancel(_make_context(), queue)
-
-        assert len(queue.events) == 1
-        bundle_event = queue.events[0]
-        assert bundle_event.artifact.name == evolution_events.RESCUE_BUNDLE_ARTIFACT_NAME
-        assert bundle_event.artifact.parts[0].raw == b"PACK-git-bundle-bytes"
-        # No raw bytes on the terminal message itself — the artifact already
-        # carries them.
-        assert not any(hasattr(p, "raw") and p.raw for p in message.parts)
-
-    @pytest.mark.anyio
     async def test_cancel_says_nothing_when_the_run_already_finished(self):
         """The run reached its own outcome inside the race window and _drive
         already reported it; a second report here would contradict it."""

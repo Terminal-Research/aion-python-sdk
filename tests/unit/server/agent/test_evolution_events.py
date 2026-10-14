@@ -853,11 +853,11 @@ class TestResultEvents:
         )
 
         artifact_event, terminal = out
-        # The diagnostic reaches the operator on the artifact...
-        assert (
-            MessageToDict(artifact_event.artifact.parts[0].data)["error"]["details"]
-            == "push denied"
-        )
+        # The diagnostic stays in the deployment's logs: the artifact carries
+        # the error's code and reason, never the raw exception text.
+        error = MessageToDict(artifact_event.artifact.parts[0].data)["error"]
+        assert "details" not in error
+        assert "push denied" not in str(error)
         assert terminal.status.state == TaskState.TASK_STATE_FAILED
         # ...while the person who asked for the change reads a short, safe
         # statement of what was (not) obtained. A toolkit failure is
@@ -887,11 +887,10 @@ class TestResultEvents:
             "evolution/ctx-1."
         )
 
-    def test_failed_with_bundle_over_the_cap_says_the_work_was_lost(self):
-        """A bundle was created (real work existed) but exceeded the size the
-        improver can hand off — no path, no operator to name, so the text
-        says plainly that it was lost rather than implying a recovery
-        nothing downstream can perform."""
+    def test_failed_with_only_a_bundle_points_at_the_operator(self):
+        """The rescue push failed and the work survives only as a bundle on
+        the server that ran the evolution: the text says so, and who can
+        restore it."""
         out = _result_events(
             _task(),
             _result(
@@ -906,9 +905,31 @@ class TestResultEvents:
         )
         _, terminal = out
         assert _text(terminal) == (
-            "Failed — Work completed so far exceeded the size that could be "
-            "preserved and was lost."
+            "Failed — Work completed so far could not be pushed; it was saved on "
+            "the server that ran the evolution, and its operator can restore it."
         )
+
+    def test_failed_carries_the_code_and_retry_hint(self):
+        """The toolkit's stable code and retry hint reach both the result
+        payload and the terminal status's `error` object."""
+        out = _result_events(
+            _task(),
+            _result(
+                "failed",
+                branch=None,
+                commit_sha=None,
+                error="token budget reached",
+                error_code="budget_exceeded",
+                error_retryable=False,
+                commit_count=None,
+                spec_path=None,
+            ),
+        )
+        artifact_event, terminal = out
+        data = MessageToDict(artifact_event.artifact.parts[0].data)
+        assert data["error"]["code"] == "budget_exceeded"
+        assert data["error"]["retryable"] is False
+        assert _progress(terminal)["error"] == {"code": "budget_exceeded", "retryable": False}
 
     def test_failed_leads_with_error_reason_when_present(self):
         """The tool's own short, safe explanation — e.g. an unsupported
@@ -941,10 +962,9 @@ class TestResultEvents:
         # The raw diagnostic (CLI invocation, stderr) never lands in the
         # chat-facing text, even when a reason is available.
         assert "codex exec" not in _text(terminal)
-        # ...while the full diagnostic and the reason both ride the artifact,
-        # grouped under one `error` object.
+        # The reason rides the artifact; the raw diagnostic does not.
         data = MessageToDict(artifact_event.artifact.parts[0].data)
-        assert "codex exec" in data["error"]["details"]
+        assert "codex exec" not in str(data)
         assert data["error"]["reason"] == (
             "The 'gpt-5.6-lunsa' model is not supported when using Codex "
             "with a ChatGPT account."
@@ -1010,64 +1030,6 @@ class TestResultEvents:
         # regardless (unlike an Optional field, `exclude_none` does not drop
         # them) — same as `rescuePushed` right beside it.
         assert data["rescueBundleCreated"] is False
-
-    def test_failed_with_rescue_bundle_attaches_it_and_says_so(self):
-        """A bundle read back under the size cap rides as its own artifact —
-        the terminal text points at it instead of claiming it was lost."""
-        out = _result_events(
-            _task(),
-            _result(
-                "failed",
-                branch=None,
-                commit_sha=None,
-                error="push denied",
-                commit_count=None,
-                spec_path=None,
-                rescue_bundle_created=True,
-                rescue_bundle=b"PACK-git-bundle-bytes",
-            ),
-        )
-        result_artifact, bundle_event, terminal = out
-        assert _text(terminal) == (
-            "Failed — Work completed so far was saved and is attached to "
-            "this task as a downloadable bundle."
-        )
-        assert isinstance(bundle_event, TaskArtifactUpdateEvent)
-        assert bundle_event.artifact.parts[0].raw == b"PACK-git-bundle-bytes"
-        assert bundle_event.artifact.parts[0].media_type == events.RESCUE_BUNDLE_MEDIA_TYPE
-        assert bundle_event.artifact.parts[0].filename == "rescue-ctx-1.bundle"
-        assert bundle_event.artifact.name == events.RESCUE_BUNDLE_ARTIFACT_NAME
-        # Emitted before the terminal status, never after — an event
-        # published once the terminal lands is dropped by the consumer.
-        assert out.index(bundle_event) < out.index(terminal)
-        # The bytes never get duplicated into the JSON result payload.
-        data = MessageToDict(result_artifact.artifact.parts[0].data)
-        assert "rescueBundle" not in data
-
-    def test_failed_without_bundle_bytes_says_the_work_was_lost(self):
-        """Over the size cap (or the read-back failed): `rescue_bundle_created`
-        alone, no bundle artifact — and the text is honest about the loss
-        rather than pointing at an operator nobody can reach."""
-        out = _result_events(
-            _task(),
-            _result(
-                "failed",
-                branch=None,
-                commit_sha=None,
-                error="push denied",
-                commit_count=None,
-                spec_path=None,
-                rescue_bundle_created=True,
-                rescue_bundle=None,
-            ),
-        )
-        assert len(out) == 2  # no bundle artifact in between
-        _, terminal = out
-        assert _text(terminal) == (
-            "Failed — Work completed so far exceeded the size that could be "
-            "preserved and was lost."
-        )
-
 
 class TestDurableEventsAreNeverEphemeral:
     """Whatever ends the run has to survive in the record — the ephemeral flag
@@ -1386,16 +1348,16 @@ class TestCancelResultMessage:
         schema = MessageToDict(message.parts[1].metadata)[EVENT_EXTENSION_URI_V1]["schema"]
         assert schema == BEHAVIOUR_EVOLUTION_RESULT_ACTION_PAYLOAD_SCHEMA_V1
 
-    def test_bundle_over_the_cap_says_the_work_was_lost(self):
-        """A bundle existed (real work) but exceeded what could be handed
-        off, and there is no path or operator to point at instead."""
+    def test_only_a_bundle_points_at_the_operator(self):
+        """The rescue push failed and the bundle stays on the server that ran
+        the evolution."""
         message = events.cancel_result_message(
             _task(),
             _result("cancelled", rescue_pushed=False, branch=None, rescue_bundle_created=True),
         )
         assert message.parts[0].text == (
-            "Cancelled — work completed so far exceeded the size that could "
-            "be preserved and was lost."
+            "Cancelled — work completed so far could not be pushed; it was saved "
+            "on the server that ran the evolution, and its operator can restore it."
         )
         assert MessageToDict(message.parts[1].data)["rescueBundleCreated"] is True
 
@@ -1403,48 +1365,6 @@ class TestCancelResultMessage:
         message = events.cancel_result_message(_task(), _result("cancelled", branch=None))
         assert message.parts[0].text == "Cancelled."
         assert MessageToDict(message.parts[1].data)["outcome"] == "cancelled"
-
-    def test_bundle_under_the_cap_names_it_but_carries_no_bytes(self):
-        """The message text says a bundle is attached, but the bytes
-        themselves never ride this message — `EvolutionTaskHandler.cancel()`
-        publishes them as their own artifact via `rescue_bundle_artifact_event`
-        before this message lands, same shape as the failed/completed path
-        (see `test_bundle_under_the_cap_matches_the_result_events_shape`)."""
-        message = events.cancel_result_message(
-            _task(),
-            _result(
-                "cancelled",
-                rescue_pushed=False,
-                branch=None,
-                rescue_bundle_created=True,
-                rescue_bundle=b"PACK-git-bundle-bytes",
-            ),
-        )
-        assert message.parts[0].text == (
-            "Cancelled — work completed so far was saved and is attached to "
-            "this task as a downloadable bundle."
-        )
-        assert len(message.parts) == 2
-        assert not any(hasattr(p, "raw") and p.raw for p in message.parts)
-
-    def test_bundle_under_the_cap_matches_the_result_events_shape(self):
-        """The cancel path's bundle artifact is produced by the exact same
-        function as the failed/completed path — one artifact shape for every
-        outcome, never a bundle-as-message-part special case."""
-        result = _result(
-            "cancelled",
-            rescue_pushed=False,
-            branch=None,
-            rescue_bundle_created=True,
-            rescue_bundle=b"PACK-git-bundle-bytes",
-        )
-        bundle_event = events.rescue_bundle_artifact_event(_task(), result)
-        assert bundle_event is not None
-        assert bundle_event.artifact.name == events.RESCUE_BUNDLE_ARTIFACT_NAME
-        assert bundle_event.artifact.parts[0].raw == b"PACK-git-bundle-bytes"
-        assert bundle_event.artifact.parts[0].media_type == events.RESCUE_BUNDLE_MEDIA_TYPE
-        assert bundle_event.artifact.parts[0].filename == "rescue-ctx-1.bundle"
-
 
 class TestStageIsOurVocabularyNotTheToolkitEnum:
     def test_known_phases_map_to_published_stages(self):
