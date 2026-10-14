@@ -9,6 +9,8 @@ authentication diagnostics) lives in ``test_aion_backend.py``; the stub used
 here succeeds unconditionally.
 """
 
+from datetime import datetime, timezone
+
 import pytest
 from a2a.server.context import ServerCallContext
 from a2a.types import (
@@ -256,6 +258,38 @@ def artifact_event(*parts, context_id="ctx-1") -> TaskArtifactUpdateEvent:
     )
 
 
+def outbox_message(*parts) -> Message:
+    return Message(
+        message_id="m-out",
+        task_id="t-1",
+        context_id="ctx-1",
+        role=Role.ROLE_AGENT,
+        parts=list(parts),
+    )
+
+
+# Every shape an outbound file can travel in - the updates an agent streams and
+# the message or task it returns through its outbox - with a way to read back
+# the parts it was built with.
+OUTBOUND_SHAPES = {
+    "status-update": (status_event, lambda event: event.status.message.parts),
+    "artifact-update": (artifact_event, lambda event: event.artifact.parts),
+    "outbox-message": (outbox_message, lambda message: message.parts),
+    "outbox-task-status": (
+        lambda *parts: task_with(status_parts=parts),
+        lambda task: task.status.message.parts,
+    ),
+    "outbox-task-history": (
+        lambda *parts: task_with(history_parts=parts),
+        lambda task: task.history[0].parts,
+    ),
+    "outbox-task-artifact": (
+        lambda *parts: task_with(artifact_parts=parts),
+        lambda task: task.artifacts[0].parts,
+    ),
+}
+
+
 class TestA2AFileTransformer:
     def _transformer(self, backend=None):
         return A2AFileTransformer(
@@ -268,17 +302,17 @@ class TestA2AFileTransformer:
     async def test_no_manager_passes_events_through(self):
         transformer = A2AFileTransformer(upload_manager=None)
         event = status_event(raw_part())
-        assert (await transformer.transform_event(event)).event is event
+        assert (await transformer.transform(event)).event is event
 
     async def test_status_event_raw_becomes_url(self):
-        event = (await self._transformer().transform_event(
+        event = (await self._transformer().transform(
             status_event(raw_part()), upload_context=upload_context()
         )).event
         part = event.status.message.parts[0]
         assert part.url and not part.raw
 
     async def test_artifact_event_raw_becomes_url(self):
-        event = (await self._transformer().transform_event(
+        event = (await self._transformer().transform(
             artifact_event(raw_part()), upload_context=upload_context()
         )).event
         assert event.artifact.parts[0].url
@@ -293,7 +327,7 @@ class TestA2AFileTransformer:
             "retentionExpiresAt": deadline,
         }})
         source = event_builder(Part(text="keep"), invalid, raw_part(name="valid.png"))
-        result = (await self._transformer(backend).transform_event(
+        result = (await self._transformer(backend).transform(
             source, upload_context=upload_context(),
         )).event
         parts = (result.status.message.parts if isinstance(result, TaskStatusUpdateEvent)
@@ -302,31 +336,43 @@ class TestA2AFileTransformer:
         assert len([p for p in parts if p.url]) == 1
         assert [u.filename for u in backend.batches[0]] == ["valid.png"]
 
-    async def test_inbound_metadata_cannot_request_indefinite_retention(self):
+    @pytest.mark.parametrize(
+        "retention",
+        [FileRetentionDefault.PROVIDER, datetime(2030, 1, 1, tzinfo=timezone.utc)],
+        ids=["provider", "deadline"],
+    )
+    async def test_a_retention_set_for_all_overrules_what_a_file_requests(self, retention):
+        """How a caller's inbound files are stored: a request books no storage.
+
+        The file's own request is neither honoured nor carried on, so nothing
+        downstream reads it as granted.
+        """
         backend = RecordingBackend()
         part = raw_part()
         part.metadata.update(FileActionPayload(retention_expires_at=None).to_metadata())
         message = Message(message_id="m", role=Role.ROLE_USER, parts=[part])
-        result = await self._transformer(backend).transform_message(
-            message, upload_context=upload_context(),
+
+        result = await self._transformer(backend).transform(
+            message, retention=retention, upload_context=upload_context(),
         )
+
         assert result.report.ok
-        assert backend.batches[0][0].retention_expires_at is FileRetentionDefault.PROVIDER
-        assert not result.message.parts[0].metadata
+        assert backend.batches[0][0].retention_expires_at == retention
+        assert not result.event.parts[0].metadata
 
     async def test_url_action_does_not_upload_or_renew_a_file(self):
         backend = RecordingBackend()
         part = Part(url="https://files.test/existing", metadata=
                     FileActionPayload(retention_expires_at=None).to_metadata())
         event = artifact_event(part)
-        assert (await self._transformer(backend).transform_event(
+        assert (await self._transformer(backend).transform(
             event, upload_context=upload_context(),
         )).event is event
         assert backend.batches == []
 
     async def test_event_without_inline_parts_is_returned_unchanged(self):
         event = status_event(Part(text="hello"))
-        assert (await self._transformer().transform_event(
+        assert (await self._transformer().transform(
             event, upload_context=upload_context()
         )).event is event
 
@@ -334,7 +380,7 @@ class TestA2AFileTransformer:
         """Cards are UI documents, not files - the skip rules keep them inline."""
         backend = RecordingBackend()
         event = status_event(Part(raw=b"<Card/>", media_type=CARDS_MEDIA_TYPE))
-        result = (await self._transformer(backend).transform_event(
+        result = (await self._transformer(backend).transform(
             event, upload_context=upload_context()
         )).event
         assert result is event
@@ -343,7 +389,7 @@ class TestA2AFileTransformer:
     async def test_one_batch_per_event(self):
         """Every inline part of one event is stored in a single call."""
         backend = RecordingBackend()
-        await self._transformer(backend).transform_event(
+        await self._transformer(backend).transform(
             status_event(raw_part(name="a.png"), Part(text="t"), raw_part(name="b.png")),
             upload_context=upload_context(),
         )
@@ -355,7 +401,7 @@ class TestA2AFileTransformer:
         backend = OutcomeBackend(
             [UploadReceipt(uri=f"u-{i}") for i in range(4)], delay=0.01
         )
-        event = (await self._transformer(backend).transform_event(
+        event = (await self._transformer(backend).transform(
             status_event(*(raw_part(name=f"{i}.png") for i in range(4))),
             upload_context=upload_context(),
         )).event
@@ -371,7 +417,7 @@ class TestA2AFileTransformer:
                 UploadReceipt(uri="u-2"),
             ]
         )
-        transform = await self._transformer(backend).transform_event(
+        transform = await self._transformer(backend).transform(
             status_event(*(raw_part(name=f"{i}.png") for i in range(3))),
             upload_context=upload_context(),
         )
@@ -385,7 +431,7 @@ class TestA2AFileTransformer:
         """An artifact with no part left is not an artifact: nothing goes out."""
         backend = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)])
         with caplog.at_level("DEBUG"):
-            event = (await self._transformer(backend).transform_event(
+            event = (await self._transformer(backend).transform(
                 artifact_event(raw_part()), upload_context=upload_context()
             )).event
         assert event is None
@@ -393,7 +439,7 @@ class TestA2AFileTransformer:
 
     async def test_status_left_without_parts_keeps_its_state_only(self):
         backend = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)])
-        event = (await self._transformer(backend).transform_event(
+        event = (await self._transformer(backend).transform(
             status_event(raw_part()), upload_context=upload_context()
         )).event
         assert event.status.state == TaskState.TASK_STATE_WORKING
@@ -402,7 +448,7 @@ class TestA2AFileTransformer:
     async def test_unnamed_part_is_uploaded_under_its_artifact_name(self, caplog):
         """``file_artifact()`` names the artifact, not the part."""
         backend = RecordingBackend()
-        await self._transformer(backend).transform_event(
+        await self._transformer(backend).transform(
             artifact_event(Part(raw=b"a,b", media_type="text/csv")),
             upload_context=upload_context(),
         )
@@ -416,7 +462,7 @@ class TestA2AFileTransformer:
         """
         backend = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_UNAVAILABLE, retryable=True)])
         with caplog.at_level("WARNING"):
-            transform = await self._transformer(backend).transform_event(
+            transform = await self._transformer(backend).transform(
                 status_event(Part(text="answer"), raw_part(name="a.png")),
                 upload_context=upload_context(),
             )
@@ -431,7 +477,7 @@ class TestA2AFileTransformer:
         cause = RuntimeError("https://internal.host/secret timed out")
         backend = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_REJECTED, cause=cause)])
         with caplog.at_level("WARNING"):
-            event = (await self._transformer(backend).transform_event(
+            event = (await self._transformer(backend).transform(
                 status_event(raw_part()), upload_context=upload_context()
             )).event
         assert "internal.host" not in event.SerializeToString().decode("latin-1")
@@ -441,7 +487,7 @@ class TestA2AFileTransformer:
         cause = RuntimeError("refused")
         backend = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_REJECTED, cause=cause)])
         with caplog.at_level("DEBUG"):
-            await self._transformer(backend).transform_event(
+            await self._transformer(backend).transform(
                 status_event(raw_part()), upload_context=upload_context()
             )
         warning = next(r for r in caplog.records if r.levelname == "WARNING")
@@ -459,14 +505,14 @@ class TestA2AFileTransformer:
         )
         failure = UploadFailure(FileUploadErrorCode.NO_ATTRIBUTION)
 
-        result = await transformer.transform_message(message, upload_context=failure)
+        result = await transformer.transform(message, upload_context=failure)
 
         assert len(result.report.failures) == 1
         assert backend.batches == []
-        assert list(result.message.parts) == []
+        assert result.event is None, "a message with every part dropped is not sent"
 
     async def test_report_receipts_match_the_stored_parts(self):
-        transform = await self._transformer().transform_message(
+        transform = await self._transformer().transform(
             Message(
                 message_id="m-1",
                 role=Role.ROLE_USER,
@@ -476,16 +522,112 @@ class TestA2AFileTransformer:
         )
         assert len(transform.report.receipts) == 2
         assert transform.report.ok
-        urls = [p.url for p in transform.message.parts if p.url]
+        urls = [p.url for p in transform.event.parts if p.url]
         assert urls == [r.uri for r in transform.report.receipts]
 
     async def test_source_message_is_not_mutated(self):
         message = Message(message_id="m-1", role=Role.ROLE_USER, parts=[raw_part()])
-        transform = await self._transformer().transform_message(
+        transform = await self._transformer().transform(
             message, upload_context=upload_context()
         )
-        assert transform.message is not message
+        assert transform.event is not message
         assert message.parts[0].raw
+
+    @pytest.mark.parametrize("shape", OUTBOUND_SHAPES)
+    async def test_every_outbound_shape_stores_its_files(self, shape):
+        """Wherever an agent puts a file, it leaves as a URL with its file action.
+
+        The parts beside it stay where they were, and the file is stored as an
+        outbound one: its retention request reaches the backend.
+        """
+        build, parts_of = OUTBOUND_SHAPES[shape]
+        backend = RecordingBackend()
+        file = raw_part(name="report.pdf", media="application/pdf")
+        file.metadata.update(FileActionPayload(retention_expires_at=None).to_metadata())
+        source = build(Part(text="keep"), file)
+
+        transform = await self._transformer(backend).transform(
+            source, upload_context=upload_context()
+        )
+
+        text, stored = parts_of(transform.event)
+        assert text.text == "keep"
+        assert stored.url.startswith(StubFileStorageBackend.BASE_URI)
+        assert not stored.raw
+        assert (stored.filename, stored.media_type) == ("report.pdf", "application/pdf")
+        assert stored.metadata == file.metadata
+        assert transform.report.ok and len(transform.report.receipts) == 1
+        assert backend.batches[0][0].retention_expires_at is None
+        assert parts_of(source)[1].raw, "the agent's own event is left alone"
+
+    async def test_a_task_stores_every_file_it_carries_in_one_batch(self):
+        """Status message, history and artifacts are one task, so one batch.
+
+        A part without a filename is uploaded under its artifact's name, as it
+        is in an artifact update.
+        """
+        backend = RecordingBackend()
+        task = task_with(
+            status_parts=[raw_part(name="status.png")],
+            history_parts=[raw_part(name="history.png")],
+            artifact_parts=[Part(raw=b"a,b", media_type="text/csv")],
+        )
+
+        transformed = (await self._transformer(backend).transform(
+            task, upload_context=upload_context()
+        )).event
+
+        assert len(backend.batches) == 1
+        assert [u.filename for u in backend.batches[0]] == ["status.png", "history.png", "art"]
+        assert strip_inline_file_content(transformed) is transformed, "no inline part is left"
+        assert transformed.id == task.id
+
+    async def test_task_without_inline_parts_is_returned_unchanged(self):
+        task = task_with(
+            status_parts=[Part(text="hello")],
+            artifact_parts=[Part(url="https://files.test/existing")],
+        )
+        assert (await self._transformer().transform(
+            task, upload_context=upload_context()
+        )).event is task
+
+    async def test_message_left_without_parts_is_not_sent(self):
+        """A message with no part is not a message: nothing goes out."""
+        backend = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)])
+        transform = await self._transformer(backend).transform(
+            outbox_message(raw_part()), upload_context=upload_context()
+        )
+        assert transform.event is None
+        assert [f.error_code for f in transform.report.failures] == [
+            FileUploadErrorCode.STORAGE_FORBIDDEN
+        ]
+
+    async def test_task_loses_only_what_its_failed_files_emptied(self):
+        """A message or artifact with nothing left goes; the rest of the task stays."""
+        backend = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)] * 4)
+        task = task_with(
+            status_parts=[raw_part()],
+            history_parts=[raw_part()],
+            artifact_parts=[raw_part()],
+        )
+        task.history.append(
+            Message(message_id="m-kept", role=Role.ROLE_AGENT, parts=[Part(text="kept")])
+        )
+        task.artifacts.append(
+            Artifact(artifact_id="a-kept", name="kept", parts=[Part(text="kept"), raw_part()])
+        )
+
+        transform = await self._transformer(backend).transform(
+            task, upload_context=upload_context()
+        )
+
+        transformed = transform.event
+        assert transformed.status.state == TaskState.TASK_STATE_WORKING
+        assert not transformed.status.HasField("message")
+        assert [m.message_id for m in transformed.history] == ["m-kept"]
+        assert [a.artifact_id for a in transformed.artifacts] == ["a-kept"]
+        assert [p.text for p in transformed.artifacts[0].parts] == ["kept"]
+        assert len(transform.report.failures) == 4
 
 
 # --------------------------------------------------------------------------

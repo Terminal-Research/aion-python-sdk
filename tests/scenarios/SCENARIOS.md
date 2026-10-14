@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-169 scenarios in 33 files, 377 runs across 2 frameworks: 345 run, 31 skipped, 1 independent of the framework.
+173 scenarios in 33 files, 397 runs across 2 frameworks: 365 run, 31 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -14,15 +14,15 @@ A status cell reads `✓` when it runs, `skip` when `frameworks.UNSUPPORTED`, `f
 
 |  | Covered | Not yet |
 |---|---|---|
-| Commands | 21 of 21: `help`, `echo`, `stream`, `typing`, `steps`, `slow`, `artifacts`, `card`, `outbox-task`, `outbox-message`, `ask`, `ask-twice`, `ask-fail`, `fail`, `ext`, `whoami`, `event`, `config`, `ids`, `big`, `parts` | — |
+| Commands | 22 of 22: `help`, `echo`, `stream`, `typing`, `steps`, `slow`, `artifacts`, `send-file`, `card`, `outbox-task`, `outbox-message`, `ask`, `ask-twice`, `ask-fail`, `fail`, `ext`, `whoami`, `event`, `config`, `ids`, `big`, `parts` | — |
 | Suites | 17 of 17: `smoke`, `streaming`, `events`, `terminal_states`, `interrupts`, `errors`, `artifacts`, `files`, `extensions`, `daemon`, `authentication`, `config`, `lifecycle`, `contexts`, `persistence`, `distributed`, `native` | — |
 
 ## Frameworks
 
 | Framework | Agent package | Entry | SDK extras | Commands implemented |
 |---|---|---|---|---|
-| langgraph | `tests.scenarios.agents.langgraph_core` | `graph.py:create_graph` | `langgraph-server` | 21 of 21 |
-| adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 18 of 21 |
+| langgraph | `tests.scenarios.agents.langgraph_core` | `graph.py:create_graph` | `langgraph-server` | 22 of 22 |
+| adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 19 of 22 |
 
 The `native` suite runs a second agent per framework instead: an ordinary agent on the framework's own path - a model, a tool, the framework's loop and memory - with no Aion authoring API and no part of the command contract. Its cells name the agent.
 
@@ -64,11 +64,11 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `smoke` | agent answers at all: card, health, help, echo | 8 | `make tests-scenarios TAGS=smoke` |
 | `streaming` | chunked replies, ephemeral typing, unary send | 14 | `make tests-scenarios TAGS=streaming` |
 | `events` | event order, ids, outbox, get_task agreement | 20 | `make tests-scenarios TAGS=events` |
-| `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 9 | `make tests-scenarios TAGS=terminal_states` |
+| `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 11 | `make tests-scenarios TAGS=terminal_states` |
 | `interrupts` | INPUT_REQUIRED and resume | 9 | `make tests-scenarios TAGS=interrupts` |
-| `errors` | failures that must stay reported, not crash the server | 8 | `make tests-scenarios TAGS=errors` |
+| `errors` | failures that must stay reported, not crash the server | 10 | `make tests-scenarios TAGS=errors` |
 | `artifacts` | artifact and card emission | 4 | `make tests-scenarios TAGS=artifacts` |
-| `files` | inline file parts: stored, rejected, or passed through | 10 | `make tests-scenarios TAGS=files` |
+| `files` | inline file parts: stored, rejected, or passed through | 12 | `make tests-scenarios TAGS=files` |
 | `extensions` | extension activation and payload delivery | 12 | `make tests-scenarios TAGS=extensions` |
 | `daemon` | daemon extension identity and environment | 6 | `make tests-scenarios TAGS=daemon` |
 | `authentication` | bearer tokens: required, verified, and naming the caller | 6 | `make tests-scenarios TAGS=authentication` |
@@ -171,11 +171,13 @@ An agent that crashes must leave a task that says so.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The stream ends in a terminal task, not in silence.](core/test_errors.py#L31 "test_a_crash_before_any_answer_closes_the_task_as_failed") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
-| [What was already delivered stays delivered, and the task still fails.](core/test_errors.py#L51 "test_a_crash_after_a_reply_keeps_the_reply") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
-| [A later `tasks/get` reports the failure too.](core/test_errors.py#L65 "test_the_failure_is_in_the_stored_task_not_only_on_the_wire") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
-| [The reason is logged, not published.](core/test_errors.py#L83 "test_the_failed_task_does_not_carry_the_exception") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
-| [The next request is answered normally.](core/test_errors.py#L99 "test_a_failing_turn_does_not_take_the_agent_with_it") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [The stream ends in a terminal task, not in silence.](core/test_errors.py#L32 "test_a_crash_before_any_answer_closes_the_task_as_failed") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [What was already delivered stays delivered, and the task still fails.](core/test_errors.py#L52 "test_a_crash_after_a_reply_keeps_the_reply") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [A later `tasks/get` reports the failure too.](core/test_errors.py#L66 "test_the_failure_is_in_the_stored_task_not_only_on_the_wire") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [The exception is logged, not published.](core/test_errors.py#L84 "test_the_failed_task_does_not_carry_the_exception") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [The next request is answered normally.](core/test_errors.py#L100 "test_a_failing_turn_does_not_take_the_agent_with_it") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [Not a bare FAILED: the caller learns the turn crashed, and the task to look for.](core/test_errors.py#L122 "test_a_crash_says_so_and_where_the_log_has_it") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [`TaskFailedError` is the agent's own word on the failure, and every reader gets it.](core/test_errors.py#L134 "test_an_agents_reason_reaches_every_reader_of_the_task") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_event_payloads.py`
 
@@ -221,16 +223,18 @@ Inline file parts: stored on the way in and out, rejected, or passed through.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The inbox keeps the data part as it was sent, metadata included.](core/test_files.py#L103 "test_an_inbound_data_part_reaches_the_inbox_whole") | `files` | `parts` | `default` | ✓ | ✓ |
-| [The agent never sees the bytes: by the time it runs, the file is a URL.](core/test_files.py#L121 "test_an_inbound_file_reaches_the_agent_as_a_url") | `files` | `parts` | `file-storage` | ✓ | ✓ |
-| [Reading the task back returns what was persisted: a URL part, no raw content.](core/test_files.py#L140 "test_the_stored_task_holds_the_url_and_not_the_bytes") | `files` | `parts` | `file-storage` | ✓ | ✓ |
-| [Direct invocation attribution supports storage without distribution metadata.](core/test_files.py#L161 "test_a_direct_inbound_file_uses_callback_scope") | `files` | `parts` | `file-storage` | ✓ | ✓ |
-| [Missing distribution principals do not override accepted callback attribution.](core/test_files.py#L172 "test_distribution_recipients_do_not_select_file_authority") | `files` | `parts` | `file-storage` | ✓ | ✓ |
-| [Storage is a concern of file parts only; a plain message is unaffected.](core/test_files.py#L186 "test_text_only_requests_need_no_distribution") | `files` | `parts` | `file-storage` | ✓ | ✓ |
-| [Passthrough is a supported mode: no backend, the bytes reach the agent and the record.](core/test_files.py#L196 "test_without_a_backend_inline_content_passes_through") | `files` | `parts` | `default` | ✓ | ✓ |
-| [The uploaded URL preserves the file action, including explicit null retention.](core/test_files.py#L214 "test_an_outbound_file_leaves_as_a_url") | `files` | `artifacts` | `file-storage` | ✓ | [skip](#frameworks) |
-| [No backend, no conversion: the bytes the agent emitted are the bytes received.](core/test_files.py#L244 "test_without_a_backend_an_outbound_file_stays_inline") | `files` | `artifacts` | `default` | ✓ | [skip](#frameworks) |
-| [Selecting the Aion backend without AION_CLIENT_ID and AION_CLIENT_SECRET is a startup error.](core/test_files.py#L257 "test_the_aion_backend_does_not_serve_without_credentials") | `files` | — | `aion-no-credentials` | ✓ | ✓ |
+| [The inbox keeps the data part as it was sent, metadata included.](core/test_files.py#L105 "test_an_inbound_data_part_reaches_the_inbox_whole") | `files` | `parts` | `default` | ✓ | ✓ |
+| [The agent never sees the bytes: by the time it runs, the file is a URL.](core/test_files.py#L123 "test_an_inbound_file_reaches_the_agent_as_a_url") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [Reading the task back returns what was persisted: a URL part, no raw content.](core/test_files.py#L142 "test_the_stored_task_holds_the_url_and_not_the_bytes") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [Direct invocation attribution supports storage without distribution metadata.](core/test_files.py#L163 "test_a_direct_inbound_file_uses_callback_scope") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [Missing distribution principals do not override accepted callback attribution.](core/test_files.py#L174 "test_distribution_recipients_do_not_select_file_authority") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [Storage is a concern of file parts only; a plain message is unaffected.](core/test_files.py#L188 "test_text_only_requests_need_no_distribution") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [Passthrough is a supported mode: no backend, the bytes reach the agent and the record.](core/test_files.py#L198 "test_without_a_backend_inline_content_passes_through") | `files` | `parts` | `default` | ✓ | ✓ |
+| [The uploaded URL preserves the file action, including explicit null retention.](core/test_files.py#L216 "test_an_outbound_file_leaves_as_a_url") | `files` | `artifacts` | `file-storage` | ✓ | [skip](#frameworks) |
+| [No backend, no conversion: the bytes the agent emitted are the bytes received.](core/test_files.py#L246 "test_without_a_backend_an_outbound_file_stays_inline") | `files` | `artifacts` | `default` | ✓ | [skip](#frameworks) |
+| [No route an agent hands the server a file by skips storage.](core/test_files.py#L278 "test_every_route_out_of_the_agent_delivers_a_file_as_a_url") | `files` | `send-file` | `file-storage` | ✓ | ✓ |
+| [No backend, no conversion, whichever route the file takes.](core/test_files.py#L306 "test_without_a_backend_every_route_delivers_the_bytes") | `files` | `send-file` | `default` | ✓ | ✓ |
+| [Selecting the Aion backend without AION_CLIENT_ID and AION_CLIENT_SECRET is a startup error.](core/test_files.py#L327 "test_the_aion_backend_does_not_serve_without_credentials") | `files` | — | `aion-no-credentials` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_interrupts.py`
 
@@ -494,13 +498,14 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | `steps <n>` | Emit n working statuses, then complete | `events` | 2 | ✓ | ✓ |
 | `slow <sec>` | Reply after n seconds | `lifecycle` | 17 | ✓ | ✓ |
 | `artifacts` | Emit a two-part data artifact, an inline file and a url | `artifacts`, `files` | 2 | ✓ | [skip](#frameworks) |
+| `send-file <route>` | Send one inline file: artifact \| reply \| outbox-message \| outbox-task | `files` | 2 | ✓ | ✓ |
 | `card` | Emit one card | `artifacts` | 4 | ✓ | ✓ |
 | `outbox-task` | Return an A2A Task through the outbox | `events` | 6 | ✓ | ✓ |
 | `outbox-message` | Return an A2A Message through the outbox | `events` | 3 | ✓ | ✓ |
 | `ask` | Ask a question, then quote the answer | `interrupts` | 9 | ✓ | [skip](#frameworks) |
 | `ask-twice` | Ask two questions in a row | `interrupts` | 3 | ✓ | [skip](#frameworks) |
 | `ask-fail` | Ask a question, then fail on the answer | `interrupts`, `errors` | 3 | ✓ | [skip](#frameworks) |
-| `fail <mode>` | Fail on purpose: exception \| after-reply | `errors`, `terminal_states` | 5 | ✓ | ✓ |
+| `fail <mode>` | Fail on purpose: exception \| after-reply \| reason | `errors`, `terminal_states` | 7 | ✓ | ✓ |
 | `ext` | Report active and unknown extensions | `extensions` | 6 | ✓ | ✓ |
 | `whoami` | Report the daemon identity | `daemon` | 6 | ✓ | ✓ |
 | `event` | Report the event this turn carried | `extensions`, `events` | 4 | ✓ | ✓ |

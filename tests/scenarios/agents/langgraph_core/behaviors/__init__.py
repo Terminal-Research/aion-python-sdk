@@ -15,7 +15,7 @@ from .cards import card
 from .config import config, event, ext, whoami
 from .errors import fail
 from .events import ids, steps
-from .files import artifacts, parts
+from .files import artifacts, parts, send_file
 from .interrupts import ask, ask_fail, ask_twice
 from .lifecycle import slow
 from .outbox import outbox_message, outbox_task
@@ -40,6 +40,7 @@ BEHAVIORS: dict[str, Behavior] = {
     "ids": ids,
     "parts": parts,
     "artifacts": artifacts,
+    "send-file": send_file,
     "card": card,
     "big": big,
     "fail": fail,

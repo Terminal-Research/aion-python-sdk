@@ -111,7 +111,7 @@ def converter(service) -> ADKToA2AEventConverter:
 
 async def store(event, backend):
     """Pass a converted event through the transformer the executor's pipeline uses."""
-    return await A2AFileTransformer(FileUploadManager(backend)).transform_event(event)
+    return await A2AFileTransformer(FileUploadManager(backend)).transform(event)
 
 
 class TestArtifactStorage:

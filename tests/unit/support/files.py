@@ -16,8 +16,10 @@ from aion.core.a2a.extensions import (
     Environment,
     PrincipalIdentity,
 )
+from aion.server.files.a2a import A2AFileTransformer
 from aion.server.files.storage import (
     FileUpload,
+    FileUploadManager,
     StubFileStorageBackend,
     UploadContext,
 )
@@ -98,3 +100,17 @@ class OutcomeBackend(StubFileStorageBackend):
                 self._in_flight -= 1
 
         return list(await asyncio.gather(*(one(i) for i in range(len(uploads)))))
+
+
+class StoringTransformer(A2AFileTransformer):
+    """The real file transformer, storing against a fixed organization.
+
+    Its callers leave the upload context to the transformer, which projects it
+    from the request; a unit test has no request, so the context is given.
+    """
+
+    def __init__(self, backend=None) -> None:
+        super().__init__(upload_manager=FileUploadManager(backend or StubFileStorageBackend()))
+
+    async def transform(self, event, **kwargs):
+        return await super().transform(event, upload_context=upload_context(), **kwargs)

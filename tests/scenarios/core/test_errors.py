@@ -6,8 +6,10 @@ executor: the caller is left holding a stream that simply stops, or the task
 stays WORKING in the store forever, so every later `tasks/get` reports work
 still in progress that nothing is doing.
 
-Both modes of `fail` are here, and the difference between them is what the
-caller already has when the crash happens.
+Both crashing modes of `fail` are here, and the difference between them is
+what the caller already has when the crash happens. The third, `reason`, is
+an agent failing on purpose and saying why: the one case where what the task
+says comes from the agent.
 """
 
 from __future__ import annotations
@@ -15,13 +17,12 @@ from __future__ import annotations
 import pytest
 from a2a.types import TaskState
 
-from tests.scenarios.commands import FAIL_MESSAGE, FAIL_REPLY_TEXT, echo_text
+from tests.scenarios.commands import FAIL_MESSAGE, FAIL_REASON_TEXT, FAIL_REPLY_TEXT, echo_text
 from tests.scenarios.harness import (
     ScenarioClient,
     assert_shape,
     final_task,
     reply_texts,
-    status,
     task,
 )
 
@@ -34,15 +35,15 @@ async def test_a_crash_before_any_answer_closes_the_task_as_failed(
 ) -> None:
     """The stream ends in a terminal task, not in silence.
 
-    Nothing was produced by the turn, so this is the whole of what the caller
-    receives - and a client waiting for a terminal event would otherwise wait
-    for one that never arrives.
+    Nothing was produced by the turn - not even the first event that would
+    have announced work - so this is the whole of what the caller receives,
+    and a client waiting for a terminal event would otherwise wait for one
+    that never arrives.
     """
     events = await client.send("fail exception")
 
     assert_shape(events, [
         task("SUBMITTED"),
-        status("WORKING", text=""),
         task("FAILED"),
     ])
     assert final_task(events).final is True
@@ -82,10 +83,10 @@ async def test_the_failure_is_in_the_stored_task_not_only_on_the_wire(
 
 @pytest.mark.command("fail")
 async def test_the_failed_task_does_not_carry_the_exception(client: ScenarioClient) -> None:
-    """The reason is logged, not published.
+    """The exception is logged, not published.
 
     An exception's text is internal detail - paths, library names, whatever
-    the agent happened to interpolate. The task says it failed and no more.
+    the agent happened to interpolate. The task says it crashed, not why.
     """
     events = await client.send("fail exception")
     closing = final_task(events)
@@ -109,3 +110,42 @@ async def test_a_failing_turn_does_not_take_the_agent_with_it(client: ScenarioCl
 
     assert echo_text("still here") in reply_texts(events)
     assert final_task(events).state == "COMPLETED"
+
+
+def _status_text(task) -> str:
+    """What a task's status message says."""
+    if not task.status.HasField("message"):
+        return ""
+    return "".join(part.text for part in task.status.message.parts)
+
+
+@pytest.mark.command("fail")
+async def test_a_crash_says_so_and_where_the_log_has_it(client: ScenarioClient) -> None:
+    """Not a bare FAILED: the caller learns the turn crashed, and the task to look for."""
+    events = await client.send("fail exception")
+    closing = final_task(events)
+    stored = await client.get_task(closing.task_id)
+
+    for where, said in (("stream", _status_text(closing.raw)), ("tasks/get", _status_text(stored))):
+        assert closing.task_id in said, where
+        assert FAIL_MESSAGE not in said, where
+
+
+@pytest.mark.command("fail")
+async def test_an_agents_reason_reaches_every_reader_of_the_task(client: ScenarioClient) -> None:
+    """`TaskFailedError` is the agent's own word on the failure, and every reader gets it.
+
+    The stream, the unary answer and a later `tasks/get` - the three places
+    a caller can find out how a turn ended.
+    """
+    streamed = await client.send("fail reason")
+    unary = await client.send("fail reason", stream=False)
+    stored = await client.get_task(final_task(streamed).task_id)
+
+    for where, failed in (
+        ("stream", final_task(streamed).raw),
+        ("unary answer", final_task(unary).raw),
+        ("tasks/get", stored),
+    ):
+        assert failed.status.state == TaskState.TASK_STATE_FAILED, where
+        assert _status_text(failed) == FAIL_REASON_TEXT, where

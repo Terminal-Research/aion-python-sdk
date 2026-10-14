@@ -2,7 +2,6 @@
 
 import aion.core.logging.base  # noqa: F401
 import logging
-import os
 import sys
 import uvicorn
 from aion.core.config import AgentConfig
@@ -14,11 +13,8 @@ from aion.server.core.app import AppFactory
 from aion.server.logging import setup_root_logger
 from aion.server.plugins import PluginFactory
 from aion.server.tasks import store_manager
-from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
-
-dotenv_path = load_dotenv(dotenv_path=os.path.join(os.getcwd(), '.env'), verbose=True)
 
 
 class MissingAPIKeyError(AionError):

@@ -22,7 +22,11 @@ requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.11.3",
     "pydantic-settings>=2.3.4",
-    "python-dotenv>=1.0.1",
+    # 1.2.0 is the first release whose load_dotenv() honours
+    # PYTHON_DOTENV_DISABLED, the switch the `aion` CLI documents for skipping a
+    # project's `.env` and the test suites rely on: libraries the frameworks
+    # bring call load_dotenv() on import, and only the switch stops them.
+    "python-dotenv>=1.2.0",
     # Two reasons this is not 6.0. PyYAML 6.0 ships no wheel for any
     # interpreter this project supports and its sdist does not build on 3.12,
     # so the floor that was written here could never have been installed at
@@ -220,6 +224,10 @@ pytest-cov = ">=7.1.0"
 # `make tests-unit` spreads the unit suite over worker processes; UNIT_WORKERS
 # in the Makefile sets how many.
 pytest-xdist = ">=3.6.0"
+# The unit suite runs with no network beyond this machine: tests/conftest.py
+# lets a unit test connect to localhost only, so a call that would reach a live
+# service fails the test instead of reaching it.
+pytest-socket = ">=0.7.0"
 import-linter = ">=2.0"
 # Development-only: the generated GraphQL client is committed, so nothing at
 # install time needs the code generator.

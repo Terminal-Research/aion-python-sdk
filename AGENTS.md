@@ -166,9 +166,14 @@ aion.cli
 Run tests through the repository's Make targets so each suite gets its own
 setup and teardown. `make help` lists targets; `tests/README.md` explains
 selection. The suite directory determines its pytest marker, so do not add
-`unit`, `integration`, or `scenario` markers by hand. Python test-package
-directories need an `__init__.py` to avoid module-name collisions; data-only
-fixture and configuration directories do not.
+`unit`, `integration`, or `scenario` markers by hand. Every test runs on the
+SDK's defaults, never on the machine's configuration: `tests/conftest.py`
+removes the variables the SDK reads and switches `.env` loading off before
+collection, and a unit test may connect to localhost only. A test that needs a
+setting sets it with `monkeypatch`; see "The environment a test runs in" in
+`tests/README.md`. Python test-package directories need an `__init__.py` to
+avoid module-name collisions; data-only fixture and configuration directories
+do not.
 
 - Unit behavior: while developing, run the tests of the affected module, for
   example `make tests-unit TEST_PATHS="tests/unit/server" ARGS="-k websocket -x"`.

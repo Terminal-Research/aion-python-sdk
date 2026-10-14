@@ -1,11 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
-
-
-os.environ.setdefault("AION_CLIENT_ID", "test-client")
-os.environ.setdefault("AION_CLIENT_SECRET", "test-secret")
 
 import pytest
 

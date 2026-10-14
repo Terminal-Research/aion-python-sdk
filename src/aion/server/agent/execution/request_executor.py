@@ -1,9 +1,9 @@
 """Framework-agnostic A2A executor for AionAgent."""
 import logging
 from a2a.server.agent_execution import AgentExecutor, RequestContext
-from a2a.server.events import EventQueue
+from a2a.server.events import Event, EventQueue
 from a2a.server.tasks import TaskUpdater
-from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
+from a2a.types import Message, Part, Task
 from a2a.helpers import new_task_from_user_message
 from a2a.utils.errors import (
     InternalError,
@@ -45,6 +45,67 @@ logger = logging.getLogger(__name__)
 _ROUTED_EXTENSION = A2AMetadataKey.ROUTED_EXTENSION.value
 
 
+CRASH_REASON = (
+    "The agent stopped on an unexpected error. Its log has the details under task {task_id}."
+)
+"""What the task of a crashed turn says: that it crashed, and where to look.
+
+The exception's own text stays in the log; it may name paths, hosts or
+whatever the agent interpolated into it.
+"""
+
+
+def public_reason_of(error: BaseException) -> Optional[str]:
+    """The first reason a caller may read, along ``error``'s chain of causes.
+
+    Frameworks and libraries wrap what an agent raises - an executor
+    re-raises it as its own error, a model client wraps the SDK's refusal -
+    so the error the server catches is often not the one that carries the
+    reason. Causes are followed the way Python prints them: an explicit
+    ``__cause__`` first, else the implicit ``__context__`` unless it was
+    suppressed.
+
+    Args:
+        error: The exception a turn ended on.
+
+    Returns:
+        The first non-empty ``public_reason`` found, or None when nothing in
+        the chain carries one.
+    """
+    seen: set[int] = set()
+    current: Optional[BaseException] = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        reason = getattr(current, "public_reason", None)
+        if isinstance(reason, str) and reason:
+            return reason
+        current = current.__cause__ or (
+            None if current.__suppress_context__ else current.__context__
+        )
+    return None
+
+
+class _FileStoringEventQueue(EventQueue):
+    """The request's event queue, with inline files stored on the way in.
+
+    What a cancel hook publishes reaches the queue directly rather than
+    through the event pipeline, so this queue stores its files the way the
+    pipeline stores a run's. A file that cannot be stored is dropped, with its
+    reason in the transformer's log line, and the task is canceled all the
+    same: cancellation is the outcome the caller asked for.
+    """
+
+    def __init__(self, queue: EventQueue, transformer: A2AFileTransformer) -> None:
+        self._queue = queue
+        self._transformer = transformer
+
+    async def enqueue_event(self, event) -> None:
+        """Store the event's inline files, then publish what is left of it."""
+        transform = await self._transformer.transform(event)
+        if transform.event is not None:
+            await self._queue.enqueue_event(transform.event)
+
+
 class AionAgentRequestExecutor(AgentExecutor):
     """A2A executor adapter for AionAgent.
 
@@ -53,14 +114,25 @@ class AionAgentRequestExecutor(AgentExecutor):
     this executor simply enqueues them.
 
     If an A2AFileTransformer is provided, inline (base64) file parts in
-    outgoing events are stored and replaced with URL parts before being
-    enqueued. A file that could not be stored fails the task: the rest of its
-    event still reaches the client and the run stops. The handler that
-    produced the event is asked to forget it (``discard_undelivered``), so a
-    copy the framework kept cannot be read back by a later turn. A stream
-    closes with the FAILED task; a unary caller gets an InternalError naming
-    the failure in its fixed public wording. Inline bytes never reach the task
-    record.
+    everything the agent sends out - status and artifact updates, and the
+    Message or Task an agent returns through its outbox - are stored and
+    replaced with URL parts before being delivered. A file that could not be
+    stored fails the task: the rest of its event still reaches the client and
+    the run stops. The handler that produced the event is asked to forget it
+    (``discard_undelivered``), so a copy the framework kept cannot be read
+    back by a later turn.
+
+    A turn that fails says why on its FAILED status, which the stream closes
+    with, the unary call answers and a later `tasks/get` returns: a file that
+    could not be stored and any error carrying a ``public_reason`` - the
+    agent's own ``TaskFailedError``, or an SDK error naming what the
+    deployment lacks - give their sentence, and the request ends normally.
+    Any other error is a crash: the task names it as one and points at the
+    log, and the error is raised for a2a-sdk to report.
+    What a cancel hook publishes, and the message it closes the CANCELED with,
+    have their files stored the same way; there a file that could not be
+    stored is dropped and the task is canceled regardless. Inline bytes never
+    reach the task record.
     """
 
     def __init__(
@@ -177,30 +249,38 @@ class AionAgentRequestExecutor(AgentExecutor):
                 await pipeline.process(agent_event)
 
         except OutboundFileNotStoredError as ex:
-            # Each file's reason is already logged on a line of its own; a
-            # traceback through the pipeline would add nothing to it.
-            logger.error("Execution failed: %s", ex)
+            # Each file's reason is already logged, one WARNING line per file.
             await self._discard_undelivered(task, context, ex.event)
-            await self._close_failed_task(task_updater, pipeline)
-            raise InternalError(message=ex.public_reason) from ex
+            await self._close_failed_task(task_updater, pipeline, reason=ex.public_reason)
         except Exception as ex:
-            logger.exception("Execution failed")
-            await self._close_failed_task(task_updater, pipeline)
-            raise InternalError() from ex
+            reason = public_reason_of(ex)
+            if reason is not None:
+                # An outcome its raiser put in words for the caller - the
+                # agent itself, or the SDK naming what a deployment lacks -
+                # not a crash: the task fails saying so, and the request ends
+                # normally. Raising would have a2a-sdk log it as an unexpected
+                # error, twice and with a traceback.
+                logger.warning("Task failed: %s", ex)
+                await self._close_failed_task(task_updater, pipeline, reason=reason)
+                return
+            # A crash. a2a-sdk logs the error raised here with its traceback,
+            # the original exception included as its cause.
+            crash = CRASH_REASON.format(task_id=task.id)
+            await self._close_failed_task(task_updater, pipeline, reason=crash)
+            raise InternalError(message=crash) from ex
 
     async def _discard_undelivered(
             self,
             task: Task,
             context: RequestContext,
-            event: TaskStatusUpdateEvent | TaskArtifactUpdateEvent,
+            event: Event,
     ) -> None:
         """Let the producer of an event that never reached the task forget it.
 
         Runs before the task is closed, so a turn that follows the FAILED
         state cannot read back what the client never received. A handler
         without ``discard_undelivered`` keeps no copy of its own. Failures are
-        logged and swallowed: the task fails either way, and the error being
-        propagated is the one the caller needs.
+        logged and swallowed: the task fails either way.
         """
         discard = getattr(self._routed_handler(task), "discard_undelivered", None)
         if discard is None:
@@ -214,6 +294,7 @@ class AionAgentRequestExecutor(AgentExecutor):
     async def _close_failed_task(
             task_updater: TaskUpdater,
             pipeline: AionEventPipeline,
+            reason: Optional[str] = None,
     ) -> None:
         """Put a crashed execution's task into a terminal FAILED state.
 
@@ -223,19 +304,23 @@ class AionAgentRequestExecutor(AgentExecutor):
         permanently in progress. Skipped when the producer already emitted a
         terminal state, since that outcome is the authoritative one.
 
-        No message is attached: the exception text is internal detail, and it
-        is already logged. Failures here are swallowed so they cannot mask the
-        original error being propagated by the caller.
+        ``reason`` becomes the FAILED status's message, so the stream, the
+        unary answer and a later `tasks/get` all say why the task failed. It
+        is always a sentence written for the caller - a public reason, or the
+        crash notice - never an exception's own text. Failures here are
+        swallowed so they cannot mask the original error.
 
         Args:
             task_updater: Updater bound to the failed execution's task.
             pipeline: Pipeline that processed the execution's events, consulted
                 for whether a terminal state was already reported.
+            reason: Sentence the caller reads, or None for a bare FAILED.
         """
         if pipeline.terminal_seen:
             return
+        message = task_updater.new_agent_message([Part(text=reason)]) if reason else None
         try:
-            await task_updater.failed()
+            await task_updater.failed(message=message)
         except Exception:  # noqa: BLE001 - must not mask the original failure
             logger.exception("Could not mark the task as failed after an execution error")
 
@@ -275,23 +360,31 @@ class AionAgentRequestExecutor(AgentExecutor):
             )
 
         cancel = await self._resolve(task, "cancel")
+        cancel_queue = (
+            _FileStoringEventQueue(event_queue, self._file_transformer)
+            if self._file_transformer is not None
+            else event_queue
+        )
         cancel_message = None
         try:
-            cancel_message = await cancel(context=context, event_queue=event_queue)
+            cancel_message = await cancel(context=context, event_queue=cancel_queue)
         except UnsupportedOperationError:
             logger.debug("Handler does not support cancellation, proceeding with A2A cancel")
 
-        # `event_queue` was already handed to the extension handler above, so
-        # any artifact it needed to publish (e.g. undelivered work rescued as
-        # a bundle) went out before this point - the event consumer stops
-        # accepting events the moment a terminal state lands, so anything
-        # queued after `task_updater.cancel()` below would be dropped.
-        # The returned message is the closing text/data for that terminal
-        # event itself. Framework adapters return None, so this is inert for
-        # them; anything that is not a Message is ignored rather than trusted
-        # into the A2A event.
+        # The request's queue was already handed to the extension handler
+        # above, so any artifact it needed to publish (e.g. undelivered work
+        # rescued as a bundle) went out before this point, its files stored on
+        # the way - the event consumer stops accepting events the moment a
+        # terminal state lands, so anything queued after
+        # `task_updater.cancel()` below would be dropped. The returned message
+        # is the closing text/data for that terminal event itself, and its
+        # files are stored the same way. Framework adapters return None, so
+        # this is inert for them; anything that is not a Message is ignored
+        # rather than trusted into the A2A event.
         if not isinstance(cancel_message, Message):
             cancel_message = None
+        elif self._file_transformer is not None:
+            cancel_message = (await self._file_transformer.transform(cancel_message)).event
 
         task_updater = TaskUpdater(event_queue, task.id, task.context_id)
         await task_updater.cancel(message=cancel_message)

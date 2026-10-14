@@ -2,7 +2,17 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from a2a.server.agent_execution import RequestContext
 from a2a.server.events import EventQueue
-from a2a.types import Task, TaskState, TaskStatus
+from a2a.types import (
+    Artifact,
+    Message,
+    Part,
+    Role,
+    Task,
+    TaskArtifactUpdateEvent,
+    TaskState,
+    TaskStatus,
+    TaskStatusUpdateEvent,
+)
 from a2a.utils.errors import (
     InternalError,
     InvalidParamsError,
@@ -18,6 +28,9 @@ from aion.server.agent.execution.scope import init_execution_scope
 from aion.core.runtime.context.models import AionRuntimeContext
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.agent.execution.context.providers import RequestScopeRuntimeContextProvider
+from aion.server.files.storage import FileUploadErrorCode, StubFileStorageBackend, UploadFailure
+from tests.unit.support.events import RecordingQueue
+from tests.unit.support.files import OutcomeBackend, StoringTransformer
 
 ROUTED = A2AMetadataKey.ROUTED_EXTENSION.value
 
@@ -342,6 +355,87 @@ class TestCancel:
             handler.cancel.assert_awaited_once_with(context=ctx, event_queue=event_queue)
             agent.cancel.assert_not_awaited()
             updater_instance.cancel.assert_awaited_once()
+
+
+class TestCancelFiles:
+    """What a cancel hook hands back reaches the client with its files stored.
+
+    The hook publishes straight to the request's queue - a rescued bundle, for
+    instance - and closes the CANCELED with a message of its own; neither
+    passes through the event pipeline, and neither may carry inline bytes.
+    """
+
+    @staticmethod
+    def _handing_back_files():
+        bundle = TaskArtifactUpdateEvent(
+            task_id="task-123",
+            context_id="ctx-456",
+            artifact=Artifact(
+                artifact_id="bundle",
+                name="bundle",
+                parts=[Part(raw=b"git bundle", media_type="application/octet-stream",
+                            filename="rescue.bundle")],
+            ),
+        )
+        closing = Message(
+            message_id="m-cancel",
+            task_id="task-123",
+            context_id="ctx-456",
+            role=Role.ROLE_AGENT,
+            parts=[Part(text="canceled"),
+                   Part(raw=b"log", media_type="text/plain", filename="run.log")],
+        )
+
+        async def cancel(*, context, event_queue):
+            await event_queue.enqueue_event(bundle)
+            return closing
+
+        handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0")
+        handler.cancel = AsyncMock(side_effect=cancel)
+        return handler
+
+    async def _cancel(self, agent, transformer) -> RecordingQueue:
+        handler = self._handing_back_files()
+        executor = AionAgentRequestExecutor(
+            aion_agent=agent, file_transformer=transformer, extension_handlers=[handler]
+        )
+        task = _make_real_task(state=TaskState.TASK_STATE_WORKING, metadata={ROUTED: handler.uri})
+        queue = RecordingQueue()
+        await executor.cancel(_make_context(task=task), queue)
+        return queue
+
+    @pytest.mark.anyio
+    async def test_files_a_cancel_hook_hands_back_leave_as_urls(self, agent):
+        queue = await self._cancel(agent, StoringTransformer())
+
+        bundle, canceled = queue.events
+        assert isinstance(bundle, TaskArtifactUpdateEvent)
+        assert bundle.artifact.parts[0].url.startswith(StubFileStorageBackend.BASE_URI)
+        assert not bundle.artifact.parts[0].raw
+        assert canceled.status.state == TaskState.TASK_STATE_CANCELED
+        text, log = canceled.status.message.parts
+        assert text.text == "canceled"
+        assert log.url.startswith(StubFileStorageBackend.BASE_URI) and not log.raw
+
+    @pytest.mark.anyio
+    async def test_a_file_that_could_not_be_stored_does_not_stop_the_cancel(self, agent):
+        """Cancellation is the outcome the caller asked for; the file is dropped."""
+        refused = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)])
+
+        queue = await self._cancel(agent, StoringTransformer(refused))
+
+        (canceled,) = queue.events
+        assert isinstance(canceled, TaskStatusUpdateEvent)
+        assert canceled.status.state == TaskState.TASK_STATE_CANCELED
+        assert [part.text for part in canceled.status.message.parts] == ["canceled"]
+
+    @pytest.mark.anyio
+    async def test_without_a_backend_the_hook_gets_the_request_queue_itself(self, agent):
+        queue = await self._cancel(agent, None)
+
+        bundle, canceled = queue.events
+        assert bundle.artifact.parts[0].raw == b"git bundle"
+        assert canceled.status.message.parts[1].raw == b"log"
 
 
 def _make_real_task(state: TaskState = TaskState.TASK_STATE_INPUT_REQUIRED, metadata: dict | None = None):

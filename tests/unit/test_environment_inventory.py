@@ -70,10 +70,16 @@ LAUNCHER = {
     "AION_CHAT_SKIP_UPDATE_CHECK",
 }
 
+# Read by the `aion` CLI before it loads a project's `.env`: python-dotenv's
+# own switch for skipping the file.
+CLI = {
+    "PYTHON_DOTENV_DISABLED",
+}
+
 
 def _inventory() -> set[str]:
     """Everything this module accounts for."""
-    return _model_variables() | DEPLOYMENT_OUTSIDE_MODELS | EXTENSION_SCOPED | LAUNCHER
+    return _model_variables() | DEPLOYMENT_OUTSIDE_MODELS | EXTENSION_SCOPED | LAUNCHER | CLI
 
 
 def _read_environment_variables() -> set[str]:

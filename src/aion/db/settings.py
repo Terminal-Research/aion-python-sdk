@@ -13,14 +13,12 @@ __all__ = ["DatabaseSettings", "db_settings"]
 class DatabaseSettings(BaseSettings):
     """Pydantic settings for PostgreSQL database connectivity.
 
-    Reads configuration from environment variables or a ``.env`` file.
-    The primary variable is ``POSTGRES_URL`` which must be a valid
-    ``postgresql://`` connection string.
+    Reads configuration from the process environment, which the ``aion`` CLI
+    fills from a project's ``.env``. The primary variable is ``POSTGRES_URL``
+    which must be a valid ``postgresql://`` connection string.
     """
 
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore"
     )

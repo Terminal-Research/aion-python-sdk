@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 
 import time
+from a2a.server.events import Event
 from a2a.types import TaskStatusUpdateEvent, TaskArtifactUpdateEvent
 from aion.server.agent.adapters import (
     ExecutionConfig,
@@ -342,7 +343,7 @@ class AionAgent:
     async def discard_undelivered(
         self,
         context: "RequestContext",
-        event: TaskStatusUpdateEvent | TaskArtifactUpdateEvent,
+        event: Event,
     ) -> None:
         """Let the framework executor forget an event the server could not deliver.
 

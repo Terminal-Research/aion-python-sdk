@@ -98,8 +98,9 @@ class LangGraphExecutor(ExecutorAdapter):
             logger.info(f"LangGraph stream completed: context_id={context_id}, duration={time.monotonic() - start:.3f}s")
 
         except Exception as e:
-            logger.error(f"LangGraph stream failed ({time.monotonic() - start:.3f}s): {e}", exc_info=True)
-            yield converter.convert_error(str(e), type(e).__name__)
+            # The request executor decides what the task says and logs the
+            # failure once; this adds only how long the run lasted.
+            logger.debug(f"LangGraph stream failed after {time.monotonic() - start:.3f}s: {e}")
             raise ExecutionError(f"Failed to stream agent: {e}") from e
 
     async def resume(
@@ -152,7 +153,7 @@ class LangGraphExecutor(ExecutorAdapter):
                 yield a2a_event
 
         except Exception as e:
-            logger.error(f"Failed to resume execution: {e}")
+            logger.debug(f"Failed to resume execution: {e}")
             raise ExecutionError(f"Failed to resume execution: {e}") from e
 
     @property

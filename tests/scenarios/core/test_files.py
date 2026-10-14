@@ -23,6 +23,8 @@ from tests.scenarios.commands import (
     ARTIFACT_FILE_NAME,
     ARTIFACT_URL,
     ARTIFACT_URL_NAME,
+    SEND_FILE_BYTES,
+    SEND_FILE_ROUTES,
     PartsResponse,
     artifacts_text,
 )
@@ -248,6 +250,74 @@ async def test_without_a_backend_an_outbound_file_stays_inline(client: ScenarioC
 
     (file_part,) = artifact_named(events, ARTIFACT_FILE_NAME)
     assert file_part.raw == ARTIFACT_FILE_BYTES
+
+
+def files_in_task(task) -> list:
+    """Every file part a task holds, in its status message, history and artifacts."""
+    messages = list(task.history)
+    if task.status.HasField("message"):
+        messages.append(task.status.message)
+    parts = [part for message in messages for part in message.parts]
+    parts += [part for artifact in task.artifacts for part in artifact.parts]
+    return [part for part in parts if part.raw or part.url]
+
+
+def files_on_the_stream(events: list[Ev]) -> list:
+    """Every file part a stream carried, the task that closes it included."""
+    parts = []
+    for event in events:
+        if event.kind == "status" and event.raw.status.HasField("message"):
+            parts += event.raw.status.message.parts
+        elif event.kind == "artifact":
+            parts += event.raw.artifact.parts
+        elif event.kind == "task":
+            parts += files_in_task(event.raw)
+    return [part for part in parts if part.raw or part.url]
+
+
+@pytest.mark.variant("file-storage")
+@pytest.mark.command("send-file")
+@pytest.mark.parametrize("route", SEND_FILE_ROUTES)
+async def test_every_route_out_of_the_agent_delivers_a_file_as_a_url(
+    storage_client: ScenarioClient, route: str
+) -> None:
+    """No route an agent hands the server a file by skips storage.
+
+    Read wherever a caller can find it - the stream, the unary answer and a
+    later ``tasks/get`` - the file is a URL and none of it is inline. A route
+    that missed storage would show the bytes in one of these places and lose
+    them in another: the task record never keeps inline content.
+    """
+    request = {"metadata": distribution_metadata(), "extensions": [DISTRIBUTION_EXTENSION_URI]}
+    streamed = await storage_client.send(f"send-file {route}", **request)
+    unary = await storage_client.send(f"send-file {route}", stream=False, **request)
+    stored = await storage_client.get_task(final_task(streamed).task_id, history_length=10)
+
+    assert final_task(streamed).state == "COMPLETED"
+    for where, files in (
+        ("stream", files_on_the_stream(streamed)),
+        ("unary answer", files_in_task(final_task(unary).raw)),
+        ("tasks/get", files_in_task(stored)),
+    ):
+        assert files, f"{where}: the file is missing"
+        assert all(part.url.startswith(STUB_URL_PREFIX) for part in files), f"{where}: {files}"
+
+
+@pytest.mark.command("send-file")
+@pytest.mark.parametrize("route", SEND_FILE_ROUTES)
+async def test_without_a_backend_every_route_delivers_the_bytes(
+    client: ScenarioClient, route: str
+) -> None:
+    """No backend, no conversion, whichever route the file takes."""
+    events = await client.send(f"send-file {route}")
+    stored = await client.get_task(final_task(events).task_id, history_length=10)
+
+    for where, files in (
+        ("stream", files_on_the_stream(events)),
+        ("tasks/get", files_in_task(stored)),
+    ):
+        assert files, f"{where}: the file is missing"
+        assert all(part.raw == SEND_FILE_BYTES for part in files), f"{where}: {files}"
 
 
 # --------------------------------------------------------------------------

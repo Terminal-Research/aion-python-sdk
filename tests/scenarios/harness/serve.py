@@ -43,18 +43,36 @@ STARTUP_TIMEOUT_SECONDS = 30
 READY_TIMEOUT_SECONDS = 90
 SHUTDOWN_GRACE_SECONDS = 10
 
-# Variables of the surrounding shell that would reach the platform or a
-# database the scenarios never asked for. A variant that wants one passes it
-# explicitly. ``DEPLOYMENT_ID`` would make the server believe the platform
-# hosts it, and so refuse the anonymous session tokens the scenarios present.
-STRIPPED_ENV_PREFIXES = ("AION_", "CODEX_")
-STRIPPED_ENV_NAMES = (
-    "DEPLOYMENT_ID",
-    "POSTGRES_URL",
-    "OPENAI_API_KEY",
-    "OPENROUTER_API_KEY",
-    "ANTHROPIC_API_KEY",
-)
+# What a server process takes from the surrounding shell: where programs are,
+# whose home it is, how text is encoded, where temporary files go. Nothing
+# else reaches it - a developer's credentials, database or storage backend
+# would otherwise decide what a scenario tests, and a setting added to the SDK
+# tomorrow is kept out without anyone listing it. A variant passes what it
+# wants explicitly.
+INHERITED_ENV_NAMES = frozenset({
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "SHELL",
+    "LANG",
+    "LANGUAGE",
+    "TZ",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    # Joined with this repository below, so the agents under tests/ import.
+    "PYTHONPATH",
+    # Windows keeps the same facts under its own names.
+    "SYSTEMROOT",
+    "WINDIR",
+    "COMSPEC",
+    "PATHEXT",
+    "USERPROFILE",
+    "APPDATA",
+    "LOCALAPPDATA",
+})
+INHERITED_ENV_PREFIXES = ("LC_",)
 
 
 def configs_root() -> Path:
@@ -126,14 +144,18 @@ def _descendants(pid: int) -> list[int]:
 
 
 def _server_env(variant: ServeVariant) -> dict[str, str]:
-    """The environment `aion serve` runs in: this shell, minus the platform, plus the stand-in control plane."""
+    """The environment `aion` runs in: this shell's basics, the stand-in control plane, the variant's.
+
+    `aion` reads no `.env`: a command the harness runs without a directory of
+    its own runs in the test's, which may hold the developer's.
+    """
     environment = {
         name: value
         for name, value in os.environ.items()
-        if not name.startswith(STRIPPED_ENV_PREFIXES) and name not in STRIPPED_ENV_NAMES
+        if name in INHERITED_ENV_NAMES or name.startswith(INHERITED_ENV_PREFIXES)
     }
-    # The stripping above takes every AION_* setting, this one included: the
-    # server finds the keys anonymous session tokens are verified with here.
+    environment["PYTHON_DOTENV_DISABLED"] = "1"
+    # The server finds the keys anonymous session tokens are verified with here.
     environment["AION_API_HOST"] = control_plane().url
     environment.update(variant.env)
     existing = environment.get("PYTHONPATH")

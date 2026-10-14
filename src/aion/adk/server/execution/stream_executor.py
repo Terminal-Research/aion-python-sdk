@@ -157,7 +157,9 @@ class ADKStreamExecutor:
                 await self._persist(event, invocation_context, session)
                 queue.enqueue_event(event)
         except Exception as exc:
-            logger.error("Agent run_async failed: %s", exc, exc_info=True)
+            # Handed on through the queue and raised where the stream is read;
+            # the request executor logs it there, once.
+            logger.debug("Agent run_async failed: %s", exc)
             queue.enqueue_error(exc)
         finally:
             queue.close()

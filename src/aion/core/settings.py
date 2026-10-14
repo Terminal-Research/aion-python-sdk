@@ -1,7 +1,7 @@
 """Environment-based settings for Aion API connections.
 
 Provides Pydantic settings models that read connection parameters from
-environment variables and .env files.
+the process environment.
 """
 
 from typing import Optional
@@ -53,10 +53,13 @@ def platform_supplied_variables(*models: type[BaseSettings]) -> set[str]:
 
 
 class BaseEnvSettings(BaseSettings):
-    """Base class for env settings."""
+    """Base class for env settings.
+
+    Settings come from the process environment only. A project's ``.env`` is
+    the ``aion`` CLI's to load (``aion.cli.utils.project_env``), so importing
+    the SDK never reads a file from the current directory.
+    """
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore"
     )

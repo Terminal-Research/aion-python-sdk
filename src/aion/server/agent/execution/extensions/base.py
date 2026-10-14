@@ -97,6 +97,8 @@ class ExtensionTaskHandler(Protocol):
         late. Small closing text/data instead rides the return value: it
         becomes the message attached to that terminal CANCELED itself. A
         handler with nothing to add returns None, leaving the CANCELED bare.
+        Inline files in either are stored and replaced with URLs, as they
+        are in what `stream()`/`resume()` publish.
         """
         ...
 

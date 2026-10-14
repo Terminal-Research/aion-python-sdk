@@ -452,19 +452,6 @@ class LangGraphA2AConverter:
             status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
         )
 
-    def convert_error(self, error: str, error_type: str) -> TaskStatusUpdateEvent:
-        """Produce a final TaskStatusUpdateEvent with state=failed and log the error.
-
-        Called when the LangGraph graph raises an unhandled exception. The error
-        details are logged at ERROR level but are not forwarded to the client.
-        """
-        logger.error(f"Execution error: {error}, type={error_type}")
-        return TaskStatusUpdateEvent(
-            task_id=self._task_id,
-            context_id=self._context_id,
-            status=TaskStatus(state=TaskState.TASK_STATE_FAILED),
-        )
-
     @staticmethod
     def _detect_role(message: LangChainAgentMessage) -> Role:
         """Map a LangChain message type to an A2A Role.

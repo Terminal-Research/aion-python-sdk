@@ -22,6 +22,12 @@ A session belongs to one agent and one user: it is keyed `app_name` = the Aion a
 
 `a2a_outbox` answers the run that wrote it: the executor takes it from the run's own state deltas, and the value the session keeps afterwards is not applied to later turns of the same context.
 
+With a file storage backend configured, an inline file part (`Part(raw=...)`) anywhere in the outbox is stored and replaced with a URL part before the response is delivered, as every outbound file is; a file that cannot be stored fails the task. The session state still holds the outbox as the agent wrote it, bytes included; to keep file content out of session state, send the file with `thread.post(file_artifact(...))` instead.
+
+## Failing a task
+
+An agent, tool or callback that raises ends the turn with the task `FAILED`, and the status message says why, the same on the stream, in the unary answer and in a later `tasks/get`. To give the caller a reason of your own, raise `aion.core.exceptions.TaskFailedError("...")`; its text is the message, as written. An SDK error that names something the deployment lacks, such as a daemon identity, gives its own sentence the same way. Any other exception is a crash: the task says the agent stopped on an unexpected error and names the task to look up in the log, and the exception's text stays in the log.
+
 ## Installation
 
 ```bash

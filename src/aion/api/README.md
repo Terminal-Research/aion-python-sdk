@@ -10,7 +10,7 @@ adds anything to it.
 
 Settings are managed by
 [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)
-and loaded from environment variables and `.env` files.
+and read from the process environment.
 
 The client authenticates with the Aion API using a `client_id` and `client_secret`.
 A JWT is obtained by POSTing these values to `/auth/tokens`. The returned token is
@@ -30,8 +30,8 @@ export AION_CLIENT_SECRET="your-secret"
 
 Connection settings such as host and port are configured via environment variables.
 You can set additional `AION_`-prefixed environment variables like `AION_API_HOST` or
-`AION_API_KEEP_ALIVE` to customize the configuration. Alternatively, you can create
-a `.env` file in your project root:
+`AION_API_KEEP_ALIVE` to customize the configuration. The `aion` CLI loads a `.env`
+from the directory it runs in before any command starts:
 
 ```
 AION_CLIENT_ID=your-client-id
@@ -39,6 +39,9 @@ AION_CLIENT_SECRET=your-secret
 AION_API_HOST=https://api.aion.to
 AION_API_KEEP_ALIVE=60
 ```
+
+Code that uses the client without the CLI reads the process environment only; load
+such a file yourself first, for example with python-dotenv's `load_dotenv()`.
 
 ## REST Endpoints
 

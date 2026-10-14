@@ -3,7 +3,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 from a2a.types import Part
-from langchain_core.messages import AIMessageChunk
+from langchain_core.messages import AIMessage, AIMessageChunk
 
 from aion.langgraph.server.converters.lc_to_a2a import LcToA2AConverter
 
@@ -126,8 +126,61 @@ class TestFromBlock:
         assert result.metadata["lc_block_type"] == "custom_type"
 
 
+class TestStandardDataBlocks:
+    """Files as a real message's ``content_blocks`` hands them over.
+
+    Built from a real ``AIMessage``, so these follow the block form
+    langchain-core actually produces rather than one written out by hand. An
+    inline file has to arrive as ``Part(raw=...)``: that is what the server
+    stores and replaces with a URL, and anything else carries the bytes into
+    the task record.
+    """
+
+    def test_an_inline_file_becomes_raw_bytes_with_its_name(self):
+        raw = b"%PDF report"
+        message = AIMessage(content=[
+            {"type": "text", "text": "see attached"},
+            {"type": "file", "base64": base64.b64encode(raw).decode(),
+             "mime_type": "application/pdf", "filename": "report.pdf"},
+        ])
+
+        text, file = LcToA2AConverter.from_message(message)
+
+        assert text.text == "see attached"
+        assert (file.raw, file.media_type, file.filename) == (raw, "application/pdf", "report.pdf")
+
+    def test_a_legacy_inline_block_becomes_raw_bytes_too(self):
+        """langchain-core rewrites a ``source_type`` block into the standard form."""
+        raw = b"\x89PNG"
+        message = AIMessage(content=[
+            {"type": "image", "source_type": "base64",
+             "data": base64.b64encode(raw).decode(), "mime_type": "image/png"},
+        ])
+
+        (image,) = LcToA2AConverter.from_message(message)
+
+        assert (image.raw, image.media_type) == (raw, "image/png")
+
+    @pytest.mark.parametrize("key", ["url", "file_id"])
+    def test_a_file_by_reference_becomes_a_url_part(self, key):
+        message = AIMessage(content=[{"type": "image", key: "https://img.test/a.png", "mime_type": "image/png"}])
+
+        (image,) = LcToA2AConverter.from_message(message)
+
+        assert (image.url, image.media_type) == ("https://img.test/a.png", "image/png")
+        assert not image.raw
+
+    def test_a_filename_in_extras_names_the_file(self):
+        block = make_block("file", base64=base64.b64encode(b"x").decode(), extras={"filename": "a.txt"})
+        assert LcToA2AConverter._from_data_content(block).filename == "a.txt"
+
+    def test_a_block_without_content_falls_back_to_a_data_part(self):
+        result = LcToA2AConverter._from_data_content(make_block("image", mime_type="image/png"))
+        assert result.metadata["lc_block_type"] == "image"
+
+
 class TestFromDataContent:
-    """_from_data_content dispatches by source_type."""
+    """_from_data_content reads a legacy block by its source_type."""
 
     def test_url_source_type_produces_url_part(self):
         """source_type='url' maps to Part(url=..., media_type=...)."""
