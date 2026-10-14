@@ -304,7 +304,10 @@ async def test_an_extension_handler_without_a_copy_is_not_asked(queue, runtime_c
         uri = "https://example.com/ext"
 
         def __init__(self) -> None:
-            self.resume = _Agent().resume
+            self._agent = _Agent()
+
+        def resume(self, *, context, event_queue=None):
+            return self._agent.resume(context=context)
 
     agent = _Agent()
 

@@ -244,6 +244,21 @@ class AppFactory:
             AionAuthMiddleware, verifier=self.token_verifier, application_routes=self._application_routes
         )
 
+    async def stop_toolkit_turns(self) -> None:
+        """Stop the toolkits' running turns, once the server has stopped accepting requests.
+
+        The first step of a shutdown, taken before the HTTP server waits for
+        open connections: a turn that ends here closes its task, and the
+        stream a client has open on it, through its own queue. What is still
+        running afterwards is drained and settled by :meth:`shutdown`.
+        """
+        if self._executor is None:
+            return
+        try:
+            await self._executor.stop_extension_turns()
+        except Exception as exc:
+            logger.error("Error stopping the toolkits' turns", exc_info=exc)
+
     async def shutdown(self) -> None:
         """Shutdown the application and cleanup resources."""
         logger.info("Shutting down application factory")

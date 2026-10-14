@@ -284,7 +284,7 @@ class _ExtensionHandler:
     def __init__(self) -> None:
         self.streamed = 0
 
-    async def stream(self, context, admission=None):
+    async def stream(self, context, admission=None, event_queue=None):
         self.streamed += 1
         return
         yield
@@ -597,10 +597,14 @@ class TestResolve:
         task = _make_real_task()
         admission = object()
 
-        resolved = await executor._resolve(task, "stream", _routed_context(ExtensionRoute(handler.uri, admission)))
+        queue = object()
+
+        resolved = await executor._resolve(
+            task, "stream", _routed_context(ExtensionRoute(handler.uri, admission)), queue
+        )
 
         assert resolved.func is handler.stream
-        assert resolved.keywords == {"admission": admission}
+        assert resolved.keywords == {"admission": admission, "event_queue": queue}
         assert task.metadata[ROUTED] == handler.uri
 
     @pytest.mark.anyio
@@ -630,10 +634,12 @@ class TestResolve:
         handler = _make_handler(uri="https://example.invalid/toolkits/scripted/1.0.0")
         executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[handler])
         task = _make_real_task(metadata={ROUTED: handler.uri})
+        queue = object()
 
-        resolved = await executor._resolve(task, "resume")
+        resolved = await executor._resolve(task, "resume", event_queue=queue)
 
-        assert resolved is handler.resume
+        assert resolved.func is handler.resume
+        assert resolved.keywords == {"event_queue": queue}
 
     @pytest.mark.anyio
     async def test_resolve_cancel_falls_back_to_agent_without_routing(self):
@@ -786,7 +792,7 @@ class TestExecuteViaResolve:
                         await executor.execute(ctx, event_queue)
 
         assert task.metadata[ROUTED] == handler.uri
-        assert streamed_with == {"context": ctx, "admission": "admitted"}
+        assert streamed_with == {"context": ctx, "admission": "admitted", "event_queue": event_queue}
         event_queue.enqueue_event.assert_awaited_once_with(task)
 
     @pytest.mark.anyio

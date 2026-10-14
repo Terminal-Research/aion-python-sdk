@@ -100,13 +100,17 @@ class ExtensionTaskHandler(Protocol):
         ...
 
     def stream(
-        self, context: "RequestContext", admission: Any
+        self, context: "RequestContext", admission: Any, event_queue: Optional["EventQueue"] = None
     ) -> AsyncIterator[TaskStatusUpdateEvent | TaskArtifactUpdateEvent]:
-        """Run the first turn of a new task routed to this extension."""
+        """Run the first turn of a new task routed to this extension.
+
+        ``event_queue`` is the run's queue the executor writes the yielded
+        events to; a handler reads from it whether they still reach the task.
+        """
         ...
 
     def resume(
-        self, context: "RequestContext"
+        self, context: "RequestContext", event_queue: Optional["EventQueue"] = None
     ) -> AsyncIterator[TaskStatusUpdateEvent | TaskArtifactUpdateEvent]:
         """Run the next turn of a task routed to this extension."""
         ...
@@ -123,4 +127,8 @@ class ExtensionTaskHandler(Protocol):
         a2a.utils.errors) when there is nothing to stop - the executor still
         writes CANCELED.
         """
+        ...
+
+    async def shutdown(self) -> None:
+        """Stop this handler's running turns for a server shutdown, within a bounded wait."""
         ...

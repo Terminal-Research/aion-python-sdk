@@ -21,6 +21,7 @@ from aion.core.runtime.context.models import AionRuntimeContext, Event
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.core.toolkit import (
     CANCEL,
+    SHUTDOWN,
     Message,
     ModelServiceAccess,
     TextPart,
@@ -598,3 +599,118 @@ async def test_without_a_context_reader_the_generation_is_none() -> None:
     await run(toolkit)
 
     assert toolkit.turns[0][2].context_generation is None
+
+
+# -- a run whose events have no consumer any more -------------------------------------
+
+
+class _Queue:
+    """The run's event queue, as far as a turn reads it: whether it is closed."""
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    def is_closed(self) -> bool:
+        return self.closed
+
+
+async def test_a_turn_whose_queue_lost_its_consumer_stops_the_toolkit_once_and_writes_nothing_more(caplog) -> None:
+    toolkit = scripted(
+        ToolkitMessageEvent(message=Message(parts=[TextPart(text="one")])),
+        ToolkitMessageEvent(message=Message(parts=[TextPart(text="two")])),
+        ToolkitMessageEvent(message=Message(parts=[TextPart(text="three")])),
+        ToolkitResult(state=ToolkitState.COMPLETED),
+    )
+    toolkit_handler = ToolkitTaskHandler(toolkit, secret_values=lambda: ())
+    queue = _Queue()
+    events = []
+
+    with caplog.at_level(logging.WARNING):
+        async for event in toolkit_handler.stream(request_context(task()), admission(), event_queue=queue):
+            events.append(event)
+            queue.closed = True
+
+    assert [event.status.message.parts[0].text for event in events] == ["one"]
+    assert toolkit.cancels == [(TASK_ID, CANCEL)]
+    assert "no consumer any more" in caplog.text
+
+
+# -- shutdown -------------------------------------------------------------------------
+
+
+async def _running(toolkit_handler: ToolkitTaskHandler, *task_ids: str) -> tuple[dict[str, list], list[asyncio.Task]]:
+    """Start a turn for each task id and return once each has yielded its first event."""
+    events: dict[str, list] = {task_id: [] for task_id in task_ids}
+    started = {task_id: asyncio.Event() for task_id in task_ids}
+
+    async def drive(task_id: str) -> None:
+        current = Task(id=task_id, context_id=CONTEXT_ID, status=TaskStatus(state=TaskState.TASK_STATE_WORKING))
+        async for event in toolkit_handler.stream(request_context(current), admission()):
+            events[task_id].append(event)
+            started[task_id].set()
+
+    runs = [asyncio.create_task(drive(task_id)) for task_id in task_ids]
+    for task_id in task_ids:
+        await started[task_id].wait()
+    return events, runs
+
+
+async def test_shutdown_stops_every_running_turn_at_once_and_their_results_close_the_tasks() -> None:
+    toolkit = scripted(ToolkitMessageEvent(message=Message(parts=[TextPart(text="busy")])), wait_for_cancel=True)
+    toolkit_handler = ToolkitTaskHandler(toolkit, secret_values=lambda: ())
+    events, runs = await _running(toolkit_handler, "task-a", "task-b")
+
+    await toolkit_handler.shutdown()
+
+    assert sorted(toolkit.cancels) == [("task-a", SHUTDOWN), ("task-b", SHUTDOWN)]
+    assert all(run.done() for run in runs)
+    for task_id in ("task-a", "task-b"):
+        assert final_state(events[task_id]) == TaskState.TASK_STATE_FAILED
+        assert closing_error(events[task_id]) == {
+            "code": codes.SERVER_SHUTDOWN,
+            "message": "The server stopped during the turn.",
+            "retryable": True,
+        }
+
+
+async def test_shutdown_waits_no_longer_than_the_grace_period(monkeypatch, caplog) -> None:
+    monkeypatch.setattr(handler_module, "CANCEL_GRACE_SECONDS", 0.05)
+    toolkit = scripted(
+        ToolkitMessageEvent(message=Message(parts=[TextPart(text="busy")])), wait_for_cancel=True, hang_on_cancel=True
+    )
+    toolkit_handler = ToolkitTaskHandler(toolkit, secret_values=lambda: ())
+    _events, runs = await _running(toolkit_handler, "task-a")
+
+    with caplog.at_level(logging.WARNING):
+        await toolkit_handler.shutdown()
+
+    assert "did not end within" in caplog.text
+    assert not runs[0].done()
+    runs[0].cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await runs[0]
+
+
+async def test_a_turn_already_asked_to_stop_is_not_asked_again_at_shutdown(monkeypatch) -> None:
+    monkeypatch.setattr(handler_module, "CANCEL_GRACE_SECONDS", 0.05)
+    toolkit = scripted(
+        ToolkitMessageEvent(message=Message(parts=[TextPart(text="busy")])), wait_for_cancel=True, hang_on_cancel=True
+    )
+    toolkit_handler = ToolkitTaskHandler(toolkit, secret_values=lambda: ())
+    _events, runs = await _running(toolkit_handler, TASK_ID)
+
+    await toolkit_handler.cancel(request_context(task()), event_queue=None)
+    await toolkit_handler.shutdown()
+
+    assert toolkit.cancels == [(TASK_ID, CANCEL)]
+    runs[0].cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await runs[0]
+
+
+async def test_shutdown_with_nothing_running_returns_at_once() -> None:
+    toolkit = scripted()
+
+    await ToolkitTaskHandler(toolkit, secret_values=lambda: ()).shutdown()
+
+    assert toolkit.cancels == []

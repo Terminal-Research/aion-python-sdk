@@ -17,7 +17,11 @@ protocol leaves to the server:
   writes are numbered per context and ``find_artifact`` reads them back
   (``TurnArtifacts``);
 * **cancellation** - ``Toolkit.cancel`` and a bounded wait for the running
-  turn to end, after which the executor writes ``CANCELED``.
+  turn to end, after which the executor writes ``CANCELED``;
+* **stopping** - at a server shutdown, ``Toolkit.cancel`` with ``SHUTDOWN``
+  for every turn running here at once and one bounded wait for them all;
+  when the run's event queue has lost its consumer, ``Toolkit.cancel`` once
+  and nothing more written.
 """
 
 from __future__ import annotations
@@ -40,6 +44,7 @@ from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.core.settings import api_settings
 from aion.core.toolkit import (
     CANCEL,
+    SHUTDOWN,
     ContextArtifact,
     ModelServiceAccess,
     PreflightContext,
@@ -126,6 +131,20 @@ def context_busy(uri: str, context_id: str, task_id: str) -> InvalidParamsError:
     )
 
 
+@dataclass
+class _Turn:
+    """A turn of a task running in this process.
+
+    Attributes:
+        finished: Set once the turn has ended, however it ended.
+        stop_reason: The reason the toolkit was asked to stop the turn with,
+            once it was asked; it is asked at most once per turn.
+    """
+
+    finished: asyncio.Event = dataclasses.field(default_factory=asyncio.Event)
+    stop_reason: Optional[str] = None
+
+
 @dataclass(frozen=True)
 class ToolkitAdmission:
     """What admission read off a request that starts a new task of a toolkit.
@@ -182,8 +201,8 @@ class ToolkitTaskHandler:
         self._context_runs = context_runs
         self._owner_resolver = owner_resolver
         self._secret_values = secret_values
-        # The turn each task is running in this process, set once it ends.
-        self._turns: dict[str, asyncio.Event] = {}
+        # The turn each task is running in this process.
+        self._turns: dict[str, _Turn] = {}
 
     # -- admission ----------------------------------------------------------
 
@@ -297,9 +316,16 @@ class ToolkitTaskHandler:
     # -- turns --------------------------------------------------------------
 
     async def stream(
-            self, context: "RequestContext", admission: ToolkitAdmission
+            self,
+            context: "RequestContext",
+            admission: ToolkitAdmission,
+            event_queue: Optional["EventQueue"] = None,
     ) -> AsyncIterator[TaskStatusUpdateEvent | TaskArtifactUpdateEvent]:
-        """Run the first turn of a new task with the admitted request."""
+        """Run the first turn of a new task with the admitted request.
+
+        ``event_queue`` is the run's queue the executor writes what this
+        yields to; while it has a consumer the turn goes on (see ``_turn``).
+        """
         async for event in self._turn(
             context,
             self.toolkit.start,
@@ -307,11 +333,12 @@ class ToolkitTaskHandler:
             admission.daemon_variables,
             admission.model_service,
             task_metadata={},
+            event_queue=event_queue,
         ):
             yield event
 
     async def resume(
-            self, context: "RequestContext"
+            self, context: "RequestContext", event_queue: Optional["EventQueue"] = None
     ) -> AsyncIterator[TaskStatusUpdateEvent | TaskArtifactUpdateEvent]:
         """Run the next turn of a task, with the toolkit's object as the task holds it."""
         runtime = await AionRuntimeContextRegistry.aget_current_context() or AionRuntimeContext()
@@ -323,6 +350,7 @@ class ToolkitTaskHandler:
             daemon_variables(runtime.extensions),
             model_service_access(runtime),
             task_metadata=_stored_object(task, self.uri),
+            event_queue=event_queue,
         ):
             yield event
 
@@ -335,8 +363,17 @@ class ToolkitTaskHandler:
             model_service: Optional[ModelServiceAccess],
             *,
             task_metadata: Mapping[str, Any],
+            event_queue: Optional["EventQueue"] = None,
     ) -> AsyncIterator[TaskStatusUpdateEvent | TaskArtifactUpdateEvent]:
-        """Drive one turn of the toolkit and translate it; the turn closes on exactly one final status."""
+        """Drive one turn of the toolkit and translate it; the turn closes on exactly one final status.
+
+        Before each event goes out, the run's queue is checked: once it is
+        closed while the turn goes on - its consumer failed, a write to the
+        store among the causes - nothing the turn yields reaches the task or
+        a client any more. The toolkit is then asked to stop (``CANCEL``),
+        as for a cancel nobody is waiting for, and the turn ends without
+        writing; the task keeps whatever a2a-sdk wrote for it.
+        """
         task = context.current_task
         masker = SecretMasker([*self._secret_values(), *deployment_secret_values(variables)])
         artifacts = self._turn_artifacts(context, task)
@@ -361,8 +398,8 @@ class ToolkitTaskHandler:
             masker=masker,
             version_of=artifacts.number if artifacts is not None else None,
         )
-        finished = asyncio.Event()
-        self._turns[task.id] = finished
+        turn = _Turn()
+        self._turns[task.id] = turn
         outputs: Any = None
         try:
             try:
@@ -375,6 +412,8 @@ class ToolkitTaskHandler:
                         result = value
                     elif isinstance(value, (ToolkitMessageEvent, ToolkitArtifactEvent, ToolkitStatusEvent)):
                         for event in await translator.event(value):
+                            if not await self._consumed(task.id, turn, event_queue):
+                                return
                             yield event
                     else:
                         raise ToolkitProtocolError(
@@ -392,11 +431,37 @@ class ToolkitTaskHandler:
             finally:
                 await _close(outputs)
             for event in closing:
+                if not await self._consumed(task.id, turn, event_queue):
+                    return
                 yield event
         finally:
-            finished.set()
-            if self._turns.get(task.id) is finished:
+            turn.finished.set()
+            if self._turns.get(task.id) is turn:
                 del self._turns[task.id]
+
+    async def _consumed(self, task_id: str, turn: _Turn, event_queue: Optional["EventQueue"]) -> bool:
+        """Whether what the turn yields next still reaches the task; asks the toolkit to stop when it does not."""
+        if event_queue is None or not event_queue.is_closed():
+            return True
+        logger.warning(
+            "The events of task %s have no consumer any more; toolkit %s is asked to stop and "
+            "the turn writes nothing more",
+            task_id,
+            self.uri,
+        )
+        await self._stop(task_id, turn, CANCEL)
+        return False
+
+    async def _stop(self, task_id: str, turn: Optional[_Turn], reason: str) -> None:
+        """Ask the toolkit to stop ``task_id``'s turn, once per turn; a failure is logged."""
+        if turn is not None:
+            if turn.stop_reason is not None:
+                return
+            turn.stop_reason = reason
+        try:
+            await self.toolkit.cancel(task_id, reason)
+        except Exception:
+            logger.exception("Toolkit %s failed to stop task %s (%s)", self.uri, task_id, reason)
 
     def _turn_artifacts(self, context: "RequestContext", task: Task) -> Optional[TurnArtifacts]:
         """The turn's artifact versions, for the context holder the caller was admitted as."""
@@ -422,15 +487,12 @@ class ToolkitTaskHandler:
             None: the executor's ``CANCELED`` carries no message of its own.
         """
         task_id = context.task_id or (context.current_task.id if context.current_task else "")
-        try:
-            await self.toolkit.cancel(task_id, CANCEL)
-        except Exception:
-            logger.exception("Toolkit %s failed to cancel task %s", self.uri, task_id)
-        finished = self._turns.get(task_id)
-        if finished is None:
+        turn = self._turns.get(task_id)
+        await self._stop(task_id, turn, CANCEL)
+        if turn is None:
             return None
         try:
-            await asyncio.wait_for(finished.wait(), CANCEL_GRACE_SECONDS)
+            await asyncio.wait_for(turn.finished.wait(), CANCEL_GRACE_SECONDS)
         except TimeoutError:
             logger.warning(
                 "Toolkit %s did not end the turn of task %s within %.0fs of the cancel; "
@@ -440,6 +502,33 @@ class ToolkitTaskHandler:
                 CANCEL_GRACE_SECONDS,
             )
         return None
+
+    async def shutdown(self) -> None:
+        """Stop every turn running here for a server shutdown, at once, and wait for them together.
+
+        Each toolkit turn is asked to stop with ``SHUTDOWN``; a toolkit
+        closes the turn with a ``failed`` result coded ``server_shutdown``,
+        which reaches the task and its clients through the run's queue like
+        any result. The wait ends when every turn has ended, or after
+        ``CANCEL_GRACE_SECONDS``; a turn still running then is left to the
+        drain of the server's active tasks, which settles its task.
+        """
+        turns = dict(self._turns)
+        if not turns:
+            return
+        logger.info("Stopping %d turn(s) of toolkit %s for the server shutdown", len(turns), self.uri)
+        await asyncio.gather(*(self._stop(task_id, turn, SHUTDOWN) for task_id, turn in turns.items()))
+        waiters = [asyncio.ensure_future(turn.finished.wait()) for turn in turns.values()]
+        _done, pending = await asyncio.wait(waiters, timeout=CANCEL_GRACE_SECONDS)
+        for waiter in pending:
+            waiter.cancel()
+        if pending:
+            logger.warning(
+                "%d turn(s) of toolkit %s did not end within %.0fs of the shutdown",
+                len(pending),
+                self.uri,
+                CANCEL_GRACE_SECONDS,
+            )
 
 
 def _request_runtime(

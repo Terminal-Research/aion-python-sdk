@@ -265,6 +265,34 @@ toolkit may still yield artifacts and a `canceled` result in that time, and
 they reach the task as any turn's would. Then the executor writes
 `CANCELED`, whether the turn ended or not.
 
+### Stopping
+
+A turn is asked to stop at most once (`Toolkit.cancel`); a later reason does
+not ask again.
+
+- **Server shutdown.** The agent's uvicorn server (`_AgentServer` in
+  `aion.server.server`) stops listening and closes idle connections, then
+  runs `AppFactory.stop_toolkit_turns`: every handler asks each turn running
+  in the process to stop with `SHUTDOWN`, all at once, and the turns are
+  awaited together for up to `CANCEL_GRACE_SECONDS`
+  (`ToolkitTaskHandler.shutdown`). A toolkit stops its work, saves what it
+  can and closes the turn with a `failed` result coded `server_shutdown`
+  (`retryable`): one writer, through the run's queue, so the stream open on
+  the task, a push and the store all get it. uvicorn then waits at most
+  `GRACEFUL_SHUTDOWN_SECONDS` for the connections still open and cancels
+  them, and the drain of the active tasks settles a turn that did not stop
+  as `FAILED` with `aion:settledReason=server_shutdown`; what such a turn did
+  not save is lost with the process. `AGENT_SHUTDOWN_SECONDS` adds these
+  steps up, and `aion serve` gives every agent that long, all of them at the
+  same time.
+- **A run without a consumer.** When the consumer of a run's events fails -
+  a store write that is not a version conflict, the store unreachable -
+  a2a-sdk closes the run's queue and drops whatever the run writes after it,
+  without stopping the run. Before each event the turn checks
+  `EventQueue.is_closed()`; once the queue is closed it asks the toolkit to
+  stop (`CANCEL`), logs it, and ends without writing. The task keeps what
+  a2a-sdk wrote for it: `FAILED`, or the active state, which a cancel ends.
+
 ## Testing
 
 `tests/support/scripted_toolkit` is a toolkit built on the protocol models
@@ -290,7 +318,8 @@ nothing installed.
 
 | Suite | Where | What |
 | --- | --- | --- |
-| unit | `tests/unit/server/agent/toolkit/` | discovery, every translation row, the object's patches, masking, limits, lifecycle violations, admission, one task per context, the context's generation, resume, cancel, artifact versions and `find_artifact` |
+| unit | `tests/unit/server/agent/toolkit/` | discovery, every translation row, the object's patches, masking, limits, lifecycle violations, admission, one task per context, the context's generation, resume, cancel, a run without a consumer, shutdown, artifact versions and `find_artifact` |
+| unit | `tests/unit/server/test_server.py`, `tests/unit/server/utils/test_process_manager.py`, `tests/unit/cli/test_serve_handler.py` | the order of a shutdown, the agent's shutdown budget, agents stopped side by side within it |
 | unit | `tests/unit/server/core/test_preprocessor_ordering.py`, `tests/unit/server/agent/test_request_executor.py` | the route of a continued task: its handler's check, `extension_unavailable` without the handler, the waiting task of the addressed handler named on the message |
 | unit | `tests/unit/server/tasks/test_context_artifacts.py` | the in-memory reader of an artifact's versions: order, holder scoping, shared contexts |
 | unit | `tests/unit/server/tasks/test_task_manager.py` | the status line a details update keeps |
@@ -298,7 +327,7 @@ nothing installed.
 | integration | `tests/integration/server/tasks/test_context_runs_parity.py` | the generation, the unfinished task of a handler and the caller's newest task of a handler - on the in-memory store and on PostgreSQL |
 | integration | `tests/integration/server/tasks/test_context_artifacts_parity.py` | versions 0, 1, 2 across tasks, the latest found, another holder seeing nothing, shared contexts - on the in-memory store and on PostgreSQL |
 | scenarios | `tests/scenarios/core/test_toolkits.py` (`TAGS=toolkits`) | a turn through a real `aion serve` on the `toolkit` deployment, numbered artifact versions with `find_artifact`, a refusal with no task, a cancel that reaches the toolkit once and ends the task `CANCELED`, `context_busy` until the blocking task ends, a directive beside the agent's waiting question, a toolkit continuing its own waiting task |
-| scenarios | `tests/scenarios/persistence/test_toolkits.py` (`make tests-scenarios-persistence`) | on a real database: the toolkit's object handed back to a resumed turn after a restart, and artifact version numbering continuing across it |
+| scenarios | `tests/scenarios/persistence/test_toolkits.py` (`make tests-scenarios-persistence`) | on a real database: the toolkit's object handed back to a resumed turn after a restart, artifact version numbering continuing across it, a shutdown closing a turn with the toolkit's `server_shutdown` on its open stream, a turn that does not stop in time settled, an open stream not holding the shutdown |
 | scenarios | `tests/scenarios/distributed/test_toolkits.py` (`make tests-scenarios-distributed`) | two servers with the toolkits and one without on one database: `context_busy` on the other server, `extension_unavailable` and an unchanged task on the server without the toolkit |
 
 A real toolkit is checked against the SDK by its own CI; see

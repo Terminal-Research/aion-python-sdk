@@ -194,17 +194,11 @@ class TestBackgroundTasks:
         assert not mock_logger.warning.called
 
 
-def test_child_shutdown_budget_covers_a_toolkit_stop_and_settlement():
-    """The parent keeps a child alive long enough for a toolkit's bounded stop and the settlement."""
-    from aion.server.agent.execution.active_task_registry import (
-        SHUTDOWN_DB_TIMEOUT_SECONDS,
-    )
-    from aion.server.agent.execution.extensions.toolkit import CANCEL_GRACE_SECONDS
+def test_each_agent_gets_its_whole_shutdown_budget():
+    """The parent keeps a child alive as long as the child's own shutdown can take."""
+    from aion.server.server import AGENT_SHUTDOWN_SECONDS
 
-    assert (
-        serve.SERVE_SHUTDOWN_TIMEOUT_SECONDS
-        > CANCEL_GRACE_SECONDS + SHUTDOWN_DB_TIMEOUT_SECONDS
-    )
+    assert serve.SERVE_SHUTDOWN_TIMEOUT_SECONDS == AGENT_SHUTDOWN_SECONDS
 
 
 class TestStartupOutcome:

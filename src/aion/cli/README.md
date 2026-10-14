@@ -262,7 +262,10 @@ The AION CLI supports running multiple agents simultaneously:
 - Ports are assigned automatically or can be specified via CLI options
 - Proxy server provides unified access to all agents
 - Failed agents don't prevent other agents from starting
-- System monitors all processes and provides graceful shutdown
+- System monitors all processes and provides graceful shutdown: on SIGINT or
+  SIGTERM every agent is asked to stop at once and given its own shutdown
+  budget (`aion.server.server.AGENT_SHUTDOWN_SECONDS`, 25 s) before what is
+  still running is killed
 
 ## Port Assignment Strategy
 

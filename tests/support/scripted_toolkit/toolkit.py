@@ -5,8 +5,10 @@ A turn's script comes from the request when its message carries a
 and otherwise from the ``Script`` the toolkit was built with (how a unit test
 drives it). A script names the protocol values to yield, a refusal or a crash
 in ``preflight``, a crash in the middle of the turn, a lookup of an artifact
-in the context, a turn that waits for ``cancel()`` and then ends
-``canceled``, or a turn that reports what the toolkit has been handed so far.
+in the context, a turn that waits for ``cancel()`` and then ends - ``failed``
+with ``server_shutdown`` when the server is stopping, ``canceled`` otherwise,
+or never at all - or a turn that reports what the toolkit has been handed so
+far.
 The toolkit records every call, so a unit test can read what the server handed
 it, and a scenario - whose server is another process - can read it from the
 report.
@@ -22,16 +24,19 @@ from pydantic import BaseModel, ConfigDict, TypeAdapter
 
 from aion.core.exceptions import ToolkitRejection
 from aion.core.toolkit import (
+    SHUTDOWN,
     DataPart,
     Message,
     PreflightContext,
     ToolkitContext,
     ToolkitDescriptor,
+    ToolkitError,
     ToolkitMessageEvent,
     ToolkitOutput,
     ToolkitRequest,
     ToolkitResult,
     ToolkitState,
+    codes,
 )
 
 from .contract import (
@@ -81,6 +86,7 @@ class ScriptPayload(BaseModel):
     crash_preflight: bool = False
     crash_after: Optional[int] = None
     wait_for_cancel: bool = False
+    hang_on_cancel: bool = False
     find_artifact: Optional[str] = None
     report: bool = False
 
@@ -104,7 +110,11 @@ class Script:
         crash_after: The turn raises a ``RuntimeError`` after yielding this
             many outputs.
         wait_for_cancel: After the outputs, the turn waits for ``cancel()``
-            and then ends with a ``canceled`` result.
+            and then ends: with a ``failed`` result coded ``server_shutdown``
+            for a ``SHUTDOWN``, as a toolkit stopping for a server shutdown
+            does, and with a ``canceled`` result otherwise.
+        hang_on_cancel: With ``wait_for_cancel``, the turn does not end after
+            ``cancel()`` either: it runs until the server tears it down.
         find_artifact: Before the outputs, the turn looks this artifact id up
             in its context and says what it found in a message whose data part
             is ``{"found": false}`` or ``{"found": true, "task_id", "version",
@@ -122,6 +132,7 @@ class Script:
     crash_preflight: bool = False
     crash_after: Optional[int] = None
     wait_for_cancel: bool = False
+    hang_on_cancel: bool = False
     find_artifact: Optional[str] = None
     report: bool = False
 
@@ -134,6 +145,7 @@ class Script:
             crash_preflight=payload.crash_preflight,
             crash_after=payload.crash_after,
             wait_for_cancel=payload.wait_for_cancel,
+            hang_on_cancel=payload.hang_on_cancel,
             find_artifact=payload.find_artifact,
             report=payload.report,
         )
@@ -171,6 +183,7 @@ class ScriptedToolkit:
         self.turns: list[tuple[str, ToolkitRequest, ToolkitContext]] = []
         self.cancels: list[tuple[str, str]] = []
         self._cancelled: dict[str, asyncio.Event] = {}
+        self._reasons: dict[str, str] = {}
 
     def configure(self) -> None:
         self.configured += 1
@@ -198,6 +211,7 @@ class ScriptedToolkit:
 
     async def cancel(self, task_id: str, reason: str) -> None:
         self.cancels.append((task_id, reason))
+        self._reasons.setdefault(task_id, reason)
         self._cancel_event(task_id).set()
 
     async def _turn(self, kind: str, request: ToolkitRequest, context: ToolkitContext) -> AsyncIterator[Any]:
@@ -215,7 +229,17 @@ class ScriptedToolkit:
             raise RuntimeError("scripted crash")
         if script.wait_for_cancel:
             await self._cancel_event(context.task_id).wait()
-            yield ToolkitResult(state=ToolkitState.CANCELED)
+            if script.hang_on_cancel:
+                await asyncio.Event().wait()
+            if self._reasons.get(context.task_id) == SHUTDOWN:
+                yield ToolkitResult(
+                    state=ToolkitState.FAILED,
+                    error=ToolkitError(
+                        code=codes.SERVER_SHUTDOWN, message="The server stopped during the turn.", retryable=True
+                    ),
+                )
+            else:
+                yield ToolkitResult(state=ToolkitState.CANCELED)
 
     def _reported(self, kind: str, context: ToolkitContext) -> ToolkitMessageEvent:
         data = {

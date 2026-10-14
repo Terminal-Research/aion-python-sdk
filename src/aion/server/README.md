@@ -474,8 +474,14 @@ servers of one agent can share the database. The rules are a2a-sdk's:
   at once; the server executing the task stops it at its next write, without
   calling `AgentExecutor.cancel` there.
 - A server that dies leaves its tasks in the state they had; nothing settles
-  them. Any server can cancel such a task. An orderly shutdown settles the
-  tasks it was running as `FAILED` with `aion:settledReason=server_shutdown`.
+  them. Any server can cancel such a task.
+- An orderly shutdown stops accepting requests, then asks every toolkit turn
+  it runs to stop (`Toolkit.cancel` with `shutdown`) and waits up to 15 s for
+  them together: a toolkit closes its task `FAILED` with `server_shutdown`,
+  and a stream open on it receives that outcome. uvicorn then waits at most
+  5 s for the connections still open, so a stream on any other task does not
+  hold the shutdown, and the tasks the server was still running are settled
+  as `FAILED` with `aion:settledReason=server_shutdown`.
 - The journal is never pruned.
 
 Without a database the store is in memory and the server is a2a-sdk's single

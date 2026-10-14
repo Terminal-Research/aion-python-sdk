@@ -10,6 +10,7 @@ from aion.core.config import AionConfig
 from aion.core.settings import api_settings
 from aion.server import services as aion_services
 from aion.server.core.platform import AionWebSocketManager, WebsocketTransportFactory
+from aion.server.server import AGENT_SHUTDOWN_SECONDS
 from aion.server.utils.processes import ProcessManager
 
 from aion.cli.services import (
@@ -26,10 +27,11 @@ from aion.cli.utils.port_manager import AionPortManager
 
 logger = logging.getLogger(__name__)
 
-# Each child closes the turns its shutdown interrupts - a toolkit may use the close to
-# save what its turn already did - then spends up to two seconds settling interrupted
-# tasks. The budget leaves a minute for the first and room for remaining cleanup.
-SERVE_SHUTDOWN_TIMEOUT_SECONDS = 75
+# How long every agent process is given to stop before it is killed: its own
+# shutdown budget - the toolkits' turns stopped, open connections closed, interrupted
+# tasks settled, the rest cleaned up. The agents stop side by side, so this is also
+# what stopping all of them takes.
+SERVE_SHUTDOWN_TIMEOUT_SECONDS = AGENT_SHUTDOWN_SECONDS
 
 
 class ServeHandler:
@@ -59,7 +61,7 @@ class ServeHandler:
 
         Signal handlers run between bytecodes on the main thread, so doing the
         shutdown *in* one blocks the event loop for as long as the child
-        processes take to die (up to 75s), and racing it against the normal
+        processes take to die, and racing it against the normal
         ``finally`` path would shut everything down twice. Instead the handler
         only sets an event, and ``run``'s own ``finally`` performs the one
         graceful, awaited shutdown.
@@ -393,7 +395,7 @@ class ServeHandler:
                 except asyncio.CancelledError:
                     pass
 
-    async def shutdown(self, timeout: int = SERVE_SHUTDOWN_TIMEOUT_SECONDS) -> bool:
+    async def shutdown(self, timeout: float = SERVE_SHUTDOWN_TIMEOUT_SECONDS) -> bool:
         """
         Gracefully shutdown all processes and release reserved ports.
 

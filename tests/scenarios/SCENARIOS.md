@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-189 scenarios in 36 files, 429 runs across 2 frameworks: 396 run, 32 skipped, 1 independent of the framework.
+192 scenarios in 36 files, 435 runs across 2 frameworks: 402 run, 32 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -76,7 +76,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `lifecycle` | cancel, concurrency, push notifications, startup | 5 | `make tests-scenarios TAGS=lifecycle` |
 | `contexts` | Context extension: list, read and delete conversations | 5 | `make tests-scenarios TAGS=contexts` |
 | `toolkits` | toolkit plugins: a turn translated into A2A, a refusal before the task exists, a cancel | 11 | `make tests-scenarios TAGS=toolkits` |
-| `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 17 | `make tests-scenarios-persistence` |
+| `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 20 | `make tests-scenarios-persistence` |
 | `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 15 | `make tests-scenarios-distributed` |
 | `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 29 | `make tests-scenarios TAGS=native` |
 
@@ -520,8 +520,11 @@ What a toolkit's task keeps across a server restart, on a real database.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [A turn that waits for input, a restart, and the answer: the new toolkit instance gets the object back.](persistence/test_toolkits.py#L64 "test_the_object_of_a_waiting_task_survives_a_restart_and_is_handed_back_on_resume") | `persistence` | — | `toolkit` | ✓ | ✓ |
-| [The first task of a context numbers its artifact 0, the first task after a restart 1, and finds the first.](persistence/test_toolkits.py#L100 "test_artifact_versions_continue_across_a_restart") | `persistence` | — | `toolkit` | ✓ | ✓ |
+| [A turn that waits for input, a restart, and the answer: the new toolkit instance gets the object back.](persistence/test_toolkits.py#L80 "test_the_object_of_a_waiting_task_survives_a_restart_and_is_handed_back_on_resume") | `persistence` | — | `toolkit` | ✓ | ✓ |
+| [The first task of a context numbers its artifact 0, the first task after a restart 1, and finds the first.](persistence/test_toolkits.py#L116 "test_artifact_versions_continue_across_a_restart") | `persistence` | — | `toolkit` | ✓ | ✓ |
+| [The open stream receives the outcome, and the stored task is the toolkit's, not a settlement.](persistence/test_toolkits.py#L144 "test_a_shutdown_closes_a_running_turn_with_the_toolkits_server_shutdown_result") | `persistence` | — | `toolkit` | ✓ | ✓ |
+| [The grace period runs out; the server settles the task as ``FAILED`` with ``server_shutdown``.](persistence/test_toolkits.py#L165 "test_a_turn_that_does_not_stop_in_time_is_settled_by_the_shutdown") | `persistence` | — | `toolkit` | ✓ | ✓ |
+| [A stream on a turn that would run for minutes ends within the shutdown's bounded wait.](persistence/test_toolkits.py#L183 "test_an_open_stream_does_not_hold_the_shutdown") | `persistence` | `slow` | `toolkit` | ✓ | ✓ |
 
 ## Commands
 
@@ -534,7 +537,7 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | `stream <n>` | Reply in n chunks of one message | `streaming` | 10 | ✓ | ✓ |
 | `typing` | Send an ephemeral typing status, then a reply | `streaming`, `events` | 3 | ✓ | ✓ |
 | `steps <n>` | Emit n working statuses, then complete | `events` | 2 | ✓ | ✓ |
-| `slow <sec>` | Reply after n seconds | `lifecycle` | 17 | ✓ | ✓ |
+| `slow <sec>` | Reply after n seconds | `lifecycle` | 18 | ✓ | ✓ |
 | `artifacts` | Emit a two-part data artifact, an inline file and a url | `artifacts`, `files` | 2 | ✓ | [skip](#frameworks) |
 | `send-file <route>` | Send one inline file: artifact \| reply \| outbox-message \| outbox-task | `files` | 2 | ✓ | ✓ |
 | `card` | Emit one card | `artifacts` | 4 | ✓ | ✓ |

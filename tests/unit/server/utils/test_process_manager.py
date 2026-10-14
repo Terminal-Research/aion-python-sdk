@@ -470,6 +470,43 @@ class TestShutdownAll:
         assert mgr.processes == {}
 
 
+class TestShutdownAllSideBySide:
+    def test_every_process_is_asked_to_stop_before_any_is_waited_for(self):
+        """Signalling them all first is what lets them shut down at the same time."""
+        mgr = _manager()
+        order: list[str] = []
+        for key in ("agent-a", "agent-b"):
+            info = _make_process_info(key)
+            info.process.terminate.side_effect = lambda key=key: order.append(f"signal {key}")
+            info.process.join.side_effect = lambda timeout=None, key=key: order.append(f"join {key}")
+            info.process.is_alive.side_effect = [True, False]
+            mgr.processes[key] = info
+
+        assert mgr.shutdown_all(timeout=10.0) is True
+        assert order == ["signal agent-a", "signal agent-b", "join agent-a", "join agent-b"]
+
+    def test_the_processes_share_one_timeout(self, monkeypatch):
+        """A process that hangs uses the time up; the next one gets what is left, not a fresh timeout."""
+        mgr = _manager()
+        clock = [100.0]
+        monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+        joined: list[float] = []
+
+        def hang(timeout=None):
+            if timeout is not None:
+                joined.append(timeout)
+                clock[0] += timeout
+
+        for key in ("agent-a", "agent-b"):
+            info = _make_process_info(key)
+            info.process.join.side_effect = hang
+            info.process.is_alive.side_effect = [True, True, False]
+            mgr.processes[key] = info
+
+        assert mgr.shutdown_all(timeout=10.0) is True
+        assert joined == [10.0, 0.0]
+
+
 class TestRestartProcess:
     def test_returns_false_for_unknown_key(self):
         """Verify that returns false for unknown key."""

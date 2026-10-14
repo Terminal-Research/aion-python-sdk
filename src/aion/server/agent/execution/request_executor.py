@@ -1,4 +1,5 @@
 """Framework-agnostic A2A executor for AionAgent."""
+import asyncio
 import logging
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import Event, EventQueue
@@ -250,6 +251,22 @@ class AionAgentRequestExecutor(AgentExecutor):
             )
         handler.admit_continuation(task)
 
+    async def stop_extension_turns(self) -> None:
+        """Stop the extension handlers' turns running here, at the start of a server shutdown.
+
+        a2a-sdk's drain cancels an execution without asking it to stop, so
+        each handler is asked first, all at once, and they are awaited
+        together; a handler bounds its own wait (``ToolkitTaskHandler.shutdown``).
+        A handler that fails is logged and does not keep the others from
+        stopping.
+        """
+        results = await asyncio.gather(
+            *(handler.shutdown() for handler in self._extension_handlers.values()), return_exceptions=True
+        )
+        for handler, result in zip(self._extension_handlers.values(), results):
+            if isinstance(result, BaseException):
+                logger.error("Stopping the turns of %s failed", handler.uri, exc_info=result)
+
     @trace_function
     async def execute(
             self,
@@ -285,7 +302,7 @@ class AionAgentRequestExecutor(AgentExecutor):
             raise InvalidParamsError(message=str(ex)) from ex
 
         operation: Literal["stream", "resume"] = "stream" if is_new_task else "resume"
-        produce_events = await self._resolve(task, operation, context)
+        produce_events = await self._resolve(task, operation, context, event_queue)
 
         if is_new_task:
             logger.info("Created task")
@@ -475,6 +492,7 @@ class AionAgentRequestExecutor(AgentExecutor):
             task: Task,
             operation: Literal["stream", "resume", "cancel"],
             context: Optional[RequestContext] = None,
+            event_queue: Optional[EventQueue] = None,
     ) -> Callable:
         """Resolve the callable for an operation on the task's routed handler.
 
@@ -484,7 +502,9 @@ class AionAgentRequestExecutor(AgentExecutor):
         persists it onto the task's metadata. "resume"/"cancel" are requested
         for an already-routed task: they recall the route from that metadata.
         Either way, falls back to the agent's own framework adapter when no
-        extension is routed for the task.
+        extension is routed for the task. An extension handler's turn is
+        handed the run's ``event_queue``, so it can tell when what it yields
+        no longer reaches the task.
 
         A new task starts without metadata (see _get_task_for_execution), so
         the routing key it carries is the one written here: only the server
@@ -495,9 +515,13 @@ class AionAgentRequestExecutor(AgentExecutor):
             route = self._admitted_route(context)
             if route is not None:
                 task.metadata[_ROUTED_EXTENSION] = route.uri
-                return partial(self._extension_handlers[route.uri].stream, admission=route.admission)
+                return partial(
+                    self._extension_handlers[route.uri].stream, admission=route.admission, event_queue=event_queue
+                )
         else:
             handler = self._routed_handler(task)
+        if operation == "resume" and handler is not self.agent:
+            return partial(handler.resume, event_queue=event_queue)
         return getattr(handler, operation)
 
     def _admitted_route(self, context: Optional[RequestContext]) -> Optional[ExtensionRoute]:
