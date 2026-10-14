@@ -281,6 +281,22 @@ async def test_a_resumed_turn_names_its_own_user_message(runtime_provider) -> No
     assert (markup["turn"], markup["sequence"]) == ("m-2", 1.0)
 
 
+async def test_a_report_turn_says_what_the_server_handed_the_toolkit(runtime_provider) -> None:
+    toolkit = scripted(ToolkitResult(state=ToolkitState.COMPLETED), report=True)
+    await toolkit.cancel("task-0", CANCEL)
+    stored = task(TaskState.TASK_STATE_INPUT_REQUIRED, **{URI: {"turns": 1}})
+    toolkit_handler = ToolkitTaskHandler(toolkit, secret_values=lambda: ())
+
+    events = [event async for event in toolkit_handler.resume(request_context(stored))]
+
+    assert MessageToDict(events[0].status.message.parts[0])["data"] == {
+        "kind": "resume",
+        "task_id": TASK_ID,
+        "task_metadata": {"turns": 1.0},
+        "cancels": [{"task_id": "task-0", "reason": CANCEL}],
+    }
+
+
 # -- cancel ---------------------------------------------------------------------
 
 

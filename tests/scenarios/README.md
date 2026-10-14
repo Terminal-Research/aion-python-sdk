@@ -26,6 +26,7 @@ is generated from the tests and the registries, so it is read, not maintained:
 ```
 commands.py     the command contract: what to send, what comes back
 extensions.py   the two extension URIs this suite owns, and why it owns them
+toolkits.py     the scripted toolkit's deployment, and sending its scripts and reading its report
 frameworks.py   the frameworks under test, and what each cannot do
 harness/        serve, client, recorder, shape, pg, and the payload builders
 agents/         one agent package per framework, all answering commands.py,

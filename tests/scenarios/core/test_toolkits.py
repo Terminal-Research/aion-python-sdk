@@ -14,43 +14,45 @@ Event of the turn. The artifacts of the tasks of one context are numbered
 versions, and ``find_artifact`` reads the latest back. A request the toolkit
 refuses before its task exists is a JSON-RPC error carrying the refusal's
 code, and leaves no task.
+
+A cancel reaches the toolkit once, with the task's id, and the task ends
+``CANCELED``. What the toolkit was asked is read from the report a later turn
+of the toolkit makes: the server is another process.
 """
 
 from __future__ import annotations
 
-import os
+import contextlib
 import uuid
 from typing import Any, AsyncIterator
 
 import httpx
 import pytest
 import pytest_asyncio
+from a2a.types import TaskState
 from google.protobuf.json_format import MessageToDict
 
+from aion.core.toolkit import CANCEL
 from tests.scenarios.harness import (
     EVENT_EXTENSION_URI,
+    Ev,
     ScenarioClient,
     ServeProcess,
-    ServeVariant,
     artifact,
     assert_shape,
     chunks,
-    event_envelope,
     final_task,
     status,
     task,
 )
-from tests.support.scripted_toolkit.contract import SCRIPT_EVENT_TYPE, SCRIPT_SCHEMA, SITE, URI
+from tests.scenarios.harness.recorder import _payload_of, to_event
+from tests.scenarios.toolkits import TOOLKIT, reported, script
+from tests.support.scripted_toolkit.contract import URI
 
 pytestmark = pytest.mark.toolkits
 
-TOOLKIT = ServeVariant(
-    name="toolkit",
-    enabled_extensions=(URI,),
-    env={"PYTHONPATH": os.pathsep.join(filter(None, [str(SITE), os.environ.get("PYTHONPATH")]))},
-)
-
 INVALID_PARAMS = -32602
+TASK_NOT_CANCELABLE = -32002
 
 
 @pytest.fixture(scope="session")
@@ -67,11 +69,6 @@ async def toolkit_client(toolkit_server) -> AsyncIterator[ScenarioClient]:
         yield scenario_client
     finally:
         await scenario_client.close()
-
-
-def script(**fields: Any):
-    """The event that carries a turn's script."""
-    return event_envelope(kind=SCRIPT_EVENT_TYPE, extension_uri=URI, schema=SCRIPT_SCHEMA, payload=fields)
 
 
 TURN = [
@@ -223,6 +220,73 @@ async def test_a_refused_request_is_an_error_with_its_code_and_leaves_no_task(
     assert error["message"] == "No target."
     assert error["data"][0]["metadata"] == {"code": "invalid_directive", "retryable": "false"}
     assert await toolkit_client.tasks_in_context(context_id) == []
+
+
+async def _cancel_a_working_turn(client: ScenarioClient) -> tuple[str, list[Ev], TaskState.ValueType]:
+    """Start a turn that waits for ``cancel()``, cancel it once it has spoken, and read the stream to its end.
+
+    Returns:
+        The task id, every event the stream delivered, and the state of the
+        task the cancel request itself answered with.
+    """
+    envelope = script(
+        outputs=[{"kind": "message", "message": {"parts": [{"kind": "text", "text": "Working"}]}}],
+        wait_for_cancel=True,
+    )
+    events: list[Ev] = []
+    task_id: str | None = None
+    cancel_state: TaskState.ValueType | None = None
+
+    stream = client.stream("run", extensions=[URI], data=[envelope.data], message_metadata=envelope.message_metadata)
+    try:
+        async for response in stream:
+            event = to_event(_payload_of(response))
+            events.append(event)
+            if event.task_id and task_id is None:
+                task_id = event.task_id
+            if event.state == "WORKING" and event.text == "Working" and task_id:
+                cancel_state = (await client.cancel(task_id)).status.state
+                break
+
+        assert task_id is not None and cancel_state is not None, f"the turn never spoke: {events}"
+        async for response in stream:
+            events.append(to_event(_payload_of(response)))
+    finally:
+        with contextlib.suppress(Exception):
+            await stream.aclose()
+    return task_id, events, cancel_state
+
+
+@pytest.mark.variant("toolkit")
+async def test_a_cancel_ends_the_turn_canceled_and_tells_the_toolkit(toolkit_client: ScenarioClient) -> None:
+    """The toolkit is asked once, with the task's id; the task ends ``CANCELED`` on the stream and in the store."""
+    task_id, events, cancel_state = await _cancel_a_working_turn(toolkit_client)
+
+    assert cancel_state == TaskState.TASK_STATE_CANCELED
+    closing = final_task(events)
+    assert closing.state == "CANCELED"
+    assert closing.final, "the terminal event did not close the stream"
+    assert (await toolkit_client.get_task(task_id)).status.state == TaskState.TASK_STATE_CANCELED
+    report = await reported(toolkit_client)
+    assert [item for item in report["cancels"] if item["task_id"] == task_id] == [
+        {"task_id": task_id, "reason": CANCEL}
+    ]
+
+
+@pytest.mark.variant("toolkit")
+async def test_a_second_cancel_of_the_finished_task_is_refused_and_does_not_reach_the_toolkit(
+    toolkit_client: ScenarioClient,
+) -> None:
+    """The repeat is an error, the task stays as it was, and the toolkit is not asked again."""
+    task_id, _, _ = await _cancel_a_working_turn(toolkit_client)
+    before = await toolkit_client.get_task(task_id)
+
+    again = await toolkit_client.rpc("CancelTask", {"id": task_id})
+
+    assert again.get("error", {}).get("code") == TASK_NOT_CANCELABLE, f"a finished task accepted a cancel: {again}"
+    assert await toolkit_client.get_task(task_id) == before
+    report = await reported(toolkit_client)
+    assert [item["task_id"] for item in report["cancels"]].count(task_id) == 1
 
 
 @pytest.mark.variant("toolkit")

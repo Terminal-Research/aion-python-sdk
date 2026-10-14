@@ -240,8 +240,12 @@ event of type `SCRIPT_EVENT_TYPE` with a data part of schema `SCRIPT_SCHEMA`
 whose `outputs` are protocol values in JSON. A script can also refuse or
 crash in `preflight`, crash after some outputs, look an artifact up in its
 context, or wait for `cancel()`. The toolkit records what the server handed
-it. `contract.py` has its URI and schemas without importing the SDK, for the
-scenarios.
+it, and a script with `report` has a turn say it in a message: how the turn
+began, its task, the object the task held and every `cancel()` the toolkit was
+asked for - which is how a scenario, whose server is another process, reads
+the record. `contract.py` has its URI and schemas without importing the SDK,
+for the scenarios; `tests/scenarios/toolkits.py` has the deployment and the
+helpers that send a script and read a report.
 
 `site/` holds the distribution metadata of an `aion.toolkits` entry point
 naming the toolkit. With that directory on `sys.path` - `PYTHONPATH` for a
@@ -255,7 +259,8 @@ nothing installed.
 | unit | `tests/unit/server/tasks/test_task_manager.py` | the status line a details update keeps |
 | integration | `tests/integration/server/tasks/test_toolkit_admission_postgres.py` | a refused request leaves no row in `tasks`, `task_versions` or `task_events`, and the error carries `code` and `retryable` |
 | integration | `tests/integration/server/tasks/test_context_artifacts_parity.py` | versions 0, 1, 2 across tasks, the latest found, another holder seeing nothing, shared contexts - on the in-memory store and on PostgreSQL |
-| scenarios | `tests/scenarios/core/test_toolkits.py` (`TAGS=toolkits`) | a turn through a real `aion serve` on the `toolkit` deployment, numbered artifact versions with `find_artifact`, and a refusal with no task |
+| scenarios | `tests/scenarios/core/test_toolkits.py` (`TAGS=toolkits`) | a turn through a real `aion serve` on the `toolkit` deployment, numbered artifact versions with `find_artifact`, a refusal with no task, and a cancel that reaches the toolkit once and ends the task `CANCELED` |
+| scenarios | `tests/scenarios/persistence/test_toolkits.py` (`make tests-scenarios-persistence`) | on a real database: the toolkit's object handed back to a resumed turn after a restart, and artifact version numbering continuing across it |
 
 A real toolkit is checked against the SDK by its own CI; see
 [Continuous integration](ci.md#toolkits).
