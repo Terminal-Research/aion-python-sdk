@@ -14,12 +14,14 @@ and is checked in the unit suite.
 
 A value the platform marks secret is sent in plaintext like any other, which
 is the case worth stating: there is nothing between the wire and the agent
-that may mask, truncate or re-type it.
+that may mask, truncate or re-type it. The payload stays with the request it
+came on: the task, which any reader of it gets back, does not hold it.
 """
 
 from __future__ import annotations
 
 import pytest
+from google.protobuf.json_format import MessageToJson
 
 from tests.scenarios.commands import ConfigResponse
 from tests.scenarios.harness import (
@@ -133,6 +135,22 @@ async def test_a_secret_value_arrives_whole(client: ScenarioClient) -> None:
 
     assert response.value == SECRET_VALUE
     assert len(response.value or "") == len(SECRET_VALUE)
+
+
+@pytest.mark.command("config")
+async def test_the_task_keeps_no_configuration_value(client: ScenarioClient) -> None:
+    """The distribution payload stays on the request; the stored task does not hold it."""
+    events = await client.send(
+        f"config {SECRET_KEY}",
+        metadata=distribution_metadata(configuration_variables=ENVIRONMENT),
+        extensions=[DISTRIBUTION_EXTENSION_URI],
+    )
+    assert config_response(events).value == SECRET_VALUE
+
+    stored = await client.get_task(final_task(events).task_id)
+
+    assert DISTRIBUTION_EXTENSION_URI not in stored.metadata
+    assert SECRET_VALUE not in MessageToJson(stored.metadata)
 
 
 @pytest.mark.command("config")

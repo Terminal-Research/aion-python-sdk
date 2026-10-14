@@ -161,8 +161,9 @@ all. Without a record the task belongs to the agent's framework adapter.
 
 The record is the server's alone:
 
-- A new task's metadata starts as a copy of the request's, so the executor
-  drops any `aion:routedExtension` the request carried before it decides.
+- A new task starts without metadata: the request's `params.metadata` stays
+  on the request and is never copied into the task, so a request cannot
+  carry an `aion:routedExtension` into it.
 - The key is in the platform metadata namespace, so `A2ATaskDeduplicator`
   removes it from the agent's task patches.
 - Clients see it in the task metadata, but it is not part of the client

@@ -1,18 +1,21 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from a2a.server.agent_execution import RequestContext
+from a2a.server.context import ServerCallContext
 from a2a.server.events import EventQueue
 from a2a.types import (
     Artifact,
     Message,
     Part,
     Role,
+    SendMessageRequest,
     Task,
     TaskArtifactUpdateEvent,
     TaskState,
     TaskStatus,
     TaskStatusUpdateEvent,
 )
+from google.protobuf.json_format import MessageToDict, MessageToJson
 from a2a.utils.errors import (
     InternalError,
     InvalidParamsError,
@@ -23,12 +26,15 @@ from a2a.utils.errors import (
 
 from aion.server.agent.execution import AionAgentRequestExecutor
 from aion.core.a2a.enums import A2AMetadataKey
+from aion.core.constants.a2a import BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1, DAEMON_EXTENSION_URI_V1
+from aion.core.runtime import aion_a2a_extension_registry
 from aion.server.agent.execution.extensions.errors import ExtensionPreflightError
 from aion.server.agent.execution.scope import init_execution_scope
 from aion.core.runtime.context.models import AionRuntimeContext
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.agent.execution.context.providers import RequestScopeRuntimeContextProvider
 from aion.server.files.storage import FileUploadErrorCode, StubFileStorageBackend, UploadFailure
+from tests.unit.support.daemon import daemon_payload
 from tests.unit.support.events import RecordingQueue
 from tests.unit.support.files import OutcomeBackend, StoringTransformer
 
@@ -232,6 +238,126 @@ class TestTaskForExecution:
         executor.agent.stream.assert_not_called()
         executor.agent.resume.assert_not_called()
         event_queue.enqueue_event.assert_not_awaited()
+
+
+SECRET = "sk-configuration-secret"
+"""A configuration variable's value, as the daemon payload carries it in plain text."""
+
+EVOLUTION = BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
+
+
+def _request_metadata() -> dict:
+    """``params.metadata`` of a daemon-driven request that also plants server keys."""
+    return {
+        DAEMON_EXTENSION_URI_V1: daemon_payload(
+            configuration_variables={"MODEL_API_KEY": SECRET},
+        ).model_dump(mode="json", by_alias=True, exclude_none=True),
+        A2AMetadataKey.SETTLED_REASON.value: "server_shutdown",
+        ROUTED: EVOLUTION,
+        "aion:custom": "planted",
+        "client-note": "for this turn",
+    }
+
+
+def _request_context(metadata: dict, *, extensions: tuple[str, ...] = ()) -> RequestContext:
+    """A new request as a2a-sdk hands it to the executor."""
+    message = Message(message_id="msg-1", role=Role.ROLE_USER, parts=[Part(text="improve the agent")])
+    message.extensions.extend(extensions)
+    request = SendMessageRequest(message=message)
+    request.metadata.update(metadata)
+    return RequestContext(ServerCallContext(), request=request)
+
+
+@pytest.fixture
+def daemon_enabled():
+    aion_a2a_extension_registry.activate([DAEMON_EXTENSION_URI_V1])
+    yield
+    aion_a2a_extension_registry.reset_to_default()
+
+
+@pytest.fixture
+def evolution_enabled(daemon_enabled):
+    aion_a2a_extension_registry.activate([EVOLUTION])
+    yield
+
+
+class _ExtensionHandler:
+    """An extension handler that finishes its turn without a word."""
+
+    uri = EVOLUTION
+
+    def __init__(self) -> None:
+        self.streamed = 0
+
+    async def stream(self, context):
+        self.streamed += 1
+        return
+        yield
+
+
+class TestRequestMetadataStaysOnTheRequest:
+    """A new task does not take the request's metadata, as in a2a-sdk.
+
+    The task is stored, journaled and returned to whoever reads it - GetTask,
+    ListTasks, stream snapshots, push notifications - while the daemon payload
+    in ``params.metadata`` carries the environment's configuration variables in
+    plain text. The agent reads the request's metadata from the request.
+    """
+
+    @pytest.mark.anyio
+    async def test_a_new_task_carries_none_of_the_request_metadata(self, executor):
+        context = _request_context(_request_metadata())
+        init_execution_scope()
+
+        task, is_new_task = await executor._get_task_for_execution(context)
+
+        assert is_new_task
+        assert MessageToDict(task.metadata) == {}
+        assert SECRET not in MessageToJson(task)
+        daemon = context.metadata[DAEMON_EXTENSION_URI_V1]
+        assert daemon["environment"]["configurationVariables"] == {"MODEL_API_KEY": SECRET}
+
+    @pytest.mark.anyio
+    async def test_an_extension_task_carries_only_the_route_the_server_wrote(self, evolution_enabled):
+        handler = _ExtensionHandler()
+        executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[handler])
+        context = _request_context(_request_metadata(), extensions=(EVOLUTION,))
+        queue = RecordingQueue()
+        init_execution_scope()
+
+        await executor.execute(context, queue)
+
+        announced = queue.events[0]
+        assert isinstance(announced, Task)
+        assert MessageToDict(announced.metadata) == {ROUTED: EVOLUTION}
+        assert SECRET not in MessageToJson(announced)
+        assert handler.streamed == 1
+
+    @pytest.mark.anyio
+    async def test_a_route_named_in_the_request_routes_nothing(self, daemon_enabled):
+        """Only the server decides which handler a task belongs to."""
+        handler = _ExtensionHandler()
+        agent = _make_agent()
+        streamed = []
+
+        async def agent_stream(context):
+            streamed.append(context)
+            return
+            yield
+
+        agent.stream = agent_stream
+        executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[handler])
+        context = _request_context(_request_metadata())
+        queue = RecordingQueue()
+        init_execution_scope()
+
+        await executor.execute(context, queue)
+
+        announced = queue.events[0]
+        assert MessageToDict(announced.metadata) == {}
+        assert executor._routed_handler(announced) is agent
+        assert streamed == [context]
+        assert handler.streamed == 0
 
 
 class TestCancel:
@@ -487,27 +613,6 @@ class TestResolve:
         resolved = await executor._resolve(task, "stream")
 
         assert resolved is agent.stream
-
-    @pytest.mark.anyio
-    async def test_resolve_stream_drops_a_routing_key_the_request_carried(self):
-        """A new task's metadata starts as a copy of the request's, so a client
-        could otherwise name the handler that resumes and cancels its task."""
-        handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0")
-        agent = _make_agent()
-        executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[handler])
-        task = _make_real_task(metadata={ROUTED: handler.uri})
-        runtime_context = MagicMock()
-        runtime_context.is_extension_active.return_value = False
-
-        with patch(
-            "aion.server.agent.execution.request_executor.AionRuntimeContextRegistry"
-        ) as MockRegistry:
-            MockRegistry.aget_current_context = AsyncMock(return_value=runtime_context)
-            resolved = await executor._resolve(task, "stream")
-
-        assert resolved is agent.stream
-        assert ROUTED not in task.metadata
-        assert executor._routed_handler(task) is agent
 
     @pytest.mark.anyio
     async def test_resolve_resume_recalls_routed_handler(self):

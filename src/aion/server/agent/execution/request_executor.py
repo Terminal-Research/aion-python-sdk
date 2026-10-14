@@ -421,8 +421,8 @@ class AionAgentRequestExecutor(AgentExecutor):
         instead of re-deciding it. Either way, falls back to the agent's own
         framework adapter when no extension is routed for the task.
 
-        A new task's metadata starts as a copy of the request's, so "stream"
-        first drops any routing key the request carried: only the server
+        A new task starts without metadata (see _get_task_for_execution), so
+        the routing key it carries is the one written here: only the server
         decides which handler a task belongs to.
 
         Routing itself is a plain lookup against
@@ -440,8 +440,6 @@ class AionAgentRequestExecutor(AgentExecutor):
         """
         handler = self.agent
         if operation == "stream":
-            if task.HasField("metadata") and _ROUTED_EXTENSION in task.metadata:
-                del task.metadata[_ROUTED_EXTENSION]
             if self._extension_handlers:
                 runtime_context = await AionRuntimeContextRegistry.aget_current_context()
                 if runtime_context is not None:
@@ -491,6 +489,17 @@ class AionAgentRequestExecutor(AgentExecutor):
         reads it as agent failure, persists FAILED for the whole task and
         propagates the error to every subscriber.
 
+        A new task is built as a2a-sdk builds one, from the user message
+        alone. The request's ``params.metadata`` is not copied into it: it
+        carries what the caller sent for this turn - the daemon payload with
+        its configuration variables among it - and a task's metadata is
+        stored, journaled and returned to every reader of the task. The agent
+        reads request metadata where it belongs: ``RequestContext.metadata``,
+        the extension payloads the runtime context collects, and
+        ``runtime.context.inbox``. ``task.metadata`` holds only what the
+        server and trusted handlers write, so a client cannot set a
+        server-owned key such as ``aion:settledReason`` either.
+
         Args:
             context: Request context with optional current task
 
@@ -513,8 +522,6 @@ class AionAgentRequestExecutor(AgentExecutor):
 
         # Create new task
         task = new_task_from_user_message(context.message)
-        if context.metadata:
-            task.metadata = context.metadata
         context.current_task = task
 
         set_task_id(task.id)
