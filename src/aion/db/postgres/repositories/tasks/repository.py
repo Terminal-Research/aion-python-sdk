@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import uuid
-from typing import List, Type, Optional
+from typing import List, NamedTuple, Type, Optional
 
 from sqlalchemy import select, func, asc, desc, delete, and_, or_
 from sqlalchemy.dialects.postgresql import insert
@@ -29,6 +29,20 @@ The public name remains stable while the repository resolves it to the typed
 timestamp, either from its own ``TaskStatus`` or stamped by the application
 when one was missing.
 """
+
+
+class StoredArtifact(NamedTuple):
+    """One artifact row of a task, with the task it belongs to.
+
+    Attributes:
+        task_id: The task that holds the artifact.
+        artifact: The artifact as it was last written.
+        updated_at: When the artifact's payload was last replaced.
+    """
+
+    task_id: uuid.UUID
+    artifact: Artifact
+    updated_at: _dt.datetime
 
 
 class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
@@ -385,12 +399,14 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
             artifact_name: Optional[str] = None,
             artifact_version: Optional[str] = None,
             owner_scope: Optional[str] = None,
+            artifact_id: Optional[str] = None,
     ) -> List[Artifact]:
         """Find artifacts matching the given criteria.
 
         Either ``task_id`` or ``context_id`` must be provided to scope the search.
         ``owner_scope`` narrows it to one user's tasks - a ``context_id`` is
-        chosen by clients, and two users may share one.
+        chosen by clients, and two users may share one. ``artifact_id`` keeps
+        only the artifacts with that id, before the matrix below applies.
 
         Behaviour matrix:
         - name=None,  version=None   > latest version of each artifact (by task creation order)
@@ -420,6 +436,8 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
             context_id=context_id,
         )
 
+        if artifact_id is not None:
+            stmt = stmt.where(TaskArtifactModel.artifact_id == artifact_id)
         if artifact_name is not None:
             stmt = stmt.where(TaskArtifactModel.payload["name"].astext == artifact_name)
         if effective_version is not None:
@@ -455,3 +473,32 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
             return all_versions_by_name(rows, artifact_name)
 
         return latest_artifacts(rows, artifact_name)
+
+    async def find_artifact_versions(
+            self, agent_id: str, context_id: str, artifact_id: str
+    ) -> List[StoredArtifact]:
+        """Every artifact with ``artifact_id`` among the tasks of a context, newest task first.
+
+        An artifact id repeated in several tasks of a context is one artifact
+        in several versions. The search is not narrowed to an owner: who may
+        see the context's tasks is decided before it is made (context
+        admission).
+
+        Args:
+            agent_id: Restrict to this agent's tasks.
+            context_id: The context to search.
+            artifact_id: The artifact's ``artifact_id``.
+
+        Returns:
+            One row per task holding the artifact, newest task first.
+        """
+        stmt = (
+            select(self.model_class.id, TaskArtifactModel.payload, TaskArtifactModel.updated_at)
+            .select_from(self.model_class)
+            .join(TaskArtifactModel, TaskArtifactModel.task_id == self.model_class.id)
+            .where(TaskArtifactModel.artifact_id == artifact_id)
+            .order_by(desc(self.model_class.created_at), desc(self.model_class.id))
+        )
+        stmt = self._apply_filter(stmt, agent_id=agent_id, context_id=context_id)
+        result = await self._session.execute(stmt)
+        return [StoredArtifact(task_id, payload, updated_at) for task_id, payload, updated_at in result.all()]

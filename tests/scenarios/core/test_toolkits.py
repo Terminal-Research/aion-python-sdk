@@ -1,4 +1,4 @@
-"""A toolkit plugin served by a real ``aion serve``: one turn on the wire, and one refusal.
+"""A toolkit plugin served by a real ``aion serve``: a turn on the wire, artifact versions, and a refusal.
 
 The deployment has the scripted toolkit installed - its directory is on the
 server's ``PYTHONPATH``, so its ``aion.toolkits`` entry point is found the
@@ -10,8 +10,10 @@ What a turn becomes is the toolkit host's translation, checked here once
 through the server: the stream opens and closes with the Task, the toolkit's
 object lands whole in ``task.metadata`` under its URI, the status line
 survives updates that only change that object, and every message is an
-Event of the turn. A request the toolkit refuses before its task exists is a
-JSON-RPC error carrying the refusal's code, and leaves no task.
+Event of the turn. The artifacts of the tasks of one context are numbered
+versions, and ``find_artifact`` reads the latest back. A request the toolkit
+refuses before its task exists is a JSON-RPC error carrying the refusal's
+code, and leaves no task.
 """
 
 from __future__ import annotations
@@ -145,6 +147,50 @@ async def test_a_status_update_keeps_the_status_line(toolkit_client: ScenarioCli
     assert closing.state == "INPUT_REQUIRED"
     assert closing.text == "Halfway"
     assert closing.metadata[URI] == {"usage": {"tokens": 10}}
+
+
+@pytest.mark.variant("toolkit")
+async def test_the_tasks_of_a_context_write_numbered_versions_of_an_artifact_and_find_the_latest(
+    toolkit_client: ScenarioClient,
+) -> None:
+    """The server numbers a toolkit's artifact per context, and ``find_artifact`` reads the latest back."""
+    context_id = f"versions-{uuid.uuid4().hex}"
+
+    async def run(**fields: Any):
+        envelope = script(**fields)
+        events = await toolkit_client.send(
+            "run",
+            extensions=[URI],
+            data=[envelope.data],
+            message_metadata=envelope.message_metadata,
+            context_id=context_id,
+        )
+        return await toolkit_client.get_task(final_task(events).task_id)
+
+    def write(text: str) -> dict:
+        return {
+            "outputs": [
+                {
+                    "kind": "artifact",
+                    "artifact": {"id": "evolution-spec", "parts": [{"kind": "text", "text": text}]},
+                    "last_chunk": True,
+                },
+                {"kind": "result", "state": "completed"},
+            ]
+        }
+
+    first = await run(**write("plan one"))
+    second = await run(**write("plan two"))
+    reader = await run(find_artifact="evolution-spec")
+
+    assert [_plain(task.artifacts[0].metadata)["version"] for task in (first, second)] == ["0", "1"]
+    [found] = [
+        _plain(part.data)
+        for message in reader.history
+        for part in message.parts
+        if part.WhichOneof("content") == "data" and "found" in _plain(part.data)
+    ]
+    assert found == {"found": True, "task_id": second.id, "version": 1, "text": "plan two"}
 
 
 @pytest.mark.variant("toolkit")

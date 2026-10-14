@@ -30,6 +30,11 @@ key, because a2a-sdk merges event metadata into the task with
 ``Struct.MergeFrom``, which replaces a key's value rather than merging into
 it.
 
+The artifacts a toolkit yields are numbered by the server: the first event of
+an artifact id in a task stamps ``metadata["version"]`` with the number the
+turn's ``version_of`` gives, and every later chunk or replacement of that id
+in the task carries the same number.
+
 Every message gets the Event extension's markup: ``type``, ``source`` (the
 toolkit's URI), ``id``, plus ``sequence`` - its place among the messages of
 the turn - and ``turn`` - the id of the user message that started it; a data
@@ -56,7 +61,7 @@ import asyncio
 import copy
 import logging
 import uuid
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Any, Optional
 
@@ -88,6 +93,7 @@ from aion.core.constants.a2a import (
 )
 from aion.core.exceptions import AionError
 from aion.core.toolkit import (
+    ARTIFACT_VERSION_KEY,
     Artifact,
     DataPart,
     FilePart,
@@ -183,6 +189,9 @@ class TurnTranslator:
         turn_id: Id of the user message that started the turn.
         task_metadata: The toolkit's object as the task holds it now.
         masker: The secret values to mask in everything translated.
+        version_of: The version number the task writes an artifact id under
+            (``TurnArtifacts.number``); asked once per id in a turn. Without
+            it the artifacts are not numbered.
     """
 
     def __init__(
@@ -194,6 +203,7 @@ class TurnTranslator:
             turn_id: str,
             task_metadata: Mapping[str, Any],
             masker: SecretMasker,
+            version_of: Optional[Callable[[str], Awaitable[int]]] = None,
     ) -> None:
         self._uri = uri
         self._task_id = task_id
@@ -202,6 +212,8 @@ class TurnTranslator:
         self._object: dict[str, Any] = copy.deepcopy(dict(task_metadata))
         self._object_written = False
         self._masker = masker
+        self._version_of = version_of
+        self._versions: dict[str, int] = {}
         self._sequence = 0
         self._durable_messages = 0
         self._delta_open = False
@@ -389,7 +401,15 @@ class TurnTranslator:
             built.description = self._masker.text(artifact.description)
         if artifact.metadata:
             built.metadata.CopyFrom(_struct(self._json(artifact.metadata)))
+        if self._version_of is not None:
+            built.metadata[ARTIFACT_VERSION_KEY] = str(await self._version(artifact.id))
         return built
+
+    async def _version(self, artifact_id: str) -> int:
+        """The number the task writes ``artifact_id`` under; asked of the store on its first event only."""
+        if artifact_id not in self._versions:
+            self._versions[artifact_id] = await self._version_of(artifact_id)
+        return self._versions[artifact_id]
 
     def _close_artifacts(self) -> list[Event]:
         """An empty last chunk for every artifact the turn left unfinished; it adds nothing to it."""

@@ -11,7 +11,9 @@ protocol leaves to the server:
 * **turns** - ``start`` or ``resume`` with a ``ToolkitContext``, every value
   they yield translated by a ``TurnTranslator``; the turn is events, then
   exactly one result, and a turn that breaks that, yields something else or
-  raises ends ``FAILED`` with ``internal_error``;
+  raises ends ``FAILED`` with ``internal_error``; the artifacts the toolkit
+  writes are numbered per context and ``find_artifact`` reads them back
+  (``TurnArtifacts``);
 * **cancellation** - ``Toolkit.cancel`` and a bounded wait for the running
   turn to end, after which the executor writes ``CANCELED``.
 """
@@ -25,6 +27,7 @@ from collections.abc import AsyncIterator, Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
 
+from a2a.server.owner_resolver import OwnerResolver, resolve_user_scope
 from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from a2a.utils.errors import InternalError, InvalidParamsError
 from google.protobuf import struct_pb2
@@ -47,11 +50,13 @@ from aion.core.toolkit import (
     ToolkitStatusEvent,
     codes,
 )
-from aion.core.toolkit.plugin import ArtifactFinder
 from aion.core.utils.protobuf import proto_to_dict
 from aion.server.auth import CredentialKind, verified_caller
+from aion.server.tasks.admission import holder_of
+from aion.server.tasks.context_artifacts import ContextArtifacts
 
 from ...context.attribution import callback_attribution
+from .artifacts import TurnArtifacts
 from .secret_values import SecretMasker, deployment_secret_values
 from .services import daemon_variables, model_service_access, toolkit_request
 from .translation import ToolkitProtocolError, TurnTranslator
@@ -124,9 +129,13 @@ class ToolkitTaskHandler:
 
     Args:
         toolkit: The toolkit plugin.
-        artifact_finder: Looks up the latest version of an artifact in a
-            task's context, for ``ToolkitContext.find_artifact``; finds
-            nothing by default.
+        context_artifacts: Reads the versions of an artifact among the tasks
+            of a context. With it, the artifacts a toolkit writes are numbered
+            and ``ToolkitContext.find_artifact`` finds the latest version in the
+            caller's context; without it they are not numbered and nothing is
+            found.
+        owner_resolver: Resolves a call's owner, as the task store does; it
+            gives the context holder the caller was admitted as.
         secret_values: Returns the deployment's secret values; read at the
             start of every turn.
     """
@@ -135,13 +144,15 @@ class ToolkitTaskHandler:
             self,
             toolkit: Toolkit,
             *,
-            artifact_finder: ArtifactFinder = _no_artifact,
+            context_artifacts: Optional[ContextArtifacts] = None,
+            owner_resolver: OwnerResolver = resolve_user_scope,
             secret_values: Callable[[], Iterable[str]] = deployment_secret_values,
     ) -> None:
         self.toolkit = toolkit
         self.descriptor = toolkit.descriptor
         self.uri = self.descriptor.uri
-        self._artifact_finder = artifact_finder
+        self._context_artifacts = context_artifacts
+        self._owner_resolver = owner_resolver
         self._secret_values = secret_values
         # The turn each task is running in this process, set once it ends.
         self._turns: dict[str, asyncio.Event] = {}
@@ -262,6 +273,7 @@ class ToolkitTaskHandler:
         """Drive one turn of the toolkit and translate it; the turn closes on exactly one final status."""
         task = context.current_task
         masker = SecretMasker([*self._secret_values(), *deployment_secret_values(variables)])
+        artifacts = self._turn_artifacts(context, task)
         toolkit_context = ToolkitContext(
             task_id=task.id,
             context_id=task.context_id,
@@ -269,7 +281,7 @@ class ToolkitTaskHandler:
             daemon_variables=variables,
             model_service=_masking_tokens(model_service, masker),
             secret_values=masker.values,
-            artifact_finder=self._artifact_finder,
+            artifact_finder=artifacts.find if artifacts is not None else _no_artifact,
         )
         translator = TurnTranslator(
             uri=self.uri,
@@ -278,6 +290,7 @@ class ToolkitTaskHandler:
             turn_id=request.message_id,
             task_metadata=task_metadata,
             masker=masker,
+            version_of=artifacts.number if artifacts is not None else None,
         )
         finished = asyncio.Event()
         self._turns[task.id] = finished
@@ -315,6 +328,17 @@ class ToolkitTaskHandler:
             finished.set()
             if self._turns.get(task.id) is finished:
                 del self._turns[task.id]
+
+    def _turn_artifacts(self, context: "RequestContext", task: Task) -> Optional[TurnArtifacts]:
+        """The turn's artifact versions, for the context holder the caller was admitted as."""
+        if self._context_artifacts is None:
+            return None
+        return TurnArtifacts(
+            self._context_artifacts,
+            context_id=task.context_id,
+            task_id=task.id,
+            holder=holder_of(context.call_context, self._owner_resolver),
+        )
 
     # -- cancellation -------------------------------------------------------
 

@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-178 scenarios in 34 files, 407 runs across 2 frameworks: 375 run, 31 skipped, 1 independent of the framework.
+179 scenarios in 34 files, 409 runs across 2 frameworks: 377 run, 31 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -75,7 +75,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `config` | aion.yaml configuration and deployment variants | 8 | `make tests-scenarios TAGS=config` |
 | `lifecycle` | cancel, concurrency, push notifications, startup | 5 | `make tests-scenarios TAGS=lifecycle` |
 | `contexts` | Context extension: list, read and delete conversations | 5 | `make tests-scenarios TAGS=contexts` |
-| `toolkits` | toolkit plugins: a turn translated into A2A, a refusal before the task exists | 4 | `make tests-scenarios TAGS=toolkits` |
+| `toolkits` | toolkit plugins: a turn translated into A2A, a refusal before the task exists | 5 | `make tests-scenarios TAGS=toolkits` |
 | `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 15 | `make tests-scenarios-persistence` |
 | `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 13 | `make tests-scenarios-distributed` |
 | `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 29 | `make tests-scenarios TAGS=native` |
@@ -339,14 +339,15 @@ Replies that arrive in pieces, and the indicator sent while one is built.
 
 ### `tests/scenarios/core/test_toolkits.py`
 
-A toolkit plugin served by a real ``aion serve``: one turn on the wire, and one refusal.
+A toolkit plugin served by a real ``aion serve``: a turn on the wire, artifact versions, and a refusal.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [Messages, deltas, details and an artifact on the stream; the object whole in the task.](core/test_toolkits.py#L98 "test_a_toolkit_turn_streams_and_completes_with_its_object") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [Details without a message change the object, not what the task last said.](core/test_toolkits.py#L129 "test_a_status_update_keeps_the_status_line") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [The toolkit's refusal is the JSON-RPC error, with its code; no task was opened for it.](core/test_toolkits.py#L150 "test_a_refused_request_is_an_error_with_its_code_and_leaves_no_task") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [An installed toolkit the agent enables is an extension the card announces.](core/test_toolkits.py#L182 "test_the_card_offers_the_enabled_toolkit") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [Messages, deltas, details and an artifact on the stream; the object whole in the task.](core/test_toolkits.py#L100 "test_a_toolkit_turn_streams_and_completes_with_its_object") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [Details without a message change the object, not what the task last said.](core/test_toolkits.py#L131 "test_a_status_update_keeps_the_status_line") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The server numbers a toolkit's artifact per context, and ``find_artifact`` reads the latest back.](core/test_toolkits.py#L152 "test_the_tasks_of_a_context_write_numbered_versions_of_an_artifact_and_find_the_latest") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The toolkit's refusal is the JSON-RPC error, with its code; no task was opened for it.](core/test_toolkits.py#L196 "test_a_refused_request_is_an_error_with_its_code_and_leaves_no_task") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [An installed toolkit the agent enables is an extension the card announces.](core/test_toolkits.py#L228 "test_the_card_offers_the_enabled_toolkit") | `toolkits` | — | `toolkit` | ✓ | ✓ |
 
 ### `tests/scenarios/distributed/test_cancel.py`
 

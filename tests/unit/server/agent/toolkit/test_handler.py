@@ -197,12 +197,7 @@ async def test_a_toolkit_whose_start_raises_at_once_fails_the_turn() -> None:
 
 async def test_the_context_a_turn_gets() -> None:
     toolkit = scripted(ToolkitResult(state=ToolkitState.COMPLETED))
-    found = object()
-
-    async def finder(artifact_id: str):
-        return found
-
-    toolkit_handler = ToolkitTaskHandler(toolkit, artifact_finder=finder, secret_values=lambda: ("secret-value-1",))
+    toolkit_handler = ToolkitTaskHandler(toolkit, secret_values=lambda: ("secret-value-1",))
     token = ModelServiceAccess(base_url="https://api.example.test/v1", token=_token("minted-token-1"))
     admitted = ToolkitAdmission(
         request=admission().request,
@@ -218,7 +213,6 @@ async def test_the_context_a_turn_gets() -> None:
     assert dict(context.daemon_variables) == {"llm": "model-a", "API_TOKEN": "daemon-token-1"}
     assert set(context.secret_values) == {"secret-value-1", "daemon-token-1"}
     assert context.model_service.base_url == "https://api.example.test/v1"
-    assert await context.find_artifact("spec") is found
 
 
 def _token(value: str):

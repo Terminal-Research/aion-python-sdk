@@ -4,9 +4,10 @@ A turn's script comes from the request when its message carries a
 ``ScriptPayload`` (how a scenario drives the toolkit through a real server),
 and otherwise from the ``Script`` the toolkit was built with (how a unit test
 drives it). A script names the protocol values to yield, a refusal or a crash
-in ``preflight``, a crash in the middle of the turn, or a turn that waits for
-``cancel()`` and then ends ``canceled``. The toolkit records every call, so a
-test can read what the server handed it.
+in ``preflight``, a crash in the middle of the turn, a lookup of an artifact
+in the context, or a turn that waits for ``cancel()`` and then ends
+``canceled``. The toolkit records every call, so a test can read what the
+server handed it.
 """
 
 from __future__ import annotations
@@ -19,9 +20,12 @@ from pydantic import BaseModel, ConfigDict, TypeAdapter
 
 from aion.core.exceptions import ToolkitRejection
 from aion.core.toolkit import (
+    DataPart,
+    Message,
     PreflightContext,
     ToolkitContext,
     ToolkitDescriptor,
+    ToolkitMessageEvent,
     ToolkitOutput,
     ToolkitRequest,
     ToolkitResult,
@@ -60,6 +64,7 @@ class ScriptPayload(BaseModel):
     crash_preflight: bool = False
     crash_after: Optional[int] = None
     wait_for_cancel: bool = False
+    find_artifact: Optional[str] = None
 
 
 @dataclass
@@ -75,6 +80,10 @@ class Script:
             many outputs.
         wait_for_cancel: After the outputs, the turn waits for ``cancel()``
             and then ends with a ``canceled`` result.
+        find_artifact: Before the outputs, the turn looks this artifact id up
+            in its context and says what it found in a message whose data part
+            is ``{"found": false}`` or ``{"found": true, "task_id", "version",
+            "text"}``.
     """
 
     outputs: list[Any] = field(default_factory=lambda: [ToolkitResult(state=ToolkitState.COMPLETED)])
@@ -82,6 +91,7 @@ class Script:
     crash_preflight: bool = False
     crash_after: Optional[int] = None
     wait_for_cancel: bool = False
+    find_artifact: Optional[str] = None
 
     @classmethod
     def from_payload(cls, payload: ScriptPayload) -> "Script":
@@ -92,6 +102,7 @@ class Script:
             crash_preflight=payload.crash_preflight,
             crash_after=payload.crash_after,
             wait_for_cancel=payload.wait_for_cancel,
+            find_artifact=payload.find_artifact,
         )
 
 
@@ -159,6 +170,8 @@ class ScriptedToolkit:
     async def _turn(self, kind: str, request: ToolkitRequest, context: ToolkitContext) -> AsyncIterator[Any]:
         self.turns.append((kind, request, context))
         script = self._script(request)
+        if script.find_artifact is not None:
+            yield await self._found(script.find_artifact, context)
         for index, value in enumerate(script.outputs):
             if script.crash_after is not None and index >= script.crash_after:
                 raise RuntimeError("scripted crash")
@@ -168,6 +181,18 @@ class ScriptedToolkit:
         if script.wait_for_cancel:
             await self._cancel_event(context.task_id).wait()
             yield ToolkitResult(state=ToolkitState.CANCELED)
+
+    @staticmethod
+    async def _found(artifact_id: str, context: ToolkitContext) -> ToolkitMessageEvent:
+        found = await context.find_artifact(artifact_id)
+        data: dict[str, Any] = {"found": found is not None}
+        if found is not None:
+            data.update(
+                task_id=found.task_id,
+                version=found.version,
+                text="".join(getattr(part, "text", "") for part in found.artifact.parts),
+            )
+        return ToolkitMessageEvent(message=Message(parts=[DataPart(data=data)]))
 
     def _script(self, request: ToolkitRequest) -> Script:
         if isinstance(request.payload, ScriptPayload):

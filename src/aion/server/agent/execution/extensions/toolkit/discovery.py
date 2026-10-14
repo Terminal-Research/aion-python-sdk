@@ -29,6 +29,7 @@ import logging
 from collections.abc import Iterable
 from typing import Any, Optional
 
+from a2a.server.owner_resolver import OwnerResolver, resolve_user_scope
 from pydantic import BaseModel
 
 from aion.core.runtime.context.extensions import (
@@ -44,6 +45,7 @@ from aion.core.toolkit import (
     ToolkitDescriptor,
     protocol_compatible,
 )
+from aion.server.tasks.context_artifacts import ContextArtifacts
 
 from .handler import ToolkitTaskHandler
 
@@ -59,6 +61,8 @@ async def load_toolkit_handlers(
         agent_config: Any,
         *,
         entry_points: Optional[Iterable[importlib.metadata.EntryPoint]] = None,
+        context_artifacts: Optional[ContextArtifacts] = None,
+        owner_resolver: OwnerResolver = resolve_user_scope,
 ) -> list[ToolkitTaskHandler]:
     """Load every installed toolkit and return a handler for each one that can serve this agent.
 
@@ -66,6 +70,11 @@ async def load_toolkit_handlers(
         agent_config: The agent's ``aion.core.config.AgentConfig``.
         entry_points: The entry points to load; every entry point of the
             ``aion.toolkits`` group by default.
+        context_artifacts: The reader of artifact versions in a context that
+            every handler numbers its toolkit's artifacts with and answers
+            ``find_artifact`` from; see ``ToolkitTaskHandler``.
+        owner_resolver: The agent's owner resolver, which every handler reads
+            the caller's context holder with.
 
     Returns:
         One handler per toolkit that is enabled for the agent, configured and
@@ -77,7 +86,7 @@ async def load_toolkit_handlers(
     handlers: list[ToolkitTaskHandler] = []
     claimed: set[str] = set()
     for entry_point in entry_points:
-        handler = await _load(entry_point, agent_config, enabled, claimed)
+        handler = await _load(entry_point, agent_config, enabled, claimed, context_artifacts, owner_resolver)
         if handler is not None:
             handlers.append(handler)
     return handlers
@@ -88,6 +97,8 @@ async def _load(
         agent_config: Any,
         enabled: frozenset[str],
         claimed: set[str],
+        context_artifacts: Optional[ContextArtifacts],
+        owner_resolver: OwnerResolver,
 ) -> Optional[ToolkitTaskHandler]:
     """One entry point: its handler, or None with the reason logged."""
     name = entry_point.name
@@ -138,7 +149,7 @@ async def _load(
         return None
 
     logger.info("Toolkit %s (entry point '%s') serves this agent", uri, name)
-    return ToolkitTaskHandler(toolkit)
+    return ToolkitTaskHandler(toolkit, context_artifacts=context_artifacts, owner_resolver=owner_resolver)
 
 
 def _incompatibility(descriptor: ToolkitDescriptor) -> Optional[str]:

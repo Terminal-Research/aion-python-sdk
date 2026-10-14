@@ -26,6 +26,7 @@ from aion.server.a2a.response_extensions import ResponseServiceParameters
 from aion.server.agent.aion_agent import AionAgent
 from aion.server.agent.execution.scope import set_task_id
 from aion.server.files.a2a import A2AFileTransformer
+from aion.server.tasks.context_artifacts import ContextArtifacts
 from collections.abc import Callable, Iterable, Mapping
 from functools import partial
 from typing import TYPE_CHECKING, Literal, Optional, Tuple
@@ -157,8 +158,13 @@ class AionAgentRequestExecutor(AgentExecutor):
             cls,
             aion_agent: AionAgent,
             file_transformer: Optional[A2AFileTransformer] = None,
+            context_artifacts: Optional[ContextArtifacts] = None,
     ) -> "AionAgentRequestExecutor":
         """Build the executor with a handler for every toolkit that can serve this agent.
+
+        ``context_artifacts`` is how the toolkit handlers number their
+        toolkit's artifacts and find them in a context; the agent's own owner
+        resolver tells them who the caller is.
 
         Discovery registers each installed toolkit's extension and records an
         unavailable one in the central extension registry with its reason -
@@ -169,7 +175,11 @@ class AionAgentRequestExecutor(AgentExecutor):
         return cls(
             aion_agent,
             file_transformer=file_transformer,
-            extension_handlers=await load_toolkit_handlers(aion_agent.config),
+            extension_handlers=await load_toolkit_handlers(
+                aion_agent.config,
+                context_artifacts=context_artifacts,
+                owner_resolver=aion_agent.owner_resolver,
+            ),
         )
 
     def routed_extension(self, extensions: "AionRuntimeExtensions") -> Optional[str]:

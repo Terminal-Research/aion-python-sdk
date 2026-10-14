@@ -8,6 +8,7 @@ from a2a.server.owner_resolver import OwnerResolver, resolve_user_scope
 
 from aion.db.postgres import db_manager
 from .admission import ContextAdmission, InMemoryContextAdmission, PostgresContextAdmission
+from .context_artifacts import ContextArtifacts, InMemoryContextArtifacts, PostgresContextArtifacts
 from .contexts import ContextCatalog, InMemoryContextCatalog, PostgresContextCatalog
 from .stores import (
     BaseTaskStore,
@@ -41,6 +42,7 @@ class StoreManager:
         self._event_stream: Optional[TaskEventStream] = None
         self._admission: Optional[ContextAdmission] = None
         self._context_catalog: Optional[ContextCatalog] = None
+        self._context_artifacts: Optional[ContextArtifacts] = None
 
     def initialize(
             self,
@@ -85,12 +87,14 @@ class StoreManager:
             event_stream = DatabaseTaskEventStream(db_manager.get_engine(), create_table=False)
             admission = PostgresContextAdmission(agent_id, db_manager)
             context_catalog = PostgresContextCatalog(agent_id, db_manager)
+            context_artifacts = PostgresContextArtifacts(agent_id, db_manager)
         else:
             task_store = InMemoryTaskStore(owner_resolver, guard_inline_files=guard_inline_files)
             versioned_store = None
             event_stream = None
             admission = InMemoryContextAdmission()
             context_catalog = InMemoryContextCatalog(task_store, admission)
+            context_artifacts = InMemoryContextArtifacts(task_store, admission)
 
         self._is_initialized = True
         self._store = task_store
@@ -98,6 +102,7 @@ class StoreManager:
         self._event_stream = event_stream
         self._admission = admission
         self._context_catalog = context_catalog
+        self._context_artifacts = context_artifacts
 
     def get_store(self) -> BaseTaskStore:
         """
@@ -161,6 +166,16 @@ class StoreManager:
         if not self._is_initialized:
             raise RuntimeError("Trying to get the context catalog without initialization")
         return self._context_catalog
+
+    def get_context_artifacts(self) -> ContextArtifacts:
+        """Return the artifact versions read from the active task store.
+
+        Raises:
+            RuntimeError: If called before initialization.
+        """
+        if not self._is_initialized:
+            raise RuntimeError("Trying to get context artifacts without initialization")
+        return self._context_artifacts
 
 
 store_manager = StoreManager()

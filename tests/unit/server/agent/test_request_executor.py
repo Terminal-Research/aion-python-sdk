@@ -808,13 +808,16 @@ class TestCreateFactory:
         agent = _make_agent()
         agent.config = MagicMock()
 
+        context_artifacts = MagicMock()
         with patch(
             "aion.server.agent.execution.request_executor.load_toolkit_handlers",
             new=AsyncMock(return_value=[handler]),
         ) as load:
-            executor = await AionAgentRequestExecutor.create(aion_agent=agent)
+            executor = await AionAgentRequestExecutor.create(aion_agent=agent, context_artifacts=context_artifacts)
 
-        load.assert_awaited_once_with(agent.config)
+        load.assert_awaited_once_with(
+            agent.config, context_artifacts=context_artifacts, owner_resolver=agent.owner_resolver
+        )
         assert executor._extension_handlers == {handler.uri: handler}
 
 

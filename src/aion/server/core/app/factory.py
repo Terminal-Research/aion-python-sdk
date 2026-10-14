@@ -201,6 +201,7 @@ class AppFactory:
         self._executor = await AionAgentRequestExecutor.create(
             self.aion_agent,
             file_transformer=self.file_transformer,
+            context_artifacts=self.store_manager.get_context_artifacts(),
         )
 
         # One push URL policy for the configs the handler accepts and the

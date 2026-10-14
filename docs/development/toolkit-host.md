@@ -10,7 +10,8 @@ holds no code for any particular toolkit.
 | Where | What |
 | --- | --- |
 | `src/aion/core/toolkit/` | The protocol: `Toolkit`, `ToolkitDescriptor`, `ToolkitRequest`, `PreflightContext`, `ToolkitContext`, `ModelServiceAccess`, the values a toolkit yields (`models.py`) and the codes the server reserves (`codes.py`). It imports no a2a type. |
-| `src/aion/server/agent/execution/extensions/toolkit/` | The host: `discovery.py`, `handler.py` (`ToolkitTaskHandler`: admission, turns, cancel), `translation.py` (`TurnTranslator`), `services.py` (what the server hands a toolkit about a request), `secret_values.py` (masking). |
+| `src/aion/server/agent/execution/extensions/toolkit/` | The host: `discovery.py`, `handler.py` (`ToolkitTaskHandler`: admission, turns, cancel), `translation.py` (`TurnTranslator`), `artifacts.py` (`TurnArtifacts`: artifact versions of a turn), `services.py` (what the server hands a toolkit about a request), `secret_values.py` (masking). |
+| `src/aion/server/tasks/context_artifacts.py` | `ContextArtifacts`, the reader of an artifact's versions among the tasks of a context, over the in-memory store or PostgreSQL; `StoreManager.get_context_artifacts()` hands it to discovery. |
 | `src/aion/server/agent/execution/extensions/base.py` | `ExtensionTaskHandler`, the contract `ToolkitTaskHandler` implements, and `ExtensionRoute`, the admitted route of a new task. |
 | `tests/support/scripted_toolkit/` | The toolkit the SDK's own tests drive the host with; see [Testing](#testing). |
 
@@ -124,7 +125,7 @@ toolkit a `ToolkitContext`:
 | `daemon_variables` | The request's daemon environment configuration variables. |
 | `model_service` | `ModelServiceAccess` - base URL `aion_model_base_url()`, a token minted per call by `aion_jwt_api_key`, and the request's one callback attribution header from `callback_headers()` - or None without platform credentials or without attribution a model call can use. The toolkit decides whether it needs it. |
 | `secret_values` | The values the server masks (below). |
-| `artifact_finder` | The handler's `artifact_finder`; it finds nothing until the context artifact lookup is wired in. |
+| `artifact_finder` | `TurnArtifacts.find` for the turn's caller and context; see [Artifact versions](#artifact-versions). |
 
 A turn is events, then exactly one `ToolkitResult`. A value after the result,
 a turn that ends without one, a value that is not a protocol value, a result
@@ -142,7 +143,7 @@ delivers and stores:
 | `ToolkitMessageEvent` | `TaskStatusUpdateEvent(WORKING)` with the message (role agent) and `metadata{<uri>: object}` |
 | the same, `ephemeral` | the same with `aion:ephemeral` and without the object: delivered, never stored |
 | the same, `partial` | an `aion:stream-delta` artifact chunk, as the framework adapters stream text; the message's metadata goes to the chunk's artifact under the server's `status` and `status_reason`; the next whole message or the result closes it |
-| `ToolkitArtifactEvent` | `TaskArtifactUpdateEvent` with the artifact's id, name, description, parts and metadata, `append`, `last_chunk`; its `task_metadata` follows as a `WORKING` update with no message |
+| `ToolkitArtifactEvent` | `TaskArtifactUpdateEvent` with the artifact's id, name, description, parts and metadata plus the server's `version` ([Artifact versions](#artifact-versions)), `append`, `last_chunk`; its `task_metadata` follows as a `WORKING` update with no message |
 | `ToolkitStatusEvent` | a `WORKING` update with no message, carrying only the object |
 | `ToolkitResult` | its artifacts with `last_chunk`, then the final status in the mapped `TaskState`; its message is the result's, closed for a failure by a text part with the error's message and a data part `{code, message, retryable}` with schema `{uri}#ToolkitError` |
 | `TextPart` / `DataPart` / `FilePart` | `Part.text` / `Part.data` with `application/json` / `Part.raw` for bytes and for a path the server reads, `Part.url` for a URL; filename and media type carried |
@@ -164,6 +165,40 @@ than merging into it, so a whole object is the only write that means what it
 says. `AionTaskManager` keeps the current `status.message` on a `WORKING`
 update with no message that carries metadata, so a status event or an
 artifact's details do not blank the task's status line.
+
+### Artifact versions
+
+The same artifact `id` in several tasks of a context is one artifact in
+several versions, numbered from 0 in the artifact's `metadata["version"]` -
+the key and the decimal-string value the ADK adapter writes too, so a client,
+`GetContext` and a lookup read it alike for either kind of agent. A toolkit
+never sets it (`Artifact` refuses the key); the server does, for the toolkit's
+artifacts only:
+
+- On the first event of an artifact `id` in a task (`TurnTranslator`, from
+  `TurnArtifacts.number`), the host reads the context's versions of that `id`
+  from the store and writes the next number. Chunks and replacements of the
+  artifact in the same task, and the artifact in a later turn of the task, keep
+  the number it already has. The count is a query on every call, not a cache,
+  so any server of the agent numbers from what the store holds.
+- `ToolkitContext.find_artifact(id)` (`TurnArtifacts.find`) returns the newest
+  version of `id` in the task's context as a `ContextArtifact`: the protocol's
+  `Artifact` converted from A2A (the `version` key moves to the `version`
+  field, and keys the server reserves are left out), the writing `task_id`,
+  `version` and `updated_at`. Nothing found, or a stored artifact the protocol
+  cannot hold, is None.
+- Both see only the tasks of the context holder the caller was admitted as
+  (`holder_of`; [Admission](#admission-before-a-task-exists)): a private
+  context's tasks are its user's, a shared context's are all its participants'.
+  A caller that does not hold the context sees none, so it numbers from 0 and
+  finds nothing. This is the holder, not the task owner.
+- `ContextArtifacts` has an in-memory reader and a PostgreSQL one
+  (`TasksRepository.find_artifact_versions`, which filters by `artifact_id`);
+  a handler built without one numbers nothing and finds nothing.
+
+Two tasks of one context that run at the same time can compute the same
+number; a toolkit that needs one run per context sets
+`exclusive_per_context`.
 
 ### Invariants
 
@@ -203,9 +238,10 @@ and nothing else. A turn yields what its script says: the `Script` it was
 built with in a unit test, or the `ScriptPayload` a request carries - an
 event of type `SCRIPT_EVENT_TYPE` with a data part of schema `SCRIPT_SCHEMA`
 whose `outputs` are protocol values in JSON. A script can also refuse or
-crash in `preflight`, crash after some outputs, or wait for `cancel()`. The
-toolkit records what the server handed it. `contract.py` has its URI and
-schemas without importing the SDK, for the scenarios.
+crash in `preflight`, crash after some outputs, look an artifact up in its
+context, or wait for `cancel()`. The toolkit records what the server handed
+it. `contract.py` has its URI and schemas without importing the SDK, for the
+scenarios.
 
 `site/` holds the distribution metadata of an `aion.toolkits` entry point
 naming the toolkit. With that directory on `sys.path` - `PYTHONPATH` for a
@@ -214,10 +250,12 @@ nothing installed.
 
 | Suite | Where | What |
 | --- | --- | --- |
-| unit | `tests/unit/server/agent/toolkit/` | discovery, every translation row, the object's patches, masking, limits, lifecycle violations, admission, resume, cancel |
+| unit | `tests/unit/server/agent/toolkit/` | discovery, every translation row, the object's patches, masking, limits, lifecycle violations, admission, resume, cancel, artifact versions and `find_artifact` |
+| unit | `tests/unit/server/tasks/test_context_artifacts.py` | the in-memory reader of an artifact's versions: order, holder scoping, shared contexts |
 | unit | `tests/unit/server/tasks/test_task_manager.py` | the status line a details update keeps |
 | integration | `tests/integration/server/tasks/test_toolkit_admission_postgres.py` | a refused request leaves no row in `tasks`, `task_versions` or `task_events`, and the error carries `code` and `retryable` |
-| scenarios | `tests/scenarios/core/test_toolkits.py` (`TAGS=toolkits`) | a turn through a real `aion serve` on the `toolkit` deployment, and a refusal with no task |
+| integration | `tests/integration/server/tasks/test_context_artifacts_parity.py` | versions 0, 1, 2 across tasks, the latest found, another holder seeing nothing, shared contexts - on the in-memory store and on PostgreSQL |
+| scenarios | `tests/scenarios/core/test_toolkits.py` (`TAGS=toolkits`) | a turn through a real `aion serve` on the `toolkit` deployment, numbered artifact versions with `find_artifact`, and a refusal with no task |
 
 A real toolkit is checked against the SDK by its own CI; see
 [Continuous integration](ci.md#toolkits).

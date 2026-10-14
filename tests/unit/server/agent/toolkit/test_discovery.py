@@ -85,6 +85,20 @@ def fresh_toolkits():
         toolkit.configured = 0
 
 
+async def test_a_handler_is_given_the_artifact_versions_and_the_owner_resolver(registry) -> None:
+    context_artifacts = object()
+
+    def resolver(call_context):
+        return "owner"
+
+    handlers = await load_toolkit_handlers(
+        agent(URI), entry_points=[entry_point("FIRST")], context_artifacts=context_artifacts, owner_resolver=resolver
+    )
+
+    assert handlers[0]._context_artifacts is context_artifacts
+    assert handlers[0]._owner_resolver is resolver
+
+
 async def test_an_enabled_toolkit_is_registered_configured_and_served(registry) -> None:
     handlers = await load_toolkit_handlers(agent(URI), entry_points=[entry_point("FIRST")])
 
