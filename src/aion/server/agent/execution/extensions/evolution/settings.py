@@ -82,8 +82,6 @@ class EvolutionSettings(BaseSettings):
     """One reading of the evolution extension's deployment environment."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
     )

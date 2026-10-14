@@ -7,6 +7,7 @@ import asyncclick as click
 from aion.core.utils.optional_deps import DISTRIBUTION
 
 from . import commands
+from .utils.project_env import load_project_env
 
 
 try:
@@ -22,7 +23,9 @@ except PackageNotFoundError:
 @click.version_option(version=__version__, prog_name="Aion SDK")
 def cli() -> None:
     """Command line interface for the Aion Python SDK."""
-    pass
+    # Before any command runs, and so before anything reads a setting: the
+    # settings of the SDK read the process environment only.
+    load_project_env()
 
 
 cli.add_command(commands.serve)

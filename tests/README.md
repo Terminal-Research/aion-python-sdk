@@ -73,6 +73,23 @@ tests migrate and truncate the specified database, and the scenarios migrate it
 and write their own tasks to it, so supply only a disposable test database.
 `PG_TEST_KEEP=1` retains the local container while debugging.
 
+## The environment a test runs in
+
+A test runs on the SDK's defaults, never on the configuration of the machine
+running it. Before collection, [`conftest.py`](conftest.py) removes every
+variable the SDK reads - the inventory `scripts/packaging/envvars.py` takes from
+the source - and the credentials of the model providers and tracing services
+the frameworks reach on their own, and sets `PYTHON_DOTENV_DISABLED=1`. Neither
+the shell nor a `.env` in the repository can then point a test, or an `aion`
+process a test starts, at a real platform, database or storage backend
+([`environment.py`](environment.py)). A test that needs a setting sets it with
+`monkeypatch`.
+
+The scenario harness starts `aion` with only the basics of the shell - `PATH`,
+`HOME`, locale, temporary directories, `PYTHONPATH` - and what the deployment
+variant names. A unit test may connect to localhost and nowhere else:
+pytest-socket fails a connection to any other host.
+
 ## Shared test code
 
 Keep helpers with the suite that owns them. Builders shared by unit test

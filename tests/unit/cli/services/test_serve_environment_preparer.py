@@ -10,6 +10,8 @@ identity or without one.
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 pytest.importorskip("httpx")
@@ -22,8 +24,18 @@ from aion.cli.services.serve.environment_preparer import (
 
 @pytest.fixture(autouse=True)
 def clean_version_env(monkeypatch):
-    """Keep an ambient VERSION_ID out of tests that are about the other sources."""
+    """Keep an ambient VERSION_ID out of these tests, and theirs out of every other.
+
+    The service caches the version it learns in ``os.environ`` and on
+    ``app_settings``, as a serving deployment needs; both are put back once
+    the test is done, so the next test in the process does not inherit it.
+    """
+    from aion.server.settings import app_settings
+
     monkeypatch.delenv("VERSION_ID", raising=False)
+    monkeypatch.setattr(app_settings, "version_id", app_settings.version_id)
+    yield
+    os.environ.pop("VERSION_ID", None)
 
 
 @pytest.fixture(autouse=True)

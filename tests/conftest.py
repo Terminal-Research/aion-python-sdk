@@ -11,10 +11,32 @@ from pathlib import Path
 
 import pytest
 
+from tests.environment import isolate
+
 TESTS_ROOT = Path(__file__).resolve().parent
 
 SUITES = {"unit": "unit", "integration": "integration", "scenarios": "scenario"}
 """The three suites: the directory each one lives in, and its marker."""
+
+UNIT_ALLOWED_HOSTS = ["127.0.0.1", "::1", "localhost"]
+"""The only hosts a unit test may connect to.
+
+A unit test runs on any machine with nothing set up, so it has no business
+with a service anywhere else; pytest-socket fails one that tries, rather than
+letting it reach the service.
+"""
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_configure(config: pytest.Config) -> None:
+    """Take the machine's configuration out of the environment before collection.
+
+    Collection imports the SDK, and the SDK builds its settings on import, so
+    this is the last point at which a developer's credentials, database or
+    storage backend can still be kept out of every test. See
+    ``tests/environment.py``.
+    """
+    isolate()
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -49,6 +71,8 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
                 f"from the directory, do not write it"
             )
         item.add_marker(getattr(pytest.mark, marker), append=False)
+        if marker == "unit":
+            item.add_marker(pytest.mark.allow_hosts(UNIT_ALLOWED_HOSTS))
 
 
 # Top-level import names of the third-party libraries the server extras
