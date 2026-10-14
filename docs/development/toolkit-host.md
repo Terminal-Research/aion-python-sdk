@@ -1,0 +1,223 @@
+# Toolkit host
+
+A toolkit is a framework-agnostic package that does one kind of work for an
+agent and plugs into any Aion server. The server is its host: it finds the
+toolkit, routes the requests that activate the toolkit's A2A extension to it,
+checks them before a task exists, drives the toolkit's turns and turns what
+they yield into A2A. The toolkit never builds an A2A object and the server
+holds no code for any particular toolkit.
+
+| Where | What |
+| --- | --- |
+| `src/aion/core/toolkit/` | The protocol: `Toolkit`, `ToolkitDescriptor`, `ToolkitRequest`, `PreflightContext`, `ToolkitContext`, `ModelServiceAccess`, the values a toolkit yields (`models.py`) and the codes the server reserves (`codes.py`). It imports no a2a type. |
+| `src/aion/server/agent/execution/extensions/toolkit/` | The host: `discovery.py`, `handler.py` (`ToolkitTaskHandler`: admission, turns, cancel), `translation.py` (`TurnTranslator`), `services.py` (what the server hands a toolkit about a request), `secret_values.py` (masking). |
+| `src/aion/server/agent/execution/extensions/base.py` | `ExtensionTaskHandler`, the contract `ToolkitTaskHandler` implements, and `ExtensionRoute`, the admitted route of a new task. |
+| `tests/support/scripted_toolkit/` | The toolkit the SDK's own tests drive the host with; see [Testing](#testing). |
+
+## Discovery
+
+A toolkit registers one object under the `aion.toolkits` entry point group.
+`AppFactory` builds the executor with `AionAgentRequestExecutor.create`,
+which calls `load_toolkit_handlers(agent_config)` before the agent card is
+built. For every entry point:
+
+1. The object is loaded and must satisfy `Toolkit` with a
+   `ToolkitDescriptor` as its `descriptor`. Its URI must not belong to
+   another extension of the server or to another toolkit.
+2. Its extension is registered in `aion_a2a_extension_registry`: URI,
+   description, `requires`, and a `MessagesCollector` over the descriptor's
+   payload models, so an incoming payload is validated by the registry's
+   pipeline before the toolkit sees it. It is active only when the
+   descriptor says `enabled_by_default` or the agent lists it in
+   `enabled_extensions`; installing a toolkit does not expose it (see
+   [Extension exposure](extension-exposure.md)).
+3. For a toolkit active for the agent: its protocol version must be
+   compatible (`protocol_compatible`), its payload models must declare
+   `SCHEMA_URI` and `EVENT_TYPE`, `configure()` must not raise and
+   `availability(agent_config)` must return None. Each runs once.
+4. A toolkit that passes gets one `ToolkitTaskHandler`, the executor's
+   handler for its URI.
+
+A plugin that fails any step is logged as a WARNING naming its entry point
+and never stops the server. When its URI is known, the registry records the
+reason (`mark_unavailable`): the card leaves the extension out and a request
+declaring it is refused with that reason and the code
+`extension_unavailable`. A toolkit installed but not enabled is registered
+and nothing more; its `configure()` does not run.
+
+## Admission: before a task exists
+
+`AionRequestHandler._setup_active_task` runs, in this order:
+
+1. context admission - the caller may use the message's context;
+2. `verify_declared_extensions` - every extension the request declares is
+   registered, enabled, available, has its requirements declared, and its
+   payload validates;
+3. the route of a new task - `AionAgentRequestExecutor.routed_extension`
+   and `admit_new_task`;
+4. preprocessors (file uploads);
+5. a2a-sdk's own setup, which creates the `ActiveTask`.
+
+A message continues a task when it names one, or when the request context
+builder will hand it to the context's interrupted task
+(`AionRequestContextBuilder.interrupted_task`); such a message keeps the
+route its task has. Any other message starts a task: `routed_extension`
+gives it to the first toolkit whose extension it activates, or to the
+agent's framework adapter, and for a toolkit `admit_new_task` runs
+`ToolkitTaskHandler.admit`:
+
+- **the caller check** - a toolkit whose descriptor says `invocation_only`,
+  on a server with `AION_CLIENT_ID`, serves only a verified caller with an
+  invocation token (`CredentialKind.INVOCATION`); anyone else is refused
+  with `caller_not_allowed`. Without `AION_CLIENT_ID` nobody is refused.
+  The rule follows the setting, not a successful registration with the
+  platform, so an unreachable platform does not open the toolkit to all;
+- **`preflight`** - with the `ToolkitRequest` (message id, the message's
+  text parts joined by newlines, the payload the registry collected with the
+  id and source of its event) and a `PreflightContext` (context id, the
+  daemon environment's configuration variables, model service access).
+
+The admitted route is kept on the request's `ServerCallContext.state`
+(`EXTENSION_ROUTE_STATE_KEY`); `execute` reads it and records the URI in
+`task.metadata["aion:routedExtension"]`, so the next turn and a cancel find
+the handler again without deciding anything. Nothing between admission and
+`execute` decides the route a second time.
+
+A refusal at any of these steps is raised before a2a-sdk creates the task,
+so no task, no `task_versions` row and no `task_events` row exist
+afterwards. A unary send answers with the JSON-RPC error. A streaming send
+answers with the error as the stream's only event, as it does for a context
+admission refusal: the stream is open by then.
+
+### Errors
+
+A refusal is an a2a-sdk error whose `data` carries `code` and `retryable`.
+a2a-sdk sends `data` as the `metadata` of a `google.rpc.ErrorInfo` detail,
+whose values are strings, so `retryable` is `"true"` or `"false"`
+(`refusal_data`).
+
+| Refusal | a2a-sdk error | `code` | `retryable` |
+| --- | --- | --- | --- |
+| `preflight` raised `ToolkitRejection` | `InvalidParamsError` | the rejection's | the rejection's |
+| `preflight` raised anything else (logged) | `InternalError` | `internal_error` | `"false"` |
+| the caller check | `InvalidParamsError` | `caller_not_allowed` | `"false"` |
+| an unavailable extension (`verify_declared_extensions`) | `InvalidParamsError` | `extension_unavailable` | `"true"` |
+
+The codes the server reserves and their fixed `retryable` live in
+`aion.core.toolkit.codes`. `InvalidParamsError` is the class for every
+refusal of a request that could be served under other conditions -
+another caller, another deployment state - because it is what a2a-sdk and
+this server already answer for a request the agent will not take;
+`InternalError` is kept for the toolkit failing. A toolkit's own codes
+belong to the toolkit; the server passes them on as they are.
+
+## Turns
+
+`stream` runs the first turn with the admitted request; `resume` runs a later
+one with the request read off the executor's runtime context. Both hand the
+toolkit a `ToolkitContext`:
+
+| Field | What the server puts there |
+| --- | --- |
+| `task_id`, `context_id` | The task's. |
+| `task_metadata` | The toolkit's object as the task holds it: empty for a new task, `task.metadata[<uri>]` for a resumed one. Whatever a request sent under that key is dropped when the task is created. |
+| `daemon_variables` | The request's daemon environment configuration variables. |
+| `model_service` | `ModelServiceAccess` - base URL `aion_model_base_url()`, a token minted per call by `aion_jwt_api_key`, and the request's one callback attribution header from `callback_headers()` - or None without platform credentials or without attribution a model call can use. The toolkit decides whether it needs it. |
+| `secret_values` | The values the server masks (below). |
+| `artifact_finder` | The handler's `artifact_finder`; it finds nothing until the context artifact lookup is wired in. |
+
+A turn is events, then exactly one `ToolkitResult`. A value after the result,
+a turn that ends without one, a value that is not a protocol value, a result
+whose error has an empty code, or an exception out of the toolkit ends the
+turn `FAILED` with `internal_error` and the generic `CRASH_MESSAGE`; the
+details go to the log only, and what the turn already delivered stays.
+
+### Translation
+
+`TurnTranslator` turns each value into the events the executor's pipeline
+delivers and stores:
+
+| Protocol | A2A |
+| --- | --- |
+| `ToolkitMessageEvent` | `TaskStatusUpdateEvent(WORKING)` with the message (role agent) and `metadata{<uri>: object}` |
+| the same, `ephemeral` | the same with `aion:ephemeral` and without the object: delivered, never stored |
+| the same, `partial` | an `aion:stream-delta` artifact chunk, as the framework adapters stream text; the message's metadata goes to the chunk's artifact under the server's `status` and `status_reason`; the next whole message or the result closes it |
+| `ToolkitArtifactEvent` | `TaskArtifactUpdateEvent` with the artifact's id, name, description, parts and metadata, `append`, `last_chunk`; its `task_metadata` follows as a `WORKING` update with no message |
+| `ToolkitStatusEvent` | a `WORKING` update with no message, carrying only the object |
+| `ToolkitResult` | its artifacts with `last_chunk`, then the final status in the mapped `TaskState`; its message is the result's, closed for a failure by a text part with the error's message and a data part `{code, message, retryable}` with schema `{uri}#ToolkitError` |
+| `TextPart` / `DataPart` / `FilePart` | `Part.text` / `Part.data` with `application/json` / `Part.raw` for bytes and for a path the server reads, `Part.url` for a URL; filename and media type carried |
+
+Every message gets the Event extension's markup: `message.metadata[<event
+uri>]` holds `type` (the toolkit's, or `to.aion.toolkit.message` when it
+named none), `source` (the toolkit's URI), `id` (the message id),
+`sequence` (its place among the messages of the turn, from 1) and `turn`
+(the id of the user message that started the turn); a data part's schema
+goes to `part.metadata[<event uri>].schema`, and the Event URI is added to
+`message.extensions`.
+
+The toolkit's object is the dictionary under its URI in `task.metadata`. A
+`task_metadata` patch replaces top-level keys and `None` deletes one; the
+translator applies the patch and writes the whole object under the key on
+every durable update of a task that has one. a2a-sdk merges event metadata
+into the task with `Struct.MergeFrom`, which replaces a key's value rather
+than merging into it, so a whole object is the only write that means what it
+says. `AionTaskManager` keeps the current `status.message` on a `WORKING`
+update with no message that carries metadata, so a status event or an
+artifact's details do not blank the task's status line.
+
+### Invariants
+
+- One terminal status per turn, written by the server: from the result, from
+  a broken turn, or by the executor on cancel.
+- Every string a toolkit yields - text, data, metadata, the object, names,
+  URLs, error messages - is masked: each secret value the server knows is
+  replaced with `[REDACTED]`. The values are the deployment's
+  (`deployment_secret_values`: variables named for a credential, passwords
+  inside URLs), the daemon variables named the same way, and every model
+  service token minted for the turn. Values shorter than 8 characters are
+  not masked.
+- A text part keeps at most `MAX_MESSAGE_TEXT_LENGTH` characters in a
+  message and `MAX_ARTIFACT_TEXT_LENGTH` in an artifact; the rest is cut and
+  a WARNING logged.
+- At most `MAX_DURABLE_MESSAGES_PER_TURN` messages of a turn are stored;
+  later ones are delivered ephemerally, with their object write as a separate
+  details update, and a WARNING is logged.
+- A file in bytes or at a path travels as `Part.raw`, which
+  `A2AFileTransformer` stores and replaces with a link; a file that cannot be
+  stored fails the task, as for any agent.
+- The final status closes an open stream delta and gives every artifact the
+  turn left unfinished an empty `last_chunk` update.
+
+### Cancel
+
+`cancel` calls `Toolkit.cancel(task_id, "cancel")` and waits up to
+`CANCEL_GRACE_SECONDS` for the turn running in this process to end. The
+toolkit may still yield artifacts and a `canceled` result in that time, and
+they reach the task as any turn's would. Then the executor writes
+`CANCELED`, whether the turn ended or not.
+
+## Testing
+
+`tests/support/scripted_toolkit` is a toolkit built on the protocol models
+and nothing else. A turn yields what its script says: the `Script` it was
+built with in a unit test, or the `ScriptPayload` a request carries - an
+event of type `SCRIPT_EVENT_TYPE` with a data part of schema `SCRIPT_SCHEMA`
+whose `outputs` are protocol values in JSON. A script can also refuse or
+crash in `preflight`, crash after some outputs, or wait for `cancel()`. The
+toolkit records what the server handed it. `contract.py` has its URI and
+schemas without importing the SDK, for the scenarios.
+
+`site/` holds the distribution metadata of an `aion.toolkits` entry point
+naming the toolkit. With that directory on `sys.path` - `PYTHONPATH` for a
+server process - discovery finds the toolkit as an installed one, with
+nothing installed.
+
+| Suite | Where | What |
+| --- | --- | --- |
+| unit | `tests/unit/server/agent/toolkit/` | discovery, every translation row, the object's patches, masking, limits, lifecycle violations, admission, resume, cancel |
+| unit | `tests/unit/server/tasks/test_task_manager.py` | the status line a details update keeps |
+| integration | `tests/integration/server/tasks/test_toolkit_admission_postgres.py` | a refused request leaves no row in `tasks`, `task_versions` or `task_events`, and the error carries `code` and `retryable` |
+| scenarios | `tests/scenarios/core/test_toolkits.py` (`TAGS=toolkits`) | a turn through a real `aion serve` on the `toolkit` deployment, and a refusal with no task |
+
+A real toolkit is checked against the SDK by its own CI; see
+[Continuous integration](ci.md#toolkits).

@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-174 scenarios in 33 files, 399 runs across 2 frameworks: 367 run, 31 skipped, 1 independent of the framework.
+177 scenarios in 34 files, 405 runs across 2 frameworks: 373 run, 31 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -15,7 +15,7 @@ A status cell reads `✓` when it runs, `skip` when `frameworks.UNSUPPORTED`, `f
 |  | Covered | Not yet |
 |---|---|---|
 | Commands | 22 of 22: `help`, `echo`, `stream`, `typing`, `steps`, `slow`, `artifacts`, `send-file`, `card`, `outbox-task`, `outbox-message`, `ask`, `ask-twice`, `ask-fail`, `fail`, `ext`, `whoami`, `event`, `config`, `ids`, `big`, `parts` | — |
-| Suites | 17 of 17: `smoke`, `streaming`, `events`, `terminal_states`, `interrupts`, `errors`, `artifacts`, `files`, `extensions`, `daemon`, `authentication`, `config`, `lifecycle`, `contexts`, `persistence`, `distributed`, `native` | — |
+| Suites | 18 of 18: `smoke`, `streaming`, `events`, `terminal_states`, `interrupts`, `errors`, `artifacts`, `files`, `extensions`, `daemon`, `authentication`, `config`, `lifecycle`, `contexts`, `toolkits`, `persistence`, `distributed`, `native` | — |
 
 ## Frameworks
 
@@ -72,9 +72,10 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `extensions` | extension activation and payload delivery | 12 | `make tests-scenarios TAGS=extensions` |
 | `daemon` | daemon extension identity and environment | 6 | `make tests-scenarios TAGS=daemon` |
 | `authentication` | bearer tokens: required, verified, and naming the caller | 6 | `make tests-scenarios TAGS=authentication` |
-| `config` | aion.yaml configuration and deployment variants | 8 | `make tests-scenarios TAGS=config` |
+| `config` | aion.yaml configuration and deployment variants | 7 | `make tests-scenarios TAGS=config` |
 | `lifecycle` | cancel, concurrency, push notifications, startup | 5 | `make tests-scenarios TAGS=lifecycle` |
 | `contexts` | Context extension: list, read and delete conversations | 5 | `make tests-scenarios TAGS=contexts` |
+| `toolkits` | toolkit plugins: a turn translated into A2A, a refusal before the task exists | 4 | `make tests-scenarios TAGS=toolkits` |
 | `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 15 | `make tests-scenarios-persistence` |
 | `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 13 | `make tests-scenarios-distributed` |
 | `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 29 | `make tests-scenarios TAGS=native` |
@@ -132,14 +133,13 @@ Configuration variable delivery through the distribution extension.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [A key present in the distribution payload is readable by the agent.](core/test_config.py#L74 "test_config_variable_reaches_the_agent") | `config` | `config` | `default` | ✓ | ✓ |
-| [A key that the platform did not send comes back ``present=False``.](core/test_config.py#L92 "test_absent_config_variable_is_reported_as_missing") | `config` | `config` | `default` | ✓ | ✓ |
-| [Without the distribution extension the environment is absent entirely.](core/test_config.py#L109 "test_config_without_distribution_sees_no_environment") | `config` | `config` | `default` | ✓ | ✓ |
-| [One payload carries many keys, and each of them arrives under its own name.](core/test_config.py#L119 "test_every_variable_of_an_environment_reaches_the_agent") | `config` | `config` | `default` | ✓ | ✓ |
-| [Nothing between the wire and the agent masks or truncates a secret.](core/test_config.py#L131 "test_a_secret_value_arrives_whole") | `config` | `config` | `default` | ✓ | ✓ |
-| [The distribution payload stays on the request; the stored task does not hold it.](core/test_config.py#L140 "test_the_task_keeps_no_configuration_value") | `config` | `config` | `default` | ✓ | ✓ |
-| [An empty string is a configured value, not an absent key.](core/test_config.py#L156 "test_an_empty_value_is_a_value") | `config` | `config` | `default` | ✓ | ✓ |
-| [The contract is a mapping of strings; nothing re-types a value in transit.](core/test_config.py#L165 "test_values_arrive_as_the_strings_they_were_sent_as") | `config` | `config` | `default` | ✓ | ✓ |
+| [A key present in the distribution payload is readable by the agent.](core/test_config.py#L72 "test_config_variable_reaches_the_agent") | `config` | `config` | `default` | ✓ | ✓ |
+| [A key that the platform did not send comes back ``present=False``.](core/test_config.py#L90 "test_absent_config_variable_is_reported_as_missing") | `config` | `config` | `default` | ✓ | ✓ |
+| [Without the distribution extension the environment is absent entirely.](core/test_config.py#L107 "test_config_without_distribution_sees_no_environment") | `config` | `config` | `default` | ✓ | ✓ |
+| [One payload carries many keys, and each of them arrives under its own name.](core/test_config.py#L117 "test_every_variable_of_an_environment_reaches_the_agent") | `config` | `config` | `default` | ✓ | ✓ |
+| [Nothing between the wire and the agent masks or truncates a secret.](core/test_config.py#L129 "test_a_secret_value_arrives_whole") | `config` | `config` | `default` | ✓ | ✓ |
+| [An empty string is a configured value, not an absent key.](core/test_config.py#L138 "test_an_empty_value_is_a_value") | `config` | `config` | `default` | ✓ | ✓ |
+| [The contract is a mapping of strings; nothing re-types a value in transit.](core/test_config.py#L147 "test_values_arrive_as_the_strings_they_were_sent_as") | `config` | `config` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_contexts.py`
 
@@ -336,6 +336,17 @@ Replies that arrive in pieces, and the indicator sent while one is built.
 | [What was shown once is gone; what was said is kept.](core/test_streaming.py#L112 "test_the_indicator_never_reaches_task_history") | `streaming` | `typing` | `default` | ✓ | ✓ |
 | [`SendMessage` without a stream answers once: the task, completed, the reply on its status.](core/test_streaming.py#L131 "test_a_unary_send_answers_with_the_completed_task") | `streaming` | `echo` | `default` | ✓ | ✓ |
 
+### `tests/scenarios/core/test_toolkits.py`
+
+A toolkit plugin served by a real ``aion serve``: one turn on the wire, and one refusal.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [Messages, deltas, details and an artifact on the stream; the object whole in the task.](core/test_toolkits.py#L98 "test_a_toolkit_turn_streams_and_completes_with_its_object") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [Details without a message change the object, not what the task last said.](core/test_toolkits.py#L129 "test_a_status_update_keeps_the_status_line") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The toolkit's refusal is the JSON-RPC error, with its code; no task was opened for it.](core/test_toolkits.py#L150 "test_a_refused_request_is_an_error_with_its_code_and_leaves_no_task") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [An installed toolkit the agent enables is an extension the card announces.](core/test_toolkits.py#L182 "test_the_card_offers_the_enabled_toolkit") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+
 ### `tests/scenarios/distributed/test_cancel.py`
 
 Cancelling a task through a server that is not the one running it.
@@ -510,7 +521,7 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | `ext` | Report active and unknown extensions | `extensions` | 6 | ✓ | ✓ |
 | `whoami` | Report the daemon identity | `daemon` | 6 | ✓ | ✓ |
 | `event` | Report the event this turn carried | `extensions`, `events` | 4 | ✓ | ✓ |
-| `config <key>` | Report one configuration value | `config` | 8 | ✓ | ✓ |
+| `config <key>` | Report one configuration value | `config` | 7 | ✓ | ✓ |
 | `ids` | Report task and context ids | `events`, `lifecycle` | 2 | ✓ | ✓ |
 | `big <kb>` | Reply with n KB of text | `errors` | 3 | ✓ | ✓ |
 | `parts` | Report the kinds of parts the inbound message carried | `files` | 7 | ✓ | ✓ |

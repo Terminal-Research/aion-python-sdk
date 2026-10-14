@@ -17,7 +17,6 @@ from aion.core.a2a.enums import A2AMetadataKey
 from aion.core.runtime import (
     AionRuntimeContextBuilder,
     ExtensionActivationError,
-    aion_a2a_extension_registry,
 )
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.core.runtime.context.models import AionRuntimeContext
@@ -27,16 +26,22 @@ from aion.server.a2a.response_extensions import ResponseServiceParameters
 from aion.server.agent.aion_agent import AionAgent
 from aion.server.agent.execution.scope import set_task_id
 from aion.server.files.a2a import A2AFileTransformer
-from collections.abc import Callable, Iterable
-from typing import Literal, Optional, Tuple
+from collections.abc import Callable, Iterable, Mapping
+from functools import partial
+from typing import TYPE_CHECKING, Literal, Optional, Tuple
 
 from .event_pipeline import AionEventPipeline, OutboundFileNotStoredError
 from .context.attribution import callback_attribution
 from .extensions import (
-    ExtensionPreflightError,
+    EXTENSION_ROUTE_STATE_KEY,
+    ExtensionRoute,
     ExtensionTaskHandler,
-    discover_extension_task_handlers,
+    load_toolkit_handlers,
 )
+
+if TYPE_CHECKING:
+    from a2a.server.context import ServerCallContext
+    from aion.core.runtime.context.extensions import AionRuntimeExtensions
 
 logger = logging.getLogger(__name__)
 
@@ -153,35 +158,52 @@ class AionAgentRequestExecutor(AgentExecutor):
             aion_agent: AionAgent,
             file_transformer: Optional[A2AFileTransformer] = None,
     ) -> "AionAgentRequestExecutor":
-        """Build the executor, keeping only extension handlers available for this agent.
+        """Build the executor with a handler for every toolkit that can serve this agent.
 
-        A handler that reports itself unavailable is recorded in the central
-        extension registry (mark_unavailable) with its own reason - the
-        request-time verification pipeline then rejects any request declaring
-        that extension, uniformly with extensions that have no handler at
-        all. The executor keeps no availability state of its own.
+        Discovery registers each installed toolkit's extension and records an
+        unavailable one in the central extension registry with its reason -
+        the request-time verification pipeline then refuses any request
+        declaring it, uniformly with extensions that have no handler at all.
+        The executor keeps no availability state of its own.
         """
-        available: list[ExtensionTaskHandler] = []
-        for handler in discover_extension_task_handlers():
-            result = await handler.availability(aion_agent.config)
-            if result.available:
-                available.append(handler)
-                continue
-            reason = result.reason or f"extension '{handler.uri}' is not available on this agent"
-            enabled = getattr(aion_agent.config, "enabled_extensions", None) or ()
-            if handler.uri in enabled:
-                aion_a2a_extension_registry.mark_unavailable(handler.uri, reason)
-                logger.warning(
-                    "Extension '%s' task handler is unavailable - requests "
-                    "declaring it will be rejected: %s",
-                    handler.uri,
-                    reason,
-                )
         return cls(
             aion_agent,
             file_transformer=file_transformer,
-            extension_handlers=available,
+            extension_handlers=await load_toolkit_handlers(aion_agent.config),
         )
+
+    def routed_extension(self, extensions: "AionRuntimeExtensions") -> Optional[str]:
+        """The extension whose handler a new task with these extensions belongs to, or None.
+
+        The first handler whose extension the request activates; None sends
+        the task to the agent's framework adapter.
+        """
+        return next((uri for uri in self._extension_handlers if extensions.is_active(uri)), None)
+
+    async def admit_new_task(
+            self,
+            uri: str,
+            message: Message,
+            extensions: "AionRuntimeExtensions",
+            call_context: "ServerCallContext",
+    ) -> None:
+        """Admit a request that starts a new task of the handler for ``uri``, before the task exists.
+
+        The handler checks the request (``admit``); the admitted route is
+        kept on the call context, where ``execute`` reads it instead of
+        deciding again.
+
+        Args:
+            uri: The extension ``routed_extension`` chose.
+            message: The user message; its ``context_id`` is set.
+            extensions: The request's verified extensions.
+            call_context: The request's call context.
+
+        Raises:
+            a2a.utils.errors.A2AError: The handler refused the request.
+        """
+        admission = await self._extension_handlers[uri].admit(message, extensions, call_context)
+        call_context.state[EXTENSION_ROUTE_STATE_KEY] = ExtensionRoute(uri, admission)
 
     @trace_function
     async def execute(
@@ -218,10 +240,7 @@ class AionAgentRequestExecutor(AgentExecutor):
             raise InvalidParamsError(message=str(ex)) from ex
 
         operation: Literal["stream", "resume"] = "stream" if is_new_task else "resume"
-        try:
-            produce_events = await self._resolve(task, operation, context)
-        except ExtensionPreflightError as ex:
-            raise InvalidParamsError(message=str(ex)) from ex
+        produce_events = await self._resolve(task, operation, context)
 
         if is_new_task:
             logger.info("Created task")
@@ -414,51 +433,35 @@ class AionAgentRequestExecutor(AgentExecutor):
     ) -> Callable:
         """Resolve the callable for an operation on the task's routed handler.
 
-        "stream" is only ever requested for a newly created task: it decides
-        routing from the live runtime context and persists that decision onto
-        the task's metadata. "resume"/"cancel" are requested for an
-        already-routed task: they recall the decision from that metadata
-        instead of re-deciding it. Either way, falls back to the agent's own
-        framework adapter when no extension is routed for the task.
+        "stream" is only ever requested for a newly created task: it takes the
+        route the request handler admitted before the task existed
+        (``admit_new_task``), kept on the request's call context, and
+        persists it onto the task's metadata. "resume"/"cancel" are requested
+        for an already-routed task: they recall the route from that metadata.
+        Either way, falls back to the agent's own framework adapter when no
+        extension is routed for the task.
 
         A new task starts without metadata (see _get_task_for_execution), so
         the routing key it carries is the one written here: only the server
         decides which handler a task belongs to.
-
-        Routing itself is a plain lookup against
-        AionRuntimeContext.extensions - the set of extensions already
-        collected and verified (schema + co-activation requirements) during
-        data prep in AionRuntimeContextBuilder. No activation or validation
-        logic lives here.
-
-        For "stream"/"resume" routed to an extension handler, this also runs
-        that handler's per-request preflight (see ExtensionPreflightError) -
-        here, not in execute(), because this is where `handler` is known, and
-        it still runs before the task is persisted/enqueued (see execute()).
-        `context` is required for those two operations; "cancel" passes none,
-        since a cancelled task already exists and has nothing left to preflight.
         """
         handler = self.agent
         if operation == "stream":
-            if self._extension_handlers:
-                runtime_context = await AionRuntimeContextRegistry.aget_current_context()
-                if runtime_context is not None:
-                    matched = next(
-                        (uri for uri in self._extension_handlers if runtime_context.is_extension_active(uri)),
-                        None,
-                    )
-                    if matched:
-                        task.metadata[_ROUTED_EXTENSION] = matched
-                        handler = self._extension_handlers[matched]
-
+            route = self._admitted_route(context)
+            if route is not None:
+                task.metadata[_ROUTED_EXTENSION] = route.uri
+                return partial(self._extension_handlers[route.uri].stream, admission=route.admission)
         else:
             handler = self._routed_handler(task)
-
-        if operation in ("stream", "resume") and handler is not self.agent:
-            preflight = getattr(handler, "preflight", None)
-            if preflight is not None:
-                await preflight(context)
         return getattr(handler, operation)
+
+    def _admitted_route(self, context: Optional[RequestContext]) -> Optional[ExtensionRoute]:
+        """The route the request handler admitted for this request, if it is one this executor serves."""
+        state = getattr(getattr(context, "call_context", None), "state", None)
+        route = state.get(EXTENSION_ROUTE_STATE_KEY) if isinstance(state, Mapping) else None
+        if isinstance(route, ExtensionRoute) and route.uri in self._extension_handlers:
+            return route
+        return None
 
     def _routed_handler(self, task: Task):
         """The extension handler a routed task is bound to, or the agent itself."""

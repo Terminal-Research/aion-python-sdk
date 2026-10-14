@@ -36,6 +36,11 @@ class ExtensionActivationError(AionError):
 
     Raised during data preparation (AionRuntimeContextBuilder), before the
     request reaches routing or any handler/agent business logic.
+
+    ``code`` is set for a refusal the server gives a stable code to - an
+    extension that is unavailable on this deployment is
+    ``extension_unavailable`` (``aion.core.toolkit.codes``) - and travels
+    in the JSON-RPC error's ``data``.
     """
 
     def __init__(
@@ -44,10 +49,12 @@ class ExtensionActivationError(AionError):
         *,
         missing_requires: frozenset[str] = frozenset(),
         reason: Optional[str] = None,
+        code: Optional[str] = None,
     ) -> None:
         self.uri = uri
         self.missing_requires = missing_requires
         self.reason = reason
+        self.code = code
         if missing_requires:
             message = (
                 f"Extension '{uri}' requires extension(s) that are not active "

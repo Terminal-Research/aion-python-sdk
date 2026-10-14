@@ -88,16 +88,17 @@ class TestVerifyDeclaredExtensions:
     def test_declared_inactive_extension_rejected_as_invalid_params(self):
         from a2a.types import Message, Role, SendMessageRequest
         from a2a.utils.errors import InvalidParamsError
-        from aion.core.constants.a2a import BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
+        from aion.core.constants.a2a import DAEMON_EXTENSION_URI_V1
         from aion.core.runtime import aion_a2a_extension_registry
 
         aion_a2a_extension_registry.reset_to_default()
         message = Message(message_id="m-1", role=Role.ROLE_USER)
-        message.extensions.append(BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1)
+        message.extensions.append(DAEMON_EXTENSION_URI_V1)
         params = SendMessageRequest(message=message)
 
-        with pytest.raises(InvalidParamsError, match="not enabled for this agent"):
+        with pytest.raises(InvalidParamsError, match="not enabled for this agent") as refusal:
             self._verify(params, self._call_context())
+        assert refusal.value.data is None
 
     def test_header_declared_inactive_extension_rejected(self):
         from a2a.types import Message, Role, SendMessageRequest
@@ -155,8 +156,9 @@ class TestVerifyDeclaredExtensions:
                 },
             }, params.metadata.get_or_create_struct(DAEMON_EXTENSION_URI_V1))
 
-            with pytest.raises(InvalidParamsError, match="daemon handler cannot run here"):
+            with pytest.raises(InvalidParamsError, match="daemon handler cannot run here") as refusal:
                 self._verify(params, self._call_context())
+            assert refusal.value.data == {"code": "extension_unavailable", "retryable": "true"}
 
             # Sanity: once availability is restored the same request passes.
             aion_a2a_extension_registry.reset_to_default()

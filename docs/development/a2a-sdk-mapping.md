@@ -31,7 +31,7 @@ against them.
 
 | Method | Protocol | Status | Aion | What differs |
 |---|---|---|---|---|
-| `SendMessage` | 1.0 | extended | `AionRequestHandler.on_message_send` | Answers with a `Task`, never a bare `Message`; context admission, extension verification and file preprocessing run first. |
+| `SendMessage` | 1.0 | extended | `AionRequestHandler.on_message_send` | Answers with a `Task`, never a bare `Message`; context admission, extension verification, the route of a new task (a toolkit's caller check and `preflight`) and file preprocessing run first. |
 | `SendStreamingMessage` | 1.0 | extended | `AionRequestHandler.on_message_send_stream`, `AionJsonRpcDispatcher._process_streaming_request` | Extensions verified before the SSE headers; the stream opens and closes with the stored `Task`. |
 | `GetTask` | 1.0 | extended | `AionRequestHandler.on_get_task` | The caller's own tasks only. |
 | `ListTasks` | 1.0 | extended | `AionRequestHandler.on_list_tasks` | The caller's own tasks only; opaque page cursors. |
@@ -104,7 +104,7 @@ What Aion adds on top of cluster mode:
 
 | Aion | a2a-sdk | Status | What differs and why | Tested by |
 |---|---|---|---|---|
-| `AionRequestHandler._setup_active_task` | `DefaultRequestHandlerV2._setup_active_task` | extended | Context admission, extension verification and preprocessing (file uploads) run first, so a refused message leaves nothing behind. | `test_context_admission_a2a_jsonrpc.py`, `test_preprocessor_ordering.py` |
+| `AionRequestHandler._setup_active_task` | `DefaultRequestHandlerV2._setup_active_task` | extended | Context admission, extension verification, the route of a new task (`AionAgentRequestExecutor.routed_extension` and `admit_new_task`: a toolkit's caller check and `preflight`) and preprocessing (file uploads) run first, so a refused message leaves nothing behind. | `test_context_admission_a2a_jsonrpc.py`, `test_preprocessor_ordering.py`, `test_toolkit_admission_postgres.py` |
 | `AionRequestHandler.on_get_task` | `DefaultRequestHandlerV2.on_get_task` | extended | A caller without individual access gets `TaskNotFoundError`. | `test_token_isolation_a2a_jsonrpc.py` |
 | `AionRequestHandler.on_list_tasks` | `DefaultRequestHandlerV2.on_list_tasks` | extended | A caller without individual access lists nothing. | `test_token_isolation_a2a_jsonrpc.py` |
 | `AionRequestHandler.on_cancel_task` | `DefaultRequestHandlerV2.on_cancel_task` | extended | Individual access check; local and remote cancellation are a2a-sdk's. | `test_cluster_mode_postgres.py`, `test_owner_isolation_postgres.py` |
@@ -130,7 +130,7 @@ What Aion adds on top of cluster mode:
 | `AionJsonRpcDispatcher._create_response` | `JsonRpcDispatcher._create_response` | extended | LF event delimiters in SSE, safe through tunnels. | `test_jsonrpc_dispatcher.py` |
 | `AionJSONRPC03Adapter._process_streaming_request` | `JSONRPC03Adapter._process_streaming_request` | extended | The A2A 0.3 streams follow the 1.0 binding's rules: LF event delimiters, and a `message/stream` whose extensions fail verification refused with `-32602` before the stream opens. | `test_v03_streams.py` |
 | `AionRequestContextBuilder.build` | `RequestContextBuilder.build` | replaced | A message with a `contextId` and no `taskId` continues the caller's interrupted task in that context. | `test_request_context_builder.py` |
-| `AionAgentRequestExecutor.execute` | `AgentExecutor.execute` | replaced | Runs the agent's framework adapter or a routed extension handler through `AionEventPipeline`. A new task is built by a2a-sdk's `new_task_from_user_message` and, as everywhere in a2a-sdk, takes none of the request's metadata. | `test_request_executor.py`, `test_request_metadata_postgres.py` |
+| `AionAgentRequestExecutor.execute` | `AgentExecutor.execute` | replaced | Runs the agent's framework adapter, or the toolkit handler the request handler admitted the task to, through `AionEventPipeline`. A new task is built by a2a-sdk's `new_task_from_user_message` and, as everywhere in a2a-sdk, takes none of the request's metadata. | `test_request_executor.py`, `test_request_metadata_postgres.py` |
 | `AionAgentRequestExecutor.cancel` | `AgentExecutor.cancel` | replaced | Delegates to the framework adapter or extension handler, then writes `CANCELED`; runs only for a task this server holds. | `test_request_executor.py` |
 | `TerminalTaskPushSender.send_notification` | `PushNotificationSender.send_notification` | replaced | Sends the stored `Task` in place of a non-active status update. | `test_terminal_push_sender.py` |
 | `AionPushNotificationSender.send_notification` | `BasePushNotificationSender.send_notification` | replaced | Same delivery; reports per-webhook outcomes instead of one summary line. | `test_push_sender.py` |

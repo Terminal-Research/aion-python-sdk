@@ -1,4 +1,4 @@
-"""Tests for AionRequestContextBuilder._find_interrupted_task."""
+"""Tests for AionRequestContextBuilder.interrupted_task."""
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock
@@ -43,7 +43,7 @@ class TestFindInterruptedTask:
         store = _make_store(None)
         builder = AionRequestContextBuilder(task_store=store)
         context = _context()
-        result = await builder._find_interrupted_task("ctx-new", context)
+        result = await builder.interrupted_task("ctx-new", context)
         assert result is None
         store.get_context_last_task.assert_awaited_once_with(
             context_id="ctx-new",
@@ -54,7 +54,7 @@ class TestFindInterruptedTask:
         """Task exists but is completed — should return None."""
         store = _make_store(_make_task(TaskState.TASK_STATE_COMPLETED))
         builder = AionRequestContextBuilder(task_store=store)
-        result = await builder._find_interrupted_task(
+        result = await builder.interrupted_task(
             "ctx-1",
             _context(),
         )
@@ -65,7 +65,7 @@ class TestFindInterruptedTask:
         task = _make_task(TaskState.TASK_STATE_INPUT_REQUIRED)
         store = _make_store(task)
         builder = AionRequestContextBuilder(task_store=store)
-        result = await builder._find_interrupted_task(
+        result = await builder.interrupted_task(
             "ctx-1",
             _context(),
         )
@@ -74,7 +74,7 @@ class TestFindInterruptedTask:
     async def test_returns_none_when_no_task_store(self):
         """No task store configured — should return None."""
         builder = AionRequestContextBuilder(task_store=None)
-        result = await builder._find_interrupted_task(
+        result = await builder.interrupted_task(
             "ctx-1",
             _context(),
         )
@@ -87,7 +87,7 @@ class TestFindInterruptedTask:
         builder = AionRequestContextBuilder(task_store=store)
         context = ServerCallContext()
 
-        result = await builder._find_interrupted_task("ctx-1", context)
+        result = await builder.interrupted_task("ctx-1", context)
 
         assert result is interrupted
         store.get_context_last_task.assert_awaited_once_with(context_id="ctx-1", context=context)

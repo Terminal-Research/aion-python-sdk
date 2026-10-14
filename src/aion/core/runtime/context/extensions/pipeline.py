@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Optional
 
 from aion.core.a2a.extensions.welcome_message import has_user_text
 from aion.core.constants.a2a import WELCOME_MESSAGE_EXTENSION_URI_V1
+from aion.core.toolkit import codes
 
 from .descriptors import ExtensionActivationError, ExtensionDescriptor
 
@@ -86,7 +87,9 @@ def _verify(
             # on this deployment - reject with the extension-authored reason
             # recorded via AionA2AExtensionRegistry.mark_unavailable().
             raise ExtensionActivationError(
-                descriptor.uri, reason=descriptor.unavailable_reason
+                descriptor.uri,
+                reason=descriptor.unavailable_reason,
+                code=codes.EXTENSION_UNAVAILABLE,
             )
 
         missing = frozenset(descriptor.requires) - enabled_uris

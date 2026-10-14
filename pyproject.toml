@@ -322,6 +322,7 @@ markers = [
     "config: scenario suite - aion.yaml configuration and deployment variants",
     "lifecycle: scenario suite - cancel, concurrency, push notifications, startup",
     "contexts: scenario suite - Context extension: list, read and delete conversations",
+    "toolkits: scenario suite - toolkit plugins: a turn translated into A2A, a refusal before the task exists",
     "persistence: scenario suite - needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database",
     "distributed: scenario suite - needs POSTGRES_TEST_URL; two servers over one database",
     "native: scenario suite - an ordinary framework agent on its own path: model, tools, memory, no Aion API",

@@ -56,8 +56,8 @@ class AionRequestContextBuilder(RequestContextBuilder):
             An instance of RequestContext populated with the provided information
             and potentially a list of related tasks.
         """
-        if not task_id and self._auto_discover_interrupted_task and context_id:
-            discovered = await self._find_interrupted_task(context_id, context)
+        if not task_id and context_id:
+            discovered = await self.interrupted_task(context_id, context)
             if discovered:
                 task_id = discovered.id
                 task = discovered
@@ -73,17 +73,22 @@ class AionRequestContextBuilder(RequestContextBuilder):
             context_id_generator=self._context_id_generator,
         )
 
-    async def _find_interrupted_task(
+    async def interrupted_task(
             self,
             context_id: str,
             context: ServerCallContext,
     ) -> Task | None:
-        """Return the caller-owned interrupted task for a context, if any.
+        """The caller-owned interrupted task a message to ``context_id`` without a task id continues.
 
-        A caller without individual access owns none to return to: its
-        shared attribution cannot tell whose interrupted task it would be.
+        None when auto-discovery is off or there is no such task. A caller
+        without individual access owns none to return to: its shared
+        attribution cannot tell whose interrupted task it would be.
         """
-        if not self._task_store or not has_individual_access(context):
+        if (
+            not self._auto_discover_interrupted_task
+            or not self._task_store
+            or not has_individual_access(context)
+        ):
             return None
 
         last_task = await self._task_store.get_context_last_task(

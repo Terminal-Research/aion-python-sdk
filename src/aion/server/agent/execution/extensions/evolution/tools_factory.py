@@ -142,7 +142,7 @@ from aion.toolkits.behaviour_evolution import (
 
 from .directive import ParsedDirective
 from .errors import ExtensionSetupError, UnsupportedDirectiveError
-from .secret_values import deployment_secret_values
+from ..toolkit.secret_values import deployment_secret_values
 from .settings import EvolutionSettings
 from .provider import CUSTOM, LOCAL_SESSION, resolve_provider, warn_ignored_keys
 

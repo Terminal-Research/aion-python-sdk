@@ -49,6 +49,8 @@ from typing import override
 import uuid
 
 from aion.server.agent.execution import AionActiveTaskRegistry
+from aion.server.agent.execution.extensions import EXTENSION_ROUTE_STATE_KEY
+from aion.server.agent.execution.extensions.toolkit import refusal_data
 from aion.server.a2a.constants import TERMINAL_TASK_STATES
 from aion.server.auth import has_individual_access
 from aion.server.tasks.admission import ContextAdmission, InMemoryContextAdmission, holder_of
@@ -142,20 +144,21 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             params: SendMessageRequest,
             call_context: ServerCallContext,
     ) -> tuple[ActiveTask, RequestContext]:
-        """Admit, verify, then preprocess, then set up the active task.
+        """Admit, verify, route, then preprocess, then set up the active task.
 
         The order is the point. A preprocessor may have an external side
         effect - storing an attachment into the organization the request
         names - and metadata that merely parsed has not been accepted yet.
-        Admitting the caller into the context and verifying first means a
-        request the agent is about to reject can never trigger that side
-        effect, nor write a push config or a task, and the preprocessor works
-        from the verified projection instead of re-reading the raw request.
-        Unary and streaming sends, and every extension handler behind them,
-        come through here.
+        Admitting the caller into the context, verifying, and admitting the
+        route of a new task first means a request the agent is about to
+        reject can never trigger that side effect, nor write a push config or
+        a task, and the preprocessor works from the verified projection
+        instead of re-reading the raw request. Unary and streaming sends, and
+        every extension handler behind them, come through here.
         """
         await self._admit(params, call_context)
         extensions = self.verify_declared_extensions(params, call_context)
+        await self._admit_route(params, call_context, extensions)
         context = PreprocessingContext(
             extensions=extensions, call_context=call_context
         )
@@ -199,6 +202,45 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         if holder is None or not await self._admission.admit(message.context_id, holder, member):
             logger.info("Refused a message into a context its caller may not use")
             raise TaskNotFoundError(f'Task {message.task_id} not found' if message.task_id else 'Task not found')
+
+    async def _admit_route(
+            self,
+            params: SendMessageRequest,
+            call_context: ServerCallContext,
+            extensions: AionRuntimeExtensions,
+    ) -> None:
+        """Decide and admit the route of a message that starts a new task, before the task exists.
+
+        The executor routes such a message to the toolkit whose extension it
+        activates (``AionAgentRequestExecutor.routed_extension``), after that
+        toolkit's own checks - the caller check and ``preflight`` - pass
+        (``admit_new_task``). A refusal here is a JSON-RPC error and no task
+        is created. A message that continues a task - one naming it, or one
+        the request context builder will hand to the context's interrupted
+        task - keeps the route its task already has.
+
+        The admitted route belongs to this request alone: a route an earlier
+        request left on a reused call context is dropped first.
+
+        Raises:
+            a2a.utils.errors.A2AError: The route refused the request.
+        """
+        call_context.state.pop(EXTENSION_ROUTE_STATE_KEY, None)
+        routed_extension = getattr(self.agent_executor, "routed_extension", None)
+        uri = routed_extension(extensions) if routed_extension is not None else None
+        if uri is None or await self._continues_task(params, call_context):
+            return
+        await self.agent_executor.admit_new_task(uri, params.message, extensions, call_context)
+
+    async def _continues_task(self, params: SendMessageRequest, call_context: ServerCallContext) -> bool:
+        """Whether the message continues an existing task rather than starting one."""
+        message = params.message
+        if message.task_id:
+            return True
+        interrupted_task = getattr(self._request_context_builder, "interrupted_task", None)
+        if interrupted_task is None or not message.context_id:
+            return False
+        return await interrupted_task(message.context_id, call_context) is not None
 
     async def _run_preprocessors(
             self,
@@ -255,7 +297,9 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         AionA2AExtensionRegistry.mark_unavailable() at startup, so the same
         pipeline rejects it here with the extension-authored reason - never
         silently handing the request to the primary flow the client
-        explicitly asked to bypass.
+        explicitly asked to bypass. That refusal carries the code
+        ``extension_unavailable`` in its ``data``, as every refusal with a
+        code does: ``{"code": ..., "retryable": "true" | "false"}``.
 
         Returns:
             The verified extensions, which preprocessing acts on.
@@ -282,7 +326,8 @@ class AionRequestHandler(DefaultRequestHandlerV2):
                 declaration, aion_a2a_extension_registry.get_all()
             )
         except ExtensionActivationError as ex:
-            raise InvalidParamsError(message=str(ex)) from ex
+            data = refusal_data(ex.code) if ex.code else None
+            raise InvalidParamsError(message=str(ex), data=data) from ex
         ResponseServiceParameters(verified.activated_uris).record(call_context)
         return verified
 

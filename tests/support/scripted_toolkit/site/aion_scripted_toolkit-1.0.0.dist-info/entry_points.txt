@@ -1,0 +1,2 @@
+[aion.toolkits]
+scripted = tests.support.scripted_toolkit.toolkit:toolkit

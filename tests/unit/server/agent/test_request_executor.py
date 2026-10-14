@@ -26,9 +26,10 @@ from a2a.utils.errors import (
 
 from aion.server.agent.execution import AionAgentRequestExecutor
 from aion.core.a2a.enums import A2AMetadataKey
-from aion.core.constants.a2a import BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1, DAEMON_EXTENSION_URI_V1
+from aion.core.constants.a2a import DAEMON_EXTENSION_URI_V1
 from aion.core.runtime import aion_a2a_extension_registry
-from aion.server.agent.execution.extensions.errors import ExtensionPreflightError
+from aion.server.agent.execution.extensions import EXTENSION_ROUTE_STATE_KEY, ExtensionRoute
+from aion.core.runtime.context.extensions import AionRuntimeExtensions
 from aion.server.agent.execution.scope import init_execution_scope
 from aion.core.runtime.context.models import AionRuntimeContext
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
@@ -243,7 +244,7 @@ class TestTaskForExecution:
 SECRET = "sk-configuration-secret"
 """A configuration variable's value, as the daemon payload carries it in plain text."""
 
-EVOLUTION = BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
+TOOLKIT = "https://example.invalid/toolkits/scripted/1.0.0"
 
 
 def _request_metadata() -> dict:
@@ -253,7 +254,7 @@ def _request_metadata() -> dict:
             configuration_variables={"MODEL_API_KEY": SECRET},
         ).model_dump(mode="json", by_alias=True, exclude_none=True),
         A2AMetadataKey.SETTLED_REASON.value: "server_shutdown",
-        ROUTED: EVOLUTION,
+        ROUTED: TOOLKIT,
         "aion:custom": "planted",
         "client-note": "for this turn",
     }
@@ -275,21 +276,15 @@ def daemon_enabled():
     aion_a2a_extension_registry.reset_to_default()
 
 
-@pytest.fixture
-def evolution_enabled(daemon_enabled):
-    aion_a2a_extension_registry.activate([EVOLUTION])
-    yield
-
-
 class _ExtensionHandler:
     """An extension handler that finishes its turn without a word."""
 
-    uri = EVOLUTION
+    uri = TOOLKIT
 
     def __init__(self) -> None:
         self.streamed = 0
 
-    async def stream(self, context):
+    async def stream(self, context, admission=None):
         self.streamed += 1
         return
         yield
@@ -318,10 +313,11 @@ class TestRequestMetadataStaysOnTheRequest:
         assert daemon["environment"]["configurationVariables"] == {"MODEL_API_KEY": SECRET}
 
     @pytest.mark.anyio
-    async def test_an_extension_task_carries_only_the_route_the_server_wrote(self, evolution_enabled):
+    async def test_an_extension_task_carries_only_the_route_the_server_wrote(self, daemon_enabled):
         handler = _ExtensionHandler()
         executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[handler])
-        context = _request_context(_request_metadata(), extensions=(EVOLUTION,))
+        context = _request_context(_request_metadata())
+        context.call_context.state[EXTENSION_ROUTE_STATE_KEY] = ExtensionRoute(TOOLKIT)
         queue = RecordingQueue()
         init_execution_scope()
 
@@ -329,7 +325,7 @@ class TestRequestMetadataStaysOnTheRequest:
 
         announced = queue.events[0]
         assert isinstance(announced, Task)
-        assert MessageToDict(announced.metadata) == {ROUTED: EVOLUTION}
+        assert MessageToDict(announced.metadata) == {ROUTED: TOOLKIT}
         assert SECRET not in MessageToJson(announced)
         assert handler.streamed == 1
 
@@ -439,7 +435,7 @@ class TestCancel:
 
     @pytest.mark.anyio
     async def test_cancel_routed_task_calls_handler_not_framework(self, agent, event_queue):
-        handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0")
+        handler = _make_handler(uri="https://example.invalid/toolkits/scripted/1.0.0")
         executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[handler])
         task = _make_real_task(
             state=TaskState.TASK_STATE_WORKING,
@@ -461,7 +457,7 @@ class TestCancel:
 
     @pytest.mark.anyio
     async def test_cancel_routed_task_unsupported_still_emits_canceled(self, agent, event_queue):
-        handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0")
+        handler = _make_handler(uri="https://example.invalid/toolkits/scripted/1.0.0")
         handler.cancel = AsyncMock(side_effect=UnsupportedOperationError())
         executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[handler])
         task = _make_real_task(
@@ -516,7 +512,7 @@ class TestCancelFiles:
             await event_queue.enqueue_event(bundle)
             return closing
 
-        handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0")
+        handler = _make_handler(uri="https://example.invalid/toolkits/scripted/1.0.0")
         handler.cancel = AsyncMock(side_effect=cancel)
         return handler
 
@@ -575,100 +571,69 @@ def _make_real_task(state: TaskState = TaskState.TASK_STATE_INPUT_REQUIRED, meta
     return task
 
 
-def _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/fake/1.0.0"):
+def _make_handler(uri="https://example.invalid/toolkits/fake/1.0.0"):
     handler = MagicMock()
     handler.uri = uri
     handler.stream = MagicMock(name="stream")
     handler.resume = MagicMock(name="resume")
     handler.cancel = AsyncMock(name="cancel")
-    handler.preflight = AsyncMock(name="preflight", return_value=None)
+    handler.admit = AsyncMock(name="admit")
     return handler
+
+
+def _routed_context(route: ExtensionRoute | None) -> MagicMock:
+    """A request context whose call context carries the route the request handler admitted."""
+    context = MagicMock(spec=RequestContext)
+    context.call_context = MagicMock()
+    context.call_context.state = {EXTENSION_ROUTE_STATE_KEY: route} if route is not None else {}
+    return context
 
 
 class TestResolve:
     @pytest.mark.anyio
-    async def test_resolve_stream_matches_new_task_and_persists_metadata(self):
-        handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0")
+    async def test_resolve_stream_takes_the_admitted_route_and_persists_it(self):
+        handler = _make_handler(uri="https://example.invalid/toolkits/scripted/1.0.0")
         executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[handler])
         task = _make_real_task()
+        admission = object()
 
-        mock_runtime_context = MagicMock()
-        mock_runtime_context.extensions = {handler.uri: None}
+        resolved = await executor._resolve(task, "stream", _routed_context(ExtensionRoute(handler.uri, admission)))
 
-        with patch(
-            "aion.server.agent.execution.request_executor.AionRuntimeContextRegistry"
-        ) as MockRegistry:
-            MockRegistry.aget_current_context = AsyncMock(return_value=mock_runtime_context)
-            resolved = await executor._resolve(task, "stream")
-
-        assert resolved is handler.stream
+        assert resolved.func is handler.stream
+        assert resolved.keywords == {"admission": admission}
         assert task.metadata[ROUTED] == handler.uri
 
     @pytest.mark.anyio
-    async def test_resolve_stream_falls_back_to_agent_without_match(self):
+    async def test_resolve_stream_falls_back_to_agent_without_a_route(self):
+        agent = _make_agent()
+        handler = _make_handler()
+        executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[handler])
+        task = _make_real_task()
+
+        resolved = await executor._resolve(task, "stream", _routed_context(None))
+
+        assert resolved is agent.stream
+        assert ROUTED not in task.metadata
+
+    @pytest.mark.anyio
+    async def test_resolve_stream_ignores_a_route_to_a_handler_it_does_not_have(self):
         agent = _make_agent()
         executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[])
         task = _make_real_task()
 
-        resolved = await executor._resolve(task, "stream")
+        resolved = await executor._resolve(task, "stream", _routed_context(ExtensionRoute("https://x.invalid/t")))
 
         assert resolved is agent.stream
 
     @pytest.mark.anyio
     async def test_resolve_resume_recalls_routed_handler(self):
-        handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0")
+        handler = _make_handler(uri="https://example.invalid/toolkits/scripted/1.0.0")
         executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[handler])
         task = _make_real_task(metadata={ROUTED: handler.uri})
 
         resolved = await executor._resolve(task, "resume")
 
         assert resolved is handler.resume
-
-    @pytest.mark.anyio
-    async def test_resolve_stream_runs_matched_handlers_preflight(self):
-        """preflight() must see the live request context, not a cached one -
-        that's the whole point of running it per request instead of once at
-        executor startup (see ExtensionPreflightError)."""
-        handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0")
-        executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[handler])
-        task = _make_real_task()
-        context = MagicMock(spec=RequestContext)
-
-        mock_runtime_context = MagicMock()
-        mock_runtime_context.extensions = {handler.uri: None}
-
-        with patch(
-            "aion.server.agent.execution.request_executor.AionRuntimeContextRegistry"
-        ) as MockRegistry:
-            MockRegistry.aget_current_context = AsyncMock(return_value=mock_runtime_context)
-            await executor._resolve(task, "stream", context)
-
-        handler.preflight.assert_awaited_once_with(context)
-
-    @pytest.mark.anyio
-    async def test_resolve_cancel_does_not_run_preflight(self):
-        """A cancelled task already exists - there is nothing left to gate
-        before task creation, so cancel must not require preflight at all."""
-        handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0")
-        executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[handler])
-        task = _make_real_task(metadata={ROUTED: handler.uri})
-
-        await executor._resolve(task, "cancel")
-
-        handler.preflight.assert_not_called()
-
-    @pytest.mark.anyio
-    async def test_resolve_stream_falls_back_to_agent_skips_preflight(self):
-        """The plain framework adapter (`self.agent`) has no preflight - the
-        executor must not assume every routed callable is an extension
-        handler."""
-        agent = _make_agent()
-        executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[])
-        task = _make_real_task()
-
-        resolved = await executor._resolve(task, "stream", MagicMock(spec=RequestContext))
-
-        assert resolved is agent.stream
 
     @pytest.mark.anyio
     async def test_resolve_cancel_falls_back_to_agent_without_routing(self):
@@ -682,7 +647,7 @@ class TestResolve:
 
     @pytest.mark.anyio
     async def test_resolve_cancel_recalls_routed_handler(self):
-        handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0")
+        handler = _make_handler(uri="https://example.invalid/toolkits/scripted/1.0.0")
         executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[handler])
         task = _make_real_task(metadata={ROUTED: handler.uri})
 
@@ -691,20 +656,68 @@ class TestResolve:
         assert resolved is handler.cancel
 
 
+class TestAdmitNewTask:
+    """The route of a new task is decided and admitted before the task exists."""
+
+    @staticmethod
+    def _call_context():
+        context = MagicMock()
+        context.state = {}
+        return context
+
+    def test_a_new_task_goes_to_the_handler_of_an_extension_it_activates(self):
+        handler = _make_handler(uri="https://example.invalid/toolkits/a/1.0.0")
+        other = _make_handler(uri="https://example.invalid/toolkits/b/1.0.0")
+        executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[other, handler])
+
+        assert executor.routed_extension(AionRuntimeExtensions({handler.uri: None})) == handler.uri
+        assert executor.routed_extension(AionRuntimeExtensions({})) is None
+
+    @pytest.mark.anyio
+    async def test_the_admitted_route_is_kept_for_execute(self):
+        handler = _make_handler(uri="https://example.invalid/toolkits/a/1.0.0")
+        handler.admit = AsyncMock(return_value="admitted")
+        executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[handler])
+        extensions = AionRuntimeExtensions({handler.uri: None})
+        message = MagicMock()
+        call_context = self._call_context()
+
+        await executor.admit_new_task(handler.uri, message, extensions, call_context)
+
+        handler.admit.assert_awaited_once_with(message, extensions, call_context)
+        assert call_context.state[EXTENSION_ROUTE_STATE_KEY] == ExtensionRoute(handler.uri, "admitted")
+
+    @pytest.mark.anyio
+    async def test_a_refusal_leaves_no_route(self):
+        handler = _make_handler()
+        handler.admit = AsyncMock(side_effect=InvalidParamsError(message="refused"))
+        executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[handler])
+        call_context = self._call_context()
+
+        with pytest.raises(InvalidParamsError):
+            await executor.admit_new_task(
+                handler.uri, MagicMock(), AionRuntimeExtensions({handler.uri: None}), call_context
+            )
+
+        assert EXTENSION_ROUTE_STATE_KEY not in call_context.state
+
+
 class TestExecuteViaResolve:
     @pytest.mark.anyio
-    async def test_execute_routes_new_task_to_matched_handler_and_persists_metadata(self):
+    async def test_execute_routes_new_task_to_the_admitted_handler_and_persists_metadata(self):
         agent = _make_agent()
 
         async def agent_stream(*args, **kwargs):
-            raise AssertionError("agent.stream must not be called when a handler is matched")
+            raise AssertionError("agent.stream must not be called when a handler is routed")
             yield
 
         agent.stream = agent_stream
 
-        handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0")
+        handler = _make_handler(uri="https://example.invalid/toolkits/scripted/1.0.0")
+        streamed_with = {}
 
         async def handler_stream(*args, **kwargs):
+            streamed_with.update(kwargs)
             return
             yield
 
@@ -712,16 +725,13 @@ class TestExecuteViaResolve:
 
         executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[handler])
         task = _make_real_task()
-        ctx = _make_context(task=None)
+        ctx = _routed_context(ExtensionRoute(handler.uri, "admitted"))
         ctx.current_task = None
         ctx.message = MagicMock()
         ctx.metadata = None
         event_queue = AsyncMock(spec=EventQueue)
 
         init_execution_scope()
-
-        mock_runtime_context = MagicMock()
-        mock_runtime_context.extensions = {handler.uri: None}
 
         with patch(
             "aion.server.agent.execution.request_executor.new_task_from_user_message",
@@ -735,11 +745,12 @@ class TestExecuteViaResolve:
                     "aion.server.agent.execution.request_executor.AionRuntimeContextRegistry"
                 ) as MockRegistry:
                     MockRegistry.aset_current_context = AsyncMock()
-                    MockRegistry.aget_current_context = AsyncMock(return_value=mock_runtime_context)
+                    MockRegistry.aget_current_context = AsyncMock(return_value=None)
                     with patch("aion.server.agent.execution.request_executor.AionEventPipeline"):
                         await executor.execute(ctx, event_queue)
 
         assert task.metadata[ROUTED] == handler.uri
+        assert streamed_with == {"context": ctx, "admission": "admitted"}
         event_queue.enqueue_event.assert_awaited_once_with(task)
 
     @pytest.mark.anyio
@@ -752,7 +763,7 @@ class TestExecuteViaResolve:
 
         agent.resume = agent_resume
 
-        handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0")
+        handler = _make_handler(uri="https://example.invalid/toolkits/scripted/1.0.0")
 
         resume_called_with = {}
 
@@ -789,127 +800,22 @@ class TestExecuteViaResolve:
         enqueued = [call.args[0] for call in event_queue.enqueue_event.await_args_list]
         assert task not in enqueued
 
-    @pytest.mark.anyio
-    async def test_execute_rejects_via_preflight_before_task_is_persisted(self):
-        """A handler that rejects a request in preflight() must stop the
-        request at the JSON-RPC level - no task ever reaches the event
-        queue, so no FAILED task is left behind for a deployment-config
-        problem (see ExtensionPreflightError)."""
-        agent = _make_agent()
-        handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0")
-        handler.preflight = AsyncMock(side_effect=ExtensionPreflightError("GITHUB_TOKEN is not set"))
-
-        executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[handler])
-        task = _make_real_task()
-        ctx = _make_context(task=None)
-        ctx.current_task = None
-        ctx.message = MagicMock()
-        ctx.metadata = None
-        event_queue = AsyncMock(spec=EventQueue)
-
-        init_execution_scope()
-
-        mock_runtime_context = MagicMock()
-        mock_runtime_context.extensions = {handler.uri: None}
-
-        with patch(
-            "aion.server.agent.execution.request_executor.new_task_from_user_message",
-            return_value=task,
-        ):
-            with patch(
-                "aion.server.agent.execution.request_executor.AionRuntimeContextBuilder"
-            ) as MockBuilder:
-                MockBuilder.from_request_context.return_value = AionRuntimeContext()
-                with patch(
-                    "aion.server.agent.execution.request_executor.AionRuntimeContextRegistry"
-                ) as MockRegistry:
-                    MockRegistry.aset_current_context = AsyncMock()
-                    MockRegistry.aget_current_context = AsyncMock(return_value=mock_runtime_context)
-                    with pytest.raises(InvalidParamsError):
-                        await executor.execute(ctx, event_queue)
-
-        event_queue.enqueue_event.assert_not_awaited()
-
 
 class TestCreateFactory:
     @pytest.mark.anyio
-    async def test_create_keeps_only_available_handlers(self):
-        from aion.server.agent.execution.extensions import ExtensionAvailability
-
-        available_handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/evolution/1.0.0")
-        available_handler.availability = AsyncMock(return_value=ExtensionAvailability.ok())
-
-        unavailable_handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/other/1.0.0")
-        unavailable_handler.availability = AsyncMock(
-            return_value=ExtensionAvailability.unavailable("the other toolkit is not installed")
-        )
-
+    async def test_create_serves_every_toolkit_discovery_returns(self):
+        handler = _make_handler(uri="https://example.invalid/toolkits/a/1.0.0")
         agent = _make_agent()
         agent.config = MagicMock()
 
         with patch(
-            "aion.server.agent.execution.request_executor.discover_extension_task_handlers",
-            return_value=[available_handler, unavailable_handler],
-        ):
+            "aion.server.agent.execution.request_executor.load_toolkit_handlers",
+            new=AsyncMock(return_value=[handler]),
+        ) as load:
             executor = await AionAgentRequestExecutor.create(aion_agent=agent)
 
-        assert executor._extension_handlers == {available_handler.uri: available_handler}
-        available_handler.availability.assert_awaited_once_with(agent.config)
-        unavailable_handler.availability.assert_awaited_once_with(agent.config)
-
-    @pytest.mark.anyio
-    async def test_create_marks_enabled_unavailable_handler_in_registry(self):
-        """Availability is a registry concern: an enabled extension whose
-        handler cannot run is recorded via mark_unavailable() so the shared
-        verification pipeline rejects requests with the handler's own reason."""
-        from types import SimpleNamespace
-        from aion.server.agent.execution.extensions import ExtensionAvailability
-
-        unavailable_handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/other/1.0.0")
-        unavailable_handler.availability = AsyncMock(
-            return_value=ExtensionAvailability.unavailable("the other toolkit is not installed")
-        )
-
-        agent = _make_agent()
-        agent.config = SimpleNamespace(enabled_extensions=[unavailable_handler.uri])
-
-        with patch(
-            "aion.server.agent.execution.request_executor.discover_extension_task_handlers",
-            return_value=[unavailable_handler],
-        ), patch(
-            "aion.server.agent.execution.request_executor.aion_a2a_extension_registry"
-        ) as mock_registry:
-            executor = await AionAgentRequestExecutor.create(aion_agent=agent)
-
-        assert executor._extension_handlers == {}
-        mock_registry.mark_unavailable.assert_called_once_with(
-            unavailable_handler.uri, "the other toolkit is not installed"
-        )
-
-    @pytest.mark.anyio
-    async def test_create_does_not_mark_not_enabled_handler(self):
-        """A handler that is unavailable merely because the agent didn't opt
-        in must not be marked - the registry already rejects such requests
-        as not enabled for this agent."""
-        from types import SimpleNamespace
-        from aion.server.agent.execution.extensions import ExtensionAvailability
-
-        handler = _make_handler(uri="https://docs.aion.to/a2a/extensions/aion/other/1.0.0")
-        handler.availability = AsyncMock(
-            return_value=ExtensionAvailability.unavailable("not enabled")
-        )
-        agent = _make_agent()
-        agent.config = SimpleNamespace(enabled_extensions=[])
-
-        with patch(
-            "aion.server.agent.execution.request_executor.discover_extension_task_handlers",
-            return_value=[handler],
-        ), patch(
-            "aion.server.agent.execution.request_executor.aion_a2a_extension_registry"
-        ) as mock_registry:
-            await AionAgentRequestExecutor.create(aion_agent=agent)
-
-        mock_registry.mark_unavailable.assert_not_called()
+        load.assert_awaited_once_with(agent.config)
+        assert executor._extension_handlers == {handler.uri: handler}
 
 
 class TestFailureClosesTheTask:
