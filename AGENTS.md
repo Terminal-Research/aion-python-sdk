@@ -129,8 +129,14 @@ aion.cli
   under the `aion.toolkits` entry point group, and the server's toolkit host
   finds it, admits requests before a task exists, drives its turns and
   translates what it yields into A2A. The SDK holds no code for a particular
-  toolkit; the protocol in `aion.core.toolkit` imports no a2a type. Read
+  toolkit; the protocol in `aion.core.toolkit` imports no a2a type. The host
+  also numbers a toolkit's artifacts per context (`metadata.version`, the key
+  ADK writes), serves `ToolkitContext.find_artifact` within the context's
+  holder, refuses a second task of an `exclusive_per_context` toolkit with
+  `context_busy`, and cancels by the a2a-sdk model. Read
   `docs/development/toolkit-host.md` before changing the protocol or the host.
+  A real toolkit is checked against the SDK by its own CI through the reusable
+  `.github/workflows/toolkit-ci.yml`; the SDK's CI installs no toolkit.
 - Preserve the external streaming contract: close every outbound stream with
   a full `Task`, including completed and failed executions and the
   initial-task resume path. Cancellation is a `Message`. Keep the shared
