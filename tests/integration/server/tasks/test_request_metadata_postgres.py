@@ -40,8 +40,8 @@ from sqlalchemy import text
 from unittest.mock import Mock
 
 from aion.core.a2a.enums import A2AMetadataKey
+from aion.core.runtime.context.extensions.descriptors import ExtensionDescriptor, MarkerCollector
 from aion.core.constants.a2a import (
-    BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1,
     DAEMON_EXTENSION_URI_V1,
     DISTRIBUTION_EXTENSION_URI_V1,
 )
@@ -68,7 +68,7 @@ pytestmark = [
 SECRET = "sk-configuration-secret"
 """A configuration variable's value, as the daemon payload carries it."""
 
-EVOLUTION = BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
+TOOLKIT = "https://example.invalid/toolkits/metadata/1.0.0"
 ROUTED = A2AMetadataKey.ROUTED_EXTENSION.value
 SETTLED = A2AMetadataKey.SETTLED_REASON.value
 PROGRESS = {"stage": "implement"}
@@ -125,13 +125,16 @@ class _Agent:
         yield _completed(context)
 
 
-class _EvolutionHandler:
-    """An extension handler that records its progress in the task and completes."""
+class _ToolkitHandler:
+    """An extension handler that keeps its object in the task and completes."""
 
-    uri = EVOLUTION
+    uri = TOOLKIT
 
-    async def stream(self, context):
-        yield _completed(context, metadata={EVOLUTION: PROGRESS})
+    async def admit(self, message, extensions, call_context):
+        return None
+
+    async def stream(self, context, admission):
+        yield _completed(context, metadata={TOOLKIT: PROGRESS})
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
@@ -148,21 +151,24 @@ def runtime_context():
 
 
 @pytest.fixture
-def evolution_enabled():
-    aion_a2a_extension_registry.activate([DAEMON_EXTENSION_URI_V1, EVOLUTION])
+def toolkit_enabled():
+    aion_a2a_extension_registry.register(
+        ExtensionDescriptor(uri=TOOLKIT, collector=MarkerCollector(), description="Keeps its object in the task.")
+    )
+    aion_a2a_extension_registry.activate([DAEMON_EXTENSION_URI_V1, TOOLKIT])
     yield
     aion_a2a_extension_registry.reset_to_default()
 
 
 @pytest_asyncio.fixture(loop_scope="module")
-async def handler(_database, runtime_context, evolution_enabled):
+async def handler(_database, runtime_context, toolkit_enabled):
     """One server of the agent, assembled as ``AppFactory`` assembles it on PostgreSQL."""
     await truncate()
     store, versioned = stores("metadata-agent")
     card = Mock()
     card.capabilities.streaming = True
     built = AionRequestHandler(
-        agent_executor=AionAgentRequestExecutor(_Agent(), extension_handlers=[_EvolutionHandler()]),
+        agent_executor=AionAgentRequestExecutor(_Agent(), extension_handlers=[_ToolkitHandler()]),
         task_store=versioned,
         agent_card=card,
         event_stream=DatabaseTaskEventStream(_db_manager.get_engine(), create_table=False, poll_interval_s=0.05),
@@ -185,7 +191,7 @@ async def _send(handler: AionRequestHandler, *, extensions: tuple[str, ...] = ()
     request.metadata.update({
         DAEMON_EXTENSION_URI_V1: _daemon(),
         SETTLED: "server_shutdown",
-        ROUTED: EVOLUTION,
+        ROUTED: TOOLKIT,
         "client-note": "for this turn",
     })
     events = [event async for event in handler.on_message_send_stream(request, ALICE)]
@@ -228,18 +234,18 @@ def _snapshots(journal: list[bytes]) -> list[Task]:
 # --------------------------------------------------------------------------
 
 async def test_an_extension_task_holds_only_what_the_server_and_its_handler_wrote(handler) -> None:
-    closing = await _send(handler, extensions=(EVOLUTION,))
+    closing = await _send(handler, extensions=(TOOLKIT,))
 
-    assert await _stored_metadata(closing.id) == {ROUTED: EVOLUTION, EVOLUTION: PROGRESS}
+    assert await _stored_metadata(closing.id) == {ROUTED: TOOLKIT, TOOLKIT: PROGRESS}
     journal = await _journal(closing.id)
     assert journal, "every write of the task is journaled"
     assert not any(SECRET.encode() in data for data in journal)
     assert all(
-        set(MessageToDict(snapshot.metadata)) <= {ROUTED, EVOLUTION}
+        set(MessageToDict(snapshot.metadata)) <= {ROUTED, TOOLKIT}
         for snapshot in _snapshots(journal)
     )
     read = await handler.on_get_task(GetTaskRequest(id=closing.id), ALICE)
-    assert MessageToDict(read.metadata) == {ROUTED: EVOLUTION, EVOLUTION: PROGRESS}
+    assert MessageToDict(read.metadata) == {ROUTED: TOOLKIT, TOOLKIT: PROGRESS}
     assert SECRET not in MessageToJson(read) and SECRET not in MessageToJson(closing)
 
 
@@ -298,9 +304,9 @@ async def stored(_database):
     mixed = await _store_with_metadata({
         DAEMON_EXTENSION_URI_V1: _daemon(),
         DISTRIBUTION_EXTENSION_URI_V1: {"senderId": "aion:user:1"},
-        ROUTED: EVOLUTION,
+        ROUTED: TOOLKIT,
         SETTLED: "server_shutdown",
-        EVOLUTION: PROGRESS,
+        TOOLKIT: PROGRESS,
         "agent-key": "kept",
     })
     request_only = await _store_with_metadata({DAEMON_EXTENSION_URI_V1: _daemon()})
@@ -329,7 +335,7 @@ async def test_apply_removes_the_request_keys_and_keeps_every_other(stored, monk
     findings = await strip_request_metadata(_db_manager, apply=True)
 
     assert _counts(findings) == {"tasks": (2, 3), "task_events": (2, 3)}
-    server_keys = {ROUTED: EVOLUTION, SETTLED: "server_shutdown", EVOLUTION: PROGRESS, "agent-key": "kept"}
+    server_keys = {ROUTED: TOOLKIT, SETTLED: "server_shutdown", TOOLKIT: PROGRESS, "agent-key": "kept"}
     assert await _stored_metadata(mixed) == server_keys
     assert await _stored_metadata(request_only) is None
     journal = await _journal()

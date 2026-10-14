@@ -218,7 +218,7 @@ async def test_the_context_a_turn_gets() -> None:
     assert dict(context.daemon_variables) == {"llm": "model-a", "API_TOKEN": "daemon-token-1"}
     assert set(context.secret_values) == {"secret-value-1", "daemon-token-1"}
     assert context.model_service.base_url == "https://api.example.test/v1"
-    assert await context.find_artifact("evolution-spec") is found
+    assert await context.find_artifact("spec") is found
 
 
 def _token(value: str):

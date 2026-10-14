@@ -94,7 +94,7 @@ def _event_status(state: int = TaskState.TASK_STATE_WORKING) -> TaskStatusUpdate
 
 
 def _event_artifact(
-        artifact_id: str = "evolution-diff", last_chunk: bool = True
+        artifact_id: str = "report-diff", last_chunk: bool = True
 ) -> TaskArtifactUpdateEvent:
     """Returns an artifact update, one of the many a streaming run emits."""
     return TaskArtifactUpdateEvent(
@@ -493,7 +493,7 @@ class TestLogsIdentifyTheEvent:
             await sender.send_notification(TASK_ID, _event_artifact())
 
         message = _our_records(caplog)[0].getMessage()
-        assert "artifact=evolution-diff" in message
+        assert "artifact=report-diff" in message
         assert "last_chunk=True" in message
 
     @pytest.mark.anyio

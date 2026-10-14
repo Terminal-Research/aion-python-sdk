@@ -4,7 +4,6 @@ import pytest
 
 from aion.core.a2a import AION_JSONRPC_METHOD_EXTENSION_BINDINGS
 from aion.core.constants.a2a import (
-    BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1,
     CRON_EXTENSION_URI_V1,
     CONTEXT_EXTENSION_URI_V1,
     DAEMON_EXTENSION_URI_V1,
@@ -12,6 +11,9 @@ from aion.core.constants.a2a import (
 from aion.server.agent.card import AionAgentCard
 from aion.core.config.models import AgentConfig, AgentSkill
 from aion.core.runtime import aion_a2a_extension_registry
+from aion.core.runtime.context.extensions import ExtensionDescriptor
+
+TOOLKIT_URI = "https://example.invalid/toolkits/card/1.0.0"
 
 
 def _make_config(**kwargs) -> AgentConfig:
@@ -49,77 +51,74 @@ class TestCapabilities:
         assert len(declarations) == 1
         assert not declarations[0].required
 
-    def test_evolution_is_not_advertised_before_it_is_enabled(self):
+    @staticmethod
+    def _register_toolkit():
+        """An extension registered the way discovery registers a toolkit: inactive, requiring the daemon."""
+        aion_a2a_extension_registry.register(
+            ExtensionDescriptor(uri=TOOLKIT_URI, requires=(DAEMON_EXTENSION_URI_V1,), active=False)
+        )
+
+    def test_a_toolkit_is_not_advertised_before_it_is_enabled(self):
         """The counter-example: advertised=True, and still off the card.
 
         Advertisement and enablement are independent in both directions, so
         the card filter has to read both - not infer one from the other.
         """
+        self._register_toolkit()
         descriptors = {d.uri: d for d in aion_a2a_extension_registry.get_all()}
-        assert descriptors[BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1].advertised is True
+        assert descriptors[TOOLKIT_URI].advertised is True
 
         card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
 
-        assert BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1 not in {
-            ext.uri for ext in card.capabilities.extensions
-        }
+        assert TOOLKIT_URI not in {ext.uri for ext in card.capabilities.extensions}
 
-    def test_evolution_is_advertised_once_enabled(self):
+    def test_a_toolkit_is_advertised_once_enabled(self):
         """Enabling it through enabled_extensions is what puts it on the card.
 
         With the daemon extension it requires, because without it the card
         would be offering something every request is refused for - see the
         test below.
         """
-        aion_a2a_extension_registry.activate(
-            [BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1, DAEMON_EXTENSION_URI_V1]
-        )
+        self._register_toolkit()
+        aion_a2a_extension_registry.activate([TOOLKIT_URI, DAEMON_EXTENSION_URI_V1])
 
         card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
 
-        assert BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1 in {
-            ext.uri for ext in card.capabilities.extensions
-        }
+        assert TOOLKIT_URI in {ext.uri for ext in card.capabilities.extensions}
 
     def test_an_extension_missing_a_required_extension_is_not_advertised(self):
         """`requires` is a condition on advertising, not only on verification.
 
-        `activate()` is additive and expands nothing, so an agent listing
-        evolution alone in enabled_extensions leaves the daemon extension it
-        requires inactive. Every request declaring evolution is then refused
+        `activate()` is additive and expands nothing, so an agent listing the
+        toolkit alone in enabled_extensions leaves the daemon extension it
+        requires inactive. Every request declaring the toolkit is then refused
         for the missing co-activation, and a card advertising it would have
         promised exactly that call.
         """
-        aion_a2a_extension_registry.activate([BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1])
+        self._register_toolkit()
+        aion_a2a_extension_registry.activate([TOOLKIT_URI])
         descriptors = {d.uri: d for d in aion_a2a_extension_registry.get_all()}
-        assert descriptors[BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1].active is True
+        assert descriptors[TOOLKIT_URI].active is True
         assert descriptors[DAEMON_EXTENSION_URI_V1].active is False
 
         card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
 
-        assert BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1 not in {
-            ext.uri for ext in card.capabilities.extensions
-        }
+        assert TOOLKIT_URI not in {ext.uri for ext in card.capabilities.extensions}
 
     def test_an_enabled_but_unavailable_extension_is_not_advertised(self):
         """Advertising what this deployment would refuse invites a failed call.
 
-        The evolution toolkit is the real case: the agent enabled the
-        extension, the deployment cannot run it, and the request-time verifier
-        already rejects it with this exact reason.
+        A toolkit that cannot configure itself is the real case: the agent
+        enabled the extension, the deployment cannot run it, and the
+        request-time verifier already rejects it with this exact reason.
         """
-        aion_a2a_extension_registry.activate(
-            [BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1, DAEMON_EXTENSION_URI_V1]
-        )
-        aion_a2a_extension_registry.mark_unavailable(
-            BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1, "the evolution toolkit is not installed"
-        )
+        self._register_toolkit()
+        aion_a2a_extension_registry.activate([TOOLKIT_URI, DAEMON_EXTENSION_URI_V1])
+        aion_a2a_extension_registry.mark_unavailable(TOOLKIT_URI, "SCRIPTED_TOKEN is not set")
 
         card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
 
-        assert BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1 not in {
-            ext.uri for ext in card.capabilities.extensions
-        }
+        assert TOOLKIT_URI not in {ext.uri for ext in card.capabilities.extensions}
 
     def test_streaming_enabled(self):
         """from_config produces a card with streaming capability enabled."""

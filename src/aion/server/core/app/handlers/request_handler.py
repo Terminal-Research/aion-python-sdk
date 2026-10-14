@@ -510,9 +510,9 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         a complete Task snapshot with all accumulated state at stream end.
 
         How much detail a run's own events carry is not decided here: it is a
-        property of the request an extension parses (the evolution directive's
-        `view`, say), so the producer shapes and drops its events before they
-        reach this handler. This layer knows nothing about any extension's
+        property of the request an extension parses (a toolkit's own payload,
+        say), so the producer shapes and drops its events before they reach
+        this handler. This layer knows nothing about any extension's
         payload.
 
         Status updates carrying a non-active state are withheld and replaced by

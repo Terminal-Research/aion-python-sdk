@@ -196,9 +196,9 @@ class TestDescribeEvent:
 
     def test_agent_named_artifact_is_left_unannotated(self):
         """An artifact the agent named itself already says what it is."""
-        message = describe_event(_artifact_event("evolution-diff", last_chunk=True))
+        message = describe_event(_artifact_event("report-diff", last_chunk=True))
         assert message == (
-            "TaskArtifactUpdateEvent artifact=evolution-diff last_chunk=True"
+            "TaskArtifactUpdateEvent artifact=report-diff last_chunk=True"
         )
 
     def test_artifact_without_an_id_is_labelled(self):

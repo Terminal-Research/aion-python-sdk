@@ -380,15 +380,15 @@ class ExtensionDescriptor:
         description: Human-readable summary, surfaced verbatim on the
             AgentCard's advertised AgentExtension entry.
         active: Whether this extension is enabled for the current agent.
-            Defaults to True - most protocol-level extensions (daemon,
-            traceability, distribution, ...) are active out of the box.
-            Agent-specific features (evolution, reflection) register with
-            active=False and rely on AgentConfig.enabled_extensions to
-            turn them on. Enablement only: it says nothing about whether
+            Defaults to True - most protocol-level extensions
+            (traceability, distribution, ...) are active out of the box.
+            Agent-specific features (the daemon extension, toolkits)
+            register with active=False and rely on
+            AgentConfig.enabled_extensions to turn them on. Enablement only: it says nothing about whether
             the extension is published on the AgentCard.
         unavailable_reason: When set, the extension is enabled but cannot
-            actually function on this deployment (e.g. its optional toolkit
-            is not installed) - a request declaring it is rejected with
+            actually function on this deployment (e.g. its toolkit cannot be
+            configured) - a request declaring it is rejected with
             exactly this user-facing message. None means available. Marked
             at startup via AionA2AExtensionRegistry.mark_unavailable() by
             whichever component owns the extension's runtime dependencies.

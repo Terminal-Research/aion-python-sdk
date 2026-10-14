@@ -21,7 +21,6 @@ from aion.core.constants.a2a import (
     MESSAGE_EVENT_TYPE_V1,
     MESSAGING_EXTENSION_URI_V1,
     REACTION_EVENT_TYPE_V1,
-    BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1,
     TRACEABILITY_EXTENSION_URI_V1,
     USAGE_ATTRIBUTION_EXTENSION_URI_V1,
 )
@@ -34,8 +33,6 @@ from aion.core.a2a.extensions import (
     Distribution,
     DistributionExtensionV1,
     Environment,
-    EvolutionDirectiveEventPayload,
-    EvolutionVerdictEventPayload,
     MessageEventPayload,
     PrincipalIdentity,
     ReactionEventPayload,
@@ -53,8 +50,8 @@ class EventKind(str, Enum):
     extensions (messaging, cards) declare via ExtensionDescriptor.event_payloads
     (see registry.py) - convenience imports for comparing against Event.kind,
     not an exhaustive list. Event.kind itself is a plain str: other
-    extensions (e.g. reflection) register their own event types the same
-    way, without needing a matching member here."""
+    extensions (a toolkit's payload models, say) register their own event
+    types the same way, without needing a matching member here."""
     MESSAGE = MESSAGE_EVENT_TYPE_V1
     REACTION = REACTION_EVENT_TYPE_V1
     COMMAND = COMMAND_EVENT_TYPE_V1
@@ -66,8 +63,6 @@ NormalizedPayload = Union[
     ReactionEventPayload,
     CommandEventPayload,
     CardActionEventPayload,
-    EvolutionDirectiveEventPayload,
-    EvolutionVerdictEventPayload,
 ]
 
 
@@ -79,7 +74,6 @@ class AionExtensions(str, Enum):
     CARDS = CARDS_EXTENSION_URI_V1
     EVENT = EVENT_EXTENSION_URI_V1
     TRACEABILITY = TRACEABILITY_EXTENSION_URI_V1
-    EVOLUTION = BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
 
 
 @dataclass(frozen=True)

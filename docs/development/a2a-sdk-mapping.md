@@ -82,7 +82,7 @@ What a2a-sdk's cluster mode does not provide, and Aion does not add either:
 | Missing upstream | Consequence here |
 |---|---|
 | Exclusive execution of a task | Two servers can execute one task at once; the version decides which writes land. |
-| `AgentExecutor.cancel` on the executing server for a remote cancel | The executing server stops at its next write. For an evolution run `EvolutionHandler.cancel` does not run, so there is no closing cancel message; the stop closes the worker's stream, and whatever the toolkit does on that close is all that happens. |
+| `AgentExecutor.cancel` on the executing server for a remote cancel | The executing server stops at its next write. For a toolkit's task `Toolkit.cancel` does not run, so the toolkit yields no closing result; the stop closes the toolkit's stream, and whatever the toolkit does on that close is all that happens. |
 | Detection of a dead server | Its tasks keep the state they had until someone cancels them. |
 | Journal cleanup | `task_events` grows with every stored event; deleting a task keeps its events. |
 | A wait hook in `DatabaseTaskEventStream` | A remote subscriber sees events up to one poll interval late. |

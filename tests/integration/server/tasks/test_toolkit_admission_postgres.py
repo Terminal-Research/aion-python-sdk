@@ -32,7 +32,6 @@ from starlette.middleware import Middleware
 from starlette.routing import Route
 
 from aion.core.constants.a2a import EVENT_EXTENSION_URI_V1
-from aion.core.runtime import aion_a2a_extension_registry
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.core.toolkit import ENTRY_POINT_GROUP, ToolkitDescriptor, codes
 from aion.db.postgres.manager import db_manager
@@ -166,16 +165,10 @@ def runtime_provider():
 
 
 @pytest.fixture
-def registry():
-    """The extension registry, put back as it was after the test."""
-    descriptors = dict(aion_a2a_extension_registry._descriptors)
-    defaults = dict(aion_a2a_extension_registry._defaults)
+def registry(isolated_registry):
+    """The extension registry, with what discovery registers undone after the test."""
     registered = set(discovery._REGISTERED_URIS)
-    yield aion_a2a_extension_registry
-    aion_a2a_extension_registry._descriptors.clear()
-    aion_a2a_extension_registry._descriptors.update(descriptors)
-    aion_a2a_extension_registry._defaults.clear()
-    aion_a2a_extension_registry._defaults.update(defaults)
+    yield isolated_registry
     discovery._REGISTERED_URIS.clear()
     discovery._REGISTERED_URIS.update(registered)
 

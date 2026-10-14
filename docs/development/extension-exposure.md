@@ -34,11 +34,11 @@ deployment cannot run is withheld, because a card that offers a call this
 server could never answer is worse than one that stays quiet about it. That
 is a floor rather than a guarantee — an advertised extension has what the
 deployment owes it, and a request declaring it can still be refused by
-`_verify()` for a per-request co-activation the card cannot know about. The
-evolution extension is the case that makes the prerequisite check matter:
-`activate()` is additive and expands nothing, so an agent that lists
-evolution in `enabled_extensions` without the daemon extension it requires
-has an extension that is active and refused on every request.
+`_verify()` for a per-request co-activation the card cannot know about. A
+toolkit that requires the daemon extension is the case that makes the
+prerequisite check matter: `activate()` is additive and expands nothing, so
+an agent that lists the toolkit in `enabled_extensions` without the daemon
+extension has an extension that is active and refused on every request.
 
 **Unavailable.** The extension is enabled but cannot function on this
 deployment — most often a toolkit whose settings are wrong or that speaks
@@ -54,7 +54,7 @@ inactive until the agent enables it, and a descriptor registered with
 | Extension | `active` | `advertised` | On a standard card |
 | --- | --- | --- | --- |
 | Distribution, messaging, cards, event, traceability, usage attribution, Context | `True` | `True` | yes |
-| Daemon, behaviour evolution | `False` | `True` | only once the agent enables it |
+| Daemon, installed toolkits (unless a toolkit is `enabled_by_default`) | `False` | `True` | only once the agent enables it |
 
 ## Extension points and transport bindings
 

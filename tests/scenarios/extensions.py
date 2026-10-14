@@ -5,12 +5,12 @@ these URIs on a request, and the agents register the descriptors behind them
 so the server's own extension pipeline has something to verify.
 
 Two of the SDK's rules have no production extension that can demonstrate them
-on a deployment a scenario can start. ``requires`` is declared today only by
-behaviour evolution, whose optional toolkit decides at startup whether the
-extension is available at all - so a scenario built on it would be asserting
-the toolkit's presence, not the co-activation rule. The router's ``on_event``
-fallback needs an event kind that no kind-specific handler claims, and every
-kind the core vocabularies define has one.
+on a deployment a scenario can start. No extension the SDK registers itself
+declares ``requires`` - a toolkit may, and whether one is installed is decided
+by the deployment, so a scenario built on it would be asserting the toolkit's
+presence, not the co-activation rule. The router's ``on_event`` fallback needs
+an event kind that no kind-specific handler claims, and every kind the core
+vocabularies define has one.
 
 So the suite registers its own: a marker extension that requires the daemon
 extension, and an event vocabulary of one kind. Both are ordinary

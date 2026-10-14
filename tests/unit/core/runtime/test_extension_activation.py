@@ -176,7 +176,7 @@ class TestVerify:
             )
 
     def test_missing_required_co_activation_raises(self):
-        """This is the evolution+daemon case: an extension declared active
+        """This is the toolkit+daemon case: an extension declared active
         without an extension it requires must be rejected during
         verification, not silently routed or left for the handler to
         discover deep in business logic."""
@@ -354,21 +354,10 @@ class TestAionA2AExtensionRegistry:
 
         assert descriptor.description == "A test extension."
 
-    def test_reflection_extension_defaults_inactive_and_requires_daemon(self):
-        """Reflection (behaviour evolution) is an agent-specific business
-        feature with no A2A spec entry - like evolution, it must require an
-        agent's AgentConfig.enabled_extensions to opt in, and is
-        daemon-driven only (the improver is daemon-addressable)."""
-        from aion.core.constants.a2a import DAEMON_EXTENSION_URI_V1, BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
-
-        descriptors = {d.uri: d for d in aion_a2a_extension_registry.get_all()}
-        assert descriptors[BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1].active is False
-        assert descriptors[BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1].requires == (DAEMON_EXTENSION_URI_V1,)
-
     def test_core_protocol_extensions_default_active(self):
         """Per the A2A extension specs, traceability/distribution/messaging/
         event/cards all activate without any agent-level opt-in - only
-        opt-in features (daemon-scoped invocation, evolution) default
+        opt-in features (daemon-scoped invocation, toolkits) default
         inactive and require AgentConfig.enabled_extensions. Regression
         guard for registry.py's registration defaults."""
         from aion.core.constants.a2a import (

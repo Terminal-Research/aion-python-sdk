@@ -37,17 +37,6 @@ __all__ = [
     # Usage attribution extension
     "USAGE_ATTRIBUTION_EXTENSION_URI_V1",
     "AION_USAGE_ATTRIBUTION_HEADER",
-    # Reflection extension (behaviour evolution)
-    "BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1",
-    "BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_TYPE_V1",
-    "BEHAVIOUR_EVOLUTION_VERDICT_EVENT_TYPE_V1",
-    "BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_PAYLOAD_SCHEMA_V1",
-    "BEHAVIOUR_EVOLUTION_VERDICT_EVENT_PAYLOAD_SCHEMA_V1",
-    "BEHAVIOUR_EVOLUTION_RESULT_ACTION_PAYLOAD_SCHEMA_V1",
-    "BEHAVIOUR_EVOLUTION_COMMAND_STARTED_PAYLOAD_SCHEMA_V1",
-    "BEHAVIOUR_EVOLUTION_COMMAND_COMPLETED_PAYLOAD_SCHEMA_V1",
-    "BEHAVIOUR_EVOLUTION_AGENT_MESSAGE_PAYLOAD_SCHEMA_V1",
-    "BEHAVIOUR_EVOLUTION_SUBTASK_COMPLETED_PAYLOAD_SCHEMA_V1",
     # Daemon extension
     "DAEMON_EXTENSION_URI_V1",
     # Context extension
@@ -100,25 +89,6 @@ USAGE_ATTRIBUTION_EXTENSION_URI_V1 = (
     "https://docs.aion.to/a2a/extensions/aion/usage-attribution/1.0.0"
 )
 AION_USAGE_ATTRIBUTION_HEADER = "Aion-Usage-Attribution"
-
-# Reflection extension (behaviour evolution: improver directive/verdict/result payloads)
-# See: https://docs.aion.to/a2a/extensions/aion/behaviour/evolution/1.0.0
-BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/behaviour/evolution/1.0.0"
-BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_TYPE_V1 = "to.aion.behaviour.evolution.directive.1.0.0"
-BEHAVIOUR_EVOLUTION_VERDICT_EVENT_TYPE_V1 = "to.aion.behaviour.evolution.verdict.1.0.0"
-BEHAVIOUR_EVOLUTION_DIRECTIVE_EVENT_PAYLOAD_SCHEMA_V1 = f"{BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1}#EvolutionDirectiveEventPayload"
-BEHAVIOUR_EVOLUTION_VERDICT_EVENT_PAYLOAD_SCHEMA_V1 = f"{BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1}#EvolutionVerdictEventPayload"
-BEHAVIOUR_EVOLUTION_RESULT_ACTION_PAYLOAD_SCHEMA_V1 = f"{BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1}#EvolutionResultActionPayload"
-# Progress-event payloads streamed while a run is in flight (schema-tagged data
-# parts on WORKING status messages, not CloudEvents — no EVENT_TYPE). The
-# distributor reacts to these programmatically; most are streamed to the client
-# but not persisted in task history (see the improver's events.py — the
-# exceptions are the final agent message and subtask progress, which the task
-# record keeps).
-BEHAVIOUR_EVOLUTION_COMMAND_STARTED_PAYLOAD_SCHEMA_V1 = f"{BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1}#EvolutionCommandStartedPayload"
-BEHAVIOUR_EVOLUTION_COMMAND_COMPLETED_PAYLOAD_SCHEMA_V1 = f"{BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1}#EvolutionCommandCompletedPayload"
-BEHAVIOUR_EVOLUTION_AGENT_MESSAGE_PAYLOAD_SCHEMA_V1 = f"{BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1}#EvolutionAgentMessagePayload"
-BEHAVIOUR_EVOLUTION_SUBTASK_COMPLETED_PAYLOAD_SCHEMA_V1 = f"{BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1}#EvolutionSubtaskCompletedPayload"
 
 # Daemon extension (authenticated, environment-scoped daemon interaction)
 # See: https://docs.aion.to/a2a/extensions/aion/daemon/1.0.0

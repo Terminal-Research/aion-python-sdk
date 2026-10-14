@@ -1,4 +1,4 @@
-"""Builder for the daemon extension payload the evolution tests need.
+"""Builder for the daemon extension payload tests hand the server.
 
 `DaemonExtensionPayload` is what the platform sends an agent about the
 environment it runs in - the configuration variables, the daemon identity the
@@ -41,7 +41,7 @@ def daemon_payload(
 
     Args:
         configuration_variables: Environment configuration as the control plane
-            supplies it - the evolution handler reads the model name out of it.
+            supplies it - a toolkit receives them as its daemon variables.
         daemon_agent_identity_id: Identity model usage is attributed to; None
             stands for an environment that has none assigned.
     """
