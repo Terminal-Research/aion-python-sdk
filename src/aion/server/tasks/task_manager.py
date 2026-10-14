@@ -207,23 +207,34 @@ class AionTaskManager(TaskManager):
         return result
 
     async def _carry_pending_message(self, event: Event) -> Event:
-        """Keep the turn's closing message in status when the task stops.
+        """Keep the current message in status when an update brings none.
 
         The base class always demotes the pending `status.message` to history
-        before applying a new status. That is right while the task is running —
-        the message is no longer the current one — but wrong for the event that
-        ends the turn: agents usually announce completion with a bare status,
-        which would bury the answer in history and lose it entirely for a
-        `historyLength=0` request.
+        before applying a new status. That is right when the update carries a
+        message of its own - the pending one is no longer the current one -
+        and for the bare `WORKING` that announces work, but wrong for two
+        updates that carry none:
 
-        So when a non-active state arrives without a message of its own, the
-        pending message is moved onto that event: it stays the current message,
-        exactly once, and migrates to history on the next turn.
+        * the event that ends the turn: agents usually announce completion
+          with a bare status, which would bury the answer in history and lose
+          it entirely for a `historyLength=0` request;
+        * a `WORKING` update that only changes details in its metadata - the
+          object a toolkit keeps in the task metadata, say - which would leave
+          the running task with an empty status line.
+
+        So when such an update arrives, the pending message is moved onto it:
+        it stays the current message, exactly once, and migrates to history
+        when the next message arrives. The event delivered to subscribers is
+        the original one; only the copy written to the task carries the
+        message.
         """
-        if not isinstance(event, TaskStatusUpdateEvent):
+        if not isinstance(event, TaskStatusUpdateEvent) or event.status.HasField('message'):
             return event
 
-        if event.status.state not in NON_ACTIVE_TASK_STATES or event.status.HasField('message'):
+        changes_details = (
+            event.status.state == TaskState.TASK_STATE_WORKING and bool(event.metadata)
+        )
+        if event.status.state not in NON_ACTIVE_TASK_STATES and not changes_details:
             return event
 
         task = await self.get_task()

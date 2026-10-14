@@ -28,6 +28,7 @@ from aion.server.tasks.task_manager import AionTaskManager
 
 TASK_ID = "task-1"
 CONTEXT_ID = "ctx-1"
+TOOLKIT_URI = "https://example.invalid/toolkit"
 
 NON_ACTIVE_STATES = [
     TaskState.TASK_STATE_COMPLETED,
@@ -60,6 +61,13 @@ def _status(state: TaskState, message: Message | None = None) -> TaskStatusUpdat
     if message is not None:
         status.message.CopyFrom(message)
     return TaskStatusUpdateEvent(task_id=TASK_ID, context_id=CONTEXT_ID, status=status)
+
+
+def _details(details: dict) -> TaskStatusUpdateEvent:
+    """A WORKING update with no message that writes ``details`` under a toolkit's key."""
+    event = _status(TaskState.TASK_STATE_WORKING)
+    event.metadata[TOOLKIT_URI] = details
+    return event
 
 
 class _FakeTaskStore:
@@ -263,12 +271,46 @@ class TestMessagePlacement:
 
     @pytest.mark.anyio
     async def test_bare_working_event_still_demotes_to_history(self, task_manager):
-        """While the task runs, a superseded message belongs in history."""
+        """The WORKING that announces work supersedes the message before it."""
         await task_manager.process(_status(TaskState.TASK_STATE_WORKING, _message("msg-agent")))
         await task_manager.process(_status(TaskState.TASK_STATE_WORKING))
 
         task = await task_manager.get_task()
         assert [m.message_id for m in task.history] == ["msg-user", "msg-agent"]
+        assert not task.status.HasField("message")
+
+    @pytest.mark.anyio
+    async def test_a_working_update_with_only_details_keeps_the_status_line(self, task_manager):
+        """A WORKING update that only changes metadata leaves the current message where it is."""
+        await task_manager.process(_status(TaskState.TASK_STATE_WORKING, _message("msg-agent")))
+        details = _details({"stage": "running"})
+        await task_manager.process(details)
+
+        task = await task_manager.get_task()
+        assert [m.message_id for m in task.history] == ["msg-user"]
+        assert task.status.message.message_id == "msg-agent"
+        assert task.metadata[TOOLKIT_URI]["stage"] == "running"
+        assert _conversation(task) == ["msg-user", "msg-agent"]
+        assert not details.status.HasField("message")
+
+    @pytest.mark.anyio
+    async def test_a_new_message_still_demotes_the_kept_one(self, task_manager):
+        """The kept message moves to history when the next message arrives, exactly once."""
+        await task_manager.process(_status(TaskState.TASK_STATE_WORKING, _message("msg-a")))
+        await task_manager.process(_details({"stage": "running"}))
+        await task_manager.process(_status(TaskState.TASK_STATE_WORKING, _message("msg-b")))
+
+        task = await task_manager.get_task()
+        assert [m.message_id for m in task.history] == ["msg-user", "msg-a"]
+        assert task.status.message.message_id == "msg-b"
+
+    @pytest.mark.anyio
+    async def test_a_details_update_with_nothing_pending(self, task_manager):
+        """Nothing is invented when there is no message to keep."""
+        await task_manager.process(_details({"stage": "running"}))
+
+        task = await task_manager.get_task()
+        assert [m.message_id for m in task.history] == ["msg-user"]
         assert not task.status.HasField("message")
 
 
