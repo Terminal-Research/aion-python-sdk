@@ -67,6 +67,8 @@ from .extensions.distribution import (
     Behavior,
     Distribution,
     DistributionExtensionV1,
+    NoticePayload,
+    extract_distribution_notices,
     Environment,
     Identity,
     PrincipalIdentity,

@@ -4,11 +4,20 @@ Defines payload models for distribution metadata including principal/service ide
 distribution channels, behavior configuration, and runtime environment details.
 """
 
-from typing import Annotated, Dict, List, Literal, Optional, Union
+from typing import Annotated, ClassVar, Dict, List, Literal, Optional, Union
+from urllib.parse import urlsplit
 
-from pydantic import Field
+from a2a.types import Message
+from google.protobuf.struct_pb2 import Struct
+
+from pydantic import Field, ValidationError, field_validator
 
 from aion.core.a2a import A2ABaseModel
+from aion.core.constants.a2a import (
+    DISTRIBUTION_EXTENSION_URI_V1,
+    DISTRIBUTION_NOTICE_PAYLOAD_SCHEMA_V1,
+)
+from aion.core.utils.protobuf import proto_to_dict
 
 __all__ = [
     "PrincipalIdentity",
@@ -18,6 +27,8 @@ __all__ = [
     "Behavior",
     "Environment",
     "DistributionExtensionV1",
+    "NoticePayload",
+    "extract_distribution_notices",
 ]
 
 
@@ -289,3 +300,75 @@ class DistributionExtensionV1(A2ABaseModel):
             "this request."
         )
     )
+
+
+class NoticePayload(A2ABaseModel):
+    """Informational context issued by a distribution or service resource.
+
+    The source identifies its issuer; it grants no access and requires no
+    lookup. Codes are extensible and do not select an event handler. Notices
+    accompany the original message without creating a new invocation.
+    """
+
+    SCHEMA_URI: ClassVar[str] = DISTRIBUTION_NOTICE_PAYLOAD_SCHEMA_V1
+
+    source: str = Field(description="Absolute credential-free HTTP(S) resource URI.")
+    code: str = Field(description="Non-empty stable code in the source's namespace.")
+    message: str = Field(description="Safe explanation without file URLs or secrets.")
+
+    @field_validator("source")
+    @classmethod
+    def _validate_source(cls, value: str) -> str:
+        parsed = urlsplit(value)
+        if (
+            not value
+            or any(character.isspace() or ord(character) < 32 for character in value)
+            or parsed.scheme.lower() not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            raise ValueError("Notice source must be a credential-free HTTP URI")
+        # Access validates the port without normalizing the original resource URI.
+        _ = parsed.port
+        return value
+
+    @field_validator("code", "message")
+    @classmethod
+    def _validate_nonempty(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Notice fields must not be empty")
+        return value
+
+
+def extract_distribution_notices(message: Message | None) -> List[NoticePayload]:
+    """Read valid notice Data parts without changing event or context extraction.
+
+    Unknown codes remain readable. Unmarked, malformed, or non-Data parts are
+    ignored so an optional notice cannot replace or reject the original event.
+
+    Args:
+        message: The inbound message, such as ``context.inbox.message``.
+
+    Returns:
+        Valid notices in their original part order; no network requests occur.
+    """
+    notices: List[NoticePayload] = []
+    if message is None:
+        return notices
+    for part in message.parts:
+        if part.WhichOneof("content") != "data":
+            continue
+        if DISTRIBUTION_EXTENSION_URI_V1 not in part.metadata:
+            continue
+        raw_marker = part.metadata[DISTRIBUTION_EXTENSION_URI_V1]
+        if not isinstance(raw_marker, (dict, Struct)):
+            continue
+        marker = proto_to_dict(raw_marker)
+        if not isinstance(marker, dict) or marker.get("schema") != NoticePayload.SCHEMA_URI:
+            continue
+        try:
+            notices.append(NoticePayload.model_validate(proto_to_dict(part.data)))
+        except ValidationError:
+            continue
+    return notices

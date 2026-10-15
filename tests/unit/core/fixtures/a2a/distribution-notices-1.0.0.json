@@ -1,0 +1,98 @@
+{
+  "extensionUri": "https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0",
+  "schemaUri": "https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0#NoticePayload",
+  "notice": {
+    "source": "https://api.aion.to/distributions/019d0000-0000-7000-8000-000000000001/a2a",
+    "code": "attachments-disabled",
+    "message": "Attachments were omitted because Chat attachments are disabled."
+  },
+  "requestMetadata": {
+    "https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0": {
+      "callerId": "external-anonymous",
+      "distribution": {
+        "id": "019d0000-0000-7000-8000-000000000001",
+        "endpointType": "Twitter",
+        "url": "https://api.aion.to/distributions/019d0000-0000-7000-8000-000000000001/a2a/.well-known/agent-card.json",
+        "identities": []
+      },
+      "behavior": {
+        "id": "019d0000-0000-7000-8000-000000000001",
+        "behaviorKey": "chat",
+        "versionId": "019d0000-0000-7000-8000-000000000001"
+      },
+      "environment": {
+        "id": "019d0000-0000-7000-8000-000000000001",
+        "name": "staging",
+        "projectId": "019d0000-0000-7000-8000-000000000001",
+        "deploymentId": "019d0000-0000-7000-8000-000000000001",
+        "configurationVariables": {}
+      }
+    }
+  },
+  "message": {
+    "messageId": "inbound-1",
+    "role": "ROLE_USER",
+    "extensions": [
+      "https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0",
+      "https://docs.aion.to/a2a/extensions/aion/event/1.0.0",
+      "https://docs.aion.to/a2a/extensions/aion/distribution/messaging/1.0.0"
+    ],
+    "metadata": {
+      "https://docs.aion.to/a2a/extensions/aion/event/1.0.0": {
+        "specversion": "1.0",
+        "type": "to.aion.distribution.message.1.0.0",
+        "source": "https://api.aion.to/distributions/019d0000-0000-7000-8000-000000000001/a2a",
+        "id": "event-789"
+      }
+    },
+    "parts": [
+      {
+        "data": {
+          "source": "https://api.aion.to/distributions/019d0000-0000-7000-8000-000000000001/a2a",
+          "code": "attachments-disabled",
+          "message": "Attachments were omitted because Chat attachments are disabled."
+        },
+        "metadata": {
+          "https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0": {
+            "schema": "https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0#NoticePayload"
+          }
+        }
+      },
+      {
+        "data": {
+          "userId": "123",
+          "contextId": "chat-456",
+          "messageId": "message-789",
+          "trajectory": "direct-message"
+        },
+        "metadata": {
+          "https://docs.aion.to/a2a/extensions/aion/event/1.0.0": {
+            "schema": "https://docs.aion.to/a2a/extensions/aion/distribution/messaging/1.0.0#MessageEventPayload"
+          }
+        }
+      }
+    ]
+  },
+  "otherCodes": [
+    "attachment-processing-failed",
+    "future-notice-code"
+  ],
+  "validSources": [
+    "https://aion.to/",
+    "https://staging-api.aion.to/distributions/019d0000-0000-7000-8000-000000000001/a2a",
+    "http://localhost:8080/distributions/019d0000-0000-7000-8000-000000000001/a2a",
+    "http://[::1]:8080/resource"
+  ],
+  "invalidSources": [
+    "aion",
+    "aion.to",
+    "/distributions/id/a2a",
+    "ftp://aion.to/resource",
+    "https:///missing-host",
+    "https://user:password@aion.to/",
+    "https://@aion.to/",
+    "https://aion.to:99999/",
+    "https://bad host/",
+    " https://aion.to/"
+  ]
+}

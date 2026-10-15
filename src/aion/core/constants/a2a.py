@@ -10,6 +10,7 @@ __all__ = [
     "WELCOME_REQUEST_PAYLOAD_SCHEMA_V1",
     # Distribution extension
     "DISTRIBUTION_EXTENSION_URI_V1",
+    "DISTRIBUTION_NOTICE_PAYLOAD_SCHEMA_V1",
     # Cards extension
     "CARDS_EXTENSION_URI_V1",
     "CARDS_PAYLOAD_SCHEMA_V1",
@@ -52,6 +53,7 @@ CRON_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/cron/1.0.0"
 # Distribution extension
 # See: https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0
 DISTRIBUTION_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0"
+DISTRIBUTION_NOTICE_PAYLOAD_SCHEMA_V1 = f"{DISTRIBUTION_EXTENSION_URI_V1}#NoticePayload"
 
 # Cards extension (for JSX-like card documents)
 # See: https://docs.aion.to/a2a/extensions/aion/distribution/cards/1.0.0
