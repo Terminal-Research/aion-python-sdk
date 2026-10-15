@@ -52,14 +52,6 @@ NEWER_PROTOCOL = ScriptedToolkit(
 NO_SCHEMA = ScriptedToolkit(descriptor=ToolkitDescriptor(uri=URI, description="bad", payloads=(_NoSchema,)))
 NOT_CONFIGURED = ScriptedToolkit(configure_error=RuntimeError("SCRIPTED_TOKEN is not set"))
 UNAVAILABLE = ScriptedToolkit(unavailable="the scripted backend is unreachable")
-OWN_PAYLOAD_CODE = ScriptedToolkit(
-    descriptor=ToolkitDescriptor(
-        uri=URI, description="own code", payloads=(ScriptPayload,), invalid_payload_code="invalid_script"
-    )
-)
-EMPTY_PAYLOAD_CODE = ScriptedToolkit(
-    descriptor=ToolkitDescriptor(uri=URI, description="bad", payloads=(ScriptPayload,), invalid_payload_code="")
-)
 CLAIMS_DAEMON = ScriptedToolkit(descriptor=ToolkitDescriptor(uri=DAEMON_EXTENSION_URI_V1, description="x"))
 NOT_A_TOOLKIT = SimpleNamespace(descriptor="not a descriptor")
 
@@ -178,7 +170,6 @@ async def test_an_object_that_is_not_a_toolkit_is_skipped(registry, caplog) -> N
     [
         ("NEWER_PROTOCOL", "toolkit protocol '2.0'"),
         ("NO_SCHEMA", "does not declare SCHEMA_URI, EVENT_TYPE"),
-        ("EMPTY_PAYLOAD_CODE", "invalid_payload_code '' is not a code"),
         ("NOT_CONFIGURED", "SCRIPTED_TOKEN is not set"),
         ("UNAVAILABLE", "the scripted backend is unreachable"),
     ],
@@ -197,18 +188,12 @@ async def test_a_toolkit_that_cannot_serve_is_refused_with_its_reason(
     assert URI not in {item.uri for item in registry.get_advertised()}
 
 
-@pytest.mark.parametrize(
-    ("attribute", "code"),
-    [("FIRST", codes.INVALID_PAYLOAD), ("OWN_PAYLOAD_CODE", "invalid_script")],
-)
-async def test_a_payload_the_toolkits_models_refuse_is_refused_with_the_descriptors_code(
-    registry, attribute, code
-) -> None:
-    await load_toolkit_handlers(agent(URI), entry_points=[entry_point(attribute)])
+async def test_a_payload_the_toolkits_models_refuse_is_refused_with_the_common_code(registry) -> None:
+    await load_toolkit_handlers(agent(URI), entry_points=[entry_point("FIRST")])
 
     error = refusal(registry, URI, declared_with_script({"no_such_field": True}))
 
-    assert (error.code, error.retryable) == (code, False)
+    assert (error.code, error.retryable) == (codes.INVALID_PAYLOAD, False)
     assert "no_such_field" in str(error)
     event = AionRuntimeExtensions.collect(declared_with_script({"report": True}), registry.get_all()).get(URI)
     assert event.payload == ScriptPayload(report=True)

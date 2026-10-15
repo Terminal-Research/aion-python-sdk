@@ -30,10 +30,9 @@ built. For every entry point:
    description, `requires`, and a `MessagesCollector` over the descriptor's
    payload models, so an incoming payload is validated by the registry's
    pipeline before the toolkit sees it. A message part tagged with one of
-   their schemas whose data the model refuses is refused with the
-   descriptor's `invalid_payload_code` (`invalid_payload` unless the toolkit
-   names its own), not retryable, before a task exists. It is active only when the
-   descriptor says `enabled_by_default` or the agent lists it in
+   their schemas whose data the model refuses is refused with
+   `invalid_payload`, not retryable, before a task exists. It is active only
+   when the descriptor says `enabled_by_default` or the agent lists it in
    `enabled_extensions`; installing a toolkit does not expose it (see
    [Extension exposure](extension-exposure.md)).
 3. For a toolkit active for the agent: its protocol version must be
@@ -140,7 +139,7 @@ whose values are strings, so `retryable` is `"true"` or `"false"`
 | `preflight` raised anything else (logged) | `InternalError` | `internal_error` | `"false"` |
 | the caller check | `InvalidParamsError` | `caller_not_allowed` | `"false"` |
 | an unavailable extension (`verify_declared_extensions`) | `InvalidParamsError` | `extension_unavailable` | `"true"` |
-| a payload the toolkit's payload models refuse (`verify_declared_extensions`) | `InvalidParamsError` | the descriptor's `invalid_payload_code`, `invalid_payload` by default | `"false"` |
+| a payload the toolkit's payload models refuse (`verify_declared_extensions`) | `InvalidParamsError` | `invalid_payload` | `"false"` |
 | a message into a task whose extension this server does not serve | `InvalidParamsError` | `extension_unavailable` | `"true"` |
 | a second task of an `exclusive_per_context` toolkit in a context, or a message into its running task | `InvalidParamsError` | `context_busy`, with the unfinished task under `taskId` | `"true"` |
 
@@ -151,6 +150,14 @@ another caller, another deployment state - because it is what a2a-sdk and
 this server already answer for a request the agent will not take;
 `InternalError` is kept for the toolkit failing. A toolkit's own codes
 belong to the toolkit; the server passes them on as they are.
+
+`invalid_payload` is the one code for any invalid extension input: the
+server refuses with it a payload that fails the models, and a toolkit
+refuses with it the input of its own that fails its validation in
+`preflight` (an empty instruction, a value the backend cannot take). A
+client answers it the same way for every toolkit - fix the request, do not
+retry - so a toolkit adds a code of its own only for a refusal a client can
+act on differently.
 
 ## Turns
 
@@ -380,10 +387,9 @@ work.
 ## Testing
 
 `tests/support/scripted_toolkit` is a toolkit built on the protocol models
-and nothing else. It is installed twice: under its own URI, with
-`INVALID_SCRIPT_CODE` as its `invalid_payload_code`, and under
+and nothing else. It is installed twice: under its own URI, and under
 `EXCLUSIVE_URI` as an `exclusive_per_context` toolkit with a script event of
-its own and the default code. A turn yields what its script says: the `Script` it was
+its own. A turn yields what its script says: the `Script` it was
 built with in a unit test, or the `ScriptPayload` a request carries - an
 event of type `SCRIPT_EVENT_TYPE` with a data part of schema `SCRIPT_SCHEMA`
 whose `outputs` are protocol values in JSON. A script can also refuse or

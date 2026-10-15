@@ -133,7 +133,7 @@ class TestVerifyDeclaredExtensions:
 
         class Refusing:
             def collect(self, uri, request_context):
-                raise ExtensionActivationError(uri, reason="bad payload", code="invalid_script", retryable=False)
+                raise ExtensionActivationError(uri, reason="bad payload", code="invalid_payload", retryable=False)
 
         aion_a2a_extension_registry.register(ExtensionDescriptor(uri=uri, collector=Refusing()))
         try:
@@ -142,7 +142,7 @@ class TestVerifyDeclaredExtensions:
 
             with pytest.raises(InvalidParamsError, match="bad payload") as refusal:
                 self._verify(SendMessageRequest(message=message), self._call_context())
-            assert refusal.value.data == {"code": "invalid_script", "retryable": "false"}
+            assert refusal.value.data == {"code": "invalid_payload", "retryable": "false"}
         finally:
             aion_a2a_extension_registry.reset_to_default()
 

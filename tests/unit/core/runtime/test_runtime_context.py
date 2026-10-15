@@ -726,11 +726,11 @@ class TestMessagesCollectorMalformedPayload:
         msg = Message(message_id="m-mp-code", role=Role.ROLE_USER)
         self._envelope(msg)
         msg.parts.append(self._data_part(scope="review"))
-        collector = MessagesCollector(_ScriptPayload, invalid_payload_code="invalid_script")
+        collector = MessagesCollector(_ScriptPayload, invalid_payload_code="invalid_payload")
 
         with pytest.raises(ExtensionActivationError) as exc_info:
             collector.collect(_SCRIPT_URI, _make_mock_rc(message=msg))
-        assert (exc_info.value.code, exc_info.value.retryable) == ("invalid_script", False)
+        assert (exc_info.value.code, exc_info.value.retryable) == ("invalid_payload", False)
 
     def test_later_valid_part_wins_over_earlier_invalid(self):
         """The multi-part fallback must survive: an earlier malformed part

@@ -115,7 +115,7 @@ class ToolkitRejection(AionError):
 
     Args:
         code: Stable machine-readable name of the refusal, such as
-            ``invalid_directive``; never empty.
+            ``invalid_payload``; never empty.
         message: Why, in words the caller may read.
         retryable: Whether repeating the same request can succeed.
     """

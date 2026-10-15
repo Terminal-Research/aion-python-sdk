@@ -339,14 +339,14 @@ async def test_an_error_closes_the_message_for_a_person_and_for_a_program() -> N
 
 async def test_an_error_without_a_message_gets_one() -> None:
     result = ToolkitResult(
-        state=ToolkitState.REJECTED, error=ToolkitError(code="invalid_directive", message="No target.")
+        state=ToolkitState.REJECTED, error=ToolkitError(code="forbidden_target", message="No target.")
     )
 
     events = await run(handler(result))
 
     parts = final(events).status.message.parts
     assert parts[0].text == "No target."
-    assert as_dict(parts[1])["data"]["code"] == "invalid_directive"
+    assert as_dict(parts[1])["data"]["code"] == "forbidden_target"
 
 
 # -- parts ----------------------------------------------------------------------

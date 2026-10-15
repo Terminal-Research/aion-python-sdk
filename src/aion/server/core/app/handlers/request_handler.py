@@ -388,7 +388,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         silently handing the request to the primary flow the client
         explicitly asked to bypass. That refusal carries the code
         ``extension_unavailable`` in its ``data``, and a toolkit's payload its
-        models refuse the toolkit's ``invalid_payload_code``, as every refusal
+        models refuse ``invalid_payload``, as every refusal
         with a code does: ``{"code": ..., "retryable": "true" | "false"}``.
 
         Returns:

@@ -272,10 +272,10 @@ def refusal(response: Any) -> tuple[int, dict[str, str]]:
 @pytest.mark.parametrize("method", ["SendMessage", "SendStreamingMessage"])
 async def test_a_preflight_refusal_creates_no_task(server, method) -> None:
     response = await server.send(
-        {"refuse": {"code": "invalid_directive", "message": "No target.", "retryable": False}}, method=method
+        {"refuse": {"code": "forbidden_target", "message": "No target.", "retryable": False}}, method=method
     )
 
-    assert refusal(response) == (INVALID_PARAMS, {"code": "invalid_directive", "retryable": "false"})
+    assert refusal(response) == (INVALID_PARAMS, {"code": "forbidden_target", "retryable": "false"})
     assert await rows() == NOTHING
 
 

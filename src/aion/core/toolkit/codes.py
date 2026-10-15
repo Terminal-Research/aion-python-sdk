@@ -34,10 +34,13 @@ CALLER_NOT_ALLOWED = "caller_not_allowed"
 """The caller may not start this toolkit."""
 
 INVALID_PAYLOAD = "invalid_payload"
-"""The request carries a payload of the toolkit that its payload models refuse.
+"""The request carries input the toolkit cannot take; the client fixes it and does not retry.
 
-The default of ``ToolkitDescriptor.invalid_payload_code``; a toolkit may name
-a code of its own there instead.
+It is the code for any invalid extension input, whoever finds it. The server
+refuses a payload that its payload models reject with it, and a toolkit
+refuses with it the input of its own that fails the toolkit's validation in
+``preflight`` (an empty instruction, a value the backend cannot take).
+Toolkit-specific codes are for refusals a client can answer differently.
 """
 
 SERVER_SHUTDOWN = "server_shutdown"

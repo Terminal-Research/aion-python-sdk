@@ -503,13 +503,13 @@ async def test_admission_hands_preflight_the_request_and_what_the_server_knows()
 
 
 async def test_a_refusal_is_a_json_rpc_error_with_its_code() -> None:
-    toolkit = ScriptedToolkit(Script(refuse=Refusal(code="invalid_directive", message="No target.", retryable=True)))
+    toolkit = ScriptedToolkit(Script(refuse=Refusal(code="forbidden_target", message="No target.", retryable=True)))
 
     with pytest.raises(InvalidParamsError) as error:
         await admit(toolkit)
 
     assert error.value.message == "No target."
-    assert error.value.data == {"code": "invalid_directive", "retryable": "true"}
+    assert error.value.data == {"code": "forbidden_target", "retryable": "true"}
 
 
 async def test_a_preflight_crash_is_an_internal_error_with_the_common_code(caplog) -> None:

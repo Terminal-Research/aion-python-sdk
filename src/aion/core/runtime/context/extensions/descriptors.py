@@ -40,10 +40,9 @@ class ExtensionActivationError(AionError):
     ``code`` is set for a refusal the server gives a stable code to - an
     extension that is unavailable on this deployment is
     ``extension_unavailable`` (``aion.core.toolkit.codes``), a toolkit's
-    payload its models refuse is the toolkit's ``invalid_payload_code`` -
-    and travels in the JSON-RPC error's ``data`` with ``retryable``: the
-    error's own when it sets one, otherwise the fixed answer for a code the
-    server reserves.
+    payload its models refuse is ``invalid_payload`` - and travels in the
+    JSON-RPC error's ``data`` with ``retryable``: the error's own when it
+    sets one, otherwise the fixed answer for a code the server reserves.
     """
 
     def __init__(
@@ -261,7 +260,7 @@ class MessagesCollector:
     A part tagged with a known schema whose data fails its model raises
     ExtensionActivationError. With ``invalid_payload_code`` the error carries
     that code and ``retryable`` false, so the caller gets a coded refusal;
-    a toolkit's extension is registered so, with the descriptor's code.
+    a toolkit's extension is registered so, with ``invalid_payload``.
     """
 
     def __init__(

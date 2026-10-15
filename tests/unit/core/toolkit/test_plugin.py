@@ -36,7 +36,7 @@ def test_a_toolkit_built_for_this_server_is_compatible():
 
 
 def test_a_rejection_is_an_aion_error_with_a_public_reason():
-    rejection = ToolkitRejection("invalid_directive", "The base ref is not valid.")
+    rejection = ToolkitRejection("invalid_payload", "The base ref is not valid.")
     assert isinstance(rejection, AionError)
     assert rejection.public_reason == "The base ref is not valid."
     assert rejection.retryable is False
@@ -58,10 +58,6 @@ def test_every_common_code_has_a_fixed_retry_hint():
     assert codes.RETRYABLE[codes.CALLER_NOT_ALLOWED] is False
     assert codes.RETRYABLE[codes.INVALID_PAYLOAD] is False
     assert codes.RETRYABLE[codes.TASK_ABANDONED] is True
-
-
-def test_a_descriptor_refuses_an_invalid_payload_with_the_common_code_by_default():
-    assert ToolkitDescriptor(uri="u", description="d").invalid_payload_code == codes.INVALID_PAYLOAD
 
 
 async def test_a_context_finds_artifacts_through_its_finder():

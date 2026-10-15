@@ -75,7 +75,7 @@ from tests.scenarios.toolkits import (
     script,
     start_working,
 )
-from tests.support.scripted_toolkit.contract import INVALID_SCRIPT_CODE, URI
+from tests.support.scripted_toolkit.contract import URI
 
 pytestmark = pytest.mark.toolkits
 
@@ -224,7 +224,7 @@ async def test_a_refused_request_is_an_error_with_its_code_and_leaves_no_task(
 ) -> None:
     """The toolkit's refusal is the JSON-RPC error, with its code; no task was opened for it."""
     context_id = f"refused-{uuid.uuid4().hex}"
-    envelope = script(refuse={"code": "invalid_directive", "message": "No target.", "retryable": False})
+    envelope = script(refuse={"code": "forbidden_target", "message": "No target.", "retryable": False})
 
     response = await toolkit_client.rpc(
         "SendMessage",
@@ -246,16 +246,16 @@ async def test_a_refused_request_is_an_error_with_its_code_and_leaves_no_task(
     error = response["error"]
     assert error["code"] == INVALID_PARAMS
     assert error["message"] == "No target."
-    assert error["data"][0]["metadata"] == {"code": "invalid_directive", "retryable": "false"}
+    assert error["data"][0]["metadata"] == {"code": "forbidden_target", "retryable": "false"}
     assert await toolkit_client.tasks_in_context(context_id) == []
 
 
 @pytest.mark.variant("toolkit")
-@pytest.mark.parametrize(("uri", "code"), [(URI, INVALID_SCRIPT_CODE), (EXCLUSIVE_URI, "invalid_payload")])
-async def test_a_payload_the_toolkits_model_refuses_is_an_error_with_the_descriptors_code_and_leaves_no_task(
-    toolkit_client: ScenarioClient, uri: str, code: str
+@pytest.mark.parametrize("uri", [URI, EXCLUSIVE_URI])
+async def test_a_payload_the_toolkits_model_refuses_is_an_error_with_the_common_code_and_leaves_no_task(
+    toolkit_client: ScenarioClient, uri: str
 ) -> None:
-    """A malformed script never reaches the toolkit: the code is the descriptor's, or the server's default."""
+    """A malformed script never reaches the toolkit: every toolkit refuses it with ``invalid_payload``."""
     context_id = f"malformed-{uuid.uuid4().hex}"
 
     response = await rpc_script(toolkit_client, uri, context_id=context_id, no_such_field=True)
@@ -263,7 +263,7 @@ async def test_a_payload_the_toolkits_model_refuses_is_an_error_with_the_descrip
     error = response["error"]
     assert error["code"] == INVALID_PARAMS
     assert "no_such_field" in error["message"]
-    assert error["data"][0]["metadata"] == {"code": code, "retryable": "false"}
+    assert error["data"][0]["metadata"] == {"code": "invalid_payload", "retryable": "false"}
     assert await toolkit_client.tasks_in_context(context_id) == []
 
 

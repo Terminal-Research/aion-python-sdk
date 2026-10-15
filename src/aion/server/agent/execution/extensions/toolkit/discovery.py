@@ -9,8 +9,8 @@ agent card is built, the server loads every such entry point:
 2. Its extension is registered in ``aion_a2a_extension_registry``: the URI,
    description and ``requires``, a ``MessagesCollector`` over the
    descriptor's payload models that refuses a payload they reject with the
-   descriptor's ``invalid_payload_code``, active by default only when the
-   descriptor says so. The agent's ``enabled_extensions`` activates it like any other
+   code ``invalid_payload``, active by default only when the descriptor says
+   so. The agent's ``enabled_extensions`` activates it like any other
    extension. Installing a toolkit does not expose it.
 3. A toolkit whose extension is active for the agent must speak a compatible
    protocol version and declare usable payload models; then its
@@ -44,6 +44,7 @@ from aion.core.toolkit import (
     PROTOCOL_VERSION,
     Toolkit,
     ToolkitDescriptor,
+    codes,
     protocol_compatible,
 )
 from aion.server.tasks.abandoned import AbandonedTasks
@@ -187,8 +188,6 @@ def _incompatibility(descriptor: ToolkitDescriptor) -> Optional[str]:
             f"the toolkit is built for toolkit protocol {descriptor.protocol_version!r}, "
             f"and this server speaks {PROTOCOL_VERSION}"
         )
-    if not isinstance(descriptor.invalid_payload_code, str) or not descriptor.invalid_payload_code:
-        return f"the descriptor's invalid_payload_code {descriptor.invalid_payload_code!r} is not a code"
     for payload in descriptor.payloads:
         if not (isinstance(payload, type) and issubclass(payload, BaseModel)):
             return f"the payload model {payload!r} is not a pydantic model"
@@ -207,7 +206,7 @@ def _register(descriptor: ToolkitDescriptor, *, payloads_usable: bool, enabled: 
     toolkits were found, so a toolkit the agent enables is activated here.
     """
     collector = (
-        MessagesCollector(*descriptor.payloads, invalid_payload_code=descriptor.invalid_payload_code)
+        MessagesCollector(*descriptor.payloads, invalid_payload_code=codes.INVALID_PAYLOAD)
         if descriptor.payloads and payloads_usable
         else MarkerCollector()
     )
