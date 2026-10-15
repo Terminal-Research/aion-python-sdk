@@ -194,11 +194,18 @@ class TestBackgroundTasks:
         assert not mock_logger.warning.called
 
 
-def test_each_agent_gets_its_whole_shutdown_budget():
-    """The parent keeps a child alive as long as the child's own shutdown can take."""
-    from aion.server.server import AGENT_SHUTDOWN_SECONDS
+async def test_each_agent_gets_its_whole_shutdown_budget(handler, monkeypatch):
+    """The parent keeps a child alive as long as ``AION_SHUTDOWN_TIMEOUT`` says the child's shutdown can take."""
+    from aion.server.settings import app_settings
 
-    assert serve.SERVE_SHUTDOWN_TIMEOUT_SECONDS == AGENT_SHUTDOWN_SECONDS
+    monkeypatch.setattr(app_settings, "shutdown_timeout", 7.0)
+    execute = AsyncMock(return_value=True)
+    monkeypatch.setattr(serve, "ServeShutdownService", lambda: MagicMock(execute=execute))
+    handler.port_manager = None
+    handler._stop_platform_link = AsyncMock()
+
+    assert await handler.shutdown() is True
+    assert execute.await_args.kwargs["timeout"] == 7.0
 
 
 class TestStartupOutcome:

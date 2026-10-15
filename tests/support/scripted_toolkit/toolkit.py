@@ -117,7 +117,9 @@ class Script:
         wait_for_cancel: After the outputs, the turn waits for ``cancel()``
             and then ends: with a ``failed`` result coded ``server_shutdown``
             for a ``SHUTDOWN``, as a toolkit stopping for a server shutdown
-            does, and with a ``canceled`` result otherwise.
+            does, with ``{"stopped_within": within}`` in its object - the
+            ``within`` the server gave ``cancel()`` - and with a
+            ``canceled`` result otherwise.
         hang_on_cancel: With ``wait_for_cancel``, the turn does not end after
             ``cancel()`` either: it runs until the server tears it down.
         completes_on_cancel: With ``wait_for_cancel``, a ``cancel()`` ends the
@@ -135,7 +137,7 @@ class Script:
             "task_metadata", "cancels"}``: how this turn began (``start`` or
             ``resume``), its task, the object the task held, and every
             ``cancel()`` the toolkit has been asked for as ``{"task_id",
-            "reason"}``.
+            "reason", "within"}``.
     """
 
     outputs: list[Any] = field(default_factory=lambda: [ToolkitResult(state=ToolkitState.COMPLETED)])
@@ -196,9 +198,10 @@ class ScriptedToolkit:
         self.configured = 0
         self.preflights: list[tuple[ToolkitRequest, PreflightContext]] = []
         self.turns: list[tuple[str, ToolkitRequest, ToolkitContext]] = []
-        self.cancels: list[tuple[str, str]] = []
+        self.cancels: list[tuple[str, str, Optional[float]]] = []
         self._cancelled: dict[str, asyncio.Event] = {}
         self._reasons: dict[str, str] = {}
+        self._windows: dict[str, Optional[float]] = {}
 
     def configure(self) -> None:
         self.configured += 1
@@ -224,9 +227,11 @@ class ScriptedToolkit:
     def resume(self, request: ToolkitRequest, context: ToolkitContext) -> AsyncIterator[Any]:
         return self._turn("resume", request, context)
 
-    async def cancel(self, task_id: str, reason: str) -> None:
-        self.cancels.append((task_id, reason))
-        self._reasons.setdefault(task_id, reason)
+    async def cancel(self, task_id: str, reason: str, *, within: Optional[float] = None) -> None:
+        self.cancels.append((task_id, reason, within))
+        if task_id not in self._reasons:
+            self._reasons[task_id] = reason
+            self._windows[task_id] = within
         self._cancel_event(task_id).set()
 
     async def _turn(self, kind: str, request: ToolkitRequest, context: ToolkitContext) -> AsyncIterator[Any]:
@@ -264,6 +269,7 @@ class ScriptedToolkit:
                     error=ToolkitError(
                         code=codes.SERVER_SHUTDOWN, message="The server stopped during the turn.", retryable=True
                     ),
+                    task_metadata={"stopped_within": self._windows.get(context.task_id)},
                 )
             else:
                 yield ToolkitResult(state=ToolkitState.CANCELED)
@@ -273,7 +279,9 @@ class ScriptedToolkit:
             "kind": kind,
             "task_id": context.task_id,
             "task_metadata": dict(context.task_metadata),
-            "cancels": [{"task_id": task_id, "reason": reason} for task_id, reason in self.cancels],
+            "cancels": [
+                {"task_id": task_id, "reason": reason, "within": within} for task_id, reason, within in self.cancels
+            ],
         }
         return ToolkitMessageEvent(message=Message(parts=[DataPart(data=data)]))
 

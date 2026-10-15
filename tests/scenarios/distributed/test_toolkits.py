@@ -157,7 +157,7 @@ async def test_a_cancel_on_the_other_server_reaches_the_toolkit_at_the_owners_ne
         if asked:
             break
         await asyncio.sleep(0.25)
-    assert asked == [{"task_id": task_id, "reason": "cancel"}]
+    assert asked == [{"task_id": task_id, "reason": "cancel", "within": None}]
 
     settled = await owner.get_task(task_id)
     await asyncio.sleep(1.5)

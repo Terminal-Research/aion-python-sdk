@@ -14,7 +14,9 @@ An orderly shutdown asks every running turn to stop first: the toolkit's own
 ``failed`` result coded ``server_shutdown`` closes the task and the stream a
 client has open on it. A turn that does not stop within the grace period is
 settled by the server instead, and a stream open on any task does not hold
-the shutdown past its bounded wait.
+the shutdown past its bounded wait. ``AION_SHUTDOWN_TIMEOUT`` sizes those
+waits: with a small budget the toolkit is told the shorter window it gets in
+``cancel()``, and a turn that outlasts it is settled sooner.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ import pytest
 from a2a.types import TaskState
 from google.protobuf.json_format import MessageToDict
 
+from tests.scenarios.frameworks import Framework
 from tests.scenarios.harness import ScenarioClient, ServeProcess, ServeVariant, final_task
 from tests.scenarios.harness.pg import postgres_env
 from tests.scenarios.harness.recorder import _payload_of, to_event
@@ -45,11 +48,28 @@ SETTLED_REASON_KEY = "aion:settledReason"
 SHUTDOWN_ERROR = {"code": "server_shutdown", "message": "The server stopped during the turn.", "retryable": True}
 """The error the scripted toolkit closes a turn with when the server stops."""
 
+SMALL_SHUTDOWN_BUDGET = "5"
+"""An ``AION_SHUTDOWN_TIMEOUT`` small enough that every step of the shutdown shrinks."""
+
+SMALL_BUDGET_TOOLKIT_WINDOW = 3.0
+"""What the toolkits' turns get of ``SMALL_SHUTDOWN_BUDGET``: 5 s less 1 s graceful, 0.4 s settlement, 0.6 s cleanup."""
+
 
 @pytest.fixture
 def pg_variant() -> ServeVariant:
     """The toolkit deployment with a Postgres backend."""
     return dataclasses.replace(TOOLKIT, env={**TOOLKIT.env, **postgres_env()})
+
+
+@pytest.fixture
+def small_budget_server(framework: Framework, pg_variant: ServeVariant):
+    """The toolkit deployment on Postgres with ``AION_SHUTDOWN_TIMEOUT`` set to ``SMALL_SHUTDOWN_BUDGET``."""
+    variant = dataclasses.replace(pg_variant, env={**pg_variant.env, "AION_SHUTDOWN_TIMEOUT": SMALL_SHUTDOWN_BUDGET})
+    process = ServeProcess(framework, variant)
+    try:
+        yield process.start()
+    finally:
+        process.stop()
 
 
 async def reconnect(server: ServeProcess) -> ScenarioClient:
@@ -191,3 +211,29 @@ async def test_an_open_stream_does_not_hold_the_shutdown(
     await restarting
 
     assert ended_after < 20, f"the open stream held the shutdown for {ended_after:.0f}s"
+
+
+@pytest.mark.variant("toolkit")
+async def test_a_small_shutdown_budget_gives_the_toolkits_a_shorter_window_and_says_so_in_cancel(
+    small_budget_server: ServeProcess,
+) -> None:
+    """A turn that stops is told the window in ``cancel()``; one that does not is settled once the window is over."""
+    async with await reconnect(small_budget_server) as client:
+        stopping, stopping_stream = await start_working(client, URI)
+        hanging, hanging_stream = await start_working(client, URI, hang_on_cancel=True)
+        for stream in (stopping_stream, hanging_stream):
+            with contextlib.suppress(Exception):
+                await stream.aclose()
+
+    await asyncio.to_thread(small_budget_server.restart)
+
+    async with await reconnect(small_budget_server) as fresh_client:
+        stopped = await fresh_client.get_task(stopping)
+        settled = await fresh_client.get_task(hanging)
+    assert stopped.status.state == TaskState.TASK_STATE_FAILED
+    assert SHUTDOWN_ERROR in data_parts(stopped)
+    assert MessageToDict(stopped.metadata)[URI]["stopped_within"] == SMALL_BUDGET_TOOLKIT_WINDOW
+    assert settled.status.state == TaskState.TASK_STATE_FAILED
+    assert MessageToDict(settled.metadata)[SETTLED_REASON_KEY] == "server_shutdown"
+    logged = small_budget_server.log_path.read_text(encoding="utf-8", errors="replace")
+    assert f"did not end within {SMALL_BUDGET_TOOLKIT_WINDOW:.1f}s of the shutdown" in logged

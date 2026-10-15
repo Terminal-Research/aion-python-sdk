@@ -304,7 +304,7 @@ async def _cancel_a_working_turn(client: ScenarioClient) -> tuple[str, list[Ev],
 
 @pytest.mark.variant("toolkit")
 async def test_a_cancel_ends_the_turn_canceled_and_tells_the_toolkit(toolkit_client: ScenarioClient) -> None:
-    """The toolkit is asked once, with the task's id; the task ends ``CANCELED`` on the stream and in the store."""
+    """The toolkit is asked once, with the task's id and the grace period; the task ends ``CANCELED``."""
     task_id, events, cancel_state = await _cancel_a_working_turn(toolkit_client)
 
     assert cancel_state == TaskState.TASK_STATE_CANCELED
@@ -314,7 +314,7 @@ async def test_a_cancel_ends_the_turn_canceled_and_tells_the_toolkit(toolkit_cli
     assert (await toolkit_client.get_task(task_id)).status.state == TaskState.TASK_STATE_CANCELED
     report = await reported(toolkit_client)
     assert [item for item in report["cancels"] if item["task_id"] == task_id] == [
-        {"task_id": task_id, "reason": CANCEL}
+        {"task_id": task_id, "reason": CANCEL, "within": 15}
     ]
 
 

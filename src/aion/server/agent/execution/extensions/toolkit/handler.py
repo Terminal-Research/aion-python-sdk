@@ -22,9 +22,14 @@ protocol leaves to the server:
   producer cancelled after another server cancelled the task - asks the
   toolkit to stop as well;
 * **stopping** - at a server shutdown, ``Toolkit.cancel`` with ``SHUTDOWN``
-  for every turn running here at once and one bounded wait for them all;
-  when the run's event queue has lost its consumer, ``Toolkit.cancel`` once
-  and nothing more written.
+  for every turn running here at once and one wait for them all, bounded by
+  the window the server's shutdown budget gives the toolkits; when the run's
+  event queue has lost its consumer, ``Toolkit.cancel`` once and nothing
+  more written.
+
+``Toolkit.cancel`` is told, as ``within``, how long the server waits for the
+turn's result from then on: ``CANCEL_GRACE_SECONDS`` for a caller's cancel,
+the shutdown window at a shutdown, and None when it waits for none.
 """
 
 from __future__ import annotations
@@ -92,7 +97,7 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 CANCEL_GRACE_SECONDS = 15.0
-"""How long a cancel waits for the running turn to end before the task is cancelled without it."""
+"""How long a caller's cancel waits for the running turn to end before the task is cancelled without it."""
 
 PREFLIGHT_CRASH_MESSAGE = "The toolkit failed while checking the request; the server log has the details."
 """The JSON-RPC error message of a ``preflight`` that raised something other than a refusal."""
@@ -485,14 +490,20 @@ class ToolkitTaskHandler:
         await self._stop(task_id, turn, CANCEL)
         return False
 
-    async def _stop(self, task_id: str, turn: Optional[_Turn], reason: str) -> None:
-        """Ask the toolkit to stop ``task_id``'s turn, once per turn; a failure is logged."""
+    async def _stop(
+            self, task_id: str, turn: Optional[_Turn], reason: str, within: Optional[float] = None
+    ) -> None:
+        """Ask the toolkit to stop ``task_id``'s turn, once per turn; a failure is logged.
+
+        ``within`` is how long the server waits for the turn's result from
+        now on; None when it waits for none.
+        """
         if turn is not None:
             if turn.stop_reason is not None:
                 return
             turn.stop_reason = reason
         try:
-            await self.toolkit.cancel(task_id, reason)
+            await self.toolkit.cancel(task_id, reason, within=within)
         except Exception:
             logger.exception("Toolkit %s failed to stop task %s (%s)", self.uri, task_id, reason)
 
@@ -512,11 +523,13 @@ class ToolkitTaskHandler:
     async def cancel(self, context: "RequestContext", event_queue: "EventQueue") -> bool:
         """Ask the toolkit to stop the task, and give a turn running here a bounded time to end.
 
-        Within ``CANCEL_GRACE_SECONDS`` the turn may still yield artifacts
-        and its result - ``canceled``, or ``completed`` for work it had
-        already delivered - which reach the task through the run's queue
-        like any turn's. The wait holds a2a-sdk's lock on the task, which is
-        why it is short.
+        Within ``CANCEL_GRACE_SECONDS`` - the ``within`` the toolkit is told
+        - the turn may still yield artifacts and its result - ``canceled``,
+        or ``completed`` for work it had already delivered - which reach the
+        task through the run's queue like any turn's. The wait holds
+        a2a-sdk's lock on the task, which is why it is short. For a task with
+        no turn running here nothing is awaited, and the toolkit is told
+        ``within=None``.
 
         Returns:
             True when the turn ended in time with a terminal status of its
@@ -526,7 +539,7 @@ class ToolkitTaskHandler:
         """
         task_id = context.task_id or (context.current_task.id if context.current_task else "")
         turn = self._turns.get(task_id)
-        await self._stop(task_id, turn, CANCEL)
+        await self._stop(task_id, turn, CANCEL, CANCEL_GRACE_SECONDS if turn is not None else None)
         if turn is None:
             return False
         try:
@@ -542,31 +555,38 @@ class ToolkitTaskHandler:
             return False
         return turn.outcome in TERMINAL_TASK_STATES
 
-    async def shutdown(self) -> None:
+    async def shutdown(self, within: float) -> None:
         """Stop every turn running here for a server shutdown, at once, and wait for them together.
 
-        Each toolkit turn is asked to stop with ``SHUTDOWN``; a toolkit
-        closes the turn with a ``failed`` result coded ``server_shutdown``,
-        which reaches the task and its clients through the run's queue like
-        any result. The wait ends when every turn has ended, or after
-        ``CANCEL_GRACE_SECONDS``; a turn still running then is left to the
-        drain of the server's active tasks, which settles its task.
+        Each toolkit turn is asked to stop with ``SHUTDOWN`` and told
+        ``within``; a toolkit closes the turn with a ``failed`` result coded
+        ``server_shutdown``, which reaches the task and its clients through
+        the run's queue like any result. The wait ends when every turn has
+        ended, or after ``within`` seconds from the start; a turn still
+        running then is left to the drain of the server's active tasks,
+        which settles its task.
+
+        Args:
+            within: The toolkits' window of the server's shutdown budget
+                (``aion.server.shutdown.ShutdownBudget.toolkit_turns``).
         """
         turns = dict(self._turns)
         if not turns:
             return
         logger.info("Stopping %d turn(s) of toolkit %s for the server shutdown", len(turns), self.uri)
-        await asyncio.gather(*(self._stop(task_id, turn, SHUTDOWN) for task_id, turn in turns.items()))
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + within
         waiters = [asyncio.ensure_future(turn.finished.wait()) for turn in turns.values()]
-        _done, pending = await asyncio.wait(waiters, timeout=CANCEL_GRACE_SECONDS)
+        await asyncio.gather(*(self._stop(task_id, turn, SHUTDOWN, within) for task_id, turn in turns.items()))
+        _done, pending = await asyncio.wait(waiters, timeout=max(0.0, deadline - loop.time()))
         for waiter in pending:
             waiter.cancel()
         if pending:
             logger.warning(
-                "%d turn(s) of toolkit %s did not end within %.0fs of the shutdown",
+                "%d turn(s) of toolkit %s did not end within %.1fs of the shutdown",
                 len(pending),
                 self.uri,
-                CANCEL_GRACE_SECONDS,
+                within,
             )
 
 

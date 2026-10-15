@@ -133,6 +133,6 @@ class ExtensionTaskHandler(Protocol):
         """
         ...
 
-    async def shutdown(self) -> None:
-        """Stop this handler's running turns for a server shutdown, within a bounded wait."""
+    async def shutdown(self, within: float) -> None:
+        """Stop this handler's running turns for a server shutdown, waiting at most ``within`` seconds."""
         ...

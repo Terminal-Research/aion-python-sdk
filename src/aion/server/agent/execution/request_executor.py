@@ -251,17 +251,20 @@ class AionAgentRequestExecutor(AgentExecutor):
             )
         handler.admit_continuation(task)
 
-    async def stop_extension_turns(self) -> None:
+    async def stop_extension_turns(self, within: float) -> None:
         """Stop the extension handlers' turns running here, at the start of a server shutdown.
 
         a2a-sdk's drain cancels an execution without asking it to stop, so
         each handler is asked first, all at once, and they are awaited
-        together; a handler bounds its own wait (``ToolkitTaskHandler.shutdown``).
-        A handler that fails is logged and does not keep the others from
-        stopping.
+        together; a handler bounds its own wait by ``within``
+        (``ToolkitTaskHandler.shutdown``). A handler that fails is logged and
+        does not keep the others from stopping.
+
+        Args:
+            within: The window the shutdown budget gives the turns, in seconds.
         """
         results = await asyncio.gather(
-            *(handler.shutdown() for handler in self._extension_handlers.values()), return_exceptions=True
+            *(handler.shutdown(within) for handler in self._extension_handlers.values()), return_exceptions=True
         )
         for handler, result in zip(self._extension_handlers.values(), results):
             if isinstance(result, BaseException):

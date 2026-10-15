@@ -44,8 +44,8 @@ READY_TIMEOUT_SECONDS = 90
 SHUTDOWN_GRACE_SECONDS = 40
 """How long an interrupted `aion serve` has to exit before its group is killed.
 
-Longer than an agent's own shutdown budget (``aion.server.server.AGENT_SHUTDOWN_SECONDS``):
-a scenario about a turn that does not stop in time waits the whole of it.
+Longer than an agent's own shutdown budget (``AION_SHUTDOWN_TIMEOUT``, 25 s by
+default): a scenario about a turn that does not stop in time waits the whole of it.
 """
 
 # What a server process takes from the surrounding shell: where programs are,

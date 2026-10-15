@@ -479,12 +479,20 @@ servers of one agent can share the database. The rules are a2a-sdk's:
 - A server that dies leaves its tasks in the state they had; nothing settles
   them. Any server can cancel such a task.
 - An orderly shutdown stops accepting requests, then asks every toolkit turn
-  it runs to stop (`Toolkit.cancel` with `shutdown`) and waits up to 15 s for
-  them together: a toolkit closes its task `FAILED` with `server_shutdown`,
-  and a stream open on it receives that outcome. uvicorn then waits at most
-  5 s for the connections still open, so a stream on any other task does not
-  hold the shutdown, and the tasks the server was still running are settled
-  as `FAILED` with `aion:settledReason=server_shutdown`.
+  it runs to stop (`Toolkit.cancel` with `shutdown`) and waits for them
+  together: a toolkit closes its task `FAILED` with `server_shutdown`, and a
+  stream open on it receives that outcome. uvicorn then waits for the
+  connections still open, so a stream on any other task does not hold the
+  shutdown, and the tasks the server was still running are settled as
+  `FAILED` with `aion:settledReason=server_shutdown`. `AION_SHUTDOWN_TIMEOUT`
+  (seconds, default 25) bounds all of it: `aion serve` kills an agent that
+  has not stopped by then, and the agent divides it among the steps
+  (`aion.server.shutdown`) - by default 15 s for the toolkits' turns, which
+  `Toolkit.cancel` receives as `within`, 5 s for open connections, 2 s for
+  the settlement and 3 s for the rest. Set it a few seconds below the stop
+  timeout of the platform running the server - Kubernetes
+  `terminationGracePeriodSeconds`, `docker stop -t` - so the server's own
+  shutdown finishes first.
 - The journal is never pruned.
 
 Without a database the store is in memory and the server is a2a-sdk's single

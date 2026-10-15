@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-197 scenarios in 36 files, 447 runs across 2 frameworks: 414 run, 32 skipped, 1 independent of the framework.
+198 scenarios in 36 files, 449 runs across 2 frameworks: 416 run, 32 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -76,7 +76,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `lifecycle` | cancel, concurrency, push notifications, startup | 5 | `make tests-scenarios TAGS=lifecycle` |
 | `contexts` | Context extension: list, read and delete conversations | 5 | `make tests-scenarios TAGS=contexts` |
 | `toolkits` | toolkit plugins: a turn translated into A2A, a refusal before the task exists, a cancel | 14 | `make tests-scenarios TAGS=toolkits` |
-| `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 20 | `make tests-scenarios-persistence` |
+| `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 21 | `make tests-scenarios-persistence` |
 | `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 16 | `make tests-scenarios-distributed` |
 | `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 29 | `make tests-scenarios TAGS=native` |
 
@@ -349,7 +349,7 @@ A toolkit plugin served by a real ``aion serve``: a turn on the wire, artifact v
 | [The server numbers a toolkit's artifact per context, and ``find_artifact`` reads the latest back.](core/test_toolkits.py#L177 "test_the_tasks_of_a_context_write_numbered_versions_of_an_artifact_and_find_the_latest") | `toolkits` | — | `toolkit` | ✓ | ✓ |
 | [The toolkit's refusal is the JSON-RPC error, with its code; no task was opened for it.](core/test_toolkits.py#L221 "test_a_refused_request_is_an_error_with_its_code_and_leaves_no_task") | `toolkits` | — | `toolkit` | ✓ | ✓ |
 | [A malformed script never reaches the toolkit: the code is the descriptor's, or the server's default.](core/test_toolkits.py#L253 "test_a_payload_the_toolkits_model_refuses_is_an_error_with_the_descriptors_code_and_leaves_no_task") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [The toolkit is asked once, with the task's id; the task ends ``CANCELED`` on the stream and in the store.](core/test_toolkits.py#L305 "test_a_cancel_ends_the_turn_canceled_and_tells_the_toolkit") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The toolkit is asked once, with the task's id and the grace period; the task ends ``CANCELED``.](core/test_toolkits.py#L305 "test_a_cancel_ends_the_turn_canceled_and_tells_the_toolkit") | `toolkits` | — | `toolkit` | ✓ | ✓ |
 | [The repeat is an error, the task stays as it was, and the toolkit is not asked again.](core/test_toolkits.py#L321 "test_a_second_cancel_of_the_finished_task_is_refused_and_does_not_reach_the_toolkit") | `toolkits` | — | `toolkit` | ✓ | ✓ |
 | [The cancel waits out the grace period; the stream and a subscription made meanwhile both close ``CANCELED``.](core/test_toolkits.py#L337 "test_a_turn_past_the_grace_period_is_cancelled_without_it_and_a_subscription_is_not_held") | `toolkits` | — | `toolkit` | ✓ | ✓ |
 | [The turn's own outcome stands: the cancel answers with it, and so does the stream.](core/test_toolkits.py#L361 "test_a_cancel_after_the_work_was_delivered_answers_completed") | `toolkits` | — | `toolkit` | ✓ | ✓ |
@@ -525,11 +525,12 @@ What a toolkit's task keeps across a server restart, on a real database.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [A turn that waits for input, a restart, and the answer: the new toolkit instance gets the object back.](persistence/test_toolkits.py#L80 "test_the_object_of_a_waiting_task_survives_a_restart_and_is_handed_back_on_resume") | `persistence` | — | `toolkit` | ✓ | ✓ |
-| [The first task of a context numbers its artifact 0, the first task after a restart 1, and finds the first.](persistence/test_toolkits.py#L116 "test_artifact_versions_continue_across_a_restart") | `persistence` | — | `toolkit` | ✓ | ✓ |
-| [The open stream receives the outcome, and the stored task is the toolkit's, not a settlement.](persistence/test_toolkits.py#L135 "test_a_shutdown_closes_a_running_turn_with_the_toolkits_server_shutdown_result") | `persistence` | — | `toolkit` | ✓ | ✓ |
-| [The grace period runs out; the server settles the task as ``FAILED`` with ``server_shutdown``.](persistence/test_toolkits.py#L156 "test_a_turn_that_does_not_stop_in_time_is_settled_by_the_shutdown") | `persistence` | — | `toolkit` | ✓ | ✓ |
-| [A stream on a turn that would run for minutes ends within the shutdown's bounded wait.](persistence/test_toolkits.py#L174 "test_an_open_stream_does_not_hold_the_shutdown") | `persistence` | `slow` | `toolkit` | ✓ | ✓ |
+| [A turn that waits for input, a restart, and the answer: the new toolkit instance gets the object back.](persistence/test_toolkits.py#L100 "test_the_object_of_a_waiting_task_survives_a_restart_and_is_handed_back_on_resume") | `persistence` | — | `toolkit` | ✓ | ✓ |
+| [The first task of a context numbers its artifact 0, the first task after a restart 1, and finds the first.](persistence/test_toolkits.py#L136 "test_artifact_versions_continue_across_a_restart") | `persistence` | — | `toolkit` | ✓ | ✓ |
+| [The open stream receives the outcome, and the stored task is the toolkit's, not a settlement.](persistence/test_toolkits.py#L155 "test_a_shutdown_closes_a_running_turn_with_the_toolkits_server_shutdown_result") | `persistence` | — | `toolkit` | ✓ | ✓ |
+| [The grace period runs out; the server settles the task as ``FAILED`` with ``server_shutdown``.](persistence/test_toolkits.py#L176 "test_a_turn_that_does_not_stop_in_time_is_settled_by_the_shutdown") | `persistence` | — | `toolkit` | ✓ | ✓ |
+| [A stream on a turn that would run for minutes ends within the shutdown's bounded wait.](persistence/test_toolkits.py#L194 "test_an_open_stream_does_not_hold_the_shutdown") | `persistence` | `slow` | `toolkit` | ✓ | ✓ |
+| [A turn that stops is told the window in ``cancel()``; one that does not is settled once the window is over.](persistence/test_toolkits.py#L216 "test_a_small_shutdown_budget_gives_the_toolkits_a_shorter_window_and_says_so_in_cancel") | `persistence` | — | `toolkit` | ✓ | ✓ |
 
 ## Commands
 

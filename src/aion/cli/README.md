@@ -264,8 +264,11 @@ The AION CLI supports running multiple agents simultaneously:
 - Failed agents don't prevent other agents from starting
 - System monitors all processes and provides graceful shutdown: on SIGINT or
   SIGTERM every agent is asked to stop at once and given its own shutdown
-  budget (`aion.server.server.AGENT_SHUTDOWN_SECONDS`, 25 s) before what is
-  still running is killed
+  budget, `AION_SHUTDOWN_TIMEOUT` (seconds, default 25), before what is
+  still running is killed. Set it a few seconds below the stop timeout of
+  the platform running `aion serve` (Kubernetes
+  `terminationGracePeriodSeconds`, `docker stop -t`); a value that is not a
+  positive number stops `aion serve` at startup
 
 ## Port Assignment Strategy
 

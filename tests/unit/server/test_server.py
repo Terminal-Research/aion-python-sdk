@@ -7,8 +7,6 @@ from unittest.mock import AsyncMock, MagicMock
 import uvicorn
 
 from aion.server import server as server_module
-from aion.server.agent.execution.active_task_registry import SHUTDOWN_DB_TIMEOUT_SECONDS
-from aion.server.agent.execution.extensions.toolkit import CANCEL_GRACE_SECONDS
 
 
 async def test_the_toolkits_turns_stop_once_nothing_new_is_accepted_and_before_open_connections_are_awaited(
@@ -51,13 +49,3 @@ async def test_a_forced_exit_does_not_wait_for_the_toolkits(monkeypatch) -> None
     await server.shutdown()
 
     before_drain.assert_not_awaited()
-
-
-def test_the_agent_shutdown_budget_is_the_sum_of_its_steps() -> None:
-    assert server_module.AGENT_SHUTDOWN_SECONDS == (
-        CANCEL_GRACE_SECONDS
-        + server_module.GRACEFUL_SHUTDOWN_SECONDS
-        + SHUTDOWN_DB_TIMEOUT_SECONDS
-        + server_module.SHUTDOWN_CLEANUP_SECONDS
-    )
-    assert server_module.AGENT_SHUTDOWN_SECONDS < 30, "an agent must stop within a pod's default grace period"

@@ -15,12 +15,10 @@ from a2a.utils.errors import TaskNotCancelableError, TaskNotFoundError
 from aion.core.a2a.enums import TaskSettlementReason
 from aion.server.a2a.constants import TERMINAL_TASK_STATES
 from aion.server.agent.execution.scope import set_task_manager
+from aion.server.shutdown import shutdown_budget
 from aion.server.tasks import AionTaskManager, TerminalTaskPushSender, settled_task
 
 logger = logging.getLogger(__name__)
-
-SHUTDOWN_DB_TIMEOUT_SECONDS = 2.0
-"""How long shutdown may spend settling the tasks it interrupted."""
 
 
 def _require_call_context(call_context: ServerCallContext | None) -> None:
@@ -336,8 +334,11 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         ``SERVER_SHUTDOWN``. See ``aion.server.tasks.settlement`` for why the
         state is terminal rather than resumable. The settlement is an ordinary
         versioned write: a task another instance has moved on in the meantime
-        refuses it, and keeps the state that instance gave it.
+        refuses it, and keeps the state that instance gave it. It takes at
+        most the settlement share of the shutdown budget
+        (``aion.server.shutdown``).
         """
+        settlement_seconds = shutdown_budget().settlement
         with self._lock:
             task_managers = list(self._task_managers.values())
 
@@ -347,7 +348,7 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
             await asyncio.gather(*self._interruption_tasks, return_exceptions=True)
 
         try:
-            async with asyncio.timeout(SHUTDOWN_DB_TIMEOUT_SECONDS):
+            async with asyncio.timeout(settlement_seconds):
                 for task_manager in task_managers:
                     try:
                         await self._settle_interrupted_task(task_manager)
@@ -363,7 +364,7 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
                             exc_info=exc,
                         )
         except TimeoutError:
-            logger.warning("Task shutdown settlement exceeded %.1fs", SHUTDOWN_DB_TIMEOUT_SECONDS)
+            logger.warning("Task shutdown settlement exceeded %.1fs", settlement_seconds)
 
         with self._lock:
             self._task_managers.clear()

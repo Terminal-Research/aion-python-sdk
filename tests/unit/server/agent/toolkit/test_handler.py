@@ -299,7 +299,7 @@ async def test_a_report_turn_says_what_the_server_handed_the_toolkit(runtime_pro
         "kind": "resume",
         "task_id": TASK_ID,
         "task_metadata": {"turns": 1.0},
-        "cancels": [{"task_id": "task-0", "reason": CANCEL}],
+        "cancels": [{"task_id": "task-0", "reason": CANCEL, "within": None}],
     }
 
 
@@ -324,7 +324,7 @@ async def test_cancel_stops_the_running_turn_and_waits_for_it() -> None:
     closed = await toolkit_handler.cancel(request_context(current), event_queue=None)
 
     assert closed is True
-    assert toolkit.cancels == [(TASK_ID, CANCEL)]
+    assert toolkit.cancels == [(TASK_ID, CANCEL, handler_module.CANCEL_GRACE_SECONDS)]
     assert running.done()
     assert final_state(events) == TaskState.TASK_STATE_CANCELED
 
@@ -334,7 +334,7 @@ async def test_cancel_of_a_task_not_running_here_still_tells_the_toolkit() -> No
     toolkit_handler = ToolkitTaskHandler(toolkit, secret_values=lambda: ())
 
     assert await toolkit_handler.cancel(request_context(task()), event_queue=None) is False
-    assert toolkit.cancels == [(TASK_ID, CANCEL)]
+    assert toolkit.cancels == [(TASK_ID, CANCEL, None)]
 
 
 async def test_cancel_gives_up_waiting_after_the_grace_period(monkeypatch, caplog) -> None:
@@ -407,9 +407,9 @@ class _Recording(ScriptedToolkit):
         super().__init__()
         self.calls: list[str] = []
 
-    async def cancel(self, task_id: str, reason: str) -> None:
+    async def cancel(self, task_id: str, reason: str, *, within: float | None = None) -> None:
         self.calls.append(f"cancel {reason}")
-        await super().cancel(task_id, reason)
+        await super().cancel(task_id, reason, within=within)
 
     async def _turn(self, kind, request, context):
         try:
@@ -434,7 +434,7 @@ async def test_a_turn_whose_producer_is_cancelled_asks_the_toolkit_to_stop() -> 
         await runs[0]
 
     assert toolkit.calls == ["stream closed", f"cancel {CANCEL}"]
-    assert toolkit.cancels == [(TASK_ID, CANCEL)]
+    assert toolkit.cancels == [(TASK_ID, CANCEL, None)]
 
 
 async def test_a_turn_closed_at_an_event_asks_the_toolkit_to_stop_before_closing_its_stream() -> None:
@@ -460,7 +460,7 @@ async def test_a_turn_torn_down_after_a_cancel_does_not_ask_again(monkeypatch) -
     with pytest.raises(asyncio.CancelledError):
         await runs[0]
 
-    assert toolkit.cancels == [(TASK_ID, CANCEL)]
+    assert toolkit.cancels == [(TASK_ID, CANCEL, 0.05)]
 
 
 # -- admission ------------------------------------------------------------------
@@ -730,7 +730,7 @@ async def test_a_turn_whose_queue_lost_its_consumer_stops_the_toolkit_once_and_w
             queue.closed = True
 
     assert [event.status.message.parts[0].text for event in events] == ["one"]
-    assert toolkit.cancels == [(TASK_ID, CANCEL)]
+    assert toolkit.cancels == [(TASK_ID, CANCEL, None)]
     assert "no consumer any more" in caplog.text
 
 
@@ -759,9 +759,9 @@ async def test_shutdown_stops_every_running_turn_at_once_and_their_results_close
     toolkit_handler = ToolkitTaskHandler(toolkit, secret_values=lambda: ())
     events, runs = await _running(toolkit_handler, "task-a", "task-b")
 
-    await toolkit_handler.shutdown()
+    await toolkit_handler.shutdown(within=3.0)
 
-    assert sorted(toolkit.cancels) == [("task-a", SHUTDOWN), ("task-b", SHUTDOWN)]
+    assert sorted(toolkit.cancels) == [("task-a", SHUTDOWN, 3.0), ("task-b", SHUTDOWN, 3.0)]
     assert all(run.done() for run in runs)
     for task_id in ("task-a", "task-b"):
         assert final_state(events[task_id]) == TaskState.TASK_STATE_FAILED
@@ -772,8 +772,7 @@ async def test_shutdown_stops_every_running_turn_at_once_and_their_results_close
         }
 
 
-async def test_shutdown_waits_no_longer_than_the_grace_period(monkeypatch, caplog) -> None:
-    monkeypatch.setattr(handler_module, "CANCEL_GRACE_SECONDS", 0.05)
+async def test_shutdown_waits_no_longer_than_its_window(caplog) -> None:
     toolkit = scripted(
         ToolkitMessageEvent(message=Message(parts=[TextPart(text="busy")])), wait_for_cancel=True, hang_on_cancel=True
     )
@@ -781,7 +780,7 @@ async def test_shutdown_waits_no_longer_than_the_grace_period(monkeypatch, caplo
     _events, runs = await _running(toolkit_handler, "task-a")
 
     with caplog.at_level(logging.WARNING):
-        await toolkit_handler.shutdown()
+        await toolkit_handler.shutdown(within=0.05)
 
     assert "did not end within" in caplog.text
     assert not runs[0].done()
@@ -799,9 +798,9 @@ async def test_a_turn_already_asked_to_stop_is_not_asked_again_at_shutdown(monke
     _events, runs = await _running(toolkit_handler, TASK_ID)
 
     await toolkit_handler.cancel(request_context(task()), event_queue=None)
-    await toolkit_handler.shutdown()
+    await toolkit_handler.shutdown(within=0.05)
 
-    assert toolkit.cancels == [(TASK_ID, CANCEL)]
+    assert toolkit.cancels == [(TASK_ID, CANCEL, 0.05)]
     runs[0].cancel()
     with pytest.raises(asyncio.CancelledError):
         await runs[0]
@@ -810,6 +809,6 @@ async def test_a_turn_already_asked_to_stop_is_not_asked_again_at_shutdown(monke
 async def test_shutdown_with_nothing_running_returns_at_once() -> None:
     toolkit = scripted()
 
-    await ToolkitTaskHandler(toolkit, secret_values=lambda: ()).shutdown()
+    await ToolkitTaskHandler(toolkit, secret_values=lambda: ()).shutdown(within=1.0)
 
     assert toolkit.cancels == []

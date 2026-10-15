@@ -317,17 +317,26 @@ class Toolkit(Protocol):
         """Run the next turn of a task that waited for input."""
         ...
 
-    async def cancel(self, task_id: str, reason: str) -> None:
+    async def cancel(self, task_id: str, reason: str, *, within: Optional[float] = None) -> None:
         """Stop the turn running for ``task_id``.
 
         Idempotent and safe to call for a task that is not running. When the
         turn is being served by this process, the toolkit may still yield
-        artifacts and a ``canceled`` result from its stream within the
-        server's grace period; otherwise it only stops its work and reports
-        to its log.
+        artifacts and its result from its stream for ``within`` seconds -
+        ``canceled`` for a caller's cancel, ``failed`` coded
+        ``server_shutdown`` for a shutdown; otherwise it only stops its work
+        and reports to its log. A toolkit that saves work while it stops
+        fits that into ``within``: what the turn yields later is dropped,
+        and at a shutdown the process is killed soon after.
 
         Args:
             task_id: The task to stop.
             reason: :data:`CANCEL` or :data:`SHUTDOWN`.
+            within: How many seconds, from this call, the server waits for
+                the turn's result: the cancel's grace period for a caller's
+                cancel, the toolkits' window of the shutdown budget
+                (``AION_SHUTDOWN_TIMEOUT``) for a shutdown. None when the
+                server waits for none - the turn was torn down, its events
+                have no consumer any more, or no turn of the task runs here.
         """
         ...

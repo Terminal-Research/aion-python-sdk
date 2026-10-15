@@ -65,6 +65,25 @@ class AppSettings(BaseEnvSettings):
         )
     )
 
+    shutdown_timeout: float = Field(
+        default=25.0,
+        gt=0,
+        allow_inf_nan=False,
+        alias="AION_SHUTDOWN_TIMEOUT",
+        description=(
+            "How long, in seconds, an agent process may take to stop. `aion serve` "
+            "gives every agent this long after SIGINT or SIGTERM before it kills "
+            "it, and the agent divides it among the steps of its shutdown: the "
+            "toolkits' running turns are asked to stop and given what is left "
+            "after uvicorn's wait for open connections, the settlement of the "
+            "tasks the shutdown interrupted and the rest of the cleanup (see "
+            "`aion.server.shutdown`). Set it a few seconds below the stop "
+            "timeout of the platform that runs the server - Kubernetes "
+            "`terminationGracePeriodSeconds`, `docker stop -t` - so the server "
+            "finishes its own shutdown before the platform kills it. Default: 25."
+        ),
+    )
+
     require_invocation_auth: bool = Field(
         default=False,
         alias="AION_REQUIRE_INVOCATION_AUTH",
