@@ -39,8 +39,11 @@ class ExtensionActivationError(AionError):
 
     ``code`` is set for a refusal the server gives a stable code to - an
     extension that is unavailable on this deployment is
-    ``extension_unavailable`` (``aion.core.toolkit.codes``) - and travels
-    in the JSON-RPC error's ``data``.
+    ``extension_unavailable`` (``aion.core.toolkit.codes``), a toolkit's
+    payload its models refuse is the toolkit's ``invalid_payload_code`` -
+    and travels in the JSON-RPC error's ``data`` with ``retryable``: the
+    error's own when it sets one, otherwise the fixed answer for a code the
+    server reserves.
     """
 
     def __init__(
@@ -50,11 +53,13 @@ class ExtensionActivationError(AionError):
         missing_requires: frozenset[str] = frozenset(),
         reason: Optional[str] = None,
         code: Optional[str] = None,
+        retryable: Optional[bool] = None,
     ) -> None:
         self.uri = uri
         self.missing_requires = missing_requires
         self.reason = reason
         self.code = code
+        self.retryable = retryable
         if missing_requires:
             message = (
                 f"Extension '{uri}' requires extension(s) that are not active "
@@ -252,10 +257,20 @@ class MessagesCollector:
 
     Subclass and override schema_dispatch() / known_event_types() when the
     standard ClassVar convention does not fit.
+
+    A part tagged with a known schema whose data fails its model raises
+    ExtensionActivationError. With ``invalid_payload_code`` the error carries
+    that code and ``retryable`` false, so the caller gets a coded refusal;
+    a toolkit's extension is registered so, with the descriptor's code.
     """
 
-    def __init__(self, *payload_classes: Type[A2ABaseModel]) -> None:
+    def __init__(
+        self,
+        *payload_classes: Type[A2ABaseModel],
+        invalid_payload_code: Optional[str] = None,
+    ) -> None:
         self._classes = payload_classes
+        self._invalid_payload_code = invalid_payload_code
 
     def collect(self, uri: str, request_context: "RequestContext") -> Optional["Event"]:
         from aion.core.runtime.context.models import Event
@@ -332,6 +347,8 @@ class MessagesCollector:
                         "a message part declared a known event schema but its "
                         f"payload failed validation: {formatted_error}"
                     ),
+                    code=self._invalid_payload_code,
+                    retryable=False if self._invalid_payload_code else None,
                 )
             return None
 

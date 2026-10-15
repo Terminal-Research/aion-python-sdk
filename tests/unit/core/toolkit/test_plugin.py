@@ -9,6 +9,7 @@ from aion.core.toolkit import (
     Artifact,
     TextPart,
     ToolkitContext,
+    ToolkitDescriptor,
     ToolkitRejection,
     codes,
     protocol_compatible,
@@ -48,11 +49,17 @@ def test_every_common_code_has_a_fixed_retry_hint():
         codes.CONTEXT_BUSY,
         codes.EXTENSION_UNAVAILABLE,
         codes.CALLER_NOT_ALLOWED,
+        codes.INVALID_PAYLOAD,
         codes.SERVER_SHUTDOWN,
         codes.INTERNAL_ERROR,
     }
     assert codes.RETRYABLE[codes.CONTEXT_BUSY] is True
     assert codes.RETRYABLE[codes.CALLER_NOT_ALLOWED] is False
+    assert codes.RETRYABLE[codes.INVALID_PAYLOAD] is False
+
+
+def test_a_descriptor_refuses_an_invalid_payload_with_the_common_code_by_default():
+    assert ToolkitDescriptor(uri="u", description="d").invalid_payload_code == codes.INVALID_PAYLOAD
 
 
 async def test_a_context_finds_artifacts_through_its_finder():

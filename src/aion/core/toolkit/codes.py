@@ -18,6 +18,7 @@ __all__ = [
     "CONTEXT_BUSY",
     "EXTENSION_UNAVAILABLE",
     "INTERNAL_ERROR",
+    "INVALID_PAYLOAD",
     "RETRYABLE",
     "SERVER_SHUTDOWN",
 ]
@@ -31,6 +32,13 @@ EXTENSION_UNAVAILABLE = "extension_unavailable"
 CALLER_NOT_ALLOWED = "caller_not_allowed"
 """The caller may not start this toolkit."""
 
+INVALID_PAYLOAD = "invalid_payload"
+"""The request carries a payload of the toolkit that its payload models refuse.
+
+The default of ``ToolkitDescriptor.invalid_payload_code``; a toolkit may name
+a code of its own there instead.
+"""
+
 SERVER_SHUTDOWN = "server_shutdown"
 """The server stopped while the turn was running."""
 
@@ -42,6 +50,7 @@ RETRYABLE = MappingProxyType(
         CONTEXT_BUSY: True,
         EXTENSION_UNAVAILABLE: True,
         CALLER_NOT_ALLOWED: False,
+        INVALID_PAYLOAD: False,
         SERVER_SHUTDOWN: True,
         INTERNAL_ERROR: False,
     }

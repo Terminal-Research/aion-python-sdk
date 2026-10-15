@@ -341,8 +341,9 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         pipeline rejects it here with the extension-authored reason - never
         silently handing the request to the primary flow the client
         explicitly asked to bypass. That refusal carries the code
-        ``extension_unavailable`` in its ``data``, as every refusal with a
-        code does: ``{"code": ..., "retryable": "true" | "false"}``.
+        ``extension_unavailable`` in its ``data``, and a toolkit's payload its
+        models refuse the toolkit's ``invalid_payload_code``, as every refusal
+        with a code does: ``{"code": ..., "retryable": "true" | "false"}``.
 
         Returns:
             The verified extensions, which preprocessing acts on.
@@ -369,7 +370,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
                 declaration, aion_a2a_extension_registry.get_all()
             )
         except ExtensionActivationError as ex:
-            data = refusal_data(ex.code) if ex.code else None
+            data = refusal_data(ex.code, ex.retryable) if ex.code else None
             raise InvalidParamsError(message=str(ex), data=data) from ex
         ResponseServiceParameters(verified.activated_uris).record(call_context)
         return verified

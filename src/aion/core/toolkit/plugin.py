@@ -30,6 +30,7 @@ from typing import Any, Optional, Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
+from . import codes
 from .models import Artifact, ToolkitOutput
 
 __all__ = [
@@ -98,6 +99,11 @@ class ToolkitDescriptor:
             message, each declaring ``SCHEMA_URI`` and ``EVENT_TYPE`` class
             variables. The server validates an incoming payload against them
             before the toolkit sees it.
+        invalid_payload_code: The code a request is refused with when a
+            message part tagged with one of the ``payloads`` schemas fails
+            its model: a JSON-RPC error whose ``data`` carries this code and
+            ``retryable`` false, and no task is created. A toolkit may name
+            a code of its own; ``invalid_payload`` by default.
         enabled_by_default: Whether the extension is active without being
             listed in the agent's ``enabled_extensions``.
         exclusive_per_context: Whether a context may hold only one unfinished
@@ -115,6 +121,7 @@ class ToolkitDescriptor:
     description: str
     requires: tuple[str, ...] = ()
     payloads: tuple[type[BaseModel], ...] = ()
+    invalid_payload_code: str = codes.INVALID_PAYLOAD
     enabled_by_default: bool = False
     exclusive_per_context: bool = False
     invocation_only: bool = False

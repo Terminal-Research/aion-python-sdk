@@ -29,7 +29,10 @@ built. For every entry point:
 2. Its extension is registered in `aion_a2a_extension_registry`: URI,
    description, `requires`, and a `MessagesCollector` over the descriptor's
    payload models, so an incoming payload is validated by the registry's
-   pipeline before the toolkit sees it. It is active only when the
+   pipeline before the toolkit sees it. A message part tagged with one of
+   their schemas whose data the model refuses is refused with the
+   descriptor's `invalid_payload_code` (`invalid_payload` unless the toolkit
+   names its own), not retryable, before a task exists. It is active only when the
    descriptor says `enabled_by_default` or the agent lists it in
    `enabled_extensions`; installing a toolkit does not expose it (see
    [Extension exposure](extension-exposure.md)).
@@ -134,6 +137,7 @@ whose values are strings, so `retryable` is `"true"` or `"false"`
 | `preflight` raised anything else (logged) | `InternalError` | `internal_error` | `"false"` |
 | the caller check | `InvalidParamsError` | `caller_not_allowed` | `"false"` |
 | an unavailable extension (`verify_declared_extensions`) | `InvalidParamsError` | `extension_unavailable` | `"true"` |
+| a payload the toolkit's payload models refuse (`verify_declared_extensions`) | `InvalidParamsError` | the descriptor's `invalid_payload_code`, `invalid_payload` by default | `"false"` |
 | a message into a task whose extension this server does not serve | `InvalidParamsError` | `extension_unavailable` | `"true"` |
 | a second task of an `exclusive_per_context` toolkit in a context, or a message into its running task | `InvalidParamsError` | `context_busy`, with the unfinished task under `taskId` | `"true"` |
 
@@ -328,9 +332,10 @@ not ask again.
 ## Testing
 
 `tests/support/scripted_toolkit` is a toolkit built on the protocol models
-and nothing else. It is installed twice: under its own URI, and under
+and nothing else. It is installed twice: under its own URI, with
+`INVALID_SCRIPT_CODE` as its `invalid_payload_code`, and under
 `EXCLUSIVE_URI` as an `exclusive_per_context` toolkit with a script event of
-its own. A turn yields what its script says: the `Script` it was
+its own and the default code. A turn yields what its script says: the `Script` it was
 built with in a unit test, or the `ScriptPayload` a request carries - an
 event of type `SCRIPT_EVENT_TYPE` with a data part of schema `SCRIPT_SCHEMA`
 whose `outputs` are protocol values in JSON. A script can also refuse or
@@ -352,7 +357,7 @@ nothing installed.
 
 | Suite | Where | What |
 | --- | --- | --- |
-| unit | `tests/unit/server/agent/toolkit/` | discovery, every translation row, the object's patches, masking, limits, lifecycle violations, admission, one task per context, the context's generation, resume, cancel, a run without a consumer, shutdown, artifact versions and `find_artifact` |
+| unit | `tests/unit/server/agent/toolkit/` | discovery, a refused payload's code, every translation row, the object's patches, masking, limits, lifecycle violations, admission, one task per context, the context's generation, resume, cancel, a run without a consumer, shutdown, artifact versions and `find_artifact` |
 | unit | `tests/unit/server/test_server.py`, `tests/unit/server/utils/test_process_manager.py`, `tests/unit/cli/test_serve_handler.py` | the order of a shutdown, the agent's shutdown budget, agents stopped side by side within it |
 | unit | `tests/unit/server/agent/test_request_executor.py`, `tests/unit/server/core/test_resubscribe_contract.py`, `tests/unit/server/core/test_remote_cancel_push.py` | one writer of a cancel's outcome, no extension activated on a cancel, a subscription not held by a cancel, the push of a remote cancel |
 | unit | `tests/unit/server/core/test_preprocessor_ordering.py`, `tests/unit/server/agent/test_request_executor.py` | the route of a continued task: its handler's check, `extension_unavailable` without the handler, the waiting task of the addressed handler named on the message |
@@ -361,7 +366,7 @@ nothing installed.
 | integration | `tests/integration/server/tasks/test_toolkit_admission_postgres.py` | a refused request leaves no row in `tasks`, `task_versions` or `task_events`, and the error carries `code` and `retryable`; one task per context across two servers of the agent; a message into a toolkit's task on a server without the toolkit refused, the task unchanged |
 | integration | `tests/integration/server/tasks/test_context_runs_parity.py` | the generation, the unfinished task of a handler and the caller's newest task of a handler - on the in-memory store and on PostgreSQL |
 | integration | `tests/integration/server/tasks/test_context_artifacts_parity.py` | versions 0, 1, 2 across tasks, the latest found, another holder seeing nothing, shared contexts - on the in-memory store and on PostgreSQL |
-| scenarios | `tests/scenarios/core/test_toolkits.py` (`TAGS=toolkits`) | a turn through a real `aion serve` on the `toolkit` deployment, numbered artifact versions with `find_artifact`, a refusal with no task, a cancel that reaches the toolkit once and ends the task `CANCELED`, `context_busy` until the blocking task ends, a directive beside the agent's waiting question, a toolkit continuing its own waiting task, a cancel past the grace period with a subscription not held by it, a cancel answered `COMPLETED` for delivered work |
+| scenarios | `tests/scenarios/core/test_toolkits.py` (`TAGS=toolkits`) | a turn through a real `aion serve` on the `toolkit` deployment, numbered artifact versions with `find_artifact`, a refusal with no task, a payload the toolkit's model refuses answered with the descriptor's code and no task, a cancel that reaches the toolkit once and ends the task `CANCELED`, `context_busy` until the blocking task ends, a directive beside the agent's waiting question, a toolkit continuing its own waiting task, a cancel past the grace period with a subscription not held by it, a cancel answered `COMPLETED` for delivered work |
 | scenarios | `tests/scenarios/persistence/test_toolkits.py` (`make tests-scenarios-persistence`) | on a real database: the toolkit's object handed back to a resumed turn after a restart, artifact version numbering continuing across it, a shutdown closing a turn with the toolkit's `server_shutdown` on its open stream, a turn that does not stop in time settled, an open stream not holding the shutdown |
 | scenarios | `tests/scenarios/distributed/test_toolkits.py` (`make tests-scenarios-distributed`) | two servers with the toolkits and one without on one database: `context_busy` on the other server, `extension_unavailable` and an unchanged task on the server without the toolkit, a cancel on the other server reaching the toolkit at the owner's next write |
 | scenarios | `tests/scenarios/core/test_daemon.py` (`TAGS=daemon`) | `GetTask` and `CancelTask` with the daemon named in `A2A-Extensions` |

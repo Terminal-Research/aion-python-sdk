@@ -2,7 +2,9 @@
 
 The toolkit is installed twice, under two URIs: as it is, and as an
 ``exclusive_per_context`` toolkit that runs one task per context. Each has
-its own script event, so a request activates exactly one of them.
+its own script event, so a request activates exactly one of them. A script
+its payload model refuses is refused with ``INVALID_SCRIPT_CODE`` by the
+first and with the server's default code by the second.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ __all__ = [
     "EXCLUSIVE_SCRIPT_EVENT_TYPE",
     "EXCLUSIVE_SCRIPT_SCHEMA",
     "EXCLUSIVE_URI",
+    "INVALID_SCRIPT_CODE",
     "SCRIPT_EVENT_TYPE",
     "SCRIPT_SCHEMA",
     "SITE",
@@ -30,6 +33,9 @@ SCRIPT_EVENT_TYPE = "invalid.example.toolkits.scripted.script.1.0.0"
 
 SCRIPT_SCHEMA = f"{URI}#ScriptPayload"
 """The schema of the script's data part."""
+
+INVALID_SCRIPT_CODE = "invalid_script"
+"""The code the toolkit under ``URI`` refuses a script its payload model rejects with."""
 
 ENTRY_POINT = "scripted"
 """The entry point's name in the ``aion.toolkits`` group."""

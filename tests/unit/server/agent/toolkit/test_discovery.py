@@ -15,10 +15,11 @@ import sys
 from types import SimpleNamespace
 
 import pytest
-from a2a.types import Message, Role
+from a2a.types import Message, Part, Role
+from google.protobuf.json_format import ParseDict
 from pydantic import BaseModel
 
-from aion.core.constants.a2a import DAEMON_EXTENSION_URI_V1
+from aion.core.constants.a2a import DAEMON_EXTENSION_URI_V1, EVENT_EXTENSION_URI_V1
 from aion.core.runtime.context.extensions import (
     AionRuntimeExtensions,
     ExtensionActivationError,
@@ -28,8 +29,8 @@ from aion.core.runtime.context.extensions import (
 from aion.core.toolkit import ENTRY_POINT_GROUP, ToolkitDescriptor, codes
 from aion.server.agent.execution.extensions.toolkit import ToolkitTaskHandler, load_toolkit_handlers
 
-from tests.support.scripted_toolkit.contract import ENTRY_POINT, SITE, URI
-from tests.support.scripted_toolkit.toolkit import ScriptedToolkit
+from tests.support.scripted_toolkit.contract import ENTRY_POINT, SCRIPT_EVENT_TYPE, SCRIPT_SCHEMA, SITE, URI
+from tests.support.scripted_toolkit.toolkit import ScriptedToolkit, ScriptPayload
 
 MODULE = __name__
 
@@ -51,6 +52,14 @@ NEWER_PROTOCOL = ScriptedToolkit(
 NO_SCHEMA = ScriptedToolkit(descriptor=ToolkitDescriptor(uri=URI, description="bad", payloads=(_NoSchema,)))
 NOT_CONFIGURED = ScriptedToolkit(configure_error=RuntimeError("SCRIPTED_TOKEN is not set"))
 UNAVAILABLE = ScriptedToolkit(unavailable="the scripted backend is unreachable")
+OWN_PAYLOAD_CODE = ScriptedToolkit(
+    descriptor=ToolkitDescriptor(
+        uri=URI, description="own code", payloads=(ScriptPayload,), invalid_payload_code="invalid_script"
+    )
+)
+EMPTY_PAYLOAD_CODE = ScriptedToolkit(
+    descriptor=ToolkitDescriptor(uri=URI, description="bad", payloads=(ScriptPayload,), invalid_payload_code="")
+)
 CLAIMS_DAEMON = ScriptedToolkit(descriptor=ToolkitDescriptor(uri=DAEMON_EXTENSION_URI_V1, description="x"))
 NOT_A_TOOLKIT = SimpleNamespace(descriptor="not a descriptor")
 
@@ -73,10 +82,23 @@ def declared(uri: str) -> SimpleNamespace:
     )
 
 
-def refusal(registry, uri: str) -> ExtensionActivationError:
+def refusal(registry, uri: str, request: SimpleNamespace | None = None) -> ExtensionActivationError:
     with pytest.raises(ExtensionActivationError) as error:
-        AionRuntimeExtensions.collect(declared(uri), registry.get_all())
+        AionRuntimeExtensions.collect(request or declared(uri), registry.get_all())
     return error.value
+
+
+def declared_with_script(script: dict) -> SimpleNamespace:
+    """A request declaring the scripted toolkit, with ``script`` as the data of its script event."""
+    request = declared(URI)
+    request.message.metadata.get_or_create_struct(EVENT_EXTENSION_URI_V1).update(
+        {"type": SCRIPT_EVENT_TYPE, "source": "test", "id": "event-1"}
+    )
+    part = Part()
+    part.metadata.get_or_create_struct(EVENT_EXTENSION_URI_V1).update({"schema": SCRIPT_SCHEMA})
+    ParseDict(script, part.data.struct_value)
+    request.message.parts.append(part)
+    return request
 
 
 @pytest.fixture(autouse=True)
@@ -156,6 +178,7 @@ async def test_an_object_that_is_not_a_toolkit_is_skipped(registry, caplog) -> N
     [
         ("NEWER_PROTOCOL", "toolkit protocol '2.0'"),
         ("NO_SCHEMA", "does not declare SCHEMA_URI, EVENT_TYPE"),
+        ("EMPTY_PAYLOAD_CODE", "invalid_payload_code '' is not a code"),
         ("NOT_CONFIGURED", "SCRIPTED_TOKEN is not set"),
         ("UNAVAILABLE", "the scripted backend is unreachable"),
     ],
@@ -172,6 +195,23 @@ async def test_a_toolkit_that_cannot_serve_is_refused_with_its_reason(
     assert error.code == codes.EXTENSION_UNAVAILABLE
     assert reason in str(error)
     assert URI not in {item.uri for item in registry.get_advertised()}
+
+
+@pytest.mark.parametrize(
+    ("attribute", "code"),
+    [("FIRST", codes.INVALID_PAYLOAD), ("OWN_PAYLOAD_CODE", "invalid_script")],
+)
+async def test_a_payload_the_toolkits_models_refuse_is_refused_with_the_descriptors_code(
+    registry, attribute, code
+) -> None:
+    await load_toolkit_handlers(agent(URI), entry_points=[entry_point(attribute)])
+
+    error = refusal(registry, URI, declared_with_script({"no_such_field": True}))
+
+    assert (error.code, error.retryable) == (code, False)
+    assert "no_such_field" in str(error)
+    event = AionRuntimeExtensions.collect(declared_with_script({"report": True}), registry.get_all()).get(URI)
+    assert event.payload == ScriptPayload(report=True)
 
 
 async def test_an_unusable_payload_model_is_not_collected(registry) -> None:

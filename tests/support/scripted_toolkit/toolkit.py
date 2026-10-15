@@ -45,6 +45,7 @@ from .contract import (
     EXCLUSIVE_SCRIPT_EVENT_TYPE,
     EXCLUSIVE_SCRIPT_SCHEMA,
     EXCLUSIVE_URI,
+    INVALID_SCRIPT_CODE,
     SCRIPT_EVENT_TYPE,
     SCRIPT_SCHEMA,
     URI,
@@ -297,8 +298,15 @@ class ScriptedToolkit:
         return self._cancelled.setdefault(task_id, asyncio.Event())
 
 
-toolkit = ScriptedToolkit()
-"""The object the ``scripted`` entry point names."""
+toolkit = ScriptedToolkit(
+    descriptor=ToolkitDescriptor(
+        uri=URI,
+        description="Yields what its script says; the SDK's tests drive the toolkit host with it.",
+        payloads=(ScriptPayload,),
+        invalid_payload_code=INVALID_SCRIPT_CODE,
+    )
+)
+"""The object the ``scripted`` entry point names; a script its model refuses is refused with its own code."""
 
 exclusive_toolkit = ScriptedToolkit(
     descriptor=ToolkitDescriptor(

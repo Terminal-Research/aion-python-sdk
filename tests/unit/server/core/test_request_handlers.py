@@ -122,6 +122,30 @@ class TestVerifyDeclaredExtensions:
         result = self._verify(params, self._call_context())
         assert result is None
 
+    def test_a_coded_refusal_carries_its_own_retryable(self):
+        """A collector's refusal with a code of its own travels with the ``retryable`` it gives."""
+        from a2a.types import Message, Role, SendMessageRequest
+        from a2a.utils.errors import InvalidParamsError
+        from aion.core.runtime import ExtensionActivationError, aion_a2a_extension_registry
+        from aion.core.runtime.context.extensions import ExtensionDescriptor
+
+        uri = "https://example.invalid/coded/1.0.0"
+
+        class Refusing:
+            def collect(self, uri, request_context):
+                raise ExtensionActivationError(uri, reason="bad payload", code="invalid_script", retryable=False)
+
+        aion_a2a_extension_registry.register(ExtensionDescriptor(uri=uri, collector=Refusing()))
+        try:
+            message = Message(message_id="m-1", role=Role.ROLE_USER)
+            message.extensions.append(uri)
+
+            with pytest.raises(InvalidParamsError, match="bad payload") as refusal:
+                self._verify(SendMessageRequest(message=message), self._call_context())
+            assert refusal.value.data == {"code": "invalid_script", "retryable": "false"}
+        finally:
+            aion_a2a_extension_registry.reset_to_default()
+
     def test_enabled_extension_marked_unavailable_rejected(self):
         """The silent-fallback guard: an enabled extension marked unavailable
         in the registry (e.g. its toolkit is not installed) must reject the
