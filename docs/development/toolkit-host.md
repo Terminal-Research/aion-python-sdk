@@ -377,7 +377,11 @@ own process and never one waiting for input:
 - a background sweep over the agent's tasks every 60 s, or every half of a
   smaller timeout (`AionRequestHandler.sweep_abandoned_tasks`, started by the
   app's lifespan). A stale task whose turn runs in this process is logged
-  as a WARNING and left: it is alive here, however silent.
+  as a WARNING and left: it is alive here, however silent. One server at a
+  time sweeps an agent: with PostgreSQL a sweep takes an advisory lock
+  (`pg_try_advisory_xact_lock`, keyed by the agent id) without waiting and
+  holds it for the whole sweep, and a server that finds it held skips that
+  sweep (DEBUG log) and tries again at the next interval.
 
 A turn that runs longer than the timeout without yielding a durable event -
 a status, a message, an artifact - is taken for abandoned by the other

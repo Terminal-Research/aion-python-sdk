@@ -3,11 +3,15 @@
 A task is aged by moving its ``updated_at`` back, which is the column the age
 is read from. The settlement is a write at the version the task was read at,
 with its event in ``task_events`` like any write of a2a-sdk's cluster mode;
-a task written in between keeps what that write gave it.
+a task written in between keeps what that write gave it. One server at a time
+sweeps an agent: a sweep takes the agent's advisory lock for its whole length,
+and a sweep that finds the lock held is skipped.
 """
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import uuid
 
 import pytest
@@ -173,3 +177,70 @@ async def test_a_task_running_on_this_server_is_not_swept(versioned) -> None:
 
     assert await settler(versioned).sweep(here) == []
     assert (await versioned.get(task_id, None)).task.status.state == TaskState.TASK_STATE_WORKING
+
+
+async def hold_a_sweep(versioned_store, *, agent_id: str = AGENT_ID):
+    """Start a sweep that stops inside the lock until released.
+
+    Returns:
+        The sweep's task, the event that ends its wait, and the event set once
+        it is inside the lock.
+    """
+    inside, release = asyncio.Event(), asyncio.Event()
+
+    async def blocked(_task_id: str) -> bool:
+        inside.set()
+        await release.wait()
+        return False
+
+    sweep = asyncio.create_task(settler(versioned_store, agent_id=agent_id).sweep(blocked))
+    await asyncio.wait_for(inside.wait(), 10)
+    return sweep, release
+
+
+async def test_a_sweep_is_skipped_while_another_server_sweeps_and_a_later_one_runs(versioned, caplog) -> None:
+    first = await written(versioned, TaskState.TASK_STATE_WORKING)
+    await aged(first, TIMEOUT + 5)
+    sweep, release = await hold_a_sweep(versioned)
+
+    with caplog.at_level(logging.DEBUG, logger="aion.server.tasks.abandoned"):
+        skipped = await settler(versioned).sweep(not_here)
+
+    assert skipped == []
+    assert "this sweep is skipped" in caplog.text
+    assert (await versioned.get(first, None)).task.status.state == TaskState.TASK_STATE_WORKING
+    release.set()
+    assert await sweep == [first]
+
+    second = await written(versioned, TaskState.TASK_STATE_WORKING)
+    await aged(second, TIMEOUT + 5)
+    assert await settler(versioned).sweep(not_here) == [second]
+
+
+async def test_the_sweep_lock_is_released_when_the_sweep_fails(versioned) -> None:
+    task_id = await written(versioned, TaskState.TASK_STATE_WORKING)
+    await aged(task_id, TIMEOUT + 5)
+
+    async def failing(_task_id: str) -> bool:
+        raise RuntimeError("the sweep failed")
+
+    with pytest.raises(RuntimeError, match="the sweep failed"):
+        await settler(versioned).sweep(failing)
+
+    assert await settler(versioned).sweep(not_here) == [task_id]
+
+
+async def test_each_agent_has_its_own_sweep_lock(versioned) -> None:
+    other_agent = "other-agent"
+    mine = await written(versioned, TaskState.TASK_STATE_WORKING)
+    other = await written(versioned, TaskState.TASK_STATE_WORKING, agent_id=other_agent)
+    await aged(mine, TIMEOUT + 5)
+    await aged(other, TIMEOUT + 5)
+    _, other_versioned = stores(other_agent)
+    sweep, release = await hold_a_sweep(versioned)
+
+    try:
+        assert await settler(other_versioned, agent_id=other_agent).sweep(not_here) == [other]
+    finally:
+        release.set()
+        await sweep

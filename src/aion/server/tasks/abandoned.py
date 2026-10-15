@@ -17,6 +17,15 @@ a write refused when the task was written since. A task that moved in between
 execution that later writes over a settled task meets the version conflict
 and stops, as it does after a cancel made on another server.
 
+The background sweep runs on every server of the agent, but one at a time:
+a sweep takes a lock for its whole length (the candidate query and the
+settlements), and a server that finds it held skips that sweep and tries
+again at the next interval. With PostgreSQL the lock is an advisory
+transaction lock per agent, so a server that dies releases it with its
+connection; the in-memory store serves one process and takes none. Settling
+the one task a request names takes no lock: the versioned write alone keeps
+two servers from settling it twice.
+
 Tasks waiting for input (``INPUT_REQUIRED``, ``AUTH_REQUIRED``) are never
 touched: nothing is executing them, by design. Whoever calls
 :meth:`AbandonedTasks.settle` decides whether the task's turn runs in its own
@@ -29,7 +38,8 @@ import asyncio
 import datetime as _dt
 import logging
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, Optional, Protocol
 
@@ -88,6 +98,14 @@ class StaleTask:
 class StaleTasks(Protocol):
     """The store's side of settling abandoned tasks: what is stale, and a write over what was read."""
 
+    def sweep_lock(self) -> AbstractAsyncContextManager[bool]:
+        """Take the right to sweep for the length of the ``async with`` block, without waiting for it.
+
+        Yields:
+            True when this server holds the right until the block ends, also
+            when it ends in an error; False when another server holds it.
+        """
+
     async def candidates(self, timeout: float) -> list[str]:
         """The ids of the agent's running tasks whose last write is older than ``timeout`` seconds."""
 
@@ -103,6 +121,10 @@ class InMemoryStaleTasks:
 
     def __init__(self, store: InMemoryTaskStore) -> None:
         self._store = store
+
+    @asynccontextmanager
+    async def sweep_lock(self) -> AsyncIterator[bool]:
+        yield True
 
     async def candidates(self, timeout: float) -> list[str]:
         cutoff = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(seconds=timeout)
@@ -133,6 +155,11 @@ class PostgresStaleTasks:
     last write. The settlement goes through ``versioned_store`` as a2a-sdk's
     own remote cancel does: at the version read, with its event in the task's
     journal, so a subscriber on any server sees the task end.
+
+    The sweep lock is a transaction-level advisory lock on the agent: the
+    session that took it stays open for the sweep, and closing it rolls the
+    transaction back, which releases the lock whether the sweep ended or
+    failed. A server that dies loses its connection and with it the lock.
     """
 
     def __init__(
@@ -146,6 +173,11 @@ class PostgresStaleTasks:
         self._db_manager = db_manager
         self._versioned_store = versioned_store
         self._event_stream = event_stream
+
+    @asynccontextmanager
+    async def sweep_lock(self) -> AsyncIterator[bool]:
+        async with self._db_manager.get_session() as session:
+            yield await TasksRepository(session).try_lock_abandoned_sweep(self._agent_id)
 
     async def _idle(self, timeout: float, task_id: Optional[uuid.UUID] = None) -> list[uuid.UUID]:
         async with self._db_manager.get_session() as session:
@@ -282,33 +314,42 @@ class AbandonedTasks:
         A task whose turn runs here is alive in this process, however long
         it has been silent: it is logged and left.
 
+        Only one server sweeps the agent at a time. A sweep takes the store's
+        sweep lock without waiting, and holds it until the sweep ends; when
+        another server holds it, this sweep does nothing.
+
         Args:
             running_here: Whether a task's turn runs in this process.
 
         Returns:
-            The ids of the tasks settled.
+            The ids of the tasks settled; empty when another server was
+            sweeping.
         """
         if not self.enabled:
             return []
-        settled: list[str] = []
-        for task_id in await self._stale_tasks.candidates(self.timeout):
-            if await running_here(task_id):
-                logger.warning(
-                    "Task %s has written nothing for over %gs, but its turn runs in this process; "
-                    "it is not settled",
-                    task_id,
-                    self.timeout,
-                )
-                continue
-            try:
-                if await self.settle(task_id) is not None:
-                    settled.append(task_id)
-            except Exception:
-                logger.exception("Could not settle the abandoned task %s", task_id)
-        return settled
+        async with self._stale_tasks.sweep_lock() as acquired:
+            if not acquired:
+                logger.debug("Another server is sweeping the abandoned tasks; this sweep is skipped")
+                return []
+            settled: list[str] = []
+            for task_id in await self._stale_tasks.candidates(self.timeout):
+                if await running_here(task_id):
+                    logger.warning(
+                        "Task %s has written nothing for over %gs, but its turn runs in this process; "
+                        "it is not settled",
+                        task_id,
+                        self.timeout,
+                    )
+                    continue
+                try:
+                    if await self.settle(task_id) is not None:
+                        settled.append(task_id)
+                except Exception:
+                    logger.exception("Could not settle the abandoned task %s", task_id)
+            return settled
 
     async def run(self, running_here: Callable[[str], Awaitable[bool]]) -> None:
-        """Sweep every ``interval`` until cancelled; a failed sweep is logged and the next one runs."""
+        """Sweep every ``interval`` until cancelled; a failed or skipped sweep is followed by the next one."""
         if not self.enabled:
             return
         while True:

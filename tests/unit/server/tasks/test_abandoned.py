@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import datetime as _dt
 import logging
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock
 
 import pytest
@@ -155,6 +156,79 @@ async def test_the_sweep_settles_every_abandoned_task_but_one_running_here(caplo
     assert (await store.get("here")).status.state == TaskState.TASK_STATE_WORKING
     assert (await store.get("fresh")).status.state == TaskState.TASK_STATE_WORKING
     assert "Task here has written nothing" in caplog.text
+
+
+class LockedStaleTasks(InMemoryStaleTasks):
+    """The in-memory store behind a sweep lock that another server may hold; it records what happens inside."""
+
+    def __init__(self, store: InMemoryTaskStore, *, held_elsewhere: bool = False) -> None:
+        super().__init__(store)
+        self.held_elsewhere = held_elsewhere
+        self.log: list[str] = []
+
+    @asynccontextmanager
+    async def sweep_lock(self):
+        self.log.append("lock")
+        try:
+            yield not self.held_elsewhere
+        finally:
+            self.log.append("unlock")
+
+    async def candidates(self, timeout: float) -> list[str]:
+        self.log.append("candidates")
+        return await super().candidates(timeout)
+
+    async def write(self, stale, settled, event) -> bool:
+        self.log.append("write")
+        return await super().write(stale, settled, event)
+
+
+async def test_a_sweep_holds_the_lock_from_the_candidate_query_to_the_last_settlement() -> None:
+    store = InMemoryTaskStore()
+    await stored(store, task("gone-1"), task("gone-2"), idle=TIMEOUT + 1)
+    stale_tasks = LockedStaleTasks(store)
+
+    settled = await AbandonedTasks(stale_tasks, timeout=TIMEOUT).sweep(not_here)
+
+    assert sorted(settled) == ["gone-1", "gone-2"]
+    assert stale_tasks.log == ["lock", "candidates", "write", "write", "unlock"]
+
+
+async def test_a_sweep_does_nothing_while_another_server_holds_the_lock(caplog) -> None:
+    store = InMemoryTaskStore()
+    await stored(store, task("gone"), idle=TIMEOUT + 1)
+    stale_tasks = LockedStaleTasks(store, held_elsewhere=True)
+
+    with caplog.at_level(logging.DEBUG, logger="aion.server.tasks.abandoned"):
+        settled = await AbandonedTasks(stale_tasks, timeout=TIMEOUT).sweep(not_here)
+
+    assert settled == []
+    assert stale_tasks.log == ["lock", "unlock"]
+    assert (await store.get("gone")).status.state == TaskState.TASK_STATE_WORKING
+    assert "this sweep is skipped" in caplog.text
+
+
+async def test_the_lock_is_released_when_the_sweep_fails() -> None:
+    store = InMemoryTaskStore()
+    await stored(store, task("gone"), idle=TIMEOUT + 1)
+    stale_tasks = LockedStaleTasks(store)
+
+    async def failing(_task_id: str) -> bool:
+        raise RuntimeError("the sweep failed")
+
+    with pytest.raises(RuntimeError):
+        await AbandonedTasks(stale_tasks, timeout=TIMEOUT).sweep(failing)
+
+    assert stale_tasks.log == ["lock", "candidates", "unlock"]
+
+
+async def test_settling_one_task_takes_no_lock() -> None:
+    store = InMemoryTaskStore()
+    await stored(store, task("gone"), idle=TIMEOUT + 1)
+    stale_tasks = LockedStaleTasks(store, held_elsewhere=True)
+
+    assert await AbandonedTasks(stale_tasks, timeout=TIMEOUT).settle("gone") is not None
+    assert "lock" not in stale_tasks.log
 
 
 async def test_a_zero_timeout_settles_nothing() -> None:

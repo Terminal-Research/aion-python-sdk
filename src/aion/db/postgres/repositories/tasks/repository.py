@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
 import uuid
 from typing import Iterable, List, NamedTuple, Type, Optional
 
-from sqlalchemy import select, func, asc, desc, delete, and_, or_
+from sqlalchemy import select, func, asc, desc, delete, and_, or_, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
 from a2a.types import Artifact, TaskStatus
 
+from aion.db.postgres.constants import ABANDONED_SWEEP_LOCK_CLASS
 from aion.db.postgres.records import TaskRecord, resolve_status_timestamp
 from aion.db.postgres.repositories.base import BaseRepository
 from aion.db.postgres.models import TaskArtifactModel, TaskRecordModel
@@ -562,6 +564,28 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
             stmt = stmt.where(self.model_class.id == task_id)
         stmt = stmt.order_by(asc(self.model_class.updated_at))
         return list((await self._session.execute(stmt)).scalars().all())
+
+    async def try_lock_abandoned_sweep(self, agent_id: str) -> bool:
+        """Try to take the agent's abandoned-task sweep lock, without waiting.
+
+        The lock is a transaction-level advisory lock: it lives as long as
+        this repository's session holds its transaction, and ends with the
+        commit, the rollback, the session's close or the lost connection. Its
+        keys are a fixed class and a stable hash of ``agent_id``, so each
+        agent of a shared database has its own lock.
+
+        Args:
+            agent_id: The agent whose sweep is locked.
+
+        Returns:
+            True when the lock is held now; False when another session holds it.
+        """
+        agent_key = int.from_bytes(hashlib.sha256(agent_id.encode()).digest()[:4], "big", signed=True)
+        acquired = await self._session.scalar(
+            text("SELECT pg_try_advisory_xact_lock(:lock_class, :agent_key)"),
+            {"lock_class": ABANDONED_SWEEP_LOCK_CLASS, "agent_key": agent_key},
+        )
+        return bool(acquired)
 
     async def find_oldest_tagged_id(
             self,

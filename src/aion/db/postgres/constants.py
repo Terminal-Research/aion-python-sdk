@@ -5,6 +5,12 @@ AION_SCHEMA = "aion"
 MIGRATION_ADVISORY_LOCK_KEY = 7_382_194_611
 """The advisory lock every runner of the SDK migrations, and the permission check before them, takes turns under."""
 
+ABANDONED_SWEEP_LOCK_CLASS = 1_914_276_053
+"""The class (first key) of the advisory lock one server at a time takes to sweep an agent's abandoned tasks.
+
+The second key is derived from the agent id, so each agent of a shared database has its own lock.
+"""
+
 TASKS_TABLE = "tasks"
 TASK_MESSAGES_TABLE = "task_messages"
 TASK_ARTIFACTS_TABLE = "task_artifacts"
