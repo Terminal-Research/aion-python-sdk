@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from contextlib import asynccontextmanager
 import logging
 from typing import TYPE_CHECKING, AsyncGenerator
@@ -32,6 +33,7 @@ class AppLifespan:
         """Initialize the lifespan manager with an app factory."""
         self.app_factory: AppFactory = app_factory
         self._context_deletions: asyncio.Task | None = None
+        self._abandoned_sweep: asyncio.Task | None = None
 
     @asynccontextmanager
     async def executor(self, app: FastAPI) -> AsyncGenerator[None, None]:
@@ -57,6 +59,7 @@ class AppLifespan:
         init_tracing()
 
         self._resume_context_deletions()
+        self._sweep_abandoned_tasks()
 
     def _resume_context_deletions(self):
         """Finish, in the background, the context deletions a previous process left ``deleting``.
@@ -72,8 +75,21 @@ class AppLifespan:
             handler.resume_pending_context_deletions(), name="resume-context-deletions"
         )
 
+    def _sweep_abandoned_tasks(self):
+        """Settle the agent's abandoned tasks in the background for as long as the server runs."""
+        handler = self.app_factory._request_handler
+        if handler is None:
+            return
+        self._abandoned_sweep = asyncio.create_task(
+            handler.sweep_abandoned_tasks(), name="sweep-abandoned-tasks"
+        )
+
     async def shutdown(self):
         """Handle application shutdown events."""
+        if self._abandoned_sweep is not None and not self._abandoned_sweep.done():
+            self._abandoned_sweep.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._abandoned_sweep
         if self._context_deletions is not None and not self._context_deletions.done():
             # Durable: whatever it did not finish, the next start resumes.
             self._context_deletions.cancel()

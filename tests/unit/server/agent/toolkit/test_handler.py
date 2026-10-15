@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import logging
 from types import SimpleNamespace
 from typing import Any
@@ -42,6 +43,7 @@ from aion.server.agent.execution.extensions.toolkit.secret_values import MASK
 from aion.server.agent.execution.extensions.toolkit.translation import CRASH_MESSAGE
 from aion.server.auth import Assurance, AuthenticatedCaller, CallerCredentials, CredentialKind
 from aion.server.tasks.admission import DELETED, ContextHolder, InMemoryContextAdmission
+from aion.server.tasks.abandoned import AbandonedTasks, InMemoryStaleTasks
 from aion.server.tasks.context_runs import InMemoryContextRuns
 from aion.server.tasks.stores.in_memory_task_store import InMemoryTaskStore
 
@@ -661,6 +663,64 @@ def test_a_message_into_a_running_task_of_an_exclusive_toolkit_is_refused(state,
         assert error.value.data == {"code": codes.CONTEXT_BUSY, "retryable": "true", "taskId": "task-7"}
     else:
         toolkit_handler.admit_continuation(running)
+
+
+async def abandoned_runs(*tasks: Task, idle: float) -> tuple[InMemoryContextRuns, InMemoryTaskStore]:
+    """A context reader over a store holding ``tasks``, each last written ``idle`` seconds ago."""
+    store = InMemoryTaskStore()
+    for stored in tasks:
+        await store.save(stored, ServerCallContext())
+        entry = store.tasks[stored.id]
+        store.tasks[stored.id] = entry._replace(updated_at=entry.updated_at - datetime.timedelta(seconds=idle))
+    return InMemoryContextRuns(store, InMemoryContextAdmission()), store
+
+
+@pytest.mark.parametrize(("idle", "admitted"), [(120, True), (30, False)], ids=["abandoned", "alive"])
+async def test_an_abandoned_task_does_not_hold_the_context_of_an_exclusive_toolkit(idle, admitted) -> None:
+    """A blocking task silent past the timeout is settled and the request admitted; one written lately still holds."""
+    context_runs, store = await abandoned_runs(routed_task("running", TaskState.TASK_STATE_WORKING), idle=idle)
+    toolkit = ScriptedToolkit(descriptor=EXCLUSIVE)
+    toolkit_handler = ToolkitTaskHandler(
+        toolkit,
+        context_runs=context_runs,
+        secret_values=lambda: (),
+        abandoned_tasks=AbandonedTasks(InMemoryStaleTasks(store), timeout=60),
+    )
+
+    if admitted:
+        await toolkit_handler.admit(user_message(), extensions_with(), call_context())
+        settled = await store.get("running")
+        assert settled.status.state == TaskState.TASK_STATE_FAILED
+        assert settled.metadata["aion:settledReason"] == "task_abandoned"
+        assert len(toolkit.preflights) == 1
+    else:
+        with pytest.raises(InvalidParamsError) as error:
+            await toolkit_handler.admit(user_message(), extensions_with(), call_context())
+        assert error.value.data["code"] == codes.CONTEXT_BUSY
+        assert (await store.get("running")).status.state == TaskState.TASK_STATE_WORKING
+
+
+async def test_an_abandoned_task_whose_turn_runs_here_still_holds_the_context() -> None:
+    context_runs, store = await abandoned_runs(routed_task(TASK_ID, TaskState.TASK_STATE_WORKING), idle=120)
+    toolkit = ScriptedToolkit(
+        Script(outputs=[ToolkitMessageEvent(message=Message(parts=[TextPart(text="busy")]))], wait_for_cancel=True),
+        descriptor=EXCLUSIVE,
+    )
+    toolkit_handler = ToolkitTaskHandler(
+        toolkit,
+        context_runs=context_runs,
+        secret_values=lambda: (),
+        abandoned_tasks=AbandonedTasks(InMemoryStaleTasks(store), timeout=60),
+    )
+    _events, runs = await _running(toolkit_handler, TASK_ID)
+
+    with pytest.raises(InvalidParamsError) as error:
+        await toolkit_handler.admit(user_message(), extensions_with(), call_context())
+
+    assert error.value.data["taskId"] == TASK_ID
+    assert (await store.get(TASK_ID)).status.state == TaskState.TASK_STATE_WORKING
+    await toolkit_handler.shutdown(within=1.0)
+    await runs[0]
 
 
 def test_a_toolkit_without_the_flag_takes_a_message_into_its_running_task() -> None:

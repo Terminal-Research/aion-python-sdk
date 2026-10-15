@@ -12,7 +12,11 @@ entry point.
 Two servers over the one database stand for two instances of the agent: one
 task per context holds across them, because the check reads the store, and a
 message into a toolkit's task on a server without the toolkit is refused with
-the task left as it was.
+the task left as it was. A task abandoned by the server running it - nothing
+written for longer than the timeout - does not hold its context: the other
+server settles it ``FAILED`` (``task_abandoned``) and admits the request; a
+message into it settles it and is refused like one into a finished task; and
+the server still running the turn stops it at its next write.
 """
 
 from __future__ import annotations
@@ -50,6 +54,7 @@ from aion.server.agent.execution.request_context_builder import AionRequestConte
 from aion.server.auth import JwksKeySource, TokenVerifier
 from aion.server.core.app.handlers import AionJsonRpcDispatcher, AionRequestHandler
 from aion.server.core.middlewares import AionAuthMiddleware, AionContextMiddleware
+from aion.server.tasks.abandoned import AbandonedTasks, PostgresStaleTasks
 from aion.server.tasks.admission import PostgresContextAdmission
 from aion.server.tasks.context_runs import PostgresContextRuns
 from aion.server.tasks.contexts import PostgresContextCatalog
@@ -80,7 +85,7 @@ AGENT_ID = "toolkit-agent"
 class ToolkitServer:
     """A JSON-RPC server over PostgreSQL whose executor hosts one toolkit."""
 
-    def __init__(self, handlers: list) -> None:
+    def __init__(self, handlers: list, abandoned_tasks: Optional[AbandonedTasks] = None) -> None:
         store, handler_store = stores(AGENT_ID)
         executor = AionAgentRequestExecutor(aion_agent=Mock(), extension_handlers=handlers)
         card = Mock()
@@ -98,6 +103,7 @@ class ToolkitServer:
             request_context_builder=AionRequestContextBuilder(
                 task_store=store, auto_discover_interrupted_task=True
             ),
+            abandoned_tasks=abandoned_tasks,
         )
         keys = JwksKeySource(
             "https://api.aion.example/runtime/a2a/verification-keys",
@@ -203,18 +209,26 @@ def registry(isolated_registry):
     discovery._REGISTERED_URIS.update(registered)
 
 
-async def _server(_database, attribute: Optional[str], *, fresh: bool = True) -> ToolkitServer:
+async def _server(
+        _database, attribute: Optional[str], *, fresh: bool = True, stale_timeout: float = 0
+) -> ToolkitServer:
     """A server whose toolkit is found through an entry point naming ``attribute`` of this module.
 
     ``attribute`` None is a server without the toolkit. ``fresh`` empties the
     database first; a second server of the same agent keeps what is there.
+    ``stale_timeout`` is the server's ``AION_STALE_TASK_TIMEOUT``; 0 settles
+    no abandoned task. Nothing sweeps in the background: a test sweeps itself.
     """
     if _database is None:
         pytest.skip("POSTGRES_TEST_URL is not set")
     if fresh:
         await truncate()
+    _, versioned_store = stores(AGENT_ID)
+    abandoned_tasks = AbandonedTasks(
+        PostgresStaleTasks(AGENT_ID, db_manager, versioned_store), timeout=stale_timeout
+    )
     if attribute is None:
-        return ToolkitServer([])
+        return ToolkitServer([], abandoned_tasks)
     entry_point = importlib.metadata.EntryPoint(
         name="scripted", value=f"{__name__}:{attribute}", group=ENTRY_POINT_GROUP
     )
@@ -222,8 +236,9 @@ async def _server(_database, attribute: Optional[str], *, fresh: bool = True) ->
         SimpleNamespace(enabled_extensions=[URI]),
         entry_points=[entry_point],
         context_runs=PostgresContextRuns(AGENT_ID, db_manager),
+        abandoned_tasks=abandoned_tasks,
     )
-    return ToolkitServer(handlers)
+    return ToolkitServer(handlers, abandoned_tasks)
 
 
 @pytest_asyncio.fixture(loop_scope="module")
@@ -406,3 +421,101 @@ async def test_a_message_into_a_toolkits_task_on_a_server_without_the_toolkit_is
     finally:
         await with_toolkit.aclose()
         await without.aclose()
+
+
+STALE_TIMEOUT = 60.0
+"""The servers' ``AION_STALE_TASK_TIMEOUT`` in the scenarios of an abandoned task; tasks are aged past it."""
+
+
+async def age(task_id: str, seconds: float = STALE_TIMEOUT + 5) -> None:
+    """Move the task's last write ``seconds`` back, as if nothing had written it since."""
+    async with db_manager.get_session() as session:
+        await session.execute(
+            text("UPDATE tasks SET updated_at = now() - make_interval(secs => :seconds) WHERE id = :id"),
+            {"seconds": seconds, "id": uuid.UUID(task_id)},
+        )
+        await session.commit()
+
+
+async def settled_reason(task_id: str) -> Optional[str]:
+    async with db_manager.get_session() as session:
+        return (
+            await session.execute(
+                text("SELECT metadata->>'aion:settledReason' FROM tasks WHERE id = :id"), {"id": uuid.UUID(task_id)}
+            )
+        ).scalar()
+
+
+async def test_an_abandoned_task_does_not_hold_the_context_on_the_other_server(_database, registry) -> None:
+    """The server running the turn leaves it to its sweep; the other server settles it and admits the request."""
+    first = await _server(_database, "EXCLUSIVE", stale_timeout=STALE_TIMEOUT)
+    second = await _server(_database, "EXCLUSIVE", fresh=False, stale_timeout=STALE_TIMEOUT)
+    context_id = str(uuid.uuid4())
+    token = SIGNER.session_token()
+    running = asyncio.create_task(first.send(WORKING_UNTIL_CANCELLED, context_id=context_id, token=token))
+    try:
+        blocking = await working_task_in(context_id)
+        await age(blocking)
+
+        assert await first.handler._abandoned_tasks.sweep(first.handler._runs_here) == []
+        served = await second.send(COMPLETES, context_id=context_id, token=token)
+
+        assert served["result"]["task"]["status"]["state"] == "TASK_STATE_COMPLETED"
+        assert (await stored_task(blocking))[0] == "TASK_STATE_FAILED"
+        assert await settled_reason(blocking) == "task_abandoned"
+    finally:
+        running.cancel()
+        await first.aclose()
+        await second.aclose()
+
+
+async def test_a_message_into_an_abandoned_task_settles_it_and_is_refused(_database, registry) -> None:
+    first = await _server(_database, "EXCLUSIVE", stale_timeout=STALE_TIMEOUT)
+    second = await _server(_database, "EXCLUSIVE", fresh=False, stale_timeout=STALE_TIMEOUT)
+    context_id = str(uuid.uuid4())
+    token = SIGNER.session_token()
+    running = asyncio.create_task(first.send(WORKING_UNTIL_CANCELLED, context_id=context_id, token=token))
+    try:
+        blocking = await working_task_in(context_id)
+        await age(blocking)
+
+        response = await second.send(None, task_id=blocking, token=token)
+
+        assert "terminal state" in response["error"]["message"]
+        assert (await stored_task(blocking))[0] == "TASK_STATE_FAILED"
+        assert await settled_reason(blocking) == "task_abandoned"
+    finally:
+        running.cancel()
+        await first.aclose()
+        await second.aclose()
+
+
+async def test_the_server_still_running_an_abandoned_turn_stops_it_at_its_next_write(_database, registry) -> None:
+    """Its write meets the settlement's version: the turn is torn down, the toolkit asked to stop, nothing overwritten."""
+    first = await _server(_database, "EXCLUSIVE", stale_timeout=STALE_TIMEOUT)
+    second = await _server(_database, "EXCLUSIVE", fresh=False, stale_timeout=STALE_TIMEOUT)
+    context_id = str(uuid.uuid4())
+    token = SIGNER.session_token()
+    running = asyncio.create_task(
+        first.send({**WORKING_UNTIL_CANCELLED, "tick_seconds": 0.3}, context_id=context_id, token=token)
+    )
+    try:
+        blocking = await working_task_in(context_id)
+        settled = None
+        for _ in range(20):
+            await age(blocking)
+            settled = await second.handler._abandoned_tasks.settle(blocking)
+            if settled is not None:
+                break
+        assert settled is not None, "a tick landed between every aging and its settlement"
+
+        await asyncio.wait_for(running, 10)
+        await asyncio.sleep(0.6)
+
+        assert (blocking, "cancel", None) in EXCLUSIVE.cancels
+        assert (await stored_task(blocking))[0] == "TASK_STATE_FAILED"
+        assert await settled_reason(blocking) == "task_abandoned"
+    finally:
+        running.cancel()
+        await first.aclose()
+        await second.aclose()

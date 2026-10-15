@@ -105,7 +105,10 @@ Any other message starts a task, and for a toolkit `admit_new_task` runs
   the context between the check and the new task's first write; the window
   is that of two requests arriving together. A task left `WORKING` by a
   server that died holds the context until it is cancelled, which any server
-  can do;
+  can do, or until it is abandoned - nothing written for longer than
+  `AION_STALE_TASK_TIMEOUT`: then the check settles it (see
+  [Abandoned tasks](#abandoned-tasks)) and admits the request, unless the
+  task's turn runs in this process;
 - **`preflight`** - with the `ToolkitRequest` (message id, the message's
   text parts joined by newlines, the payload the registry collected with the
   id and source of its event) and a `PreflightContext` (context id, the
@@ -342,6 +345,38 @@ cancel of a task whose turn does not run here.
   stop (`CANCEL`), logs it, and ends without writing. The task keeps what
   a2a-sdk wrote for it: `FAILED`, or the active state, which a cancel ends.
 
+### Abandoned tasks
+
+A task in `SUBMITTED` or `WORKING` with no durable write for longer than
+`AION_STALE_TASK_TIMEOUT` (seconds, 3600 by default, `0` off) is taken for
+abandoned: its server died or hung. `aion.server.tasks.abandoned` settles it
+`FAILED` with `aion:settledReason=task_abandoned`; a task routed to a toolkit
+also gets, as its status message, the error a failed turn closes with (`code`
+`task_abandoned`, `retryable` true, schema `{uri}#ToolkitError`), so its
+client reads both alike. There is no lease and no heartbeat, only the time of
+the task's last write, read on the database's clock. The write is the one
+a2a-sdk's remote cancel makes - at the version read, with its journal event,
+then a push notification - so a task written in the meantime keeps its state,
+and a turn still alive on some server meets the version conflict at its next
+write and is torn down: `Toolkit.cancel(task_id, "cancel", within=None)`.
+
+Three places settle, on every server, never a task whose turn runs in their
+own process and never one waiting for input:
+
+- the one task per context check of an `exclusive_per_context` toolkit, for
+  the task that holds the context; the request is then admitted;
+- a message that names an abandoned task (`AionRequestHandler._settle_if_abandoned`);
+  the message is then refused as one into a task that has an outcome;
+- a background sweep over the agent's tasks every 60 s, or every half of a
+  smaller timeout (`AionRequestHandler.sweep_abandoned_tasks`, started by the
+  app's lifespan). A stale task whose turn runs in this process is logged
+  as a WARNING and left: it is alive here, however silent.
+
+A turn that runs longer than the timeout without yielding a durable event -
+a status, a message, an artifact - is taken for abandoned by the other
+servers of the agent; a toolkit writes a status now and then during long
+work.
+
 ## Testing
 
 `tests/support/scripted_toolkit` is a toolkit built on the protocol models
@@ -377,12 +412,15 @@ nothing installed.
 | unit | `tests/unit/server/core/test_preprocessor_ordering.py`, `tests/unit/server/agent/test_request_executor.py` | the route of a continued task: its handler's check, `extension_unavailable` without the handler, the waiting task of the addressed handler named on the message |
 | unit | `tests/unit/server/tasks/test_context_artifacts.py` | the in-memory reader of an artifact's versions: order, holder scoping, shared contexts |
 | unit | `tests/unit/server/tasks/test_task_manager.py` | the status line a details update keeps |
-| integration | `tests/integration/server/tasks/test_toolkit_admission_postgres.py` | a refused request leaves no row in `tasks`, `task_versions` or `task_events`, and the error carries `code` and `retryable`; one task per context across two servers of the agent; a message into a toolkit's task on a server without the toolkit refused, the task unchanged |
+| unit | `tests/unit/server/tasks/test_abandoned.py`, `tests/unit/server/agent/toolkit/test_handler.py`, `tests/unit/server/core/test_request_handlers.py` | what is abandoned and what its settlement writes over the in-memory store, a task written meanwhile left, the sweep and a task running here, `AION_STALE_TASK_TIMEOUT`; an abandoned task not holding an exclusive toolkit's context; a message into an abandoned task |
+| integration | `tests/integration/server/tasks/test_toolkit_admission_postgres.py` | a refused request leaves no row in `tasks`, `task_versions` or `task_events`, and the error carries `code` and `retryable`; one task per context across two servers of the agent; a message into a toolkit's task on a server without the toolkit refused, the task unchanged; an abandoned task settled by the other server's admission, a message into it refused, the server still running it stopping at its next write |
+| integration | `tests/integration/server/tasks/test_abandoned_tasks_postgres.py` | the settlement on PostgreSQL: a versioned write with its journal entry, a toolkit's error, tasks written lately, waiting for input or finished left, another agent's task not swept, the version conflict |
 | integration | `tests/integration/server/tasks/test_context_runs_parity.py` | the generation, the unfinished task of a handler and the caller's newest task of a handler - on the in-memory store and on PostgreSQL |
 | integration | `tests/integration/server/tasks/test_context_artifacts_parity.py` | versions 0, 1, 2 across tasks, the latest found, another holder seeing nothing, shared contexts - on the in-memory store and on PostgreSQL |
 | scenarios | `tests/scenarios/core/test_toolkits.py` (`TAGS=toolkits`) | a turn through a real `aion serve` on the `toolkit` deployment, numbered artifact versions with `find_artifact`, a refusal with no task, a payload the toolkit's model refuses answered with the descriptor's code and no task, a cancel that reaches the toolkit once and ends the task `CANCELED`, `context_busy` until the blocking task ends, a directive beside the agent's waiting question, a toolkit continuing its own waiting task, a cancel past the grace period with a subscription not held by it, a cancel answered `COMPLETED` for delivered work |
 | scenarios | `tests/scenarios/persistence/test_toolkits.py` (`make tests-scenarios-persistence`) | on a real database: the toolkit's object handed back to a resumed turn after a restart, artifact version numbering continuing across it, a shutdown closing a turn with the toolkit's `server_shutdown` on its open stream, a turn that does not stop in time settled, an open stream not holding the shutdown, a small `AION_SHUTDOWN_TIMEOUT` giving the toolkit a shorter `within` |
 | scenarios | `tests/scenarios/distributed/test_toolkits.py` (`make tests-scenarios-distributed`) | two servers with the toolkits and one without on one database: `context_busy` on the other server, `extension_unavailable` and an unchanged task on the server without the toolkit, a cancel on the other server reaching the toolkit at the owner's next write |
+| scenarios | `tests/scenarios/distributed/test_abandoned_tasks.py` (`make tests-scenarios-distributed`) | two servers with a small `AION_STALE_TASK_TIMEOUT`: a hung turn settled by the other server's sweep and a waiting task left, an abandoned task freeing its context and refusing a message, a server killed mid-turn whose toolkit and framework tasks the survivor settles |
 | scenarios | `tests/scenarios/core/test_daemon.py` (`TAGS=daemon`) | `GetTask` and `CancelTask` with the daemon named in `A2A-Extensions` |
 
 A real toolkit is checked against the SDK by its own CI; see

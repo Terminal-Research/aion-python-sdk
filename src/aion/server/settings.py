@@ -84,6 +84,26 @@ class AppSettings(BaseEnvSettings):
         ),
     )
 
+    stale_task_timeout: float = Field(
+        default=3600.0,
+        ge=0,
+        allow_inf_nan=False,
+        alias="AION_STALE_TASK_TIMEOUT",
+        description=(
+            "How long, in seconds, a task may stay SUBMITTED or WORKING without a "
+            "durable write before it counts as abandoned - the server running it "
+            "died or hung. Every server of the agent settles such a task FAILED "
+            "with `aion:settledReason=task_abandoned` (a toolkit's task also with "
+            "the error code `task_abandoned`): a background sweep looks for them "
+            "every minute, or more often for a small timeout, and a request the "
+            "task stands in the way of settles it first. A task whose turn runs in "
+            "the server's own process is never settled. Tasks waiting for input "
+            "are never touched. Keep it above the longest a turn of the agent can "
+            "go without writing a status or an artifact. 0 turns it off. "
+            "Default: 3600."
+        ),
+    )
+
     require_invocation_auth: bool = Field(
         default=False,
         alias="AION_REQUIRE_INVOCATION_AUTH",

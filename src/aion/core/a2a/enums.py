@@ -72,10 +72,12 @@ class TaskSettlementReason(str, Enum):
     status message is promoted into task history on the following turn, which
     would show a resumed agent words it never produced.
 
-    A state is only ever supplied where the execution is known to be gone. A
-    stream that merely ends — because the client disconnected or the turn
-    produced no outcome — is left alone: the execution outlives the subscriber
-    and records the truth itself.
+    A state is only ever supplied where the execution is known to be gone: the
+    process that ran it stopped it, or it has written nothing for longer than
+    a running task can (`AION_STALE_TASK_TIMEOUT`). A stream that merely ends
+    — because the client disconnected or the turn produced no outcome — is
+    left alone: the execution outlives the subscriber and records the truth
+    itself.
 
     A reason settles the task terminally — never with a resumable state.
     A non-terminal state would claim the opposite of what happened: the
@@ -95,6 +97,16 @@ class TaskSettlementReason(str, Enum):
     Shutdown cancels the execution, so nothing is left to record an outcome and
     the task would otherwise stay active in the store forever. The shutting-down
     process settles the task itself, as its last write to it.
+    """
+
+    TASK_ABANDONED = "task_abandoned"
+    """The task ran without a durable write for longer than `AION_STALE_TASK_TIMEOUT`.
+
+    The server executing it died or hung: a running execution writes every
+    status and artifact it produces, and one that is gone writes nothing more.
+    Any server of the agent settles such a task - its background sweep, or a
+    request the task stands in the way of - unless the task's turn runs in
+    that server's own process.
     """
 
     @property
@@ -121,6 +133,10 @@ _SETTLEMENT_DESCRIPTIONS = {
     TaskSettlementReason.SERVER_SHUTDOWN: (
         "The server was shut down while this task was still running, so the "
         "task was stopped without finishing."
+    ),
+    TaskSettlementReason.TASK_ABANDONED: (
+        "The task stopped making progress - the server running it stopped or "
+        "stopped responding - so it was ended without finishing."
     ),
 }
 

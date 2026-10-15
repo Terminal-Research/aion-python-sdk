@@ -54,8 +54,9 @@ import uuid
 from aion.server.agent.execution import AionActiveTaskRegistry
 from aion.server.agent.execution.extensions import EXTENSION_ROUTE_STATE_KEY
 from aion.server.agent.execution.extensions.toolkit import refusal_data
-from aion.server.a2a.constants import TERMINAL_TASK_STATES
+from aion.server.a2a.constants import ACTIVE_TASK_STATES, TERMINAL_TASK_STATES
 from aion.server.auth import has_individual_access
+from aion.server.tasks.abandoned import AbandonedTasks
 from aion.server.tasks.admission import ContextAdmission, InMemoryContextAdmission, holder_of
 from aion.server.tasks.stores import BaseTaskStore
 from aion.server.contexts import ContextService, ContextStateDeleter
@@ -100,6 +101,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             preprocessors: list[A2ARequestPreprocessor] | None = None,
             admission: ContextAdmission | None = None,
             context_catalog: ContextCatalog | None = None,
+            abandoned_tasks: AbandonedTasks | None = None,
             **kwargs,
     ) -> None:
         """Build the handler over a2a-sdk's own, with Aion's registry.
@@ -114,6 +116,11 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         which is right for a handler over the in-memory store. The catalog
         must cover the same reservations admission writes, so a handler given
         only one of them is refused.
+
+        ``abandoned_tasks`` settles a running task nothing has written for
+        longer than ``AION_STALE_TASK_TIMEOUT``: one a message names
+        (``_setup_active_task``) and, in the background, every one of the
+        agent's (:meth:`sweep_abandoned_tasks`); omitted, none is settled.
         """
         super().__init__(*args, **kwargs)
         self._active_task_registry = AionActiveTaskRegistry(
@@ -123,6 +130,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             event_stream=self._event_stream,
         )
         self._tasks = _unversioned(self._versioned_store)
+        self._abandoned_tasks = abandoned_tasks
         # The cancels this server is handling, each task's own; see
         # on_subscribe_to_task.
         self._cancels: dict[str, list[asyncio.Event]] = {}
@@ -161,8 +169,14 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         a task, and the preprocessor works from the verified projection
         instead of re-reading the raw request. Unary and streaming sends, and
         every extension handler behind them, come through here.
+
+        A message into an abandoned task settles the task first
+        (``_settle_if_abandoned``), and is then refused like any message into
+        a task that has an outcome.
         """
         named_task = await self._admit(params, call_context)
+        if named_task is not None:
+            named_task = await self._settle_if_abandoned(named_task)
         extensions = self.verify_declared_extensions(params, call_context)
         await self._admit_route(params, call_context, extensions, named_task)
         context = PreprocessingContext(
@@ -214,6 +228,38 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             logger.info("Refused a message into a context its caller may not use")
             raise TaskNotFoundError(f'Task {message.task_id} not found' if message.task_id else 'Task not found')
         return task
+
+    async def _settle_if_abandoned(self, task: Task) -> Task:
+        """The task a message names, settled ``FAILED`` (``task_abandoned``) when it is abandoned.
+
+        A running task whose turn runs on this server is alive and stays as
+        it is; anywhere else, a task nothing has written for longer than
+        ``AION_STALE_TASK_TIMEOUT`` is settled before the message reaches
+        it, so a2a-sdk refuses the message as one into a finished task.
+        """
+        if (
+            self._abandoned_tasks is None
+            or task.status.state not in ACTIVE_TASK_STATES
+            or await self._runs_here(task.id)
+        ):
+            return task
+        settled = await self._abandoned_tasks.settle(task.id)
+        return settled if settled is not None else task
+
+    async def _runs_here(self, task_id: str) -> bool:
+        """Whether this server holds a live execution of the task."""
+        return await self._active_task_registry.get(task_id) is not None
+
+    async def sweep_abandoned_tasks(self) -> None:
+        """Settle the agent's abandoned tasks in the background, every sweep interval, until cancelled.
+
+        Every server of the agent sweeps the agent's tasks, so a client sees
+        an abandoned task end without sending anything. A task whose turn
+        runs on this server is logged and left (``AbandonedTasks.sweep``).
+        """
+        if self._abandoned_tasks is None:
+            return
+        await self._abandoned_tasks.run(self._runs_here)
 
     async def _admit_route(
             self,

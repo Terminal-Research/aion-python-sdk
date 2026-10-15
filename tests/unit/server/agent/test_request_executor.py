@@ -898,12 +898,16 @@ class TestCreateFactory:
 
         context_artifacts = MagicMock()
         context_runs = MagicMock()
+        abandoned_tasks = MagicMock()
         with patch(
             "aion.server.agent.execution.request_executor.load_toolkit_handlers",
             new=AsyncMock(return_value=[handler]),
         ) as load:
             executor = await AionAgentRequestExecutor.create(
-                aion_agent=agent, context_artifacts=context_artifacts, context_runs=context_runs
+                aion_agent=agent,
+                context_artifacts=context_artifacts,
+                context_runs=context_runs,
+                abandoned_tasks=abandoned_tasks,
             )
 
         load.assert_awaited_once_with(
@@ -911,6 +915,7 @@ class TestCreateFactory:
             context_artifacts=context_artifacts,
             context_runs=context_runs,
             owner_resolver=agent.owner_resolver,
+            abandoned_tasks=abandoned_tasks,
         )
         assert executor._extension_handlers == {handler.uri: handler}
 

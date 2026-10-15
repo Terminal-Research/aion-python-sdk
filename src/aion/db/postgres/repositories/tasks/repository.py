@@ -531,6 +531,38 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
         stmt = stmt.order_by(desc(self.model_class.created_at), desc(self.model_class.id)).limit(1)
         return await self._execute_and_convert(stmt)
 
+    async def find_idle_ids(
+            self,
+            agent_id: str,
+            states: Iterable[str],
+            idle_seconds: float,
+            task_id: Optional[uuid.UUID] = None,
+    ) -> list[uuid.UUID]:
+        """The ids of the agent's tasks in ``states`` whose last write is older than ``idle_seconds``.
+
+        Every owner's tasks are searched. The age is measured on the
+        database's clock, which stamped ``updated_at``, so the servers' own
+        clocks do not matter.
+
+        Args:
+            agent_id: Restrict to this agent's tasks.
+            states: States, by their protobuf name, a task must be in.
+            idle_seconds: How long ago the last write must be.
+            task_id: Check this one task only.
+
+        Returns:
+            The matching ids, the longest idle first.
+        """
+        stmt = select(self.model_class.id).where(
+            self.model_class.agent_id == agent_id,
+            self.model_class.state.in_(list(states)),
+            self.model_class.updated_at < func.now() - _dt.timedelta(seconds=idle_seconds),
+        )
+        if task_id is not None:
+            stmt = stmt.where(self.model_class.id == task_id)
+        stmt = stmt.order_by(asc(self.model_class.updated_at))
+        return list((await self._session.execute(stmt)).scalars().all())
+
     async def find_oldest_tagged_id(
             self,
             agent_id: str,

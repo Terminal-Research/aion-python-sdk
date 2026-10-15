@@ -59,8 +59,10 @@ contracts; reconcile this file with them when behavior changes.
     the test and the mapping table;
   - check whether upstream now offers what cluster mode lacks here - a wait
     hook in `DatabaseTaskEventStream`, remote cancellation that runs
-    `AgentExecutor.cancel`, detection of a dead instance, journal cleanup -
-    and adopt it rather than writing an Aion version;
+    `AgentExecutor.cancel`, detection of a dead instance (Aion settles a
+    running task idle past `AION_STALE_TASK_TIMEOUT`,
+    `aion.server.tasks.abandoned`), journal cleanup - and adopt it rather
+    than writing an Aion version;
   - when `tests/unit/db/test_a2a_migration_registry.py` fails, a2a-sdk has a
     new revision of its own migrations: write the SDK revision that makes the
     same change, or mark it `not applied` with the reason, and add its rows

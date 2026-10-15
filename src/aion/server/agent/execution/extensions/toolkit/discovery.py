@@ -46,6 +46,7 @@ from aion.core.toolkit import (
     ToolkitDescriptor,
     protocol_compatible,
 )
+from aion.server.tasks.abandoned import AbandonedTasks
 from aion.server.tasks.context_artifacts import ContextArtifacts
 from aion.server.tasks.context_runs import ContextRuns
 
@@ -66,6 +67,7 @@ async def load_toolkit_handlers(
         context_artifacts: Optional[ContextArtifacts] = None,
         context_runs: Optional[ContextRuns] = None,
         owner_resolver: OwnerResolver = resolve_user_scope,
+        abandoned_tasks: Optional[AbandonedTasks] = None,
 ) -> list[ToolkitTaskHandler]:
     """Load every installed toolkit and return a handler for each one that can serve this agent.
 
@@ -82,6 +84,8 @@ async def load_toolkit_handlers(
             with; see ``ToolkitTaskHandler``.
         owner_resolver: The agent's owner resolver, which every handler reads
             the caller's context holder with.
+        abandoned_tasks: What every handler settles an abandoned task with
+            that would hold a context of an ``exclusive_per_context`` toolkit.
 
     Returns:
         One handler per toolkit that is enabled for the agent, configured and
@@ -94,7 +98,14 @@ async def load_toolkit_handlers(
     claimed: set[str] = set()
     for entry_point in entry_points:
         handler = await _load(
-            entry_point, agent_config, enabled, claimed, context_artifacts, context_runs, owner_resolver
+            entry_point,
+            agent_config,
+            enabled,
+            claimed,
+            context_artifacts,
+            context_runs,
+            owner_resolver,
+            abandoned_tasks,
         )
         if handler is not None:
             handlers.append(handler)
@@ -109,6 +120,7 @@ async def _load(
         context_artifacts: Optional[ContextArtifacts],
         context_runs: Optional[ContextRuns],
         owner_resolver: OwnerResolver,
+        abandoned_tasks: Optional[AbandonedTasks],
 ) -> Optional[ToolkitTaskHandler]:
     """One entry point: its handler, or None with the reason logged."""
     name = entry_point.name
@@ -164,6 +176,7 @@ async def _load(
         context_artifacts=context_artifacts,
         context_runs=context_runs,
         owner_resolver=owner_resolver,
+        abandoned_tasks=abandoned_tasks,
     )
 
 

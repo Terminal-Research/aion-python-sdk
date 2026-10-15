@@ -109,6 +109,7 @@ from aion.core.toolkit import (
     ToolkitStatusEvent,
     codes,
 )
+from aion.server.a2a.toolkit_errors import ERROR_SCHEMA_NAME, error_parts, error_schema
 from aion.server.a2a.utils import mark_status_event_ephemeral
 
 from .secret_values import SecretMasker
@@ -143,9 +144,6 @@ TRUNCATION_MARK = "\n[truncated]"
 DEFAULT_EVENT_TYPE = "to.aion.toolkit.message"
 """The Event type of a message whose toolkit named none."""
 
-ERROR_SCHEMA_NAME = "ToolkitError"
-"""Name of the error payload's shape, after the toolkit's URI: ``{uri}#ToolkitError``."""
-
 CRASH_MESSAGE = (
     "The toolkit stopped on an unexpected error. The server log has the details under task {task_id}."
 )
@@ -159,11 +157,6 @@ _TASK_STATES = {
     ToolkitState.INPUT_REQUIRED: TaskState.TASK_STATE_INPUT_REQUIRED,
     ToolkitState.AUTH_REQUIRED: TaskState.TASK_STATE_AUTH_REQUIRED,
 }
-
-
-def error_schema(uri: str) -> str:
-    """The schema of the error payload a failed turn of the toolkit at ``uri`` closes with."""
-    return f"{uri}#{ERROR_SCHEMA_NAME}"
 
 
 class ToolkitProtocolError(AionError):
@@ -464,18 +457,7 @@ class TurnTranslator:
         return None
 
     def _error_parts(self, code: str, text: str, retryable: bool) -> list[A2APart]:
-        text = self._text(text, MAX_MESSAGE_TEXT_LENGTH)
-        data = struct_pb2.Value()
-        json_format.ParseDict({"code": code, "message": text, "retryable": retryable}, data)
-        schema = EventPartMetadataV1(schema=error_schema(self._uri)).model_dump(by_alias=True)
-        return [
-            A2APart(text=text),
-            A2APart(
-                data=data,
-                media_type="application/json",
-                metadata=_struct({EVENT_EXTENSION_URI_V1: schema}),
-            ),
-        ]
+        return error_parts(self._uri, code, self._text(text, MAX_MESSAGE_TEXT_LENGTH), retryable)
 
     # -- the toolkit's object -----------------------------------------------
 

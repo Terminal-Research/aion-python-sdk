@@ -476,8 +476,21 @@ servers of one agent can share the database. The rules are a2a-sdk's:
   push notification and answers at once; the server executing the task stops
   it at its next write, without calling `AgentExecutor.cancel` there. A
   toolkit's turn stopped that way calls `Toolkit.cancel`.
-- A server that dies leaves its tasks in the state they had; nothing settles
-  them. Any server can cancel such a task.
+- A server that dies leaves its tasks in the state they had. Any server can
+  cancel such a task, and any server settles it once it has gone without a
+  durable write for longer than `AION_STALE_TASK_TIMEOUT` (seconds, default
+  3600, `0` turns it off): `FAILED` with
+  `aion:settledReason=task_abandoned`, and for a toolkit's task the error
+  `task_abandoned` (retryable) as a toolkit's failure carries it. Every
+  server sweeps the agent's tasks every minute (more often for a small
+  timeout), and a message into such a task, or a request into a context such
+  a task holds for an exclusive toolkit, settles it first. A server never
+  settles a task whose turn runs in its own process - it logs a WARNING for
+  one its sweep finds - and never a task waiting for input. The write is
+  versioned: a task written in the meantime keeps its state, and an
+  execution still alive somewhere stops at its next write, as after a remote
+  cancel. Keep the timeout above the longest a turn of the agent goes
+  without writing a status or an artifact.
 - An orderly shutdown stops accepting requests, then asks every toolkit turn
   it runs to stop (`Toolkit.cancel` with `shutdown`) and waits for them
   together: a toolkit closes its task `FAILED` with `server_shutdown`, and a

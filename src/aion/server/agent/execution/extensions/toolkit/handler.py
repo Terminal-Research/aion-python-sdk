@@ -6,10 +6,11 @@ protocol leaves to the server:
 
 * **admission** - before a task exists, the caller check of an
   ``invocation_only`` toolkit, the one task per context of an
-  ``exclusive_per_context`` toolkit and the toolkit's ``preflight``; before a
-  message continues a task, the same one task per context; a refusal is a
-  JSON-RPC error whose ``data`` carries ``code`` and ``retryable``, and no
-  task is created or changed;
+  ``exclusive_per_context`` toolkit - an abandoned task does not hold the
+  context, it is settled - and the toolkit's ``preflight``; before a message
+  continues a task, the same one task per context; a refusal is a JSON-RPC
+  error whose ``data`` carries ``code`` and ``retryable``, and no task is
+  created or changed;
 * **turns** - ``start`` or ``resume`` with a ``ToolkitContext``, every value
   they yield translated by a ``TurnTranslator``; the turn is events, then
   exactly one result, and a turn that breaks that, yields something else or
@@ -69,6 +70,7 @@ from aion.core.toolkit import (
 from aion.core.utils.protobuf import proto_to_dict
 from aion.server.a2a.constants import ACTIVE_TASK_STATES, TERMINAL_TASK_STATES
 from aion.server.auth import CredentialKind, verified_caller
+from aion.server.tasks.abandoned import AbandonedTasks
 from aion.server.tasks.admission import holder_of
 from aion.server.tasks.context_artifacts import ContextArtifacts
 from aion.server.tasks.context_runs import ContextRuns
@@ -195,6 +197,10 @@ class ToolkitTaskHandler:
             gives the context holder the caller was admitted as.
         secret_values: Returns the deployment's secret values; read at the
             start of every turn.
+        abandoned_tasks: Settles an abandoned task. With it, an abandoned
+            task of an ``exclusive_per_context`` toolkit no longer holds its
+            context: the next request settles it and is admitted. Without it
+            such a task holds the context until it is cancelled.
     """
 
     def __init__(
@@ -205,12 +211,14 @@ class ToolkitTaskHandler:
             context_runs: Optional[ContextRuns] = None,
             owner_resolver: OwnerResolver = resolve_user_scope,
             secret_values: Callable[[], Iterable[str]] = deployment_secret_values,
+            abandoned_tasks: Optional[AbandonedTasks] = None,
     ) -> None:
         self.toolkit = toolkit
         self.descriptor = toolkit.descriptor
         self.uri = self.descriptor.uri
         self._context_artifacts = context_artifacts
         self._context_runs = context_runs
+        self._abandoned_tasks = abandoned_tasks
         self._owner_resolver = owner_resolver
         self._secret_values = secret_values
         # The turn each task is running in this process.
@@ -299,15 +307,31 @@ class ToolkitTaskHandler:
         store, so it holds across the servers of the agent; nothing locks the
         context between this read and the new task's first write.
 
+        An abandoned unfinished task - running, with no write for longer
+        than ``AION_STALE_TASK_TIMEOUT``, its turn not in this process - is
+        settled ``FAILED`` (``task_abandoned``) instead of holding the
+        context, and the check reads again.
+
         Raises:
             InvalidParamsError: ``context_busy``, naming the unfinished task.
         """
         if not self.descriptor.exclusive_per_context or self._context_runs is None:
             return
-        blocking = await self._context_runs.unfinished_task(context_id, self.uri)
-        if blocking is not None:
-            logger.info("Refused a second task of toolkit %s in context %s (task %s)", self.uri, context_id, blocking)
-            raise context_busy(self.uri, context_id, blocking)
+        while (blocking := await self._context_runs.unfinished_task(context_id, self.uri)) is not None:
+            if not await self._settled_as_abandoned(blocking):
+                logger.info(
+                    "Refused a second task of toolkit %s in context %s (task %s)", self.uri, context_id, blocking
+                )
+                raise context_busy(self.uri, context_id, blocking)
+            logger.info(
+                "The abandoned task %s no longer holds context %s for toolkit %s", blocking, context_id, self.uri
+            )
+
+    async def _settled_as_abandoned(self, task_id: str) -> bool:
+        """Settle ``task_id`` if it is abandoned and its turn does not run here; whether it was."""
+        if self._abandoned_tasks is None or task_id in self._turns:
+            return False
+        return await self._abandoned_tasks.settle(task_id) is not None
 
     def admit_continuation(self, task: Task) -> None:
         """Check a message that continues a task of this toolkit, before the task is changed.

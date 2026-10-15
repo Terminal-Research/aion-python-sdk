@@ -21,6 +21,7 @@ __all__ = [
     "INVALID_PAYLOAD",
     "RETRYABLE",
     "SERVER_SHUTDOWN",
+    "TASK_ABANDONED",
 ]
 
 CONTEXT_BUSY = "context_busy"
@@ -42,6 +43,12 @@ a code of its own there instead.
 SERVER_SHUTDOWN = "server_shutdown"
 """The server stopped while the turn was running."""
 
+TASK_ABANDONED = "task_abandoned"
+"""The turn wrote nothing for longer than ``AION_STALE_TASK_TIMEOUT``: its server died or hung.
+
+The server settles such a task ``FAILED`` with this code; no toolkit returns it.
+"""
+
 INTERNAL_ERROR = "internal_error"
 """The toolkit or the server failed unexpectedly; the details are in the log."""
 
@@ -52,6 +59,7 @@ RETRYABLE = MappingProxyType(
         CALLER_NOT_ALLOWED: False,
         INVALID_PAYLOAD: False,
         SERVER_SHUTDOWN: True,
+        TASK_ABANDONED: True,
         INTERNAL_ERROR: False,
     }
 )

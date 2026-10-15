@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-198 scenarios in 36 files, 449 runs across 2 frameworks: 416 run, 32 skipped, 1 independent of the framework.
+201 scenarios in 37 files, 455 runs across 2 frameworks: 422 run, 32 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -77,7 +77,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `contexts` | Context extension: list, read and delete conversations | 5 | `make tests-scenarios TAGS=contexts` |
 | `toolkits` | toolkit plugins: a turn translated into A2A, a refusal before the task exists, a cancel | 14 | `make tests-scenarios TAGS=toolkits` |
 | `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 21 | `make tests-scenarios-persistence` |
-| `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 16 | `make tests-scenarios-distributed` |
+| `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 19 | `make tests-scenarios-distributed` |
 | `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 29 | `make tests-scenarios TAGS=native` |
 
 ## Scenarios by file
@@ -359,6 +359,16 @@ A toolkit plugin served by a real ``aion serve``: a turn on the wire, artifact v
 | [The directive is not taken as the answer: a toolkit task starts, and the question keeps waiting for it.](core/test_toolkits.py#L431 "test_a_directive_beside_the_agents_waiting_question_starts_its_own_task") | `toolkits` | `ask` | `toolkit` | ✓ | [skip](#frameworks) |
 | [A directive without a task id resumes the toolkit's waiting task in the context.](core/test_toolkits.py#L455 "test_a_toolkit_that_waits_for_input_continues_its_own_task") | `toolkits` | — | `toolkit` | ✓ | ✓ |
 
+### `tests/scenarios/distributed/test_abandoned_tasks.py`
+
+Tasks their server abandoned - hung or dead - settled by the other server of the agent.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [No request is needed; the task waiting for input outlives the timeout untouched.](distributed/test_abandoned_tasks.py#L156 "test_a_hung_turn_is_settled_by_the_other_servers_sweep_and_a_waiting_task_is_left") | `distributed` | — | `default` | ✓ | ✓ |
+| [Past the timeout the context of an exclusive toolkit takes a new task; the old task refuses a message.](distributed/test_abandoned_tasks.py#L170 "test_an_abandoned_task_frees_its_context_and_takes_no_message") | `distributed` | — | `default` | ✓ | ✓ |
+| [A toolkit's turn and a framework turn die with their server; the survivor settles both and serves on.](distributed/test_abandoned_tasks.py#L189 "test_the_tasks_of_a_server_killed_mid_turn_are_settled_by_the_survivor") | `distributed` | `slow` | `default` | ✓ | ✓ |
+
 ### `tests/scenarios/distributed/test_cancel.py`
 
 Cancelling a task through a server that is not the one running it.
@@ -389,7 +399,7 @@ One server dies; what becomes of the tasks it was running.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The whole sequence, in the order a deployment would live it.](distributed/test_recovery.py#L44 "test_a_dead_servers_task_stays_active_until_the_survivor_cancels_it") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [The whole sequence, in the order a deployment would live it.](distributed/test_recovery.py#L46 "test_a_dead_servers_task_stays_active_until_the_survivor_cancels_it") | `distributed` | `slow` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/distributed/test_toolkits.py`
 
@@ -543,7 +553,7 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | `stream <n>` | Reply in n chunks of one message | `streaming` | 10 | ✓ | ✓ |
 | `typing` | Send an ephemeral typing status, then a reply | `streaming`, `events` | 3 | ✓ | ✓ |
 | `steps <n>` | Emit n working statuses, then complete | `events` | 2 | ✓ | ✓ |
-| `slow <sec>` | Reply after n seconds | `lifecycle` | 19 | ✓ | ✓ |
+| `slow <sec>` | Reply after n seconds | `lifecycle` | 20 | ✓ | ✓ |
 | `artifacts` | Emit a two-part data artifact, an inline file and a url | `artifacts`, `files` | 2 | ✓ | [skip](#frameworks) |
 | `send-file <route>` | Send one inline file: artifact \| reply \| outbox-message \| outbox-task | `files` | 2 | ✓ | ✓ |
 | `card` | Emit one card | `artifacts` | 4 | ✓ | ✓ |

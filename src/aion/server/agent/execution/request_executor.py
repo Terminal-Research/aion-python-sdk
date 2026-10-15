@@ -29,6 +29,7 @@ from aion.server.agent.execution.scope import set_task_id
 from aion.server.files.a2a import A2AFileTransformer
 from aion.core.toolkit import codes
 from aion.server.a2a.utils import routed_extension_of
+from aion.server.tasks.abandoned import AbandonedTasks
 from aion.server.tasks.context_artifacts import ContextArtifacts
 from aion.server.tasks.context_runs import ContextRuns
 from collections.abc import Callable, Iterable, Mapping
@@ -165,14 +166,16 @@ class AionAgentRequestExecutor(AgentExecutor):
             file_transformer: Optional[A2AFileTransformer] = None,
             context_artifacts: Optional[ContextArtifacts] = None,
             context_runs: Optional[ContextRuns] = None,
+            abandoned_tasks: Optional[AbandonedTasks] = None,
     ) -> "AionAgentRequestExecutor":
         """Build the executor with a handler for every toolkit that can serve this agent.
 
         ``context_artifacts`` is how the toolkit handlers number their
         toolkit's artifacts and find them in a context, ``context_runs`` how
         they read a context's generation and keep an exclusive toolkit to one
-        task per context; the agent's own owner resolver tells them who the
-        caller is.
+        task per context, ``abandoned_tasks`` how they settle an abandoned
+        task that would hold such a context; the agent's own owner resolver
+        tells them who the caller is.
 
         Discovery registers each installed toolkit's extension and records an
         unavailable one in the central extension registry with its reason -
@@ -188,6 +191,7 @@ class AionAgentRequestExecutor(AgentExecutor):
                 context_artifacts=context_artifacts,
                 context_runs=context_runs,
                 owner_resolver=aion_agent.owner_resolver,
+                abandoned_tasks=abandoned_tasks,
             ),
         )
 

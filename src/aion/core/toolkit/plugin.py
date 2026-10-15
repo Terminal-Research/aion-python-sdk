@@ -308,7 +308,15 @@ class Toolkit(Protocol):
     def start(
         self, request: ToolkitRequest, context: ToolkitContext
     ) -> AsyncIterator[ToolkitOutput]:
-        """Run the first turn of a new task: events, then one result."""
+        """Run the first turn of a new task: events, then one result.
+
+        Every event that is not ephemeral is a durable write of the task. A
+        turn that writes nothing for longer than the server's
+        ``AION_STALE_TASK_TIMEOUT`` is taken for abandoned - its server died
+        or hung - and the agent's other servers settle its task ``FAILED``
+        with ``task_abandoned``; a turn doing long work yields a status
+        event now and then.
+        """
         ...
 
     def resume(

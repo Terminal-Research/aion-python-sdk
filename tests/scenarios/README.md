@@ -95,9 +95,11 @@ scenarios need no database and do not wait for one.
 
 A server that shuts down in an orderly way settles the tasks it was running
 itself, so that scenario reads `server_shutdown` the moment the next process is
-up. A server that is killed outright settles nothing, and nothing settles its
-tasks afterwards: they keep their state until someone cancels them, which any
-server can. These two groups start several servers per scenario, which is the
+up. A server that is killed outright settles nothing: its tasks keep their
+state until someone cancels them, which any server can, or until they have
+gone without a write for longer than `AION_STALE_TASK_TIMEOUT` - an hour by
+default, seconds in `distributed/test_abandoned_tasks.py` - when any other
+server settles them as `task_abandoned`. These two groups start several servers per scenario, which is the
 reason they are not part of `make tests-scenarios`.
 
 It is also why both groups need a database. In-memory task storage is

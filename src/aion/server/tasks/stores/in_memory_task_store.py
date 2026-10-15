@@ -324,6 +324,35 @@ class InMemoryTaskStore(BaseTaskStore):
                 if stored.task.context_id == context_id
             ]
 
+    async def write_times(self) -> list[tuple[Task, datetime]]:
+        """Every owner's tasks with the time of their last write, oldest first."""
+        async with self.lock:
+            return [(stored.task, stored.updated_at) for stored in self.tasks.values()]
+
+    async def last_write(self, task_id: str) -> Optional[tuple[Task, datetime]]:
+        """The task, whoever owns it, with the time of its last write; None when there is none."""
+        async with self.lock:
+            stored = self.tasks.get(task_id)
+            return None if stored is None else (stored.task, stored.updated_at)
+
+    async def replace_if_last_written_at(self, task: Task, written_at: datetime) -> bool:
+        """Write ``task`` over the stored one only if that was last written at ``written_at``.
+
+        The compare-and-swap of a store without versions: the server's own
+        write over a task it read, refused when anything wrote the task in
+        between. The task keeps its owner and its place.
+
+        Returns:
+            Whether the task was written.
+        """
+        task = self._persistable(task)
+        async with self.lock:
+            stored = self.tasks.get(task.id)
+            if stored is None or stored.updated_at != written_at:
+                return False
+            self.tasks[task.id] = _Stored(stored.owner, task, datetime.now(timezone.utc))
+            return True
+
     async def retire_context(self, context_id: str) -> list[str]:
         """Remove every task of a context and refuse any later write of them.
 

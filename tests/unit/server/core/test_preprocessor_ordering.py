@@ -72,6 +72,7 @@ def handler(*preprocessors, executor: RouteRecorder | None = None) -> AionReques
     instance.admitted = 0
     instance.agent_executor = executor or RouteRecorder()
     instance._request_context_builder = None
+    instance._abandoned_tasks = None
 
     async def admit(params, call_context):
         instance.admitted += 1
