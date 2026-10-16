@@ -18,9 +18,13 @@ from __future__ import annotations
 
 from typing import Any, AsyncIterator
 
+import asyncio
+import json
+
 import pytest
 import pytest_asyncio
 
+from tests.scenarios.commands import TYPING_INDICATOR, typing_text
 from tests.scenarios.harness import (
     AUTHORIZATION_HEADER,
     NOTIFICATION_TOKEN_HEADER,
@@ -82,6 +86,17 @@ def _find_terminal(notifications: list[Notification]) -> Notification | None:
         if state in ("TASK_STATE_COMPLETED", "TASK_STATE_FAILED", "TASK_STATE_CANCELED"):
             return n
     return None
+
+
+async def _wait_for_terminal(callback: CallbackServer, timeout: float = 15) -> list[Notification]:
+    """Every notification received until the terminal one arrived, or the timeout passed."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while True:
+        notifications = await callback.wait(timeout=max(0.0, deadline - loop.time()))
+        if _find_terminal(notifications) is not None or loop.time() >= deadline:
+            return notifications
+        await asyncio.sleep(0.1)
 
 
 @pytest.fixture(scope="session")
@@ -156,6 +171,46 @@ async def test_push_notification_reaches_callback(
     ]
     assert working_statuses
     assert all(status.get("timestamp") for status in working_statuses)
+
+
+@pytest.mark.variant("push")
+@pytest.mark.command("typing")
+async def test_an_ephemeral_indicator_is_streamed_but_not_pushed(
+    push_client: ScenarioClient,
+    callback: CallbackServer,
+) -> None:
+    """The callback receives what the task stores; the live-only indicator is not stored."""
+    events = await push_client.send(
+        "typing",
+        push_notification_url=callback.url,
+    )
+    assert final_task(events).state == "COMPLETED"
+
+    notifications = await _wait_for_terminal(callback)
+    assert _find_terminal(notifications) is not None, "no terminal notification received"
+
+    pushed = json.dumps([notification.body for notification in notifications])
+    assert typing_text() in pushed
+    assert TYPING_INDICATOR not in pushed
+
+
+@pytest.mark.variant("push")
+@pytest.mark.command("fail")
+async def test_a_crashed_agent_s_failure_is_pushed(
+    push_client: ScenarioClient,
+    callback: CallbackServer,
+) -> None:
+    """The FAILED a crash leaves reaches the callback as the full Task."""
+    events = await push_client.send(
+        "fail exception",
+        push_notification_url=callback.url,
+    )
+    assert final_task(events).state == "FAILED"
+
+    notifications = await _wait_for_terminal(callback)
+    terminal = _find_terminal(notifications)
+    assert terminal is not None, f"no terminal notification among {len(notifications)} received"
+    assert _task_from_notification(terminal)["status"]["state"] == "TASK_STATE_FAILED"
 
 
 @pytest.mark.variant("push")

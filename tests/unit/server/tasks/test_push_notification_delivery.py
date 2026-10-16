@@ -34,6 +34,7 @@ from a2a.server.events import EventQueue
 from a2a.server.tasks import InMemoryPushNotificationConfigStore
 from a2a.auth.user import User
 from a2a.types import (
+    Artifact,
     Message,
     Part,
     Role,
@@ -46,6 +47,8 @@ from a2a.types import (
 from a2a.types.a2a_pb2 import AuthenticationInfo, TaskPushNotificationConfig
 from unittest.mock import AsyncMock, Mock
 
+from aion.core.a2a.enums import ArtifactId
+from aion.server.a2a.utils import mark_status_event_ephemeral
 from aion.server.agent.execution import AionActiveTaskRegistry
 from aion.server.agent.execution.scope import clear_execution_scope, init_execution_scope
 from aion.server.core.app.handlers.terminal_task_projection import TerminalTaskProjection
@@ -273,6 +276,131 @@ class TestTerminalDeliveryAcrossChannels:
 
         _assert_ends_with_full_task(_push_deliveries(raw_push), TaskState.TASK_STATE_FAILED)
         _assert_ends_with_full_task(stream_events, TaskState.TASK_STATE_FAILED)
+
+
+def _recording_push() -> tuple[Mock, list]:
+    """A push transport stand-in that keeps a copy of each delivery as it was sent.
+
+    The consumer hands over the task manager's live snapshot, which later
+    writes mutate in place; a copy keeps what a webhook would have received.
+    """
+    sent: list = []
+
+    async def record(task_id: str, event) -> None:
+        copy = type(event)()
+        copy.CopyFrom(event)
+        sent.append(copy)
+
+    raw_push = Mock()
+    raw_push.send_notification = AsyncMock(side_effect=record)
+    return raw_push, sent
+
+
+class _CrashingExecutor(AgentExecutor):
+    """Emits its events, waits until the consumer has handled them, then raises."""
+
+    def __init__(self, events: list, handled) -> None:
+        self._events = events
+        self._handled = handled
+
+    async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
+        for event in self._events:
+            await event_queue.enqueue_event(event)
+        await _until_settled(self._handled)
+        raise RuntimeError("agent crashed")
+
+    async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
+        pass
+
+
+async def _run_crashing_task(events: list, handled_pushes: int) -> list:
+    """Drives one task whose agent raises after its events were pushed; returns the pushes."""
+    raw_push, sent = _recording_push()
+    call_context = ServerCallContext(user=_NamedUser("alice"))
+    registry = AionActiveTaskRegistry(
+        agent_executor=_CrashingExecutor(events, lambda: len(sent) >= handled_pushes),
+        task_store=InMemoryTaskStore(),
+        push_sender=raw_push,
+    )
+    active_task = await registry.get_or_create(
+        TASK_ID, call_context=call_context, context_id=CONTEXT_ID, create_task_if_missing=True,
+    )
+    request_context = RequestContext(call_context=call_context, task_id=TASK_ID, context_id=CONTEXT_ID)
+    with pytest.raises(RuntimeError, match="agent crashed"):
+        async for _ in active_task.subscribe(request=request_context):
+            pass
+    await _until_settled(lambda: any(
+        isinstance(event, Task) and event.status.state == TaskState.TASK_STATE_FAILED for event in sent
+    ))
+    await registry.aclose()
+    return sent
+
+
+def _submitted() -> Task:
+    return Task(id=TASK_ID, context_id=CONTEXT_ID, status=TaskStatus(state=TaskState.TASK_STATE_SUBMITTED))
+
+
+def _working() -> TaskStatusUpdateEvent:
+    return TaskStatusUpdateEvent(
+        task_id=TASK_ID, context_id=CONTEXT_ID, status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
+    )
+
+
+class TestPushCarriesWhatTheTaskStores:
+    """The push channel carries every stored change of the task and nothing live-only."""
+
+    @pytest.mark.anyio
+    async def test_live_only_events_reach_the_stream_but_not_the_webhook(self, execution_scope):
+        progress = _working()
+        progress.status.message.CopyFrom(Message(
+            message_id="msg-progress", context_id=CONTEXT_ID, task_id=TASK_ID,
+            role=Role.ROLE_AGENT, parts=[Part(text="running tests")],
+        ))
+        mark_status_event_ephemeral(progress)
+        delta = TaskArtifactUpdateEvent(
+            task_id=TASK_ID, context_id=CONTEXT_ID,
+            artifact=Artifact(artifact_id=ArtifactId.STREAM_DELTA.value, parts=[Part(text="partial")]),
+        )
+        report = TaskArtifactUpdateEvent(
+            task_id=TASK_ID, context_id=CONTEXT_ID,
+            artifact=Artifact(artifact_id="report", parts=[Part(text="result")]),
+        )
+        events = [_submitted(), progress, delta, report, _terminal_status(TaskState.TASK_STATE_COMPLETED)]
+
+        raw_push, stream_events = await _run_task_to_completion(
+            events, ServerCallContext(user=_NamedUser("alice")),
+        )
+
+        pushed = _push_deliveries(raw_push)
+        assert progress in stream_events and delta in stream_events
+        assert progress not in pushed and delta not in pushed
+        assert report in pushed
+        _assert_ends_with_full_task(pushed, TaskState.TASK_STATE_COMPLETED)
+
+    @pytest.mark.anyio
+    async def test_the_failed_a_crashed_producer_stores_is_pushed(self, execution_scope):
+        """The agent raises with no final status queued: a2a-sdk's producer stores FAILED itself."""
+        sent = await _run_crashing_task([_submitted(), _working()], handled_pushes=2)
+
+        states = [(type(event).__name__, TaskState.Name(event.status.state)) for event in sent]
+        assert states == [
+            ("Task", "TASK_STATE_SUBMITTED"),
+            ("TaskStatusUpdateEvent", "TASK_STATE_WORKING"),
+            ("Task", "TASK_STATE_FAILED"),
+        ]
+
+    @pytest.mark.anyio
+    async def test_a_failed_status_queued_before_the_crash_is_pushed_once(self, execution_scope):
+        """The executor's own crash handling queues FAILED with the reason, then raises."""
+        sent = await _run_crashing_task(
+            [_submitted(), _working(), _terminal_status(TaskState.TASK_STATE_FAILED, text="crash reason")],
+            handled_pushes=3,
+        )
+
+        failed = [event for event in sent if event.status.state == TaskState.TASK_STATE_FAILED]
+        assert len(failed) == 1
+        assert isinstance(failed[0], Task)
+        assert failed[0].status.message.parts[0].text == "crash reason"
 
 
 class TestPushSenderWiring:

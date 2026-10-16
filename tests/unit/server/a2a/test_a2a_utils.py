@@ -17,9 +17,11 @@ from aion.server.a2a.utils import (
     describe_event,
     empty_input_warning,
     extract_event_preview,
+    is_ephemeral_event,
     is_message_in_task_history,
     is_task_interrupted,
     task_history_message_ids,
+    mark_status_event_ephemeral,
 )
 
 
@@ -269,3 +271,31 @@ class TestExtractEventPreview:
         event = _status_event(message=_make_message("msg-1", text="x" * 500))
         preview = extract_event_preview(event, max_len=120)
         assert preview == "x" * 120 + "..."
+
+
+class TestIsEphemeralEvent:
+    """One predicate says what never becomes part of the task: the store and the push channel share it."""
+
+    @pytest.mark.parametrize("artifact_id", [
+        ArtifactId.STREAM_DELTA.value,
+        ArtifactId.THINKING_DELTA.value,
+        ArtifactId.EPHEMERAL_MESSAGE.value,
+        ArtifactId.REACTION.value,
+    ])
+    def test_a_reserved_live_only_artifact_is_ephemeral(self, artifact_id):
+        event = TaskArtifactUpdateEvent(task_id="task-1", context_id="ctx-1", artifact=Artifact(artifact_id=artifact_id))
+        assert is_ephemeral_event(event)
+
+    def test_an_artifact_the_agent_named_is_durable(self):
+        event = TaskArtifactUpdateEvent(task_id="task-1", context_id="ctx-1", artifact=Artifact(artifact_id="report"))
+        assert not is_ephemeral_event(event)
+
+    def test_a_flagged_status_update_is_ephemeral(self):
+        event = TaskStatusUpdateEvent(task_id="task-1", context_id="ctx-1", status=TaskStatus(state=TaskState.TASK_STATE_WORKING))
+        mark_status_event_ephemeral(event)
+        assert is_ephemeral_event(event)
+
+    def test_a_plain_status_update_and_a_task_are_durable(self):
+        event = TaskStatusUpdateEvent(task_id="task-1", context_id="ctx-1", status=TaskStatus(state=TaskState.TASK_STATE_WORKING))
+        assert not is_ephemeral_event(event)
+        assert not is_ephemeral_event(_make_task())

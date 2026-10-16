@@ -12,7 +12,11 @@ from a2a.types import (
 )
 
 from aion.core.a2a.enums import A2AMetadataKey, ArtifactId
-from aion.server.a2a.constants import EPHEMERAL_STATUS_METADATA_KEY, INTERRUPT_TASK_STATES
+from aion.server.a2a.constants import (
+    EPHEMERAL_STATUS_METADATA_KEY,
+    INTERRUPT_TASK_STATES,
+    TRANSIENT_ARTIFACT_IDS,
+)
 
 __all__ = [
     "is_task_interrupted",
@@ -27,6 +31,7 @@ __all__ = [
     "task_state_name",
     "mark_status_event_ephemeral",
     "is_ephemeral_status_event",
+    "is_ephemeral_event",
     "NO_TEXT",
 ]
 
@@ -166,6 +171,21 @@ def is_ephemeral_status_event(event: object) -> bool:
         EPHEMERAL_STATUS_METADATA_KEY in event.metadata
         and bool(event.metadata[EPHEMERAL_STATUS_METADATA_KEY])
     )
+
+
+def is_ephemeral_event(event: object) -> bool:
+    """Return True when ``event`` is live-only: delivered to a stream, never persisted.
+
+    Two kinds of event are: an artifact update under one of
+    ``TRANSIENT_ARTIFACT_IDS`` (stream and reasoning deltas, ephemeral
+    messages, reactions) and a status update flagged ephemeral. This is the
+    one predicate for "not part of the task": the task manager skips these
+    events instead of storing them, and the push channel, which carries only
+    what the task stores, skips them too.
+    """
+    if isinstance(event, TaskArtifactUpdateEvent):
+        return event.artifact.artifact_id in TRANSIENT_ARTIFACT_IDS
+    return is_ephemeral_status_event(event)
 
 
 def _require_task(task: object) -> Task:

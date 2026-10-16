@@ -3,7 +3,7 @@
 from typing import Protocol
 
 from a2a.server.events import Event
-from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
+from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
 
 
 class AionTaskManagerProtocol(Protocol):
@@ -12,6 +12,11 @@ class AionTaskManagerProtocol(Protocol):
     Defines the interface that task managers should implement for processing
     task-related events and managing task lifecycle.
     """
+
+    @property
+    def written_outcome(self) -> TaskState | None:
+        """The non-active state this manager's own last write moved the task into, or None."""
+        ...
 
     async def get_task(self) -> Task | None:
         """Retrieve the current task object, either from memory or the store.

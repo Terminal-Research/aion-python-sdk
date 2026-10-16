@@ -614,3 +614,52 @@ class TestATerminalTaskIsFinal:
         await manager.save_task_event(_task(TaskState.TASK_STATE_INPUT_REQUIRED))
 
         callback.assert_not_called()
+
+
+class TestWrittenOutcome:
+    """The manager reports the non-active state its own write produced, for the push channel."""
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        "state",
+        [TaskState.TASK_STATE_FAILED, TaskState.TASK_STATE_COMPLETED, TaskState.TASK_STATE_INPUT_REQUIRED],
+    )
+    async def test_a_write_into_a_non_active_state_is_the_outcome(self, state):
+        manager, _store = _built(TaskState.TASK_STATE_WORKING)
+        await manager.get_task()
+
+        await manager.save_task_event(_task(state))
+
+        assert manager.written_outcome == state
+
+    @pytest.mark.anyio
+    async def test_a_state_read_from_the_store_is_not_the_managers_outcome(self):
+        """Another writer's cancel is that writer's to push."""
+        manager, store = _built(TaskState.TASK_STATE_WORKING)
+        await manager.get_task()
+        store.task = _task(TaskState.TASK_STATE_CANCELED)
+
+        manager.invalidate()
+        await manager.get_task()
+
+        assert manager.written_outcome is None
+
+    @pytest.mark.anyio
+    async def test_going_back_to_work_clears_the_outcome(self):
+        manager, _store = _built(TaskState.TASK_STATE_WORKING)
+        await manager.get_task()
+
+        await manager.save_task_event(_task(TaskState.TASK_STATE_INPUT_REQUIRED))
+        await manager.save_task_event(_task(TaskState.TASK_STATE_WORKING))
+
+        assert manager.written_outcome is None
+
+    @pytest.mark.anyio
+    async def test_rewriting_the_stored_interrupt_is_not_an_outcome(self):
+        """The resume's write of the task as it stands produces nothing new."""
+        manager, _store = _built(TaskState.TASK_STATE_INPUT_REQUIRED)
+        await manager.get_task()
+
+        await manager.save_task_event(_task(TaskState.TASK_STATE_INPUT_REQUIRED))
+
+        assert manager.written_outcome is None

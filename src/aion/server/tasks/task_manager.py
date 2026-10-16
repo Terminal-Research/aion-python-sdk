@@ -11,14 +11,13 @@ from a2a.server.cluster.task_store import (
 )
 from a2a.server.events import Event
 from a2a.server.tasks import TaskManager
-from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskState, TaskStatus, TaskStatusUpdateEvent
+from a2a.types import Message, Task, TaskState, TaskStatus, TaskStatusUpdateEvent
 from aion.server.a2a.constants import (
     INTERRUPT_TASK_STATES,
     NON_ACTIVE_TASK_STATES,
     TERMINAL_TASK_STATES,
-    TRANSIENT_ARTIFACT_IDS,
 )
-from aion.server.a2a.utils import is_ephemeral_status_event, is_task_interrupted
+from aion.server.a2a.utils import is_ephemeral_event, is_task_interrupted
 from aion.server.agent.execution.scope import set_task_status
 from typing import override
 
@@ -69,11 +68,27 @@ class AionTaskManager(TaskManager):
         # ``None`` means nothing has been read or written yet, so the first
         # write of a non-active state counts as a transition.
         self._persisted_state: TaskState | None = None
+        # The non-active state this manager's own last write moved the task
+        # into; see ``written_outcome``.
+        self._written_outcome: TaskState | None = None
         # Two writers share this manager: the SDK consumer, for the events the
         # agent puts on the queue, and the producer, for the Task and Message
         # events ``AionEventPipeline`` saves itself. Each write names the
         # version the previous one left, so they take turns.
         self._write_lock = asyncio.Lock()
+
+    @property
+    def written_outcome(self) -> TaskState | None:
+        """The non-active state this manager wrote the task into, or None.
+
+        Set by a write that moves the task into a non-active state, cleared by
+        a write of an active one. A state the store brought back - another
+        writer's cancel, say - is not this manager's write and does not count.
+        The push channel compares it with the outcome it delivered, to find an
+        outcome that was written without an event to carry it: the ``FAILED``
+        a2a-sdk's producer writes directly when the agent raises.
+        """
+        return self._written_outcome
 
     @override
     def invalidate(self) -> None:
@@ -167,6 +182,10 @@ class AionTaskManager(TaskManager):
 
             state = task.status.state
             self._persisted_state = state
+            if state not in NON_ACTIVE_TASK_STATES:
+                self._written_outcome = None
+            elif state != previous_state:
+                self._written_outcome = state
         if state not in NON_ACTIVE_TASK_STATES or state == previous_state:
             return
 
@@ -298,18 +317,17 @@ class AionTaskManager(TaskManager):
         folded into history — the milestone-only history policy for live
         progress (running commands, intermediate agent messages).
 
+        Both kinds are recognised by ``is_ephemeral_event``, the predicate the
+        push channel filters by as well, so what is pushed and what is stored
+        cannot drift apart.
+
         Args:
             event: The event to check.
 
         Returns:
             True if the event should be skipped, False otherwise.
         """
-        if isinstance(event, TaskArtifactUpdateEvent):
-            if event.artifact.artifact_id in TRANSIENT_ARTIFACT_IDS:
-                return True
-        if is_ephemeral_status_event(event):
-            return True
-        return False
+        return is_ephemeral_event(event)
 
     async def auto_discover_and_assign_task(self, interrupted: bool = False) -> Task | None:
         """

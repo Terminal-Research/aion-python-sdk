@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-201 scenarios in 37 files, 455 runs across 2 frameworks: 422 run, 32 skipped, 1 independent of the framework.
+203 scenarios in 37 files, 459 runs across 2 frameworks: 426 run, 32 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -73,7 +73,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `daemon` | daemon extension identity and environment | 7 | `make tests-scenarios TAGS=daemon` |
 | `authentication` | bearer tokens: required, verified, and naming the caller | 6 | `make tests-scenarios TAGS=authentication` |
 | `config` | aion.yaml configuration and deployment variants | 8 | `make tests-scenarios TAGS=config` |
-| `lifecycle` | cancel, concurrency, push notifications, startup | 5 | `make tests-scenarios TAGS=lifecycle` |
+| `lifecycle` | cancel, concurrency, push notifications, startup | 7 | `make tests-scenarios TAGS=lifecycle` |
 | `contexts` | Context extension: list, read and delete conversations | 5 | `make tests-scenarios TAGS=contexts` |
 | `toolkits` | toolkit plugins: a turn translated into A2A, a refusal before the task exists, a cancel | 14 | `make tests-scenarios TAGS=toolkits` |
 | `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 21 | `make tests-scenarios-persistence` |
@@ -277,11 +277,13 @@ Push notification delivery to a real HTTP callback.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The server POSTs a terminal notification to the registered URL.](core/test_push_notifications.py#L125 "test_push_notification_reaches_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
-| [The pushed body identifies the task the notification is about.](core/test_push_notifications.py#L161 "test_push_notification_carries_the_task_id") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
-| [The callback accepts the delivery, because it arrived authenticated.](core/test_push_notifications.py#L184 "test_a_declared_credential_is_presented_to_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
-| [The callback really checks: the same delivery without credentials is rejected.](core/test_push_notifications.py#L215 "test_an_undeclared_credential_is_refused_by_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
-| [The four push config methods, on a task of this caller; a config created without an id takes the task's.](core/test_push_notifications.py#L237 "test_a_push_config_is_created_read_listed_and_deleted") | `lifecycle` | `echo` | `default` | ✓ | ✓ |
+| [The server POSTs a terminal notification to the registered URL.](core/test_push_notifications.py#L140 "test_push_notification_reaches_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The callback receives what the task stores; the live-only indicator is not stored.](core/test_push_notifications.py#L176 "test_an_ephemeral_indicator_is_streamed_but_not_pushed") | `lifecycle` | `typing` | `push` | ✓ | ✓ |
+| [The FAILED a crash leaves reaches the callback as the full Task.](core/test_push_notifications.py#L197 "test_a_crashed_agent_s_failure_is_pushed") | `lifecycle` | `fail` | `push` | ✓ | ✓ |
+| [The pushed body identifies the task the notification is about.](core/test_push_notifications.py#L216 "test_push_notification_carries_the_task_id") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The callback accepts the delivery, because it arrived authenticated.](core/test_push_notifications.py#L239 "test_a_declared_credential_is_presented_to_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The callback really checks: the same delivery without credentials is rejected.](core/test_push_notifications.py#L270 "test_an_undeclared_credential_is_refused_by_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The four push config methods, on a task of this caller; a config created without an id takes the task's.](core/test_push_notifications.py#L292 "test_a_push_config_is_created_read_listed_and_deleted") | `lifecycle` | `echo` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_resubscribe.py`
 
@@ -551,7 +553,7 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | `help` | Show this menu | `smoke` | 1 | ✓ | ✓ |
 | `echo <text>` | Reply with the argument, unchanged | `smoke`, `events` | 22 | ✓ | ✓ |
 | `stream <n>` | Reply in n chunks of one message | `streaming` | 10 | ✓ | ✓ |
-| `typing` | Send an ephemeral typing status, then a reply | `streaming`, `events` | 3 | ✓ | ✓ |
+| `typing` | Send an ephemeral typing status, then a reply | `streaming`, `events` | 4 | ✓ | ✓ |
 | `steps <n>` | Emit n working statuses, then complete | `events` | 2 | ✓ | ✓ |
 | `slow <sec>` | Reply after n seconds | `lifecycle` | 20 | ✓ | ✓ |
 | `artifacts` | Emit a two-part data artifact, an inline file and a url | `artifacts`, `files` | 2 | ✓ | [skip](#frameworks) |
@@ -562,7 +564,7 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | `ask` | Ask a question, then quote the answer | `interrupts` | 10 | ✓ | [skip](#frameworks) |
 | `ask-twice` | Ask two questions in a row | `interrupts` | 3 | ✓ | [skip](#frameworks) |
 | `ask-fail` | Ask a question, then fail on the answer | `interrupts`, `errors` | 3 | ✓ | [skip](#frameworks) |
-| `fail <mode>` | Fail on purpose: exception \| after-reply \| reason | `errors`, `terminal_states` | 7 | ✓ | ✓ |
+| `fail <mode>` | Fail on purpose: exception \| after-reply \| reason | `errors`, `terminal_states` | 8 | ✓ | ✓ |
 | `ext` | Report active and unknown extensions | `extensions` | 6 | ✓ | ✓ |
 | `whoami` | Report the daemon identity | `daemon` | 6 | ✓ | ✓ |
 | `event` | Report the event this turn carried | `extensions`, `events` | 4 | ✓ | ✓ |
