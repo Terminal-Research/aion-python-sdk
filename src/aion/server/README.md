@@ -329,10 +329,16 @@ until it ends. Then every active task of the context, whoever owns it, is
 cancelled through the ordinary cancellation path, in groups of ten; once all
 are terminal the framework state - LangGraph checkpoints, ADK sessions - is
 deleted under the context holder's state scope, and the tasks, their messages,
-artifacts, versions and push configurations and the bindings are removed in one
-storage step. The reservation becomes `deleted`, and the next message with
-that context ID reserves it afresh: a new conversation, with nothing of the
-old one.
+artifacts, versions, journal events (`task_events`) and push configurations and
+the bindings are removed in one storage step. The reservation becomes
+`deleted`, and the next message with that context ID reserves it afresh: a new
+conversation, with nothing of the old one.
+
+**Retention.** A context keeps its whole history for as long as it lives:
+every task, with its messages, artifacts, versions and journal events, and
+every push configuration. Nothing expires or is pruned on a schedule, so a
+long-lived context grows with every task in it. Deleting the context is what
+removes all of it.
 
 A deletion that cannot finish in one request - a cancellation still settling
 on another server, a database error, a concurrent attempt at the same deletion
@@ -506,7 +512,9 @@ servers of one agent can share the database. The rules are a2a-sdk's:
   timeout of the platform running the server - Kubernetes
   `terminationGracePeriodSeconds`, `docker stop -t` - so the server's own
   shutdown finishes first.
-- The journal is never pruned.
+- The journal keeps every event of a task for as long as the task exists.
+  Deleting the task, or its context, removes its events in the same
+  transaction as the task.
 
 Without a database the store is in memory and the server is a2a-sdk's single
 process: no versions, no journal, nothing shared, so one server only.

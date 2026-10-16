@@ -227,8 +227,9 @@ takes them from a request.
 The keys are the URIs of every registered extension whose payload arrives in
 request metadata: daemon, distribution, cron and traceability. The command
 looks for them in the `metadata` column of `tasks` and in the `Task`
-snapshots of the `task_events` journal, which nothing prunes. Every other key
-stays, and a task left with no metadata reads as a task without any.
+snapshots of the `task_events` journal, which keeps a task's events until the
+task is deleted. Every other key stays, and a task left with no metadata reads
+as a task without any.
 
 Without `--apply` it only reports, per table, how many keys it would remove
 from how many rows. With `--apply` it removes them. It changes no task's

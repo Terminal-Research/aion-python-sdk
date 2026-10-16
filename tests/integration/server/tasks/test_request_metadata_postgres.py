@@ -2,8 +2,8 @@
 
 A request's ``params.metadata`` carries the daemon payload, and with it the
 environment's configuration variables in plain text. The task a request starts
-is stored in ``tasks``, its every write is journaled in ``task_events``, which
-nothing prunes, and both are read back by whoever reads the task. So the
+is stored in ``tasks``, its every write is journaled in ``task_events``, kept
+until the task is deleted, and both are read back by whoever reads the task. So the
 request's metadata stays on the request: the stored task holds only what the
 server and the extension handler wrote.
 

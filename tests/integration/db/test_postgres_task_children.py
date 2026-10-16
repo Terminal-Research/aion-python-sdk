@@ -13,6 +13,7 @@ import pytest
 from a2a.server.tasks.task_manager import append_artifact_to_task
 from a2a.types import Artifact, Message, Part, Role, Task, TaskArtifactUpdateEvent, TaskState, TaskStatus
 from google.protobuf.struct_pb2 import Struct
+from sqlalchemy import text
 
 from aion.db.postgres.records import TaskRecord
 from aion.db.postgres.repositories import (
@@ -158,6 +159,35 @@ async def test_upsert_batch_replaces_an_existing_artifact_in_place(postgres_sess
 
     stored = await repo.find_by_task_id(task_id)
     assert [(a.artifact_id, a.name) for a in stored] == [("a1", "final")]
+
+
+async def _artifact_rows(postgres_session, task_id: uuid.UUID) -> dict[str, tuple[str, object]]:
+    """Each artifact row's ``xmin`` - the transaction that last wrote it - and ``updated_at``."""
+    rows = await postgres_session.execute(
+        text("SELECT artifact_id, xmin::text, updated_at FROM task_artifacts WHERE task_id = :task_id"),
+        {"task_id": task_id},
+    )
+    return {artifact_id: (xmin, updated_at) for artifact_id, xmin, updated_at in rows.all()}
+
+
+async def test_upsert_batch_rewrites_only_the_artifacts_that_changed(postgres_session):
+    """A save repeats every artifact of the task; the unchanged ones keep their rows."""
+    task_id = await _make_task(postgres_session)
+    repo = TaskArtifactsRepository(postgres_session)
+    await repo.upsert_batch(task_id, [_artifact("a1", name="spec"), _artifact("a2", name="draft")])
+    await postgres_session.commit()
+    before = await _artifact_rows(postgres_session, task_id)
+    await postgres_session.commit()
+
+    await repo.upsert_batch(task_id, [_artifact("a1", name="spec"), _artifact("a2", name="final")])
+    await postgres_session.commit()
+
+    after = await _artifact_rows(postgres_session, task_id)
+    assert after["a1"] == before["a1"]
+    assert after["a2"][0] != before["a2"][0]
+    assert after["a2"][1] > before["a2"][1]
+    stored = await repo.find_by_task_id(task_id)
+    assert [(a.artifact_id, a.name) for a in stored] == [("a1", "spec"), ("a2", "final")]
 
 
 async def test_append_true_chunks_persist_with_all_their_parts(postgres_session):

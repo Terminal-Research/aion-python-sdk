@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Optional
 
-from a2a.server.models import PushNotificationConfigModel, TaskVersionModel
+from a2a.server.models import PushNotificationConfigModel, TaskEventModel, TaskVersionModel
 from a2a.types import TaskStatus
 from sqlalchemy import Text, and_, cast, delete, desc, func, literal_column, or_, select
 
@@ -241,20 +241,18 @@ class PostgresContextCatalog:
 
                 task_ids = [task_id for task_id, _ in rows]
                 if task_ids:
+                    removed = [str(task_id) for task_id in task_ids]
                     # A version row has no foreign key to its task. Removing it
                     # is what refuses a late write of a removed task: the
                     # writer's version no longer matches, and the task it
                     # would then recreate is refused by admission - the
                     # context is no longer active.
+                    await session.execute(delete(TaskVersionModel).where(TaskVersionModel.task_id.in_(removed)))
+                    # The journal and the push configs name their task by id
+                    # only, without a foreign key, so they go explicitly.
+                    await session.execute(delete(TaskEventModel).where(TaskEventModel.task_id.in_(removed)))
                     await session.execute(
-                        delete(TaskVersionModel).where(
-                            TaskVersionModel.task_id.in_([str(task_id) for task_id in task_ids])
-                        )
-                    )
-                    await session.execute(
-                        delete(PushNotificationConfigModel).where(
-                            PushNotificationConfigModel.task_id.in_([str(task_id) for task_id in task_ids])
-                        )
+                        delete(PushNotificationConfigModel).where(PushNotificationConfigModel.task_id.in_(removed))
                     )
                     # Messages and artifacts cascade with their task.
                     await session.execute(delete(TaskRecordModel).where(TaskRecordModel.id.in_(task_ids)))

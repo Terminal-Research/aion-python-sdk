@@ -8,7 +8,7 @@ from typing import Optional, List
 
 from a2a.server.cluster.task_store import ConcurrentTaskModificationError
 from a2a.server.context import ServerCallContext
-from a2a.server.models import TaskVersionModel
+from a2a.server.models import TaskEventModel, TaskVersionModel
 from a2a.server.owner_resolver import OwnerResolver, resolve_user_scope
 from a2a.types import Message, Task, TaskState, TaskStatus
 from a2a.types import a2a_pb2
@@ -315,9 +315,9 @@ class PostgresTaskStore(BaseTaskStore):
         owner's is left as it is, exactly as in the in-memory store. ``None``
         deletes regardless of owner: the store's deliberate unfiltered access,
         which no A2A request path uses. ``task_messages`` and
-        ``task_artifacts`` rows cascade with it. The task's version row goes
-        in the same transaction, as a2a-sdk's versioned store removes it; its
-        events stay in ``task_events``, which a2a-sdk never prunes.
+        ``task_artifacts`` rows cascade with it. The task's version row and
+        its events in ``task_events`` go in the same transaction: neither has
+        a foreign key to the task.
         """
         owner_scope = self._owner_filter(context)
         try:
@@ -341,6 +341,9 @@ class PostgresTaskStore(BaseTaskStore):
                 if deleted:
                     await session.execute(
                         delete(TaskVersionModel).where(TaskVersionModel.task_id == task_id)
+                    )
+                    await session.execute(
+                        delete(TaskEventModel).where(TaskEventModel.task_id == task_id)
                     )
 
     async def list(

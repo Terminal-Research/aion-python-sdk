@@ -83,7 +83,7 @@ What a2a-sdk's cluster mode does not provide, and Aion does not add either:
 |---|---|
 | Exclusive execution of a task | Two servers can execute one task at once; the version decides which writes land. A toolkit that declares `exclusive_per_context` refuses a message into its running task, and a second task in the context, with `context_busy` before a2a-sdk sees the message. |
 | `AgentExecutor.cancel` on the executing server for a remote cancel | The executing server stops at its next write, when a2a-sdk cancels its producer. The toolkit host takes that cancellation for a cancel and calls `Toolkit.cancel`; nothing more is written into the task. |
-| Journal cleanup | `task_events` grows with every stored event; deleting a task keeps its events. |
+| Journal cleanup | `task_events` grows with every stored event of a task while the task exists. |
 | A wait hook in `DatabaseTaskEventStream` | A remote subscriber sees events up to one poll interval late. |
 
 What Aion adds on top of cluster mode:
@@ -100,6 +100,7 @@ What Aion adds on top of cluster mode:
 | A toolkit turn whose queue lost its consumer is stopped | `ToolkitTaskHandler._turn` | When the consumer fails - a store write other than a version conflict - a2a-sdk closes the run's queue and drops what the producer writes, without cancelling it. Before each event the toolkit host checks `EventQueue.is_closed()` and, once it is closed, calls `Toolkit.cancel` and ends the turn without writing. |
 | Inline file content stripped from journaled events | `PostgresVersionedTaskStore._persistable_event` | The journal is persistence too. |
 | Version rows removed with a deleted context's tasks | `PostgresContextCatalog.finish_deletion` | A late write of a removed task is then stale, and as a new task admission refuses it. |
+| Journal events removed with their task | `PostgresTaskStore.delete`, `PostgresContextCatalog.finish_deletion` | `task_events` has no foreign key to the task, so an explicit `DELETE` in the task's transaction removes them: deleting a task or a context leaves nothing of it in the journal. |
 | Live-only events are not journaled | `AionTaskManager._check_process_skip_event` | Response and thinking deltas and ephemeral progress are never stored, so only a subscriber on the executing server receives them. |
 
 ## Overridden methods

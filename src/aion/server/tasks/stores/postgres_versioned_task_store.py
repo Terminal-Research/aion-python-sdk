@@ -299,5 +299,5 @@ class PostgresVersionedTaskStore(VersionedTaskStore):
         return await self._store.list(params, context)
 
     async def delete(self, task_id: str, context: ServerCallContext) -> None:
-        """Delete a task and its version row through the underlying store."""
+        """Delete a task with its version row and journal through the underlying store."""
         await self._store.delete(task_id, context)

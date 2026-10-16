@@ -36,14 +36,17 @@ class TaskArtifactsRepository(BaseRepository[TaskArtifactModel, TaskArtifactReco
         return TaskArtifactRecord
 
     async def upsert_batch(self, task_id: uuid.UUID, artifacts: Sequence[Artifact]) -> None:
-        """Replace each artifact's row with its current content.
+        """Store each artifact's current content, writing only the rows it changes.
+
+        Every entry is sent in one upsert. A new ``artifact_id`` is inserted; an
+        existing row is updated only when its stored payload differs from the
+        new one, so a save that repeats a task's unchanged artifacts writes no
+        row for them and keeps their ``updated_at``. The payloads are JSONB and
+        compare by content, whatever the order of their keys.
 
         Args:
             task_id: Task the artifacts belong to.
-            artifacts: The caller's full, current ``Task.artifacts`` - every
-                entry is upserted, since there is no cheaper way to tell
-                "unchanged since last save" apart from "replaced" without
-                comparing payloads.
+            artifacts: The caller's full, current ``Task.artifacts``.
         """
         if not artifacts:
             return
@@ -64,6 +67,7 @@ class TaskArtifactsRepository(BaseRepository[TaskArtifactModel, TaskArtifactReco
                 "payload": stmt.excluded.payload,
                 "updated_at": func.clock_timestamp(),
             },
+            where=TaskArtifactModel.payload.is_distinct_from(stmt.excluded.payload),
         )
         await self._session.execute(stmt)
 

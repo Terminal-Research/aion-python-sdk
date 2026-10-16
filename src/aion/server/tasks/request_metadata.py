@@ -8,7 +8,7 @@ payload among them carries the environment's configuration variables in plain
 text. A task row, or a ``Task`` snapshot in a2a-sdk's ``task_events`` journal,
 that holds such a payload hands it to every reader of the task - GetTask,
 ListTasks, stream snapshots, push notifications - for as long as the row
-lives, and nothing prunes the journal.
+lives, and the journal keeps a task's events until the task is deleted.
 
 :func:`strip_request_metadata` counts those keys and, when asked to, removes
 them from both tables. It is what ``aion db strip-request-metadata`` runs.
