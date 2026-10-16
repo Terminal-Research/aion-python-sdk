@@ -1105,3 +1105,43 @@ class TestStatusTimesFollowTheTurn:
         assert len(times) == 3
         assert all(times)
         assert times == sorted(times)
+
+    @pytest.mark.anyio
+    async def test_a_turn_that_opens_with_a_status_has_nothing_before_it(self):
+        """The agent's own WORKING moves the task, stamped when the agent made it."""
+        agent = _make_agent()
+
+        async def agent_stream(context):
+            task = context.current_task
+            reply = Message(
+                message_id="msg-reply",
+                role=Role.ROLE_AGENT,
+                task_id=task.id,
+                context_id=task.context_id,
+                parts=[Part(text="done")],
+            )
+            working = TaskStatusUpdateEvent(
+                task_id=task.id,
+                context_id=task.context_id,
+                status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=reply),
+            )
+            working.status.timestamp.GetCurrentTime()
+            yield working
+            yield TaskStatusUpdateEvent(
+                task_id=task.id,
+                context_id=task.context_id,
+                status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
+            )
+
+        agent.stream = agent_stream
+        executor = AionAgentRequestExecutor(aion_agent=agent)
+        context = _request_context({})
+        queue = RecordingQueue()
+        init_execution_scope()
+
+        await executor.execute(context, queue)
+
+        assert [type(event) for event in queue.events] == [Task, TaskStatusUpdateEvent, TaskStatusUpdateEvent]
+        assert queue.events[1].status.message.message_id == "msg-reply"
+        times = await self._consume(context, queue.events)
+        assert times == sorted(times)

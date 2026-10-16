@@ -154,14 +154,16 @@ Every scenario builds on the shape of a turn, which is what
 | # | Event | Meaning |
 |---|---|---|
 | 1 | `Task` `SUBMITTED` | the stream opens; the task now exists |
-| 2 | `TaskStatusUpdateEvent` `WORKING`, no message | the transition into a running task |
-| 3 | `TaskStatusUpdateEvent` `WORKING`, with a message | one durable reply; repeated per reply |
-| 4 | `Task` terminal | the stream closes on `COMPLETED`, `FAILED`, `CANCELED` or `INPUT_REQUIRED` |
+| 2 | `TaskStatusUpdateEvent` `WORKING`, with a message | one durable reply; the first is the transition into a running task; repeated per reply |
+| 3 | `Task` terminal | the stream closes on `COMPLETED`, `FAILED`, `CANCELED` or `INPUT_REQUIRED` |
 
-A reply the agent streams arrives ahead of its own step 3: one
-`TaskArtifactUpdateEvent` per chunk under the artifact id `aion:stream-delta`
-(the first with `append=False`, the rest with `append=True`), followed by the
-whole reply as a single `WORKING` status.
+A turn whose first event is not a status the task keeps - an artifact, a
+streamed chunk, a live-only status - gets a `WORKING` status without a message
+right before that event, so the task is never `SUBMITTED` while output reaches
+the client. A reply the agent streams therefore opens with that `WORKING`,
+then one `TaskArtifactUpdateEvent` per chunk under the artifact id
+`aion:stream-delta` (the first with `append=False`, the rest with
+`append=True`), followed by the whole reply as a single `WORKING` status.
 
 An ephemeral event is delivered and then forgotten: the client sees it, task
 history never does. There are two shapes of one idea, and which one an agent
@@ -181,7 +183,6 @@ async def test_echo_answers_with_the_argument(client: ScenarioClient) -> None:
 
     assert_shape(events, [
         task("SUBMITTED"),
-        status("WORKING", text=""),
         status("WORKING", text="hello"),
         task("COMPLETED"),
     ])

@@ -199,13 +199,13 @@ The shape of a turn: which events arrive, in which order, under which ids.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [A plain turn is: Task SUBMITTED, WORKING, the reply, the terminal Task.](core/test_events.py#L28 "test_a_turn_opens_with_submitted_and_closes_with_the_task") | `events` | `echo` | `default` | ✓ | ✓ |
-| [`steps <n>` reports each step once, in order, before completing.](core/test_events.py#L47 "test_working_statuses_arrive_in_order") | `events` | `steps` | `default` | ✓ | ✓ |
-| [Every status of a turn, the opening SUBMITTED included, is no earlier than the one before it.](core/test_events.py#L68 "test_status_times_follow_the_turn") | `events` | `steps` | `default` | ✓ | ✓ |
-| [The task and context the agent reports are the ones on the wire.](core/test_events.py#L83 "test_the_agent_sees_the_ids_the_client_sees") | `events` | `ids` | `default` | ✓ | ✓ |
-| [Reusing a context keeps it and starts a fresh task under it.](core/test_events.py#L95 "test_a_second_message_in_a_context_starts_a_new_task") | `events` | `ids` | `default` | ✓ | ✓ |
-| [Reading the task back gives the state and the text the stream ended on.](core/test_events.py#L105 "test_get_task_agrees_with_the_closing_event") | `events` | `echo` | `default` | ✓ | ✓ |
-| [Nothing follows the closing Task, and the stream ends there.](core/test_events.py#L122 "test_the_stream_carries_nothing_after_the_terminal_task") | `events` | `echo` | `default` | ✓ | ✓ |
+| [A plain turn is: Task SUBMITTED, the reply as WORKING, the terminal Task.](core/test_events.py#L28 "test_a_turn_opens_with_submitted_and_closes_with_the_task") | `events` | `echo` | `default` | ✓ | ✓ |
+| [`steps <n>` reports each step once, in order, before completing.](core/test_events.py#L46 "test_working_statuses_arrive_in_order") | `events` | `steps` | `default` | ✓ | ✓ |
+| [Every status of a turn, the opening SUBMITTED included, is no earlier than the one before it.](core/test_events.py#L66 "test_status_times_follow_the_turn") | `events` | `steps` | `default` | ✓ | ✓ |
+| [The task and context the agent reports are the ones on the wire.](core/test_events.py#L81 "test_the_agent_sees_the_ids_the_client_sees") | `events` | `ids` | `default` | ✓ | ✓ |
+| [Reusing a context keeps it and starts a fresh task under it.](core/test_events.py#L93 "test_a_second_message_in_a_context_starts_a_new_task") | `events` | `ids` | `default` | ✓ | ✓ |
+| [Reading the task back gives the state and the text the stream ended on.](core/test_events.py#L103 "test_get_task_agrees_with_the_closing_event") | `events` | `echo` | `default` | ✓ | ✓ |
+| [Nothing follows the closing Task, and the stream ends there.](core/test_events.py#L120 "test_the_stream_carries_nothing_after_the_terminal_task") | `events` | `echo` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_extensions.py`
 
@@ -349,19 +349,19 @@ A toolkit plugin served by a real ``aion serve``: a turn on the wire, artifact v
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
 | [Messages, deltas, details and an artifact on the stream; the object whole in the task.](core/test_toolkits.py#L125 "test_a_toolkit_turn_streams_and_completes_with_its_object") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [Details without a message change the object, not what the task last said.](core/test_toolkits.py#L156 "test_a_status_update_keeps_the_status_line") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [The server numbers a toolkit's artifact per context, and ``find_artifact`` reads the latest back.](core/test_toolkits.py#L177 "test_the_tasks_of_a_context_write_numbered_versions_of_an_artifact_and_find_the_latest") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [The toolkit's refusal is the JSON-RPC error, with its code; no task was opened for it.](core/test_toolkits.py#L221 "test_a_refused_request_is_an_error_with_its_code_and_leaves_no_task") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [A malformed script never reaches the toolkit: every toolkit refuses it with ``invalid_payload``.](core/test_toolkits.py#L253 "test_a_payload_the_toolkits_model_refuses_is_an_error_with_the_common_code_and_leaves_no_task") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [The toolkit is asked once, with the task's id and the grace period; the task ends ``CANCELED``.](core/test_toolkits.py#L305 "test_a_cancel_ends_the_turn_canceled_and_tells_the_toolkit") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [The repeat is an error, the task stays as it was, and the toolkit is not asked again.](core/test_toolkits.py#L321 "test_a_second_cancel_of_the_finished_task_is_refused_and_does_not_reach_the_toolkit") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [The cancel waits out the grace period; the stream and a subscription made meanwhile both close ``CANCELED``.](core/test_toolkits.py#L337 "test_a_turn_past_the_grace_period_is_cancelled_without_it_and_a_subscription_is_not_held") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [The turn's own outcome stands: the cancel answers with it, and so does the stream.](core/test_toolkits.py#L361 "test_a_cancel_after_the_work_was_delivered_answers_completed") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [An installed toolkit the agent enables is an extension the card announces.](core/test_toolkits.py#L374 "test_the_card_offers_the_enabled_toolkit") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [A second directive, and a message into the running task, get ``context_busy`` naming the task.](core/test_toolkits.py#L390 "test_an_exclusive_toolkit_refuses_a_second_task_in_a_context_until_the_first_ends") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [The limit is per context: two contexts each hold a running task of the toolkit.](core/test_toolkits.py#L415 "test_an_exclusive_toolkit_runs_in_several_contexts_at_once") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [The directive is not taken as the answer: a toolkit task starts, and the question keeps waiting for it.](core/test_toolkits.py#L431 "test_a_directive_beside_the_agents_waiting_question_starts_its_own_task") | `toolkits` | `ask` | `toolkit` | ✓ | [skip](#frameworks) |
-| [A directive without a task id resumes the toolkit's waiting task in the context.](core/test_toolkits.py#L455 "test_a_toolkit_that_waits_for_input_continues_its_own_task") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [Details without a message change the object, not what the task last said.](core/test_toolkits.py#L155 "test_a_status_update_keeps_the_status_line") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The server numbers a toolkit's artifact per context, and ``find_artifact`` reads the latest back.](core/test_toolkits.py#L176 "test_the_tasks_of_a_context_write_numbered_versions_of_an_artifact_and_find_the_latest") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The toolkit's refusal is the JSON-RPC error, with its code; no task was opened for it.](core/test_toolkits.py#L220 "test_a_refused_request_is_an_error_with_its_code_and_leaves_no_task") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [A malformed script never reaches the toolkit: every toolkit refuses it with ``invalid_payload``.](core/test_toolkits.py#L252 "test_a_payload_the_toolkits_model_refuses_is_an_error_with_the_common_code_and_leaves_no_task") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The toolkit is asked once, with the task's id and the grace period; the task ends ``CANCELED``.](core/test_toolkits.py#L304 "test_a_cancel_ends_the_turn_canceled_and_tells_the_toolkit") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The repeat is an error, the task stays as it was, and the toolkit is not asked again.](core/test_toolkits.py#L320 "test_a_second_cancel_of_the_finished_task_is_refused_and_does_not_reach_the_toolkit") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The cancel waits out the grace period; the stream and a subscription made meanwhile both close ``CANCELED``.](core/test_toolkits.py#L336 "test_a_turn_past_the_grace_period_is_cancelled_without_it_and_a_subscription_is_not_held") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The turn's own outcome stands: the cancel answers with it, and so does the stream.](core/test_toolkits.py#L360 "test_a_cancel_after_the_work_was_delivered_answers_completed") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [An installed toolkit the agent enables is an extension the card announces.](core/test_toolkits.py#L373 "test_the_card_offers_the_enabled_toolkit") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [A second directive, and a message into the running task, get ``context_busy`` naming the task.](core/test_toolkits.py#L389 "test_an_exclusive_toolkit_refuses_a_second_task_in_a_context_until_the_first_ends") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The limit is per context: two contexts each hold a running task of the toolkit.](core/test_toolkits.py#L414 "test_an_exclusive_toolkit_runs_in_several_contexts_at_once") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The directive is not taken as the answer: a toolkit task starts, and the question keeps waiting for it.](core/test_toolkits.py#L430 "test_a_directive_beside_the_agents_waiting_question_starts_its_own_task") | `toolkits` | `ask` | `toolkit` | ✓ | [skip](#frameworks) |
+| [A directive without a task id resumes the toolkit's waiting task in the context.](core/test_toolkits.py#L454 "test_a_toolkit_that_waits_for_input_continues_its_own_task") | `toolkits` | — | `toolkit` | ✓ | ✓ |
 
 ### `tests/scenarios/distributed/test_abandoned_tasks.py`
 

@@ -70,7 +70,17 @@ def _event_debug_info(event) -> str:
 
 
 class AionEventPipeline:
-    """Orchestrates per-event processing: first-event trigger, transforms, routing."""
+    """Orchestrates per-event processing: starting the task, transforms, routing.
+
+    A new task opens as ``SUBMITTED`` and moves to ``WORKING`` with the first
+    event of its turn that reaches the client or the task. A status update
+    that is kept in the task states the task's state itself, so it carries
+    that move. Anything else - an artifact, a live-only status or delta, a
+    message or task snapshot the pipeline stores without streaming it - is
+    preceded by a ``WORKING`` status: the task is never ``SUBMITTED`` while
+    its output reaches the client, and a turn that opens with a status of
+    its own gets no status without a message or details in front of it.
+    """
 
     def __init__(
             self,
@@ -84,10 +94,11 @@ class AionEventPipeline:
         """
         Args:
             event_queue: Queue the processed events are emitted to.
-            task_updater: Updater used to announce the task is working.
+            task_updater: Updater used to move the task to ``WORKING`` when
+                the first event does not.
             file_transformer: Optional transformer for inline file parts.
-            task_started: True when the caller has already announced the work,
-                as the executor does for a resumed task.
+            task_started: True when the task is already working, as the
+                executor makes a resumed task before its turn runs.
             response_parameters: Verified activation for this invocation only.
             prior_message_ids: Existing history/status messages to preserve.
         """
@@ -124,7 +135,6 @@ class AionEventPipeline:
                 then, so an answer sent alongside the file reaches the client
                 before the task fails.
         """
-        await self._ensure_task_started()
         produced = event
         event, failures = await self._prepare_event(event)
         if event is not None:
@@ -140,6 +150,8 @@ class AionEventPipeline:
         event = await self._deduplicate_event(event)
         if event is None:
             return
+
+        await self._start_task(event)
 
         # Task and Message events are persisted silently (not streamed to client)
         if isinstance(event, (Task, Message)):
@@ -221,10 +233,35 @@ class AionEventPipeline:
         event_copy = copy.deepcopy(event)
         await self._queue.enqueue_event(event_copy)
 
-    async def _ensure_task_started(self) -> None:
-        if not self._task_started:
-            await self._task_updater.start_work()
-            self._task_started = True
+    async def _start_task(self, event) -> None:
+        """Move the task to ``WORKING`` ahead of the first event that does not move it itself.
+
+        The ``WORKING`` written here is stamped no later than a live-only
+        status it precedes, which carries the time it was made, so the
+        statuses keep the order of the turn.
+        """
+        if self._task_started:
+            return
+        self._task_started = True
+        if self._starts_the_task(event):
+            return
+
+        timestamp = None
+        if isinstance(event, TaskStatusUpdateEvent) and event.status.HasField("timestamp"):
+            timestamp = event.status.timestamp.ToJsonString()
+        await self._task_updater.update_status(TaskState.TASK_STATE_WORKING, timestamp=timestamp)
+
+    @staticmethod
+    def _starts_the_task(event) -> bool:
+        """Whether delivering the event moves a ``SUBMITTED`` task out of that state.
+
+        Only a status update the task keeps does. A ``Message`` or ``Task``
+        is stored silently, under the state the task already has, and the
+        ``WORKING`` written before it is also what moves a message left in
+        ``status.message`` into the history when the event consumer applies
+        it.
+        """
+        return isinstance(event, TaskStatusUpdateEvent) and not is_ephemeral_status_event(event)
 
     async def _prepare_event(self, event) -> tuple[object, list[UploadFailure]]:
         """Return the event ready for delivery and the files it could not keep.

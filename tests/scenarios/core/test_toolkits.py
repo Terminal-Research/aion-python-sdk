@@ -133,7 +133,6 @@ async def test_a_toolkit_turn_streams_and_completes_with_its_object(toolkit_clie
 
     assert_shape(events, [
         task("SUBMITTED"),
-        status("WORKING", text=""),
         status("WORKING", text="Preparing"),
         chunks(2),
         status("WORKING", text=""),

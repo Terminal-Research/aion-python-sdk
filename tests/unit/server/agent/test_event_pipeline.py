@@ -1,8 +1,8 @@
 """What `AionEventPipeline` promises about every event on its way to a client.
 
 Every event either framework produces passes through this one object, and it
-is the object that decides four things nobody else decides: whether the turn
-has been announced, whether the event is a duplicate, whether it reaches the
+is the object that decides four things nobody else decides: whether the task
+has started working, whether the event is a duplicate, whether it reaches the
 client or only the database, and whether the task has already been closed.
 
 None of that had a test of its own. The pipeline was patched out in the tests
@@ -164,34 +164,117 @@ def _status_events(queue: RecordingQueue) -> list[TaskStatusUpdateEvent]:
 
 
 # --------------------------------------------------------------------------
-# Announcing the turn
+# Starting the task
 # --------------------------------------------------------------------------
 
-async def test_the_first_event_announces_the_work_once(manager, queue) -> None:
-    """The client learns the task is working, and learns it exactly once.
+@pytest.fixture
+async def submitted(manager) -> AionTaskManager:
+    """A new task, stored as the consumer stores it before the turn's first event."""
+    await manager.save_task_event(_task(state=TaskState.TASK_STATE_SUBMITTED))
+    return manager
 
-    The announcement is the pipeline's job precisely because the agent does
-    not make one: an agent that spends a minute before its first token would
-    otherwise leave the client with no sign the turn started.
+
+def _bare_working(queue: RecordingQueue) -> list[TaskStatusUpdateEvent]:
+    """The WORKING statuses that carry neither a message nor details."""
+    return [
+        e for e in _status_events(queue)
+        if e.status.state == TaskState.TASK_STATE_WORKING
+        and not e.status.HasField("message")
+        and not e.metadata
+    ]
+
+
+async def test_a_first_status_starts_the_task_itself(submitted, queue) -> None:
+    """The agent's first status is the move out of SUBMITTED; nothing precedes it.
+
+    A WORKING with neither a message nor details in front of it would only
+    repeat what that status says, in every stream, journal and push.
     """
     pipeline = _pipeline(queue)
 
     await pipeline.process(_status("first"))
     await pipeline.process(_status("second"))
 
-    working = [
-        e for e in _status_events(queue)
-        if e.status.state == TaskState.TASK_STATE_WORKING and not e.status.HasField("message")
-    ]
-    assert len(working) == 1
-    assert queue.events[0] is working[0], "the announcement precedes the agent's own events"
+    assert [e.status.message.parts[0].text for e in _status_events(queue)] == ["first", "second"]
+    assert _bare_working(queue) == []
+
+
+@pytest.mark.parametrize("state", [
+    TaskState.TASK_STATE_INPUT_REQUIRED,
+    TaskState.TASK_STATE_COMPLETED,
+    TaskState.TASK_STATE_FAILED,
+])
+async def test_a_first_status_in_another_state_is_the_move_too(submitted, queue, state) -> None:
+    """A turn that ends or stops at once goes there straight from SUBMITTED."""
+    pipeline = _pipeline(queue)
+
+    await pipeline.process(_status("at once", state=state))
+
+    assert [e.status.state for e in _status_events(queue)] == [state]
+
+
+async def test_a_first_artifact_is_preceded_by_working_once(submitted, queue) -> None:
+    """Output never reaches the client while the task still says SUBMITTED.
+
+    An artifact update carries no state, so the task is moved to WORKING
+    right before it - once, however many events follow.
+    """
+    pipeline = _pipeline(queue)
+
+    await pipeline.process(_artifact_update("Hel"))
+    await pipeline.process(_artifact_update("lo"))
+    await pipeline.process(_status("done"))
+
+    assert len(_bare_working(queue)) == 1
+    assert queue.events[0] is _bare_working(queue)[0], "the move precedes the agent's own events"
+    assert isinstance(queue.events[1], TaskArtifactUpdateEvent)
+
+
+async def test_a_first_live_only_status_is_preceded_by_working(submitted, queue) -> None:
+    """An ephemeral status never reaches the task, so it cannot move it."""
+    pipeline = _pipeline(queue)
+
+    await pipeline.process(_status("typing", ephemeral=True))
+
+    assert len(queue.events) == 2
+    assert queue.events[0] is _bare_working(queue)[0]
+
+
+async def test_the_move_is_no_later_than_the_event_it_precedes(submitted, queue) -> None:
+    """A WORKING put in front of a stamped event keeps the order of the turn."""
+    pipeline = _pipeline(queue)
+    live = _status("typing", ephemeral=True)
+    live.status.timestamp.FromJsonString("2026-10-16T08:00:00Z")
+
+    await pipeline.process(live)
+
+    working, delivered = queue.events
+    assert working.status.timestamp.ToNanoseconds() <= delivered.status.timestamp.ToNanoseconds()
+
+
+@pytest.mark.parametrize("first", ["message", "task"])
+async def test_a_first_event_stored_silently_is_preceded_by_working(submitted, queue, first) -> None:
+    """A message or task snapshot the pipeline stores itself does not reach the stream.
+
+    The client learns the task is working from the WORKING put before it.
+    """
+    pipeline = _pipeline(queue)
+    event = (
+        _message("noted") if first == "message"
+        else _task(state=TaskState.TASK_STATE_WORKING, history=[_message("from the agent")])
+    )
+
+    await pipeline.process(event)
+
+    assert len(queue.events) == 1
+    assert queue.events[0] is _bare_working(queue)[0]
 
 
 async def test_a_resumed_task_announces_nothing(manager, queue) -> None:
-    """A task resumed after an interrupt was announced before the agent ran.
+    """A task resumed after an interrupt is WORKING before the agent runs.
 
     `task_started=True` is how the executor says so, and a second
-    announcement would tell the client the turn restarted when it did not.
+    WORKING would tell the client the turn restarted when it did not.
     """
     pipeline = _pipeline(queue, task_started=True)
 
