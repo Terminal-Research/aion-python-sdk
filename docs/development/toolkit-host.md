@@ -197,7 +197,7 @@ delivers and stores:
 | Protocol | A2A |
 | --- | --- |
 | `ToolkitMessageEvent` | `TaskStatusUpdateEvent(WORKING)` with the message (role agent) and `metadata{<uri>: object}` |
-| the same, `ephemeral` | the same with `aion:ephemeral` and without the object: delivered, never stored |
+| the same, `ephemeral` | the same with `aion:ephemeral` and without the object: delivered to the streams open on the executing server, never stored, never pushed |
 | the same, `partial` | an `aion:stream-delta` artifact chunk, as the framework adapters stream text; the message's metadata goes to the chunk's artifact under the server's `status` and `status_reason`; the next whole message or the result closes it |
 | `ToolkitArtifactEvent` | `TaskArtifactUpdateEvent` with the artifact's id, name, description, parts and metadata plus the server's `version` ([Artifact versions](#artifact-versions)), `append`, `last_chunk`; its `task_metadata` follows as a `WORKING` update with no message |
 | `ToolkitStatusEvent` | a `WORKING` update with no message, carrying only the object |
@@ -346,12 +346,12 @@ cancel of a task whose turn does not run here.
   get it. uvicorn then waits for the connections still open
   (`timeout_graceful_shutdown`) and cancels them, and the drain of the
   active tasks settles a turn that did not stop as `FAILED` with
-  `aion:settledReason=server_shutdown`; what such a turn did not save is
-  lost with the process. Of the default 25 s the toolkits get 15, uvicorn 5,
-  the settlement 2 and the rest of the cleanup 3. A smaller budget shrinks
-  the last three - uvicorn at most 20 % of it - and the toolkits get the
-  rest, at least 1 s; below 10 s the agent logs a WARNING at startup. A
-  larger one goes to the toolkits. A deployment sets the variable a few
+  `aion:settledReason=server_shutdown` and pushes it; what such a turn did
+  not save is lost with the process. Of the default 25 s the toolkits get
+  15, uvicorn 5, the settlement 2 and the rest of the cleanup 3. A smaller
+  budget shrinks the last three - uvicorn at most 20 % of it - and the
+  toolkits get the rest, at least 1 s; below 10 s the agent logs a WARNING
+  at startup. A larger one goes to the toolkits. A deployment sets the variable a few
   seconds below its platform's stop timeout (Kubernetes
   `terminationGracePeriodSeconds`, `docker stop -t`), so the server finishes
   its shutdown before the platform kills it.

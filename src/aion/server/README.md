@@ -450,6 +450,39 @@ this section says otherwise.
   created on its own or inline in `SendMessage`, and a delivery to a stored
   one is skipped. Elsewhere any URL is accepted.
 
+### How a client receives a task's updates
+
+A run belongs to the server, not to the request that started it: it goes on
+when the client disconnects, and stores its outcome either way. A client
+follows it through one of the methods below. *Durable* is what the task
+stores - status changes with their messages, artifacts, the outcome.
+*Ephemeral* is live-only progress the task never stores: response and
+thinking deltas, ephemeral messages and reactions (see [Transient stream
+artifacts](#transient-stream-artifacts)), and status updates flagged
+`aion:ephemeral`.
+
+| Method | How it is delivered | What arrives | Connection held |
+|---|---|---|---|
+| `SendStreamingMessage` | SSE on the request, opened and closed by the stored `Task` | everything, ephemeral included | until the task has an outcome or waits for input |
+| `SendMessage` | one JSON response: the `Task` once it has an outcome or waits for input; with `configuration.returnImmediately`, the task at once while the run goes on | durable only | as for the stream; none with `returnImmediately` |
+| push notifications | `configuration.taskPushNotificationConfig` on a send, or `CreateTaskPushNotificationConfig`; the server POSTs each change the task stores to the webhook, an outcome or a wait for input as the full `Task` | durable only | none |
+| `SubscribeToTask` | SSE: the stored task, then the live events until the task stops; a task that already has an outcome is refused | on the server running the task, everything; on another server the task's journal, so durable only | until the task stops |
+| `GetTask` | one JSON response: the stored task, its history cut to `historyLength` | durable only | none |
+
+Push carries every outcome the task stores, including those the run did not
+write itself: a cancel written by another server, the `FAILED` of an agent
+that raised, a task settled at shutdown or as abandoned. Deliveries are made
+one at a time from the task's event loop, each after its change is stored, so
+a webhook that answers slowly holds back the delivery of the run's later
+events, on every channel, for up to `PUSH_NOTIFICATION_TIMEOUT_SECONDS`
+(default 30 s) per delivery.
+
+A stream that closes on a `Task` that is still `SUBMITTED` or `WORKING`, and
+a `SendMessage` answered with one, did not see the run end: a2a-sdk drops a
+subscriber that falls 1024 events behind (it logs `Evicting event queue
+sink`), and a stopping server closes its connections. Resubscribe with
+`SubscribeToTask`, or poll `GetTask`, for the outcome.
+
 ### Several servers of one agent
 
 With PostgreSQL the server runs a2a-sdk's cluster mode, so any number of
@@ -503,7 +536,9 @@ servers of one agent can share the database. The rules are a2a-sdk's:
   stream open on it receives that outcome. uvicorn then waits for the
   connections still open, so a stream on any other task does not hold the
   shutdown, and the tasks the server was still running are settled as
-  `FAILED` with `aion:settledReason=server_shutdown`. `AION_SHUTDOWN_TIMEOUT`
+  `FAILED` with `aion:settledReason=server_shutdown` and pushed; a webhook
+  that has not answered by the end of the settlement's share is not waited
+  for. `AION_SHUTDOWN_TIMEOUT`
   (seconds, default 25) bounds all of it: `aion serve` kills an agent that
   has not stopped by then, and the agent divides it among the steps
   (`aion.server.shutdown`) - by default 15 s for the toolkits' turns, which
@@ -550,6 +585,9 @@ HTTP+JSON routes (see [Contexts](#contexts)).
 
 The task manager delivers `aion:stream-delta`, `aion:thinking-delta`,
 `aion:ephemeral-message`, and `aion:reaction` updates to live clients without
-adding them to stored task artifacts. The deduplicator does not retain their
-IDs, so repeated chunks remain deliverable. Ordinary artifacts still persist.
-This filter does not remove artifacts from previously stored tasks.
+adding them to stored task artifacts, and skips status updates flagged
+`aion:ephemeral` the same way. Push notifications skip both, by the same
+predicate (`is_ephemeral_event`): a webhook receives what the task stores.
+The deduplicator does not retain their IDs, so repeated chunks remain
+deliverable. Ordinary artifacts still persist. This filter does not remove
+artifacts from previously stored tasks.
