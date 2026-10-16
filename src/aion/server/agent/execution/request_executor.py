@@ -625,6 +625,12 @@ class AionAgentRequestExecutor(AgentExecutor):
         server and trusted handlers write, so a client cannot set a
         server-owned key such as ``aion:settledReason`` either.
 
+        A new task's SUBMITTED status is stamped here, when the task is made.
+        Every status of the turn is stamped when it is made - ``TaskUpdater``
+        does it as it creates the event - while the event consumer stores this
+        task later, concurrently with the turn; a time left for the consumer
+        to fill in could fall after the turn's first WORKING.
+
         Args:
             context: Request context with optional current task
 
@@ -647,6 +653,7 @@ class AionAgentRequestExecutor(AgentExecutor):
 
         # Create new task
         task = new_task_from_user_message(context.message)
+        task.status.timestamp.GetCurrentTime()
         context.current_task = task
 
         set_task_id(task.id)

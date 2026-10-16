@@ -65,6 +65,21 @@ async def test_working_statuses_arrive_in_order(client: ScenarioClient) -> None:
         assert event.raw.status.timestamp.ToNanoseconds() <= completed_at, event
 
 
+@pytest.mark.command("steps")
+async def test_status_times_follow_the_turn(client: ScenarioClient) -> None:
+    """Every status of a turn, the opening SUBMITTED included, is no earlier than the one before it."""
+    events = await client.send("steps 2")
+
+    times = [
+        event.raw.status.timestamp.ToNanoseconds()
+        for event in events
+        if event.kind in ("task", "status")
+    ]
+    assert events[0].state == "SUBMITTED"
+    assert len(times) >= 4
+    assert times == sorted(times)
+
+
 @pytest.mark.command("ids")
 async def test_the_agent_sees_the_ids_the_client_sees(client: ScenarioClient) -> None:
     """The task and context the agent reports are the ones on the wire."""

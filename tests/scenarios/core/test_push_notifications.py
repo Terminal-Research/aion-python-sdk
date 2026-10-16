@@ -23,6 +23,7 @@ import json
 
 import pytest
 import pytest_asyncio
+from google.protobuf.timestamp_pb2 import Timestamp
 
 from tests.scenarios.commands import TYPING_INDICATOR, typing_text
 from tests.scenarios.harness import (
@@ -76,6 +77,15 @@ def _task_id_from_notification(notification: Notification) -> str | None:
     if status_update:
         return status_update.get("taskId")
     return None
+
+
+def _status_time(notification: Notification) -> int:
+    """The status time a Task or status-update notification carries, in nanoseconds."""
+    body = notification.body
+    status = (body.get("task") or body.get("statusUpdate", {}))["status"]
+    time = Timestamp()
+    time.FromJsonString(status["timestamp"])
+    return time.ToNanoseconds()
 
 
 def _find_terminal(notifications: list[Notification]) -> Notification | None:
@@ -211,6 +221,37 @@ async def test_a_crashed_agent_s_failure_is_pushed(
     terminal = _find_terminal(notifications)
     assert terminal is not None, f"no terminal notification among {len(notifications)} received"
     assert _task_from_notification(terminal)["status"]["state"] == "TASK_STATE_FAILED"
+
+
+@pytest.mark.command("steps")
+async def test_pushed_status_times_follow_the_turn_of_a_unary_send(
+    push_client: ScenarioClient,
+    callback: CallbackServer,
+) -> None:
+    """A unary send's notifications carry status times in the order of the turn."""
+    events = await push_client.send(
+        "steps 2",
+        push_notification_url=callback.url,
+        stream=False,
+    )
+    assert final_task(events).state == "COMPLETED"
+
+    notifications = await callback.wait(timeout=15)
+    while _find_terminal(notifications) is None:
+        more = await callback.wait(timeout=15, count=len(notifications) + 1)
+        if len(more) == len(notifications):
+            break
+        notifications = more
+    terminal = _find_terminal(notifications)
+    assert terminal is not None, f"no terminal notification among {len(notifications)} received"
+
+    nanoseconds = [
+        _status_time(notification)
+        for notification in notifications[: notifications.index(terminal) + 1]
+        if "task" in notification.body or "statusUpdate" in notification.body
+    ]
+    assert len(nanoseconds) >= 3
+    assert nanoseconds == sorted(nanoseconds)
 
 
 @pytest.mark.variant("push")

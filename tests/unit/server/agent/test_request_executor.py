@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from a2a.server.agent_execution import RequestContext
 from a2a.server.context import ServerCallContext
 from a2a.server.events import EventQueue
+from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import (
     Artifact,
     Message,
@@ -35,6 +36,7 @@ from aion.core.runtime.context.models import AionRuntimeContext
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.agent.execution.context.providers import RequestScopeRuntimeContextProvider
 from aion.server.files.storage import FileUploadErrorCode, StubFileStorageBackend, UploadFailure
+from aion.server.tasks.task_manager import AionTaskManager
 from tests.unit.support.daemon import daemon_payload
 from tests.unit.support.events import RecordingQueue
 from tests.unit.support.files import OutcomeBackend, StoringTransformer
@@ -1034,3 +1036,72 @@ class TestFailureClosesTheTask:
 
         assert [call.args[1] for call in MockUpdater.call_args_list] == ["task-a", "task-b"]
         assert not hasattr(executor, "_task_updater")
+
+
+class TestStatusTimesFollowTheTurn:
+    """A new task's statuses carry times in the order they happened.
+
+    The producer makes the turn's events and the event consumer stores them
+    concurrently: the opening Task may be stored after the producer has
+    already made the first WORKING, stamped as ``TaskUpdater`` stamps it,
+    when it is made. The times must not depend on when the consumer gets to
+    an event.
+    """
+
+    @staticmethod
+    async def _consume(context: RequestContext, events: list) -> list[int]:
+        """Store the events as the event consumer does, after the producer made them all.
+
+        Returns:
+            The status time of each Task and status update, as it was stored
+            and delivered.
+        """
+        task = events[0]
+        manager = AionTaskManager(
+            task_store=InMemoryTaskStore(),
+            context=context.call_context,
+            task_id=task.id,
+            context_id=task.context_id,
+            initial_message=None,
+        )
+        await manager.save_task_event(task)
+        times = [task.status.timestamp.ToNanoseconds()]
+        for event in events[1:]:
+            processed = await manager.process(event)
+            if isinstance(processed, TaskStatusUpdateEvent):
+                times.append(processed.status.timestamp.ToNanoseconds())
+        return times
+
+    @pytest.mark.anyio
+    async def test_submitted_is_not_later_than_the_working_that_follows(self):
+        agent = _make_agent()
+
+        async def agent_stream(context):
+            task = context.current_task
+            yield TaskArtifactUpdateEvent(
+                task_id=task.id,
+                context_id=task.context_id,
+                artifact=Artifact(artifact_id="report", parts=[Part(text="findings")]),
+            )
+            yield TaskStatusUpdateEvent(
+                task_id=task.id,
+                context_id=task.context_id,
+                status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
+            )
+
+        agent.stream = agent_stream
+        executor = AionAgentRequestExecutor(aion_agent=agent)
+        context = _request_context({})
+        queue = RecordingQueue()
+        init_execution_scope()
+
+        await executor.execute(context, queue)
+        assert isinstance(queue.events[0], Task)
+        assert queue.events[0].status.state == TaskState.TASK_STATE_SUBMITTED
+        assert queue.events[1].status.state == TaskState.TASK_STATE_WORKING
+
+        times = await self._consume(context, queue.events)
+
+        assert len(times) == 3
+        assert all(times)
+        assert times == sorted(times)
