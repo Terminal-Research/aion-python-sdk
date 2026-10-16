@@ -29,6 +29,24 @@ but it is not a substitute for a required pull request check.
 the release workflow's checks of the built wheel. `TEST_PYTHONS` in the
 `Makefile` is the `unit` job's matrix; change the two together.
 
+## Toolkits
+
+The SDK's CI installs no toolkit. It checks the toolkit host against the
+scripted toolkit in `tests/support/scripted_toolkit`, which is built on the
+protocol models of `aion.core.toolkit` alone (see
+[Toolkit host](toolkit-host.md#testing)).
+
+A real toolkit is checked against the SDK by its own CI, which calls the
+reusable workflow `.github/workflows/toolkit-ci.yml` of this repository and
+so installs the SDK from this public repository: a toolkit branch runs
+against the SDK branch of the same name when one exists, and against `main`
+otherwise; a manual run can name another SDK ref, and a nightly run checks
+the toolkit's `main` against the SDK's `main`. A change that spans both
+repositories uses the same branch name in each, and the SDK side is merged
+first. When the server loads a toolkit it also compares the protocol version
+the toolkit declares with its own, so an installation that skipped the
+dependency resolver still cannot run a toolkit built for another protocol.
+
 ## Require the checks before merging
 
 The workflow alone does not block a merge. Protect `main` after `CI result` has

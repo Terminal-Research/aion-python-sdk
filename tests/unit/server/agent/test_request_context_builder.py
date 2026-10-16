@@ -1,9 +1,9 @@
-"""Tests for AionRequestContextBuilder._find_interrupted_task."""
+"""Tests for AionRequestContextBuilder: the waiting task a message continues, and the context it builds."""
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from a2a.server.context import ServerCallContext, User
-from a2a.types import Task, TaskState, TaskStatus
+from a2a.types import Message, Role, SendMessageRequest, Task, TaskState, TaskStatus
 
 from aion.server.agent.execution.request_context_builder import AionRequestContextBuilder
 from aion.server.tasks.stores.base_task_store import BaseTaskStore
@@ -15,7 +15,7 @@ def _make_task(state: TaskState) -> Task:
 
 def _make_store(last_task: Task | None) -> BaseTaskStore:
     store = MagicMock(spec=BaseTaskStore)
-    store.get_context_last_task = AsyncMock(return_value=last_task)
+    store.get_context_last_routed_task = AsyncMock(return_value=last_task)
     return store
 
 
@@ -43,10 +43,11 @@ class TestFindInterruptedTask:
         store = _make_store(None)
         builder = AionRequestContextBuilder(task_store=store)
         context = _context()
-        result = await builder._find_interrupted_task("ctx-new", context)
+        result = await builder.interrupted_task("ctx-new", context)
         assert result is None
-        store.get_context_last_task.assert_awaited_once_with(
+        store.get_context_last_routed_task.assert_awaited_once_with(
             context_id="ctx-new",
+            routed_extension=None,
             context=context,
         )
 
@@ -54,7 +55,7 @@ class TestFindInterruptedTask:
         """Task exists but is completed — should return None."""
         store = _make_store(_make_task(TaskState.TASK_STATE_COMPLETED))
         builder = AionRequestContextBuilder(task_store=store)
-        result = await builder._find_interrupted_task(
+        result = await builder.interrupted_task(
             "ctx-1",
             _context(),
         )
@@ -65,7 +66,7 @@ class TestFindInterruptedTask:
         task = _make_task(TaskState.TASK_STATE_INPUT_REQUIRED)
         store = _make_store(task)
         builder = AionRequestContextBuilder(task_store=store)
-        result = await builder._find_interrupted_task(
+        result = await builder.interrupted_task(
             "ctx-1",
             _context(),
         )
@@ -74,7 +75,7 @@ class TestFindInterruptedTask:
     async def test_returns_none_when_no_task_store(self):
         """No task store configured — should return None."""
         builder = AionRequestContextBuilder(task_store=None)
-        result = await builder._find_interrupted_task(
+        result = await builder.interrupted_task(
             "ctx-1",
             _context(),
         )
@@ -87,7 +88,33 @@ class TestFindInterruptedTask:
         builder = AionRequestContextBuilder(task_store=store)
         context = ServerCallContext()
 
-        result = await builder._find_interrupted_task("ctx-1", context)
+        result = await builder.interrupted_task("ctx-1", context)
 
         assert result is interrupted
-        store.get_context_last_task.assert_awaited_once_with(context_id="ctx-1", context=context)
+        store.get_context_last_routed_task.assert_awaited_once_with(
+            context_id="ctx-1", routed_extension=None, context=context
+        )
+
+    async def test_only_a_task_of_the_addressed_handler_is_searched(self):
+        """A toolkit's directive looks for that toolkit's waiting task, not the framework adapter's."""
+        store = _make_store(None)
+        builder = AionRequestContextBuilder(task_store=store)
+        context = _context()
+
+        await builder.interrupted_task("ctx-1", context, "https://example.invalid/toolkits/a")
+
+        store.get_context_last_routed_task.assert_awaited_once_with(
+            context_id="ctx-1", routed_extension="https://example.invalid/toolkits/a", context=context
+        )
+
+
+async def test_build_takes_the_task_id_as_given_and_discovers_nothing():
+    """The request handler has already made a continuing message name its task."""
+    store = _make_store(_make_task(TaskState.TASK_STATE_INPUT_REQUIRED))
+    builder = AionRequestContextBuilder(task_store=store)
+    params = SendMessageRequest(message=Message(message_id="m-1", role=Role.ROLE_USER, context_id="ctx-1"))
+
+    built = await builder.build(_context(), params=params, task_id=None, context_id="ctx-1")
+
+    assert built.task_id != "task-1"
+    store.get_context_last_routed_task.assert_not_awaited()

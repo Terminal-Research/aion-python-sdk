@@ -195,6 +195,10 @@ class ContextReservationsRepository(BaseRepository[ContextReservationModel, Cont
         )
         return found.first() is not None
 
+    async def held(self, agent_id: str, context_id: str) -> Optional[ContextReservationRecord]:
+        """The context's reservation as it is now, or None when nothing was admitted into it."""
+        return await self._held(agent_id, context_id)
+
     async def held_for_update(self, agent_id: str, context_id: str) -> Optional[ContextReservationRecord]:
         """The context's reservation, locked until the transaction ends."""
         return await self._held(agent_id, context_id, for_update=True)

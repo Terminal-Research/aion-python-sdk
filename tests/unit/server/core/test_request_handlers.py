@@ -88,16 +88,17 @@ class TestVerifyDeclaredExtensions:
     def test_declared_inactive_extension_rejected_as_invalid_params(self):
         from a2a.types import Message, Role, SendMessageRequest
         from a2a.utils.errors import InvalidParamsError
-        from aion.core.constants.a2a import BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1
+        from aion.core.constants.a2a import DAEMON_EXTENSION_URI_V1
         from aion.core.runtime import aion_a2a_extension_registry
 
         aion_a2a_extension_registry.reset_to_default()
         message = Message(message_id="m-1", role=Role.ROLE_USER)
-        message.extensions.append(BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1)
+        message.extensions.append(DAEMON_EXTENSION_URI_V1)
         params = SendMessageRequest(message=message)
 
-        with pytest.raises(InvalidParamsError, match="not enabled for this agent"):
+        with pytest.raises(InvalidParamsError, match="not enabled for this agent") as refusal:
             self._verify(params, self._call_context())
+        assert refusal.value.data is None
 
     def test_header_declared_inactive_extension_rejected(self):
         from a2a.types import Message, Role, SendMessageRequest
@@ -120,6 +121,30 @@ class TestVerifyDeclaredExtensions:
 
         result = self._verify(params, self._call_context())
         assert result is None
+
+    def test_a_coded_refusal_carries_its_own_retryable(self):
+        """A collector's refusal with a code of its own travels with the ``retryable`` it gives."""
+        from a2a.types import Message, Role, SendMessageRequest
+        from a2a.utils.errors import InvalidParamsError
+        from aion.core.runtime import ExtensionActivationError, aion_a2a_extension_registry
+        from aion.core.runtime.context.extensions import ExtensionDescriptor
+
+        uri = "https://example.invalid/coded/1.0.0"
+
+        class Refusing:
+            def collect(self, uri, request_context):
+                raise ExtensionActivationError(uri, reason="bad payload", code="invalid_payload", retryable=False)
+
+        aion_a2a_extension_registry.register(ExtensionDescriptor(uri=uri, collector=Refusing()))
+        try:
+            message = Message(message_id="m-1", role=Role.ROLE_USER)
+            message.extensions.append(uri)
+
+            with pytest.raises(InvalidParamsError, match="bad payload") as refusal:
+                self._verify(SendMessageRequest(message=message), self._call_context())
+            assert refusal.value.data == {"code": "invalid_payload", "retryable": "false"}
+        finally:
+            aion_a2a_extension_registry.reset_to_default()
 
     def test_enabled_extension_marked_unavailable_rejected(self):
         """The silent-fallback guard: an enabled extension marked unavailable
@@ -155,8 +180,9 @@ class TestVerifyDeclaredExtensions:
                 },
             }, params.metadata.get_or_create_struct(DAEMON_EXTENSION_URI_V1))
 
-            with pytest.raises(InvalidParamsError, match="daemon handler cannot run here"):
+            with pytest.raises(InvalidParamsError, match="daemon handler cannot run here") as refusal:
                 self._verify(params, self._call_context())
+            assert refusal.value.data == {"code": "extension_unavailable", "retryable": "true"}
 
             # Sanity: once availability is restored the same request passes.
             aion_a2a_extension_registry.reset_to_default()
@@ -164,3 +190,55 @@ class TestVerifyDeclaredExtensions:
             self._verify(params, self._call_context())
         finally:
             aion_a2a_extension_registry.reset_to_default()
+
+
+class TestAbandonedNamedTask:
+    """A message naming an abandoned task settles it first, unless its turn runs on this server."""
+
+    @staticmethod
+    def _handler(*, running_here: bool, settled):
+        from types import SimpleNamespace
+
+        instance = AionRequestHandler.__new__(AionRequestHandler)
+        instance._abandoned_tasks = SimpleNamespace(settle=AsyncMock(return_value=settled))
+        instance._active_task_registry = SimpleNamespace(
+            get=AsyncMock(return_value=object() if running_here else None)
+        )
+        return instance
+
+    @staticmethod
+    def _task(state):
+        from a2a.types import Task, TaskStatus
+
+        return Task(id="t-1", context_id="ctx-1", status=TaskStatus(state=state))
+
+    @pytest.mark.anyio
+    async def test_an_abandoned_task_is_settled_before_the_message_reaches_it(self):
+        from a2a.types import TaskState
+
+        settled = self._task(TaskState.TASK_STATE_FAILED)
+        handler = self._handler(running_here=False, settled=settled)
+
+        assert await handler._settle_if_abandoned(self._task(TaskState.TASK_STATE_WORKING)) is settled
+        handler._abandoned_tasks.settle.assert_awaited_once_with("t-1")
+
+    @pytest.mark.anyio
+    async def test_a_task_that_is_not_abandoned_is_left_as_it_is(self):
+        from a2a.types import TaskState
+
+        handler = self._handler(running_here=False, settled=None)
+        working = self._task(TaskState.TASK_STATE_WORKING)
+
+        assert await handler._settle_if_abandoned(working) is working
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize("running_here", [True, False])
+    async def test_a_task_running_here_or_waiting_for_input_is_not_settled(self, running_here):
+        from a2a.types import TaskState
+
+        handler = self._handler(running_here=running_here, settled=None)
+        state = TaskState.TASK_STATE_WORKING if running_here else TaskState.TASK_STATE_INPUT_REQUIRED
+        named = self._task(state)
+
+        assert await handler._settle_if_abandoned(named) is named
+        handler._abandoned_tasks.settle.assert_not_awaited()

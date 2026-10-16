@@ -26,6 +26,7 @@ is generated from the tests and the registries, so it is read, not maintained:
 ```
 commands.py     the command contract: what to send, what comes back
 extensions.py   the two extension URIs this suite owns, and why it owns them
+toolkits.py     the scripted toolkit's deployment, and sending its scripts and reading its report
 frameworks.py   the frameworks under test, and what each cannot do
 harness/        serve, client, recorder, shape, pg, and the payload builders
 agents/         one agent package per framework, all answering commands.py,
@@ -94,9 +95,11 @@ scenarios need no database and do not wait for one.
 
 A server that shuts down in an orderly way settles the tasks it was running
 itself, so that scenario reads `server_shutdown` the moment the next process is
-up. A server that is killed outright settles nothing, and nothing settles its
-tasks afterwards: they keep their state until someone cancels them, which any
-server can. These two groups start several servers per scenario, which is the
+up. A server that is killed outright settles nothing: its tasks keep their
+state until someone cancels them, which any server can, or until they have
+gone without a write for longer than `AION_STALE_TASK_TIMEOUT` - an hour by
+default, seconds in `distributed/test_abandoned_tasks.py` - when any other
+server settles them as `task_abandoned`. These two groups start several servers per scenario, which is the
 reason they are not part of `make tests-scenarios`.
 
 It is also why both groups need a database. In-memory task storage is
@@ -151,14 +154,16 @@ Every scenario builds on the shape of a turn, which is what
 | # | Event | Meaning |
 |---|---|---|
 | 1 | `Task` `SUBMITTED` | the stream opens; the task now exists |
-| 2 | `TaskStatusUpdateEvent` `WORKING`, no message | the transition into a running task |
-| 3 | `TaskStatusUpdateEvent` `WORKING`, with a message | one durable reply; repeated per reply |
-| 4 | `Task` terminal | the stream closes on `COMPLETED`, `FAILED`, `CANCELED` or `INPUT_REQUIRED` |
+| 2 | `TaskStatusUpdateEvent` `WORKING`, with a message | one durable reply; the first is the transition into a running task; repeated per reply |
+| 3 | `Task` terminal | the stream closes on `COMPLETED`, `FAILED`, `CANCELED` or `INPUT_REQUIRED` |
 
-A reply the agent streams arrives ahead of its own step 3: one
-`TaskArtifactUpdateEvent` per chunk under the artifact id `aion:stream-delta`
-(the first with `append=False`, the rest with `append=True`), followed by the
-whole reply as a single `WORKING` status.
+A turn whose first event is not a status the task keeps - an artifact, a
+streamed chunk, a live-only status - gets a `WORKING` status without a message
+right before that event, so the task is never `SUBMITTED` while output reaches
+the client. A reply the agent streams therefore opens with that `WORKING`,
+then one `TaskArtifactUpdateEvent` per chunk under the artifact id
+`aion:stream-delta` (the first with `append=False`, the rest with
+`append=True`), followed by the whole reply as a single `WORKING` status.
 
 An ephemeral event is delivered and then forgotten: the client sees it, task
 history never does. There are two shapes of one idea, and which one an agent
@@ -178,7 +183,6 @@ async def test_echo_answers_with_the_argument(client: ScenarioClient) -> None:
 
     assert_shape(events, [
         task("SUBMITTED"),
-        status("WORKING", text=""),
         status("WORKING", text="hello"),
         task("COMPLETED"),
     ])

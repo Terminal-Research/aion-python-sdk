@@ -178,58 +178,89 @@ class ProcessManager:
         if key not in self.processes:
             self.logger.warning(f"Process with key '{key}' not found")
             return False
+        return self._terminate([key], timeout)
 
-        process_info = self.processes[key]
-        process = process_info.process
+    def _terminate(self, keys: list[str], timeout: float) -> bool:
+        """Stop the processes of ``keys`` side by side.
 
-        if not process.is_alive():
-            self.logger.debug(f"Process '{key}' is already terminated")
-            process_info.status = ProcessStatus.STOPPED
-            # Close pipe connections if they exist
-            self._close_pipes(process_info)
-            return True
+        Every live process is asked to stop first, then each is joined
+        against one deadline ``timeout`` from now, and whatever is still
+        alive at the deadline is killed with its whole process group. Several
+        processes thus take ``timeout`` to stop, not that much each.
 
-        try:
-            # Signal the whole child tree before waiting. A child process can
-            # outlive the multiprocessing leader after spawning work of its
-            # own; waiting first would leave that tree running.
-            signalled = False
-            if process_info.process_group_id is not None and os.name == "posix":
-                try:
-                    os.killpg(process_info.process_group_id, signal.SIGTERM)
-                    signalled = True
-                except (ProcessLookupError, PermissionError):
-                    # No group under that id: the child may have died already,
-                    # or may not have reached setsid yet. Either way the
-                    # process API is still a correct way to ask it to stop.
-                    pass
-            if not signalled:
-                process.terminate()
-            process.join(timeout=timeout)
+        Args:
+            keys: Keys of managed processes.
+            timeout: Seconds the processes have, together, to stop on their own.
 
-            # If still alive, force kill
-            if process.is_alive():
-                self.logger.warning(f"Force killing process '{key}'")
-                if process_info.process_group_id is not None and os.name == "posix":
-                    try:
-                        os.killpg(process_info.process_group_id, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
-                process.kill()
-                process.join()
+        Returns:
+            True if every process stopped; False if one could not be
+            signalled or reaped.
+        """
+        success = True
+        stopping: list[ProcessInfo] = []
+        for key in keys:
+            process_info = self.processes[key]
+            if not process_info.process.is_alive():
+                self.logger.debug(f"Process '{key}' is already terminated")
+                process_info.status = ProcessStatus.STOPPED
+                self._close_pipes(process_info)
+                continue
+            try:
+                self._ask_to_stop(process_info)
+            except Exception as e:
+                self.logger.error(f"Failed to terminate process '{key}': {str(e)}")
+                process_info.status = ProcessStatus.ERROR
+                success = False
+                continue
+            stopping.append(process_info)
 
-            process_info.status = ProcessStatus.TERMINATED
-            self.logger.debug(f"Process '{key}' terminated successfully")
+        deadline = time.monotonic() + timeout
+        for process_info in stopping:
+            key = process_info.key
+            process = process_info.process
+            try:
+                process.join(timeout=max(0.0, deadline - time.monotonic()))
 
-            # Close pipe connections if they exist
-            self._close_pipes(process_info)
+                # If still alive, force kill
+                if process.is_alive():
+                    self.logger.warning(f"Force killing process '{key}'")
+                    if process_info.process_group_id is not None and os.name == "posix":
+                        try:
+                            os.killpg(process_info.process_group_id, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                    process.kill()
+                    process.join()
 
-            return True
+                process_info.status = ProcessStatus.TERMINATED
+                self.logger.debug(f"Process '{key}' terminated successfully")
 
-        except Exception as e:
-            self.logger.error(f"Failed to terminate process '{key}': {str(e)}")
-            process_info.status = ProcessStatus.ERROR
-            return False
+                # Close pipe connections if they exist
+                self._close_pipes(process_info)
+            except Exception as e:
+                self.logger.error(f"Failed to terminate process '{key}': {str(e)}")
+                process_info.status = ProcessStatus.ERROR
+                success = False
+        return success
+
+    @staticmethod
+    def _ask_to_stop(process_info: ProcessInfo) -> None:
+        """Send SIGTERM to the process's whole group, or terminate the process alone without one.
+
+        The whole child tree is signalled before anything waits: a child
+        process can outlive the multiprocessing leader after spawning work of
+        its own, and waiting first would leave that tree running.
+        """
+        if process_info.process_group_id is not None and os.name == "posix":
+            try:
+                os.killpg(process_info.process_group_id, signal.SIGTERM)
+                return
+            except (ProcessLookupError, PermissionError):
+                # No group under that id: the child may have died already,
+                # or may not have reached setsid yet. Either way the
+                # process API is still a correct way to ask it to stop.
+                pass
+        process_info.process.terminate()
 
     def _close_pipes(self, process_info: ProcessInfo) -> None:
         """
@@ -416,20 +447,16 @@ class ProcessManager:
 
     def shutdown_all(self, timeout: float = 5.0) -> bool:
         """
-        Shutdown all managed processes
+        Shutdown all managed processes, side by side
 
         Args:
-            timeout: Timeout for each process termination
+            timeout: Seconds the processes have, together, to stop on their
+                own before the ones still running are killed
 
         Returns:
             bool: True if all processes shut down successfully
         """
-        success = True
-        keys_to_remove = list(self.processes.keys())
-
-        for key in keys_to_remove:
-            if not self.terminate_process(key, timeout):
-                success = False
+        success = self._terminate(list(self.processes.keys()), timeout)
 
         # Clear all processes
         self.processes.clear()

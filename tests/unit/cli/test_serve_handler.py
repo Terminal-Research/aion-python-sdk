@@ -194,19 +194,18 @@ class TestBackgroundTasks:
         assert not mock_logger.warning.called
 
 
-def test_child_shutdown_budget_covers_rescue_and_settlement():
-    """The parent keeps a child alive long enough for its bounded rescue."""
-    from aion.server.agent.execution.active_task_registry import (
-        SHUTDOWN_DB_TIMEOUT_SECONDS,
-    )
-    from aion.server.agent.execution.extensions.evolution.handler import (
-        _CANCEL_DRAIN_TIMEOUT_S,
-    )
+async def test_each_agent_gets_its_whole_shutdown_budget(handler, monkeypatch):
+    """The parent keeps a child alive as long as ``AION_SHUTDOWN_TIMEOUT`` says the child's shutdown can take."""
+    from aion.server.settings import app_settings
 
-    assert (
-        serve.SERVE_SHUTDOWN_TIMEOUT_SECONDS
-        > _CANCEL_DRAIN_TIMEOUT_S + SHUTDOWN_DB_TIMEOUT_SECONDS
-    )
+    monkeypatch.setattr(app_settings, "shutdown_timeout", 7.0)
+    execute = AsyncMock(return_value=True)
+    monkeypatch.setattr(serve, "ServeShutdownService", lambda: MagicMock(execute=execute))
+    handler.port_manager = None
+    handler._stop_platform_link = AsyncMock()
+
+    assert await handler.shutdown() is True
+    assert execute.await_args.kwargs["timeout"] == 7.0
 
 
 class TestStartupOutcome:

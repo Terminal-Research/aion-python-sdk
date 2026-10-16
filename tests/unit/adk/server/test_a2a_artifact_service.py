@@ -7,14 +7,19 @@ one place the two meet - tested here through the method that asks for it.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from typing import AsyncIterator
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from google.adk.errors.input_validation_error import InputValidationError
 from google.genai import types
 
-from aion.adk.server.artifacts.backends.a2a import A2AArtifactService
+from aion.adk.server.artifacts.backends.a2a import (
+    VERSION_ATTEMPTS,
+    A2AArtifactService,
+    ArtifactVersionConflictError,
+)
 
 APP, USER, SESSION = "app", "user", "ctx-1"
 
@@ -120,3 +125,83 @@ async def test_numbering_continues_after_what_the_database_already_holds(
     assert await service.list_versions(
         app_name=APP, user_id=USER, filename="report.txt", session_id=SESSION
     ) == [0, 1, 2]
+
+
+class _Database:
+    """A database whose version records answer from a script: True records, False is taken."""
+
+    def __init__(self, answers: list[bool]) -> None:
+        self.is_initialized = True
+        self.tried: list[int] = []
+        self._answers = iter(answers)
+        repository = MagicMock()
+        repository.claim = AsyncMock(side_effect=self._claim)
+        self.repository = repository
+
+    async def _claim(self, *, version: int, **_) -> bool:
+        self.tried.append(version)
+        return next(self._answers)
+
+    def get_session(self):
+        session = MagicMock()
+        session.begin = lambda: _nothing()
+
+        @asynccontextmanager
+        async def opened():
+            yield session
+
+        return opened()
+
+
+@asynccontextmanager
+async def _nothing():
+    yield
+
+
+def _numbered_by(database: _Database, next_versions: list[int]) -> A2AArtifactService:
+    """A service over ``database`` that reads ``next_versions`` from it, one per lookup."""
+    service = A2AArtifactService(db_manager=database)
+    service._resolve_db_version_offset = AsyncMock(side_effect=next_versions)
+    return service
+
+
+async def test_a_number_another_server_took_is_skipped_for_the_next_free_one() -> None:
+    """Another server recorded 0 and 1 meanwhile; this save is numbered 2, and memory finds it there."""
+    database = _Database([False, True, True])
+    service = _numbered_by(database, [0, 2, 3])
+
+    with patch("aion.adk.server.artifacts.backends.a2a.AdkArtifactVersionsRepository", return_value=database.repository):
+        first = await _save(service, "report.txt", "mine")
+        second = await _save(service, "report.txt", "mine too")
+
+    assert (first, second) == (2, 3)
+    assert database.tried == [0, 2, 3]
+    loaded = await service.load_artifact(
+        app_name=APP, user_id=USER, filename="report.txt", session_id=SESSION, version=2
+    )
+    assert loaded.text == "mine"
+    await service.close()
+
+
+async def test_a_save_that_never_gets_a_number_fails() -> None:
+    database = _Database([False] * VERSION_ATTEMPTS)
+    service = _numbered_by(database, list(range(VERSION_ATTEMPTS + 1)))
+
+    with patch("aion.adk.server.artifacts.backends.a2a.AdkArtifactVersionsRepository", return_value=database.repository):
+        with pytest.raises(ArtifactVersionConflictError):
+            await _save(service, "report.txt", "never")
+
+    assert len(database.tried) == VERSION_ATTEMPTS
+    await service.close()
+
+
+async def test_user_scoped_artifacts_record_no_number() -> None:
+    """A ``user:`` artifact is not kept per context, so no context-keyed number is recorded for it."""
+    database = _Database([])
+    service = _numbered_by(database, [0])
+
+    with patch("aion.adk.server.artifacts.backends.a2a.AdkArtifactVersionsRepository", return_value=database.repository):
+        assert await _save(service, "user:profile.txt", "x") == 0
+
+    assert database.tried == []
+    await service.close()

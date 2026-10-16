@@ -1,9 +1,13 @@
 """Entry points for running the Aion agent server process."""
 
 import aion.core.logging.base  # noqa: F401
+import functools
 import logging
+import socket
 import sys
 import uvicorn
+from collections.abc import Awaitable, Callable
+from typing import Optional
 from aion.core.config import AgentConfig
 from aion.core.exceptions import AionError
 from aion.db.postgres import DbFactory, db_manager
@@ -12,6 +16,7 @@ from aion.server.agent import agent_manager
 from aion.server.core.app import AppFactory
 from aion.server.logging import setup_root_logger
 from aion.server.plugins import PluginFactory
+from aion.server.shutdown import MIN_SANE_SHUTDOWN_SECONDS, shutdown_budget
 from aion.server.tasks import store_manager
 
 logger = logging.getLogger(__name__)
@@ -19,6 +24,37 @@ logger = logging.getLogger(__name__)
 
 class MissingAPIKeyError(AionError):
     """Exception for missing API key."""
+
+
+class _AgentServer(uvicorn.Server):
+    """uvicorn's server, which stops the toolkits' turns as soon as it stops accepting requests.
+
+    uvicorn's shutdown stops listening, asks every connection to close once
+    its response is complete, waits for open connections up to
+    ``timeout_graceful_shutdown`` and only then runs the application's
+    shutdown. A stream on a toolkit's task closes with the turn; a stream on
+    any other task would hold the shutdown for as long as its turn runs, so
+    after that wait uvicorn cancels the requests still open and the drain of
+    the active tasks settles what they were following. A toolkit's turn has to be asked to stop before that wait, so
+    that the stream open on its task closes with the turn's outcome rather
+    than holding the wait; ``before_drain`` runs right after the server stops
+    accepting.
+    """
+
+    def __init__(self, config: uvicorn.Config, before_drain: Callable[[], Awaitable[None]]) -> None:
+        super().__init__(config=config)
+        self._before_drain = before_drain
+
+    async def shutdown(self, sockets: Optional[list[socket.socket]] = None) -> None:
+        for server in self.servers:
+            server.close()
+        for sock in sockets or []:
+            sock.close()
+        for connection in list(self.server_state.connections):
+            connection.shutdown()
+        if not self.force_exit:
+            await self._before_drain()
+        await super().shutdown(sockets=sockets)
 
 
 async def async_serve(
@@ -53,6 +89,18 @@ async def async_serve(
         if not app_factory:
             return
 
+        budget = shutdown_budget()
+        if budget.too_short:
+            logger.warning(
+                "AION_SHUTDOWN_TIMEOUT=%gs is below %gs: a toolkit's turn gets %.1fs to stop and save its work, "
+                "uvicorn %.1fs for open connections, and the settlement of interrupted tasks %.1fs",
+                budget.total,
+                MIN_SANE_SHUTDOWN_SECONDS,
+                budget.toolkit_turns,
+                budget.graceful,
+                budget.settlement,
+            )
+
         # Deserialize socket if provided
         sockets = None
         if serialized_socket is not None:
@@ -66,10 +114,14 @@ async def async_serve(
             host=aion_agent.host if sockets is None else None,
             port=aion_agent.port if sockets is None else None,
             log_config=None,
-            access_log=False
+            access_log=False,
+            timeout_graceful_shutdown=budget.graceful,
         )
         # If we have sockets, we need to manually set them on the server
-        server = uvicorn.Server(config=uconfig)
+        server = _AgentServer(
+            config=uconfig,
+            before_drain=functools.partial(app_factory.stop_toolkit_turns, budget.toolkit_turns),
+        )
         if sockets is not None:
             server.servers = []  # Clear default servers
 

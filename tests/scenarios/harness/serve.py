@@ -41,7 +41,12 @@ this repository on its ``sys.path``, so the harness does.
 
 STARTUP_TIMEOUT_SECONDS = 30
 READY_TIMEOUT_SECONDS = 90
-SHUTDOWN_GRACE_SECONDS = 10
+SHUTDOWN_GRACE_SECONDS = 40
+"""How long an interrupted `aion serve` has to exit before its group is killed.
+
+Longer than an agent's own shutdown budget (``AION_SHUTDOWN_TIMEOUT``, 25 s by
+default): a scenario about a turn that does not stop in time waits the whole of it.
+"""
 
 # What a server process takes from the surrounding shell: where programs are,
 # whose home it is, how text is encoded, where temporary files go. Nothing

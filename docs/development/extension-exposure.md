@@ -34,17 +34,18 @@ deployment cannot run is withheld, because a card that offers a call this
 server could never answer is worse than one that stays quiet about it. That
 is a floor rather than a guarantee — an advertised extension has what the
 deployment owes it, and a request declaring it can still be refused by
-`_verify()` for a per-request co-activation the card cannot know about. The
-evolution extension is the case that makes the prerequisite check matter:
-`activate()` is additive and expands nothing, so an agent that lists
-evolution in `enabled_extensions` without the daemon extension it requires
-has an extension that is active and refused on every request.
+`_verify()` for a per-request co-activation the card cannot know about. A
+toolkit that requires the daemon extension is the case that makes the
+prerequisite check matter: `activate()` is additive and expands nothing, so
+an agent that lists the toolkit in `enabled_extensions` without the daemon
+extension has an extension that is active and refused on every request.
 
 **Unavailable.** The extension is enabled but cannot function on this
-deployment — most often an optional toolkit that is not installed. The
-component that owns those runtime dependencies records the reason with
-`mark_unavailable()`, the request-time verifier rejects the extension with
-exactly that reason, and the card omits it.
+deployment — most often a toolkit whose settings are wrong or that speaks
+another protocol version. The component that owns those runtime dependencies
+records the reason with `mark_unavailable()`, the request-time verifier
+rejects the extension with exactly that reason and the code
+`extension_unavailable` in the error's `data`, and the card omits it.
 
 `active` and `advertised` are independent: an extension can be advertised and
 inactive until the agent enables it, and a descriptor registered with
@@ -53,7 +54,7 @@ inactive until the agent enables it, and a descriptor registered with
 | Extension | `active` | `advertised` | On a standard card |
 | --- | --- | --- | --- |
 | Distribution, messaging, cards, event, traceability, usage attribution, Context | `True` | `True` | yes |
-| Daemon, behaviour evolution | `False` | `True` | only once the agent enables it |
+| Daemon, installed toolkits (unless a toolkit is `enabled_by_default`) | `False` | `True` | only once the agent enables it |
 
 ## Extension points and transport bindings
 
@@ -140,8 +141,9 @@ An extension either owns the execution of a task or it does not, and the
 answer is structural rather than declared. An **execution-owning** (or
 **task-routing**) extension is one with an `ExtensionTaskHandler`
 (`src/aion/server/agent/execution/extensions/base.py`): it takes `stream()`,
-`resume()` and `cancel()` from the agent's framework adapter and drives its
-own toolkit instead. Behaviour evolution is the one such extension today.
+`resume()` and `cancel()` from the agent's framework adapter. Every such
+handler is a `ToolkitTaskHandler` serving one toolkit plugin, found through
+the `aion.toolkits` entry point group - see [Toolkit host](toolkit-host.md).
 Every other registered extension contributes metadata or payloads to a request
 that the framework adapter still executes.
 
@@ -151,18 +153,24 @@ flag to the descriptor: it would be imprecise about what it claims and
 duplicate something the handler already answers exactly — and the two could
 then disagree.
 
-A task keeps the handler it was routed to for its whole life. The first turn
-decides: when the request activates an extension that has a handler, the
-executor gives the task to that handler and records the extension URI in the
-task metadata under `aion:routedExtension` (`A2AMetadataKey.ROUTED_EXTENSION`).
-A follow-up turn or a cancel reads that record instead of deciding again,
-because neither has to activate the extension: a cancel carries no message at
-all. Without a record the task belongs to the agent's framework adapter.
+A task keeps the handler it was routed to for its whole life. The request
+that starts it decides, before the task exists: after context admission and
+extension verification, `AionRequestHandler._setup_active_task` asks the
+executor which handler the message goes to (`routed_extension`). When the
+request activates an extension that has a handler, the handler checks the
+request (`admit_new_task`): for a toolkit, its caller check and
+`preflight`. A refusal is a JSON-RPC error with no task behind it. The admitted route travels on the request's call
+context to `execute`, which records the extension URI in the task metadata
+under `aion:routedExtension` (`A2AMetadataKey.ROUTED_EXTENSION`). A follow-up
+turn or a cancel reads that record instead of deciding again, because neither
+has to activate the extension: a cancel carries no message at all. Without a
+record the task belongs to the agent's framework adapter.
 
 The record is the server's alone:
 
-- A new task's metadata starts as a copy of the request's, so the executor
-  drops any `aion:routedExtension` the request carried before it decides.
+- A new task starts without metadata: the request's `params.metadata` stays
+  on the request and is never copied into the task, so a request cannot
+  carry an `aion:routedExtension` into it.
 - The key is in the platform metadata namespace, so `A2ATaskDeduplicator`
   removes it from the agent's task patches.
 - Clients see it in the task metadata, but it is not part of the client

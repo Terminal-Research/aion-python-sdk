@@ -27,17 +27,16 @@ pytestmark = pytest.mark.events
 
 @pytest.mark.command("echo")
 async def test_a_turn_opens_with_submitted_and_closes_with_the_task(client: ScenarioClient) -> None:
-    """A plain turn is: Task SUBMITTED, WORKING, the reply, the terminal Task.
+    """A plain turn is: Task SUBMITTED, the reply as WORKING, the terminal Task.
 
-    The bare WORKING status is the transition into a running task; the reply
-    is delivered as a second WORKING status carrying the message. The stream
-    closes with the Task itself, which is what a caller acts on.
+    The WORKING status carrying the reply is the transition into a running
+    task; no status without content precedes it. The stream closes with the
+    Task itself, which is what a caller acts on.
     """
     events = await client.send("echo shape")
 
     assert_shape(events, [
         task("SUBMITTED"),
-        status("WORKING", text=""),
         status("WORKING", text="shape"),
         task("COMPLETED"),
     ])
@@ -52,7 +51,6 @@ async def test_working_statuses_arrive_in_order(client: ScenarioClient) -> None:
     assert reply_texts(events) == list(steps_texts(3))
     assert_shape(events, [
         task("SUBMITTED"),
-        status("WORKING", text=""),
         status("WORKING", text="step 1/3"),
         status("WORKING", text="step 2/3"),
         status("WORKING", text="step 3/3"),
@@ -63,6 +61,21 @@ async def test_working_statuses_arrive_in_order(client: ScenarioClient) -> None:
     completed_at = final_task(events).raw.status.timestamp.ToNanoseconds()
     for event in events:
         assert event.raw.status.timestamp.ToNanoseconds() <= completed_at, event
+
+
+@pytest.mark.command("steps")
+async def test_status_times_follow_the_turn(client: ScenarioClient) -> None:
+    """Every status of a turn, the opening SUBMITTED included, is no earlier than the one before it."""
+    events = await client.send("steps 2")
+
+    times = [
+        event.raw.status.timestamp.ToNanoseconds()
+        for event in events
+        if event.kind in ("task", "status")
+    ]
+    assert events[0].state == "SUBMITTED"
+    assert len(times) >= 4
+    assert times == sorted(times)
 
 
 @pytest.mark.command("ids")

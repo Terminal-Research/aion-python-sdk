@@ -1,17 +1,12 @@
-"""Extension routing: the ExtensionTaskHandler contract, the discovery
-registry, and one subpackage per concrete implementation (e.g. `evolution`).
-"""
+"""Extension routing: the ExtensionTaskHandler contract and the toolkit host behind it."""
 
-from .availability import ExtensionAvailability
-from .base import (
-    ExtensionTaskHandler,
-    discover_extension_task_handlers,
-)
-from .errors import ExtensionPreflightError
+from .base import EXTENSION_ROUTE_STATE_KEY, ExtensionRoute, ExtensionTaskHandler
+from .toolkit import ToolkitTaskHandler, load_toolkit_handlers
 
 __all__ = [
-    "ExtensionAvailability",
-    "ExtensionPreflightError",
+    "EXTENSION_ROUTE_STATE_KEY",
+    "ExtensionRoute",
     "ExtensionTaskHandler",
-    "discover_extension_task_handlers",
+    "ToolkitTaskHandler",
+    "load_toolkit_handlers",
 ]

@@ -46,23 +46,6 @@ DEPLOYMENT_OUTSIDE_MODELS = {
     "DEPLOYMENT_ID",
 }
 
-# Read only while the behaviour-evolution extension is active. They configure
-# that extension rather than the SDK, so they belong to its specification.
-EXTENSION_SCOPED = {
-    "CODEX_API_KEY",
-    "CODEX_BASE_URL",
-    "CODEX_BIN",
-    "CODEX_HOME",
-    "CODEX_MODEL_CATALOG_JSON",
-    "CODEX_PROVIDER",
-    "EVOLUTION_EXECUTOR_NETWORK",
-    "EVOLUTION_SETUP_COMMAND",
-    "EVOLUTION_SETUP_TIMEOUT",
-    "EVOLUTION_SPECS_ROOT",
-    "EVOLUTION_WORKDIR_ROOT",
-    "GITHUB_TOKEN",
-}
-
 # Set by the SDK itself for a process it starts, and read back on the other
 # side of that boundary.
 LAUNCHER = {
@@ -79,7 +62,7 @@ CLI = {
 
 def _inventory() -> set[str]:
     """Everything this module accounts for."""
-    return _model_variables() | DEPLOYMENT_OUTSIDE_MODELS | EXTENSION_SCOPED | LAUNCHER | CLI
+    return _model_variables() | DEPLOYMENT_OUTSIDE_MODELS | LAUNCHER | CLI
 
 
 def _read_environment_variables() -> set[str]:

@@ -28,6 +28,7 @@ from aion.server.tasks.task_manager import AionTaskManager
 
 TASK_ID = "task-1"
 CONTEXT_ID = "ctx-1"
+TOOLKIT_URI = "https://example.invalid/toolkit"
 
 NON_ACTIVE_STATES = [
     TaskState.TASK_STATE_COMPLETED,
@@ -60,6 +61,13 @@ def _status(state: TaskState, message: Message | None = None) -> TaskStatusUpdat
     if message is not None:
         status.message.CopyFrom(message)
     return TaskStatusUpdateEvent(task_id=TASK_ID, context_id=CONTEXT_ID, status=status)
+
+
+def _details(details: dict) -> TaskStatusUpdateEvent:
+    """A WORKING update with no message that writes ``details`` under a toolkit's key."""
+    event = _status(TaskState.TASK_STATE_WORKING)
+    event.metadata[TOOLKIT_URI] = details
+    return event
 
 
 class _FakeTaskStore:
@@ -263,12 +271,46 @@ class TestMessagePlacement:
 
     @pytest.mark.anyio
     async def test_bare_working_event_still_demotes_to_history(self, task_manager):
-        """While the task runs, a superseded message belongs in history."""
+        """The WORKING that announces work supersedes the message before it."""
         await task_manager.process(_status(TaskState.TASK_STATE_WORKING, _message("msg-agent")))
         await task_manager.process(_status(TaskState.TASK_STATE_WORKING))
 
         task = await task_manager.get_task()
         assert [m.message_id for m in task.history] == ["msg-user", "msg-agent"]
+        assert not task.status.HasField("message")
+
+    @pytest.mark.anyio
+    async def test_a_working_update_with_only_details_keeps_the_status_line(self, task_manager):
+        """A WORKING update that only changes metadata leaves the current message where it is."""
+        await task_manager.process(_status(TaskState.TASK_STATE_WORKING, _message("msg-agent")))
+        details = _details({"stage": "running"})
+        await task_manager.process(details)
+
+        task = await task_manager.get_task()
+        assert [m.message_id for m in task.history] == ["msg-user"]
+        assert task.status.message.message_id == "msg-agent"
+        assert task.metadata[TOOLKIT_URI]["stage"] == "running"
+        assert _conversation(task) == ["msg-user", "msg-agent"]
+        assert not details.status.HasField("message")
+
+    @pytest.mark.anyio
+    async def test_a_new_message_still_demotes_the_kept_one(self, task_manager):
+        """The kept message moves to history when the next message arrives, exactly once."""
+        await task_manager.process(_status(TaskState.TASK_STATE_WORKING, _message("msg-a")))
+        await task_manager.process(_details({"stage": "running"}))
+        await task_manager.process(_status(TaskState.TASK_STATE_WORKING, _message("msg-b")))
+
+        task = await task_manager.get_task()
+        assert [m.message_id for m in task.history] == ["msg-user", "msg-a"]
+        assert task.status.message.message_id == "msg-b"
+
+    @pytest.mark.anyio
+    async def test_a_details_update_with_nothing_pending(self, task_manager):
+        """Nothing is invented when there is no message to keep."""
+        await task_manager.process(_details({"stage": "running"}))
+
+        task = await task_manager.get_task()
+        assert [m.message_id for m in task.history] == ["msg-user"]
         assert not task.status.HasField("message")
 
 
@@ -572,3 +614,52 @@ class TestATerminalTaskIsFinal:
         await manager.save_task_event(_task(TaskState.TASK_STATE_INPUT_REQUIRED))
 
         callback.assert_not_called()
+
+
+class TestWrittenOutcome:
+    """The manager reports the non-active state its own write produced, for the push channel."""
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        "state",
+        [TaskState.TASK_STATE_FAILED, TaskState.TASK_STATE_COMPLETED, TaskState.TASK_STATE_INPUT_REQUIRED],
+    )
+    async def test_a_write_into_a_non_active_state_is_the_outcome(self, state):
+        manager, _store = _built(TaskState.TASK_STATE_WORKING)
+        await manager.get_task()
+
+        await manager.save_task_event(_task(state))
+
+        assert manager.written_outcome == state
+
+    @pytest.mark.anyio
+    async def test_a_state_read_from_the_store_is_not_the_managers_outcome(self):
+        """Another writer's cancel is that writer's to push."""
+        manager, store = _built(TaskState.TASK_STATE_WORKING)
+        await manager.get_task()
+        store.task = _task(TaskState.TASK_STATE_CANCELED)
+
+        manager.invalidate()
+        await manager.get_task()
+
+        assert manager.written_outcome is None
+
+    @pytest.mark.anyio
+    async def test_going_back_to_work_clears_the_outcome(self):
+        manager, _store = _built(TaskState.TASK_STATE_WORKING)
+        await manager.get_task()
+
+        await manager.save_task_event(_task(TaskState.TASK_STATE_INPUT_REQUIRED))
+        await manager.save_task_event(_task(TaskState.TASK_STATE_WORKING))
+
+        assert manager.written_outcome is None
+
+    @pytest.mark.anyio
+    async def test_rewriting_the_stored_interrupt_is_not_an_outcome(self):
+        """The resume's write of the task as it stands produces nothing new."""
+        manager, _store = _built(TaskState.TASK_STATE_INPUT_REQUIRED)
+        await manager.get_task()
+
+        await manager.save_task_event(_task(TaskState.TASK_STATE_INPUT_REQUIRED))
+
+        assert manager.written_outcome is None

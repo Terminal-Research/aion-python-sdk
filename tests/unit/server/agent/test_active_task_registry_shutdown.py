@@ -18,6 +18,7 @@ from aion.core.a2a.enums import A2AMetadataKey, TaskSettlementReason
 from aion.server.a2a.constants import INTERRUPT_TASK_STATES
 from aion.server.agent.execution.active_task_registry import AionActiveTaskRegistry
 from aion.server.agent.execution.scope import clear_execution_scope, init_execution_scope
+from aion.server.shutdown import ShutdownBudget
 
 TASK_ID = "task-1"
 CONTEXT_ID = "ctx-1"
@@ -41,14 +42,14 @@ def _task(state: TaskState) -> Task:
     return Task(id=TASK_ID, context_id=CONTEXT_ID, status=TaskStatus(state=state))
 
 
-async def _registry_holding(state: TaskState):
+async def _registry_holding(state: TaskState, push_sender=None):
     """Build a registry with one registered task whose store reports ``state``."""
     store = AsyncMock()
     store.get.return_value = _task(state)
     registry = AionActiveTaskRegistry(
         agent_executor=Mock(),
         task_store=store,
-        push_sender=None,
+        push_sender=push_sender,
     )
 
     with patch(
@@ -164,3 +165,72 @@ async def test_a_task_another_writer_moved_on_keeps_that_writers_state(execution
 
     store.save.assert_awaited_once()
     logger.error.assert_not_called()
+
+
+class TestSettlementPush:
+    """A settled task is pushed like any stored outcome: no execution is left to push it."""
+
+    @staticmethod
+    def _push_sender(send=None) -> Mock:
+        push_sender = Mock()
+        push_sender.send_notification = AsyncMock(side_effect=send)
+        return push_sender
+
+    @pytest.mark.anyio
+    async def test_the_settled_task_is_pushed(self, execution_scope):
+        push_sender = self._push_sender()
+        registry, store, _ = await _registry_holding(TaskState.TASK_STATE_WORKING, push_sender)
+
+        await registry.aclose()
+
+        push_sender.send_notification.assert_awaited_once()
+        task_id, pushed = push_sender.send_notification.await_args.args
+        assert task_id == TASK_ID
+        assert pushed == _settled(store)
+        assert pushed.status.state == TaskState.TASK_STATE_FAILED
+
+    @pytest.mark.anyio
+    async def test_a_task_left_alone_is_not_pushed(self, execution_scope):
+        push_sender = self._push_sender()
+        registry, _, _ = await _registry_holding(TaskState.TASK_STATE_COMPLETED, push_sender)
+
+        await registry.aclose()
+
+        push_sender.send_notification.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_a_hanging_receiver_is_given_only_the_settlement_window(self, execution_scope):
+        """The push shares the settlement's budget; a receiver that never answers does not hold the shutdown."""
+        never = asyncio.Event()
+
+        async def hang(task_id, event):
+            await never.wait()
+
+        push_sender = self._push_sender(hang)
+        registry, store, _ = await _registry_holding(TaskState.TASK_STATE_WORKING, push_sender)
+        budget = ShutdownBudget.of(5.0)
+
+        with (
+            patch("aion.server.agent.execution.active_task_registry.shutdown_budget", return_value=budget),
+            patch("aion.server.agent.execution.active_task_registry.logger") as logger,
+        ):
+            loop = asyncio.get_running_loop()
+            started = loop.time()
+            await registry.aclose()
+            elapsed = loop.time() - started
+
+        assert elapsed < budget.settlement + 1.0
+        _settled(store)
+        push_sender.send_notification.assert_awaited_once()
+        logger.warning.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_a_failed_push_is_logged_and_shutdown_goes_on(self, execution_scope):
+        push_sender = self._push_sender(RuntimeError("receiver down"))
+        registry, store, _ = await _registry_holding(TaskState.TASK_STATE_WORKING, push_sender)
+
+        with patch("aion.server.agent.execution.active_task_registry.logger") as logger:
+            await registry.aclose()
+
+        assert _settled(store).status.state == TaskState.TASK_STATE_FAILED
+        logger.warning.assert_called_once()

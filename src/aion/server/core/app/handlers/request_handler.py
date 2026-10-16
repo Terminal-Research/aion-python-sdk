@@ -1,9 +1,12 @@
 """Aion request handler extending the default A2A handler with preprocessors and Aion methods."""
 
+import asyncio
+import contextlib
 import logging
 from a2a.server.agent_execution import RequestContext
 from a2a.server.agent_execution.active_task import ActiveTask
 from a2a.server.cluster.task_store import LegacyTaskStoreAdapter
+from a2a.server.cluster.version import TaskVersion
 from a2a.server.context import ServerCallContext
 from a2a.server.events import Event
 from a2a.server.request_handlers import DefaultRequestHandlerV2
@@ -42,15 +45,18 @@ from aion.core.a2a import (
 )
 from aion.core.runtime import ExtensionActivationError, aion_a2a_extension_registry
 from aion.core.runtime.context.extensions import AionRuntimeExtensions
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from google.protobuf import json_format
 from types import SimpleNamespace
 from typing import override
 import uuid
 
 from aion.server.agent.execution import AionActiveTaskRegistry
-from aion.server.a2a.constants import TERMINAL_TASK_STATES
+from aion.server.agent.execution.extensions import EXTENSION_ROUTE_STATE_KEY
+from aion.server.agent.execution.extensions.toolkit import refusal_data
+from aion.server.a2a.constants import ACTIVE_TASK_STATES, TERMINAL_TASK_STATES
 from aion.server.auth import has_individual_access
+from aion.server.tasks.abandoned import AbandonedTasks
 from aion.server.tasks.admission import ContextAdmission, InMemoryContextAdmission, holder_of
 from aion.server.tasks.stores import BaseTaskStore
 from aion.server.contexts import ContextService, ContextStateDeleter
@@ -95,6 +101,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             preprocessors: list[A2ARequestPreprocessor] | None = None,
             admission: ContextAdmission | None = None,
             context_catalog: ContextCatalog | None = None,
+            abandoned_tasks: AbandonedTasks | None = None,
             **kwargs,
     ) -> None:
         """Build the handler over a2a-sdk's own, with Aion's registry.
@@ -109,6 +116,11 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         which is right for a handler over the in-memory store. The catalog
         must cover the same reservations admission writes, so a handler given
         only one of them is refused.
+
+        ``abandoned_tasks`` settles a running task nothing has written for
+        longer than ``AION_STALE_TASK_TIMEOUT``: one a message names
+        (``_setup_active_task``) and, in the background, every one of the
+        agent's (:meth:`sweep_abandoned_tasks`); omitted, none is settled.
         """
         super().__init__(*args, **kwargs)
         self._active_task_registry = AionActiveTaskRegistry(
@@ -118,6 +130,10 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             event_stream=self._event_stream,
         )
         self._tasks = _unversioned(self._versioned_store)
+        self._abandoned_tasks = abandoned_tasks
+        # The cancels this server is handling, each task's own; see
+        # on_subscribe_to_task.
+        self._cancels: dict[str, list[asyncio.Event]] = {}
         self._preprocessors = preprocessors or []
         if (admission is None) != (context_catalog is None):
             raise ValueError("admission and context_catalog are chosen together; pass both or neither")
@@ -142,20 +158,27 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             params: SendMessageRequest,
             call_context: ServerCallContext,
     ) -> tuple[ActiveTask, RequestContext]:
-        """Admit, verify, then preprocess, then set up the active task.
+        """Admit, verify, route, then preprocess, then set up the active task.
 
         The order is the point. A preprocessor may have an external side
         effect - storing an attachment into the organization the request
         names - and metadata that merely parsed has not been accepted yet.
-        Admitting the caller into the context and verifying first means a
-        request the agent is about to reject can never trigger that side
-        effect, nor write a push config or a task, and the preprocessor works
-        from the verified projection instead of re-reading the raw request.
-        Unary and streaming sends, and every extension handler behind them,
-        come through here.
+        Admitting the caller into the context, verifying, and admitting the
+        route of a new task first means a request the agent is about to
+        reject can never trigger that side effect, nor write a push config or
+        a task, and the preprocessor works from the verified projection
+        instead of re-reading the raw request. Unary and streaming sends, and
+        every extension handler behind them, come through here.
+
+        A message into an abandoned task settles the task first
+        (``_settle_if_abandoned``), and is then refused like any message into
+        a task that has an outcome.
         """
-        await self._admit(params, call_context)
+        named_task = await self._admit(params, call_context)
+        if named_task is not None:
+            named_task = await self._settle_if_abandoned(named_task)
         extensions = self.verify_declared_extensions(params, call_context)
+        await self._admit_route(params, call_context, extensions, named_task)
         context = PreprocessingContext(
             extensions=extensions, call_context=call_context
         )
@@ -167,7 +190,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             await self._rollback_preprocessors(len(self._preprocessors))
             raise
 
-    async def _admit(self, params: SendMessageRequest, call_context: ServerCallContext) -> None:
+    async def _admit(self, params: SendMessageRequest, call_context: ServerCallContext) -> Task | None:
         """Admit the caller into the message's context, or refuse it as if the task did not exist.
 
         A continuation's context is its task's: the task has to be the
@@ -181,10 +204,15 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         with individual access is bound to the context, which is what makes it
         visible to that caller through the Context extension.
 
+        Returns:
+            The task the message names, as the caller's store holds it; None
+            for a message that names none.
+
         Raises:
             TaskNotFoundError: The caller may not use the context or the task.
         """
         message = params.message
+        task = None
         if message.task_id:
             _require_individual_access(call_context, message.task_id)
             task = await self._tasks.get(message.task_id, call_context)
@@ -199,6 +227,109 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         if holder is None or not await self._admission.admit(message.context_id, holder, member):
             logger.info("Refused a message into a context its caller may not use")
             raise TaskNotFoundError(f'Task {message.task_id} not found' if message.task_id else 'Task not found')
+        return task
+
+    async def _settle_if_abandoned(self, task: Task) -> Task:
+        """The task a message names, settled ``FAILED`` (``task_abandoned``) when it is abandoned.
+
+        A running task whose turn runs on this server is alive and stays as
+        it is; anywhere else, a task nothing has written for longer than
+        ``AION_STALE_TASK_TIMEOUT`` is settled before the message reaches
+        it, so a2a-sdk refuses the message as one into a finished task.
+        """
+        if (
+            self._abandoned_tasks is None
+            or task.status.state not in ACTIVE_TASK_STATES
+            or await self._runs_here(task.id)
+        ):
+            return task
+        settled = await self._abandoned_tasks.settle(task.id)
+        return settled if settled is not None else task
+
+    async def _runs_here(self, task_id: str) -> bool:
+        """Whether this server holds a live execution of the task."""
+        return await self._active_task_registry.get(task_id) is not None
+
+    async def sweep_abandoned_tasks(self) -> None:
+        """Settle the agent's abandoned tasks in the background, every sweep interval, until cancelled.
+
+        Every server of the agent sweeps the agent's tasks, so a client sees
+        an abandoned task end without sending anything. A task whose turn
+        runs on this server is logged and left (``AbandonedTasks.sweep``).
+        """
+        if self._abandoned_tasks is None:
+            return
+        await self._abandoned_tasks.run(self._runs_here)
+
+    async def _admit_route(
+            self,
+            params: SendMessageRequest,
+            call_context: ServerCallContext,
+            extensions: AionRuntimeExtensions,
+            named_task: Task | None = None,
+    ) -> None:
+        """Decide which task the message belongs to and admit it there, before any task is created or changed.
+
+        The handler the message addresses is the toolkit whose extension it
+        activates (``AionAgentRequestExecutor.routed_extension``), or the
+        agent's framework adapter. Then:
+
+        * a message that continues a task - the one it names, or the
+          addressed handler's task waiting for input (``_continued_task``) -
+          is checked by the task's own handler
+          (``AionAgentRequestExecutor.admit_continuation``): a task routed to
+          an extension this server does not serve is refused with
+          ``extension_unavailable``, a running task of an exclusive toolkit
+          with ``context_busy``;
+        * any other message starts a task; one routed to a toolkit is checked
+          by that toolkit (``admit_new_task``: the caller check, one task per
+          context, ``preflight``).
+
+        A refusal here is a JSON-RPC error, and no task is created or
+        changed. The admitted route of a new task belongs to this request
+        alone: a route an earlier request left on a reused call context is
+        dropped first.
+
+        Raises:
+            a2a.utils.errors.A2AError: The route refused the request.
+        """
+        call_context.state.pop(EXTENSION_ROUTE_STATE_KEY, None)
+        executor = self.agent_executor
+        routed_extension = getattr(executor, "routed_extension", None)
+        uri = routed_extension(extensions) if routed_extension is not None else None
+        task = named_task or await self._continued_task(params, call_context, uri)
+        if task is not None:
+            admit_continuation = getattr(executor, "admit_continuation", None)
+            if admit_continuation is not None:
+                admit_continuation(task)
+            return
+        if uri is not None:
+            await executor.admit_new_task(uri, params.message, extensions, call_context)
+
+    async def _continued_task(
+            self,
+            params: SendMessageRequest,
+            call_context: ServerCallContext,
+            routed_extension: str | None,
+    ) -> Task | None:
+        """The task waiting for input that a message without a task id continues, or None.
+
+        Only a task of the handler the message addresses is continued: a
+        toolkit's directive continues that toolkit's task, any other message
+        the framework adapter's (``AionRequestContextBuilder.interrupted_task``).
+        A waiting task of another handler keeps waiting, and the message
+        starts a new task. The message is made to name the task it
+        continues, so a2a-sdk and the request context builder take it as an
+        explicit continuation and nothing decides again.
+        """
+        message = params.message
+        interrupted_task = getattr(self._request_context_builder, "interrupted_task", None)
+        if message.task_id or interrupted_task is None or not message.context_id:
+            return None
+        task = await interrupted_task(message.context_id, call_context, routed_extension)
+        if task is not None:
+            message.task_id = task.id
+        return task
 
     async def _run_preprocessors(
             self,
@@ -255,7 +386,10 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         AionA2AExtensionRegistry.mark_unavailable() at startup, so the same
         pipeline rejects it here with the extension-authored reason - never
         silently handing the request to the primary flow the client
-        explicitly asked to bypass.
+        explicitly asked to bypass. That refusal carries the code
+        ``extension_unavailable`` in its ``data``, and a toolkit's payload its
+        models refuse ``invalid_payload``, as every refusal
+        with a code does: ``{"code": ..., "retryable": "true" | "false"}``.
 
         Returns:
             The verified extensions, which preprocessing acts on.
@@ -282,7 +416,8 @@ class AionRequestHandler(DefaultRequestHandlerV2):
                 declaration, aion_a2a_extension_registry.get_all()
             )
         except ExtensionActivationError as ex:
-            raise InvalidParamsError(message=str(ex)) from ex
+            data = refusal_data(ex.code, ex.retryable) if ex.code else None
+            raise InvalidParamsError(message=str(ex), data=data) from ex
         ResponseServiceParameters(verified.activated_uris).record(call_context)
         return verified
 
@@ -391,7 +526,8 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         Raises:
             TaskNotCancelableError: If the task already has an outcome.
         """
-        local = await self._active_task_registry.cancel_local_as_owner(task_id)
+        async with self._cancelling(task_id):
+            local = await self._active_task_registry.cancel_local_as_owner(task_id)
         if local is not None:
             return local
         stored = await self._versioned_store.get(task_id, None)
@@ -465,9 +601,9 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         a complete Task snapshot with all accumulated state at stream end.
 
         How much detail a run's own events carry is not decided here: it is a
-        property of the request an extension parses (the evolution directive's
-        `view`, say), so the producer shapes and drops its events before they
-        reach this handler. This layer knows nothing about any extension's
+        property of the request an extension parses (a toolkit's own payload,
+        say), so the producer shapes and drops its events before they reach
+        this handler. This layer knows nothing about any extension's
         payload.
 
         Status updates carrying a non-active state are withheld and replaced by
@@ -488,16 +624,57 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             params: CancelTaskRequest,
             context: ServerCallContext,
     ) -> Task:
-        """Cancel a task; only its initiator may.
+        """Cancel a task; only its initiator may. The answer is always a task with an outcome.
 
         A caller without individual access cancels nothing: the task answers
         as if it did not exist. The rest is a2a-sdk's: a task this instance
         holds is cancelled through its executor, any other gets ``CANCELED``
         written over its stored version, and the instance executing it stops
-        at its next write.
+        at its next write. The answer is the task's outcome - ``CANCELED``,
+        or the outcome its own turn reached in the meantime.
         """
         _require_individual_access(context, params.id)
-        return await super().on_cancel_task(params, context)
+        async with self._cancelling(params.id):
+            return await super().on_cancel_task(params, context)
+
+    @override
+    async def _write_cancel(
+            self,
+            task_id: str,
+            current: Task,
+            version: TaskVersion,
+            context: ServerCallContext | None,
+    ) -> Task:
+        """a2a-sdk's remote cancel: ``CANCELED`` written over the stored version, then pushed.
+
+        The server executing the task learns of the cancel at its next write
+        and stops without writing, and nothing on this server delivers the
+        outcome either, so the push notification of the ``CANCELED`` task is
+        sent here, once, by the writer of the state. A failed delivery is
+        logged and does not undo the cancel.
+        """
+        cancelled = await super()._write_cancel(task_id, current, version, context)
+        if self._push_sender is not None:
+            try:
+                await self._push_sender.send_notification(task_id, cancelled)
+            except Exception:
+                logger.exception("Could not push the cancellation of task %s", task_id)
+        return cancelled
+
+    @contextlib.asynccontextmanager
+    async def _cancelling(self, task_id: str) -> AsyncIterator[None]:
+        """Record a cancel of ``task_id`` in progress here, for subscribers to wait on."""
+        done = asyncio.Event()
+        self._cancels.setdefault(task_id, []).append(done)
+        try:
+            yield
+        finally:
+            done.set()
+            waiting = self._cancels.get(task_id, [])
+            if done in waiting:
+                waiting.remove(done)
+            if not waiting:
+                self._cancels.pop(task_id, None)
 
     @validate_request_params
     @validate(
@@ -522,6 +699,12 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         ``UnsupportedOperationError``, as a2a-sdk refuses it. The check runs
         before the projection, because the projection would otherwise answer
         the refusal with the stored Task.
+
+        While this server is cancelling the task, a2a-sdk holds the task's
+        lock for as long as the executor's cancel waits for the running turn,
+        and a subscription would wait with it. Such a subscription is served
+        here instead: the stored task at once, then, once the cancel is over,
+        the task with its outcome.
         """
         _require_individual_access(context, params.id)
         stored = await self._versioned_store.get(params.id, context)
@@ -533,10 +716,22 @@ class AionRequestHandler(DefaultRequestHandlerV2):
                 f'{TaskState.Name(stored.task.status.state)}'
             )
 
+        cancels = list(self._cancels.get(params.id, ()))
+        source = (
+            self._while_cancelling(stored.task, cancels)
+            if cancels
+            else super().on_subscribe_to_task(params, context)
+        )
         projection = TerminalTaskProjection(
             task_store=self._tasks,
             call_context=context,
             task_id=params.id,
         )
-        async for event in projection.project(super().on_subscribe_to_task(params, context)):
+        async for event in projection.project(source):
             yield event
+
+    @staticmethod
+    async def _while_cancelling(task: Task, cancels: list[asyncio.Event]) -> AsyncGenerator[Event]:
+        """The subscription to a task being cancelled here: its snapshot, until the cancels are over."""
+        yield task
+        await asyncio.gather(*(done.wait() for done in cancels))

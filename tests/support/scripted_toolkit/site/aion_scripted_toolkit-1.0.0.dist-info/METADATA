@@ -1,0 +1,4 @@
+Metadata-Version: 2.1
+Name: aion-scripted-toolkit
+Version: 1.0.0
+Summary: The scripted toolkit the SDK's tests drive the toolkit host with; not an installable package.

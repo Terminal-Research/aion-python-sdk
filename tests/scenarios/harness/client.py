@@ -322,7 +322,9 @@ class ScenarioClient:
         """Raw resubscribe, for scenarios that read events as they arrive."""
         return self._client(True).subscribe(SubscribeToTaskRequest(id=task_id))
 
-    async def rpc(self, method: str, params: Mapping[str, Any]) -> dict:
+    async def rpc(
+        self, method: str, params: Mapping[str, Any], *, headers: Optional[Mapping[str, str]] = None
+    ) -> dict:
         """Call one JSON-RPC method by hand and return the body as it arrived.
 
         The typed client is the right instrument almost everywhere, and it is
@@ -337,6 +339,8 @@ class ScenarioClient:
             method: The A2A method name as the wire spells it, e.g.
                 ``SubscribeToTask``.
             params: The method's parameters, in protobuf JSON form.
+            headers: Headers to send besides ``A2A-Version``, such as
+                ``A2A-Extensions``.
 
         Returns:
             The decoded JSON-RPC response - ``result`` or ``error``.
@@ -349,7 +353,7 @@ class ScenarioClient:
                 "method": method,
                 "params": dict(params),
             },
-            headers={A2A_VERSION_HEADER: A2A_VERSION},
+            headers={A2A_VERSION_HEADER: A2A_VERSION, **(headers or {})},
         )
         response.raise_for_status()
         return response.json()

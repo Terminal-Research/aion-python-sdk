@@ -21,6 +21,8 @@ from a2a.utils.errors import InvalidParamsError
 
 from tests.scenarios.commands import WhoamiResponse
 from tests.scenarios.extensions import SCENARIO_REQUIRES_EXTENSION_URI
+from a2a.types import TaskState
+
 from tests.scenarios.harness import (
     DAEMON_BEHAVIOR_ID,
     DAEMON_ENVIRONMENT_ID,
@@ -36,6 +38,7 @@ from tests.scenarios.harness import (
     distribution_metadata,
     final_task,
     reply_texts,
+    run_until_working,
 )
 
 pytestmark = pytest.mark.daemon
@@ -180,3 +183,20 @@ async def test_an_extension_gets_what_it_requires_when_both_are_declared(
 
     assert whoami_response(events).daemon_identity_id == DAEMON_IDENTITY_ID
     assert final_task(events).state == "COMPLETED"
+
+
+@pytest.mark.variant("daemon")
+@pytest.mark.command("slow")
+async def test_reading_and_cancelling_a_task_with_the_daemon_declared_activates_nothing(
+    daemon_client: ScenarioClient,
+) -> None:
+    """``A2A-Extensions`` naming the daemon on ``GetTask`` and ``CancelTask``: no payload is looked for, nothing fails."""
+    task_id, _ = await run_until_working(daemon_client, "slow 30")
+    declared = {"A2A-Extensions": DAEMON_EXTENSION_URI}
+
+    read = await daemon_client.rpc("GetTask", {"id": task_id}, headers=declared)
+    cancelled = await daemon_client.rpc("CancelTask", {"id": task_id}, headers=declared)
+
+    assert read.get("result", {}).get("id") == task_id, read
+    assert cancelled.get("result", {}).get("status", {}).get("state") == "TASK_STATE_CANCELED", cancelled
+    assert (await daemon_client.get_task(task_id)).status.state == TaskState.TASK_STATE_CANCELED

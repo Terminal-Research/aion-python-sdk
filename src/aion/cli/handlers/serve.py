@@ -10,6 +10,7 @@ from aion.core.config import AionConfig
 from aion.core.settings import api_settings
 from aion.server import services as aion_services
 from aion.server.core.platform import AionWebSocketManager, WebsocketTransportFactory
+from aion.server.shutdown import shutdown_budget
 from aion.server.utils.processes import ProcessManager
 
 from aion.cli.services import (
@@ -25,10 +26,6 @@ from aion.cli.utils.cli_messages import generate_welcome_message
 from aion.cli.utils.port_manager import AionPortManager
 
 logger = logging.getLogger(__name__)
-
-# Each child may spend 60 seconds rescuing an evolution run its shutdown cancels, then up
-# to two seconds settling interrupted tasks. Leave room for remaining cleanup.
-SERVE_SHUTDOWN_TIMEOUT_SECONDS = 75
 
 
 class ServeHandler:
@@ -58,7 +55,7 @@ class ServeHandler:
 
         Signal handlers run between bytecodes on the main thread, so doing the
         shutdown *in* one blocks the event loop for as long as the child
-        processes take to die (up to 75s), and racing it against the normal
+        processes take to die, and racing it against the normal
         ``finally`` path would shut everything down twice. Instead the handler
         only sets an event, and ``run``'s own ``finally`` performs the one
         graceful, awaited shutdown.
@@ -392,12 +389,19 @@ class ServeHandler:
                 except asyncio.CancelledError:
                     pass
 
-    async def shutdown(self, timeout: int = SERVE_SHUTDOWN_TIMEOUT_SECONDS) -> bool:
+    async def shutdown(self, timeout: Optional[float] = None) -> bool:
         """
         Gracefully shutdown all processes and release reserved ports.
 
+        Every agent process is given its whole shutdown budget,
+        ``AION_SHUTDOWN_TIMEOUT`` (``aion.server.shutdown``), before it is
+        killed: the toolkits' turns stopped, open connections closed,
+        interrupted tasks settled, the rest cleaned up. The agents stop side
+        by side, so this is also what stopping all of them takes.
+
         Args:
-            timeout: Maximum time in seconds to wait for processes to shutdown
+            timeout: Maximum time in seconds to wait for processes to shutdown;
+                the shutdown budget by default.
 
         Returns:
             bool: True if all processes shut down successfully
@@ -409,7 +413,7 @@ class ServeHandler:
         if self.process_manager:
             shutdown_successful = await ServeShutdownService().execute(
                 process_manager=self.process_manager,
-                timeout=timeout
+                timeout=shutdown_budget().total if timeout is None else timeout
             )
         else:
             logger.warning("shutdown() called but no process manager initialized")

@@ -10,7 +10,7 @@ read it off the implementation a2a-sdk ships, ``VersionedDatabaseTaskStore``:
 * the event of a write is appended to ``task_events`` with the new version,
   in the same transaction - which is what lets a2a-sdk's own
   ``DatabaseTaskEventStream`` follow the task from another instance;
-* the version row goes with the task, the journal stays.
+* the version row and the task's journal go with the task.
 
 What is Aion's on top: the task itself lives in ``tasks`` with its message and
 artifact tables, a task written before versions existed reads as
@@ -253,14 +253,27 @@ async def test_a_write_without_a_context_journals_the_recorded_owner(versioned) 
     assert (await versioned.get(task.id, ALICE)).task.status.state == TaskState.TASK_STATE_FAILED
 
 
-async def test_delete_removes_the_version_and_keeps_the_journal(versioned) -> None:
+async def test_delete_removes_the_version_and_the_journal_of_that_task_only(versioned) -> None:
     task = _task(str(uuid.uuid4()))
+    other = _task(str(uuid.uuid4()))
     await _first_write(versioned, task)
+    await _first_write(versioned, other)
 
     await versioned.delete(task.id, ALICE)
 
     assert await versioned.get(task.id, ALICE) is None
     assert await task_version(task.id) is None
+    assert await journal(task.id) == []
+    assert await journal(other.id) == [(1, "alice")]
+
+
+async def test_another_users_delete_leaves_the_task_and_its_journal(versioned) -> None:
+    task = _task(str(uuid.uuid4()))
+    await _first_write(versioned, task)
+
+    await versioned.delete(task.id, MALLORY)
+
+    assert await task_version(task.id) == 1
     assert await journal(task.id) == [(1, "alice")]
 
 

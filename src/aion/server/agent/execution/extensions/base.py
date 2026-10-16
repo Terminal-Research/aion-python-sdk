@@ -1,113 +1,138 @@
 """Framework-agnostic extension routing for A2A requests.
 
-Defines the ExtensionTaskHandler contract that lets an A2A extension (e.g. a
-future self-improvement/evolution flow) take over stream()/resume() for a
-task in place of the agent's framework adapter (LangGraph, ADK, ...), based
-solely on which A2A extensions are declared active on the inbound request.
-Framework adapters never participate in this decision.
+Defines the ExtensionTaskHandler contract that lets an A2A extension take
+over stream()/resume()/cancel() of a task in place of the agent's framework
+adapter (LangGraph, ADK, ...), based solely on which A2A extensions are
+declared active on the request that starts the task. Framework adapters never
+participate in this decision. Every handler the server runs drives one
+toolkit plugin (see ``toolkit``).
 """
 
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING, Optional, Protocol
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Optional, Protocol
 
-from a2a.types import Message, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
-
-from .availability import ExtensionAvailability
-from .errors import ExtensionPreflightError
-from .evolution import EvolutionTaskHandler
+from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
+    from a2a.server.context import ServerCallContext
     from a2a.server.events import EventQueue
-    from aion.core.config.models import AgentConfig
+    from aion.core.runtime.context.extensions import AionRuntimeExtensions
 
 __all__ = [
-    "ExtensionAvailability",
-    "ExtensionPreflightError",
+    "EXTENSION_ROUTE_STATE_KEY",
+    "ExtensionRoute",
     "ExtensionTaskHandler",
-    "discover_extension_task_handlers",
 ]
 
+EXTENSION_ROUTE_STATE_KEY = "aion:extensionRoute"
+"""Key of the ``ServerCallContext.state`` entry that carries an admitted route.
 
-class ExtensionTaskHandler(Protocol):
-    """Alternate stream()/resume() provider for a single A2A extension.
+The request handler decides and admits the route of a new task before the
+task exists, and the executor reads it here: the decision is made once.
+"""
 
-    Implementations are framework-agnostic: they drive their own toolkit and
-    emit A2A events directly, without going through the agent's framework
-    adapter. Registered handlers are matched by whether their `uri` is
-    declared active on the inbound request's runtime context.
+
+@dataclass(frozen=True)
+class ExtensionRoute:
+    """A new task's route to an extension handler, decided before the task exists.
+
+    Attributes:
+        uri: The extension URI of the handler the task belongs to.
+        admission: What the handler's ``admit`` returned; handed to its
+            ``stream``.
     """
 
     uri: str
-    """Extension URI this handler owns (matched against message.extensions[])."""
+    admission: Any = None
 
-    async def availability(self, config: "AgentConfig") -> ExtensionAvailability:
-        """Report whether this handler can run for the given agent config.
 
-        Called once per executor instance at startup, e.g. to check that a
-        required optional toolkit dependency is installed. When unavailable,
-        the returned reason is surfaced verbatim to clients whose requests
-        declare this extension - make it actionable.
+class ExtensionTaskHandler(Protocol):
+    """Alternate stream()/resume()/cancel() provider for a single A2A extension.
+
+    Implementations are framework-agnostic: they emit A2A events directly,
+    without going through the agent's framework adapter. A request that starts
+    a new task is routed to the handler whose ``uri`` it declares active.
+    """
+
+    uri: str
+    """Extension URI this handler owns."""
+
+    async def admit(
+        self,
+        message: Message,
+        extensions: "AionRuntimeExtensions",
+        call_context: "ServerCallContext",
+    ) -> Any:
+        """Check a request that would start a task of this handler, before the task exists.
+
+        Called by the request handler after the caller is admitted into the
+        context and the request's extensions are verified, and before the
+        task is created; a refusal here leaves nothing behind.
+
+        Args:
+            message: The user message; its ``context_id`` is set.
+            extensions: The request's verified extensions.
+            call_context: The request's call context.
+
+        Returns:
+            What ``stream`` needs of the admitted request.
+
+        Raises:
+            a2a.utils.errors.A2AError: The request is refused; the caller
+                gets this JSON-RPC error.
         """
         ...
 
-    async def preflight(self, context: "RequestContext") -> None:
-        """Reject this specific request before its task is created.
+    def admit_continuation(self, task: Task) -> None:
+        """Check a message that continues ``task``, before the task is changed.
 
-        Called once per request, after routing but before the task is
-        persisted - see ExtensionPreflightError. Raise it (or a subclass) to
-        reject; anything else is treated as success. The default is a no-op:
-        a handler with nothing to check per-request need not implement this
-        at all - the executor calls it via `getattr(handler, "preflight",
-        None)`, so an absent override is the same as one that always passes.
+        Called by the request handler for a message that names a task of this
+        handler, or that the request handler hands to one waiting for input.
+
+        Raises:
+            a2a.utils.errors.A2AError: The message is refused; the caller
+                gets this JSON-RPC error and the task is left as it is.
         """
-        return None
+        ...
 
     def stream(
-        self, context: "RequestContext"
+        self, context: "RequestContext", admission: Any, event_queue: Optional["EventQueue"] = None
     ) -> AsyncIterator[TaskStatusUpdateEvent | TaskArtifactUpdateEvent]:
-        """Start a new task routed to this extension."""
+        """Run the first turn of a new task routed to this extension.
+
+        ``event_queue`` is the run's queue the executor writes the yielded
+        events to; a handler reads from it whether they still reach the task.
+        """
         ...
 
     def resume(
-        self, context: "RequestContext"
+        self, context: "RequestContext", event_queue: Optional["EventQueue"] = None
     ) -> AsyncIterator[TaskStatusUpdateEvent | TaskArtifactUpdateEvent]:
-        """Resume an interrupted task previously routed to this extension."""
+        """Run the next turn of a task routed to this extension."""
         ...
 
     async def cancel(
         self, context: "RequestContext", event_queue: "EventQueue"
-    ) -> Optional["Message"]:
-        """Cancel a task previously routed to this extension.
+    ) -> bool:
+        """Cancel a task routed to this extension.
 
         Called in place of the agent's framework-adapter cancel hook when the
-        task being canceled was routed to this handler. Raise
-        UnsupportedOperationError (see a2a.utils.errors) if this handler does
-        not support cancellation - the executor still emits the terminal A2A
-        CANCELED state either way.
+        task being cancelled was routed to this handler. The handler stops
+        its work for the task; a turn running in this process may still
+        close the task through the run's queue.
 
-        `event_queue` is the same queue `stream()`/`resume()` publish to: a
-        handler with something substantial to hand back (e.g. undelivered
-        work recovered as a downloadable artifact) enqueues it here, before
-        returning - the event consumer shuts down on the first terminal
-        state, so anything queued after the executor calls
-        `task_updater.cancel()` below would be dropped rather than delivered
-        late. Small closing text/data instead rides the return value: it
-        becomes the message attached to that terminal CANCELED itself. A
-        handler with nothing to add returns None, leaving the CANCELED bare.
-        Inline files in either are stored and replaced with URLs, as they
-        are in what `stream()`/`resume()` publish.
+        Returns:
+            True when the task's own turn wrote its terminal status into the
+            run's queue; the executor writes nothing more. False otherwise,
+            and the executor writes ``CANCELED`` into the same queue. Raising
+            UnsupportedOperationError (see a2a.utils.errors) counts as False.
         """
         ...
 
-
-# Explicit, known extension handler classes. See
-# Uses BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1 (behaviour/evolution namespace).
-_KNOWN_TASK_HANDLERS: list[type[ExtensionTaskHandler]] = [EvolutionTaskHandler]
-
-
-def discover_extension_task_handlers() -> list[ExtensionTaskHandler]:
-    """Instantiate all known extension task handlers."""
-    return [cls() for cls in _KNOWN_TASK_HANDLERS]
+    async def shutdown(self, within: float) -> None:
+        """Stop this handler's running turns for a server shutdown, waiting at most ``within`` seconds."""
+        ...

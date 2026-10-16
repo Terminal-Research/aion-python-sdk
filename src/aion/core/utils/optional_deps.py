@@ -39,11 +39,12 @@ DISTRIBUTION = "aionto-sdk"
 def is_own_module(name: str | None) -> bool:
     """Is ``name`` a module that this distribution ships?
 
-    Other distributions may share the ``aion`` namespace - the behaviour
-    evolution toolkit publishes ``aion.toolkits.*`` - and this answers yes for
-    those too. Callers that can encounter one should check for it by name
-    before asking; the plugin loader is the only place that comes close, and
-    the toolkit is not among the plugins it loads.
+    Other distributions may share the ``aion`` namespace - a toolkit
+    package publishes ``aion.toolkits.*`` - and this answers yes for those
+    too. Callers that can encounter one should check for it by name before
+    asking; the plugin loader is the only place that comes close, and
+    toolkits are not among the plugins it loads: the toolkit host finds them
+    through their own entry point group.
     """
     return bool(name) and (name == "aion" or name.startswith("aion."))
 

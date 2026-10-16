@@ -1,13 +1,15 @@
 """Tests for TerminalTaskPushSender.
 
-The wrapper owns the outbound contract on the push channel: a task must leave
-the active states through exactly one webhook delivery — the full Task —
-never through a bare status update. It mirrors TerminalTaskProjection, which
-does the same for the streaming/unary channels.
+The wrapper owns the outbound contract on the push channel: it carries what
+the task stores and nothing live-only, and a task must leave the active states
+through exactly one webhook delivery — the full Task — never through a bare
+status update. It mirrors TerminalTaskProjection, which does the same for the
+streaming/unary channels.
 """
 
 import pytest
 from a2a.types import (
+    Artifact,
     Message,
     Role,
     Task,
@@ -18,6 +20,8 @@ from a2a.types import (
 )
 from unittest.mock import AsyncMock, Mock, patch
 
+from aion.core.a2a.enums import ArtifactId
+from aion.server.a2a.utils import mark_status_event_ephemeral
 from aion.server.agent.execution import AionActiveTaskRegistry
 from aion.server.agent.execution.scope import clear_execution_scope, init_execution_scope
 from aion.server.tasks.terminal_push_sender import TerminalTaskPushSender
@@ -70,9 +74,10 @@ def _inner() -> Mock:
     return sender
 
 
-def _manager(task: Task | None) -> Mock:
+def _manager(task: Task | None, written_outcome: TaskState | None = None) -> Mock:
     manager = Mock()
     manager.get_task = AsyncMock(return_value=task)
+    manager.written_outcome = written_outcome
     return manager
 
 
@@ -188,6 +193,93 @@ class TestTerminalTaskPushSender:
         assert event is stored
         assert not event.status.HasField("message")
         assert [m.message_id for m in event.history] == ["msg-a"]
+
+
+class TestOnlyWhatTheTaskStoresIsPushed:
+    """Live-only events never reach a webhook: the task does not store them."""
+
+    @pytest.mark.parametrize("artifact_id", [
+        ArtifactId.STREAM_DELTA.value,
+        ArtifactId.THINKING_DELTA.value,
+        ArtifactId.EPHEMERAL_MESSAGE.value,
+        ArtifactId.REACTION.value,
+    ])
+    @pytest.mark.anyio
+    async def test_a_live_only_artifact_is_not_sent(self, artifact_id):
+        artifact = TaskArtifactUpdateEvent(
+            task_id=TASK_ID, context_id=CONTEXT_ID, artifact=Artifact(artifact_id=artifact_id)
+        )
+        inner = _inner()
+        sender = TerminalTaskPushSender(inner=inner, task_manager=_manager(None))
+
+        await sender.send_notification(TASK_ID, artifact)
+
+        inner.send_notification.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_an_ephemeral_status_update_is_not_sent(self):
+        progress = _status(TaskState.TASK_STATE_WORKING, _message())
+        mark_status_event_ephemeral(progress)
+        inner = _inner()
+        sender = TerminalTaskPushSender(inner=inner, task_manager=_manager(None))
+
+        await sender.send_notification(TASK_ID, progress)
+
+        inner.send_notification.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_a_durable_artifact_is_sent(self):
+        artifact = TaskArtifactUpdateEvent(
+            task_id=TASK_ID, context_id=CONTEXT_ID, artifact=Artifact(artifact_id="report")
+        )
+        inner = _inner()
+        sender = TerminalTaskPushSender(inner=inner, task_manager=_manager(None))
+
+        await sender.send_notification(TASK_ID, artifact)
+
+        assert _dispatched(inner) == (TASK_ID, artifact)
+
+
+class TestUnsentOutcome:
+    """An outcome the manager wrote with no event to carry it is pushed once the execution is over."""
+
+    @pytest.mark.anyio
+    async def test_an_outcome_written_past_the_consumer_is_pushed(self):
+        """The FAILED a2a-sdk's producer stores when the agent raises."""
+        stored = _task(TaskState.TASK_STATE_FAILED)
+        inner = _inner()
+        sender = TerminalTaskPushSender(
+            inner=inner, task_manager=_manager(stored, written_outcome=TaskState.TASK_STATE_FAILED)
+        )
+
+        await sender.push_unsent_outcome(TASK_ID)
+
+        assert _dispatched(inner) == (TASK_ID, stored)
+
+    @pytest.mark.anyio
+    async def test_an_outcome_already_pushed_is_not_pushed_again(self):
+        stored = _task(TaskState.TASK_STATE_FAILED)
+        inner = _inner()
+        sender = TerminalTaskPushSender(
+            inner=inner, task_manager=_manager(stored, written_outcome=TaskState.TASK_STATE_FAILED)
+        )
+        await sender.send_notification(TASK_ID, _status(TaskState.TASK_STATE_FAILED))
+
+        await sender.push_unsent_outcome(TASK_ID)
+
+        inner.send_notification.assert_awaited_once()
+
+    @pytest.mark.anyio
+    async def test_an_outcome_another_writer_stored_is_left_to_that_writer(self):
+        """A cancel from another server is pushed by the server that wrote it."""
+        inner = _inner()
+        sender = TerminalTaskPushSender(
+            inner=inner, task_manager=_manager(_task(TaskState.TASK_STATE_CANCELED), written_outcome=None)
+        )
+
+        await sender.push_unsent_outcome(TASK_ID)
+
+        inner.send_notification.assert_not_awaited()
 
 
 class TestRegistryBinding:

@@ -1,4 +1,4 @@
-"""``aion db check`` and ``aion db migrate``: what they report and how they exit."""
+"""``aion db check``, ``aion db migrate`` and ``aion db strip-request-metadata``: what they report and how they exit."""
 
 from __future__ import annotations
 
@@ -30,6 +30,23 @@ def database(monkeypatch):
     monkeypatch.setattr(database, "check_database", AsyncMock())
     monkeypatch.setattr(database, "migrate_database", AsyncMock())
     return database
+
+
+@pytest.fixture
+def request_metadata(monkeypatch):
+    """The request metadata clean-up, with the database itself left out."""
+    from aion.server.tasks import request_metadata
+
+    @asynccontextmanager
+    async def connected(_command):
+        yield Mock()
+
+    monkeypatch.setattr(db_command, "_connected", connected)
+    monkeypatch.setattr(request_metadata, "strip_request_metadata", AsyncMock(return_value=[
+        request_metadata.RequestMetadataFinding("tasks", rows=2, keys=3),
+        request_metadata.RequestMetadataFinding("task_events", rows=4, keys=5),
+    ]))
+    return request_metadata
 
 
 def _checks(*states: SchemaState) -> list[SchemaCheck]:
@@ -73,12 +90,31 @@ async def test_migrate_reports_a_failure_with_a_non_zero_exit(database) -> None:
     assert "cannot create tables" in result.output
 
 
-async def test_without_postgres_url_both_commands_refuse(monkeypatch) -> None:
+async def test_strip_request_metadata_only_reports_without_apply(request_metadata) -> None:
+    result = await CliRunner().invoke(cli, ["db", "strip-request-metadata"])
+
+    assert result.exit_code == 0
+    assert request_metadata.strip_request_metadata.await_args.kwargs == {"apply": False}
+    assert "tasks: 3 keys to remove in 2 rows" in result.output
+    assert "task_events: 5 keys to remove in 4 rows" in result.output
+    assert "run with --apply" in result.output
+
+
+async def test_strip_request_metadata_removes_with_apply(request_metadata) -> None:
+    result = await CliRunner().invoke(cli, ["db", "strip-request-metadata", "--apply"])
+
+    assert result.exit_code == 0
+    assert request_metadata.strip_request_metadata.await_args.kwargs == {"apply": True}
+    assert "tasks: 3 keys removed in 2 rows" in result.output
+    assert "--apply" not in result.output
+
+
+async def test_without_postgres_url_every_command_refuses(monkeypatch) -> None:
     from aion.db.settings import db_settings
 
     monkeypatch.setattr(db_settings, "pg_url", None)
 
-    for command in ("check", "migrate"):
+    for command in ("check", "migrate", "strip-request-metadata"):
         result = await CliRunner().invoke(cli, ["db", command])
         assert result.exit_code == 1
         assert "POSTGRES_URL is not set" in result.output

@@ -8,8 +8,8 @@ catalog of one kind, so the two backends cannot drift apart:
 * artifacts are qualified by task, newest first, without streaming deltas;
 * ``DeleteContext`` removes the caller's binding; the last one cancels the
   context's active tasks through the store, deletes its framework state under
-  the holder's scope and removes its tasks, messages, artifacts, versions and
-  bindings, after which the ID starts a new conversation;
+  the holder's scope and removes its tasks, messages, artifacts, versions,
+  journal events, push configs and bindings, after which the ID starts a new conversation;
 * an unsettled deletion stays durable and fenced, and the same caller's retry
   finishes it; a late write of a removed task is refused.
 
@@ -42,7 +42,14 @@ from a2a.types import (
 )
 from sqlalchemy import text
 
-from .postgres_support import POSTGRES_TEST_URL, prepared_database, stores as postgres_stores, task_version, truncate
+from .postgres_support import (
+    POSTGRES_TEST_URL,
+    journal,
+    prepared_database,
+    stores as postgres_stores,
+    task_version,
+    truncate,
+)
 
 from aion.core.a2a import (
     A2AMetadataKey,
@@ -324,10 +331,11 @@ async def test_a_deleted_context_id_starts_a_new_conversation(backend):
         await backend.history("alice", "ctx")
 
 
-async def test_postgres_removes_versions_and_push_configs_with_the_tasks(backend):
+async def test_postgres_removes_versions_events_and_push_configs_with_the_tasks(backend):
     if backend.kind != "postgres":
         pytest.skip("storage detail of the PostgreSQL backend")
     task = await backend.send("alice", "ctx", _message("m1"))
+    kept = await backend.send("alice", "other", _message("m2"))
     push_configs = PushNotificationFactory._create_postgres_store(db_manager, resolve_user_scope)
     await push_configs.set_info(
         task.id,
@@ -337,16 +345,20 @@ async def test_postgres_removes_versions_and_push_configs_with_the_tasks(backend
     assert await push_configs.get_info_for_dispatch(task.id)
 
     assert await task_version(task.id) is not None
+    assert await journal(task.id)
 
     await backend.delete("alice", "ctx")
 
     assert await task_version(task.id) is None
+    assert await journal(task.id) == []
+    assert await journal(kept.id) == [(1, "alice")]
+    assert await task_version(kept.id) == 1
     async with db_manager.get_session() as session:
         remaining = await session.scalar(
             text("SELECT count(*) FROM push_notification_configs WHERE task_id = :task_id"), {"task_id": task.id}
         )
         bindings = await session.scalar(
-            text("SELECT count(*) FROM context_bindings WHERE agent_id = :agent_id"),
+            text("SELECT count(*) FROM context_bindings WHERE agent_id = :agent_id AND context_id = 'ctx'"),
             {"agent_id": backend.store.agent_id},
         )
         state = await session.scalar(

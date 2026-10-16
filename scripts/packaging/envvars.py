@@ -15,7 +15,7 @@ What it finds:
 * ``os.environ[...]``, ``os.environ.get(...)``, ``os.getenv(...)`` and
   ``environ.get(...)`` with a string literal.
 * A string literal passed to a helper that reads the environment from its own
-  parameter - ``_env_flag("EVOLUTION_EXECUTOR_NETWORK")`` and the like. The
+  parameter - ``_env_flag("SOME_FLAG")`` and the like. The
   helpers are found first, by looking for a function whose body reaches
   ``os.environ`` or ``os.getenv`` through one of its parameters; then every
   call to one is read for the literal in that position. This is the case a

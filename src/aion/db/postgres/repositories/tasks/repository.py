@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
 import uuid
-from typing import List, Type, Optional
+from typing import Iterable, List, NamedTuple, Type, Optional
 
-from sqlalchemy import select, func, asc, desc, delete, and_, or_
+from sqlalchemy import select, func, asc, desc, delete, and_, or_, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
 from a2a.types import Artifact, TaskStatus
 
+from aion.db.postgres.constants import ABANDONED_SWEEP_LOCK_CLASS
 from aion.db.postgres.records import TaskRecord, resolve_status_timestamp
 from aion.db.postgres.repositories.base import BaseRepository
 from aion.db.postgres.models import TaskArtifactModel, TaskRecordModel
@@ -29,6 +31,20 @@ The public name remains stable while the repository resolves it to the typed
 timestamp, either from its own ``TaskStatus`` or stamped by the application
 when one was missing.
 """
+
+
+class StoredArtifact(NamedTuple):
+    """One artifact row of a task, with the task it belongs to.
+
+    Attributes:
+        task_id: The task that holds the artifact.
+        artifact: The artifact as it was last written.
+        updated_at: When the artifact's payload was last replaced.
+    """
+
+    task_id: uuid.UUID
+    artifact: Artifact
+    updated_at: _dt.datetime
 
 
 class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
@@ -385,12 +401,14 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
             artifact_name: Optional[str] = None,
             artifact_version: Optional[str] = None,
             owner_scope: Optional[str] = None,
+            artifact_id: Optional[str] = None,
     ) -> List[Artifact]:
         """Find artifacts matching the given criteria.
 
         Either ``task_id`` or ``context_id`` must be provided to scope the search.
         ``owner_scope`` narrows it to one user's tasks - a ``context_id`` is
-        chosen by clients, and two users may share one.
+        chosen by clients, and two users may share one. ``artifact_id`` keeps
+        only the artifacts with that id, before the matrix below applies.
 
         Behaviour matrix:
         - name=None,  version=None   > latest version of each artifact (by task creation order)
@@ -420,6 +438,8 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
             context_id=context_id,
         )
 
+        if artifact_id is not None:
+            stmt = stmt.where(TaskArtifactModel.artifact_id == artifact_id)
         if artifact_name is not None:
             stmt = stmt.where(TaskArtifactModel.payload["name"].astext == artifact_name)
         if effective_version is not None:
@@ -455,3 +475,148 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
             return all_versions_by_name(rows, artifact_name)
 
         return latest_artifacts(rows, artifact_name)
+
+    async def find_artifact_versions(
+            self, agent_id: str, context_id: str, artifact_id: str
+    ) -> List[StoredArtifact]:
+        """Every artifact with ``artifact_id`` among the tasks of a context, newest task first.
+
+        An artifact id repeated in several tasks of a context is one artifact
+        in several versions. The search is not narrowed to an owner: who may
+        see the context's tasks is decided before it is made (context
+        admission).
+
+        Args:
+            agent_id: Restrict to this agent's tasks.
+            context_id: The context to search.
+            artifact_id: The artifact's ``artifact_id``.
+
+        Returns:
+            One row per task holding the artifact, newest task first.
+        """
+        stmt = (
+            select(self.model_class.id, TaskArtifactModel.payload, TaskArtifactModel.updated_at)
+            .select_from(self.model_class)
+            .join(TaskArtifactModel, TaskArtifactModel.task_id == self.model_class.id)
+            .where(TaskArtifactModel.artifact_id == artifact_id)
+            .order_by(desc(self.model_class.created_at), desc(self.model_class.id))
+        )
+        stmt = self._apply_filter(stmt, agent_id=agent_id, context_id=context_id)
+        result = await self._session.execute(stmt)
+        return [StoredArtifact(task_id, payload, updated_at) for task_id, payload, updated_at in result.all()]
+
+    async def find_latest_tagged(
+            self,
+            agent_id: str,
+            context_id: str,
+            metadata_key: str,
+            metadata_value: Optional[str],
+            owner_scope: Optional[str] = None,
+    ) -> Optional[TaskRecord]:
+        """The newest task of a context whose ``metadata[metadata_key]`` is ``metadata_value``.
+
+        Args:
+            agent_id: Restrict to this agent's tasks.
+            context_id: The context to search.
+            metadata_key: A top-level key of the task's metadata, read as text.
+            metadata_value: The value it must hold; None matches a task whose
+                metadata lacks the key.
+            owner_scope: Restrict to one owner's tasks; None searches every
+                owner's.
+
+        Returns:
+            The newest matching task by ``created_at``, or None.
+        """
+        tag = self.model_class.task_metadata[metadata_key].astext
+        stmt = select(self.model_class).where(tag.is_(None) if metadata_value is None else tag == metadata_value)
+        stmt = self._apply_filter(stmt, agent_id=agent_id, owner_scope=owner_scope, context_id=context_id)
+        stmt = stmt.order_by(desc(self.model_class.created_at), desc(self.model_class.id)).limit(1)
+        return await self._execute_and_convert(stmt)
+
+    async def find_idle_ids(
+            self,
+            agent_id: str,
+            states: Iterable[str],
+            idle_seconds: float,
+            task_id: Optional[uuid.UUID] = None,
+    ) -> list[uuid.UUID]:
+        """The ids of the agent's tasks in ``states`` whose last write is older than ``idle_seconds``.
+
+        Every owner's tasks are searched. The age is measured on the
+        database's clock, which stamped ``updated_at``, so the servers' own
+        clocks do not matter.
+
+        Args:
+            agent_id: Restrict to this agent's tasks.
+            states: States, by their protobuf name, a task must be in.
+            idle_seconds: How long ago the last write must be.
+            task_id: Check this one task only.
+
+        Returns:
+            The matching ids, the longest idle first.
+        """
+        stmt = select(self.model_class.id).where(
+            self.model_class.agent_id == agent_id,
+            self.model_class.state.in_(list(states)),
+            self.model_class.updated_at < func.now() - _dt.timedelta(seconds=idle_seconds),
+        )
+        if task_id is not None:
+            stmt = stmt.where(self.model_class.id == task_id)
+        stmt = stmt.order_by(asc(self.model_class.updated_at))
+        return list((await self._session.execute(stmt)).scalars().all())
+
+    async def try_lock_abandoned_sweep(self, agent_id: str) -> bool:
+        """Try to take the agent's abandoned-task sweep lock, without waiting.
+
+        The lock is a transaction-level advisory lock: it lives as long as
+        this repository's session holds its transaction, and ends with the
+        commit, the rollback, the session's close or the lost connection. Its
+        keys are a fixed class and a stable hash of ``agent_id``, so each
+        agent of a shared database has its own lock.
+
+        Args:
+            agent_id: The agent whose sweep is locked.
+
+        Returns:
+            True when the lock is held now; False when another session holds it.
+        """
+        agent_key = int.from_bytes(hashlib.sha256(agent_id.encode()).digest()[:4], "big", signed=True)
+        acquired = await self._session.scalar(
+            text("SELECT pg_try_advisory_xact_lock(:lock_class, :agent_key)"),
+            {"lock_class": ABANDONED_SWEEP_LOCK_CLASS, "agent_key": agent_key},
+        )
+        return bool(acquired)
+
+    async def find_oldest_tagged_id(
+            self,
+            agent_id: str,
+            context_id: str,
+            metadata_key: str,
+            metadata_value: str,
+            excluded_states: Iterable[str] = (),
+    ) -> Optional[uuid.UUID]:
+        """The id of the oldest task of a context whose ``metadata[metadata_key]`` is ``metadata_value``.
+
+        Every owner's tasks are searched: who may use the context is decided
+        before the search is made (context admission).
+
+        Args:
+            agent_id: Restrict to this agent's tasks.
+            context_id: The context to search.
+            metadata_key: A top-level key of the task's metadata, read as text.
+            metadata_value: The value it must hold.
+            excluded_states: States, by their protobuf name, a matching task
+                must not be in.
+
+        Returns:
+            The id of the oldest matching task by ``created_at``, or None.
+        """
+        stmt = select(self.model_class.id).where(
+            self.model_class.task_metadata[metadata_key].astext == metadata_value
+        )
+        excluded = list(excluded_states)
+        if excluded:
+            stmt = stmt.where(self.model_class.state.not_in(excluded))
+        stmt = self._apply_filter(stmt, agent_id=agent_id, context_id=context_id)
+        stmt = stmt.order_by(asc(self.model_class.created_at), asc(self.model_class.id)).limit(1)
+        return (await self._session.execute(stmt)).scalar_one_or_none()

@@ -9,8 +9,8 @@ them:
 
 *Layout.* One PyPI project ships every ``aion.*`` subpackage, and the three
 namespace levels (``aion``, ``aion.langgraph``, ``aion.adk``) must stay free of
-``__init__.py`` or a second distribution sharing the namespace - the behaviour
-evolution toolkit does - stops being importable.
+``__init__.py`` or a second distribution sharing the namespace - a toolkit
+package does - stops being importable.
 
 *Extras drift.* The composite extras are written out in full instead of
 referring to their parts (see the comment in pyproject.toml: Poetry's solver

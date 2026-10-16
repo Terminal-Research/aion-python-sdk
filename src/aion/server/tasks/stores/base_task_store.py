@@ -149,3 +149,27 @@ class BaseTaskStore(TaskStore):
             The most recent Task object for the context, or None if no tasks exist
         """
         pass
+
+    @abstractmethod
+    async def get_context_last_routed_task(
+            self,
+            context_id: str,
+            routed_extension: Optional[str],
+            context: Optional[ServerCallContext] = None,
+    ) -> Optional[Task]:
+        """Retrieve the most recent task of a context that one handler serves.
+
+        A task's handler is the extension recorded in its
+        ``metadata["aion:routedExtension"]``, or the agent's framework adapter
+        when the key is absent.
+
+        Args:
+            context_id: The context identifier to search
+            routed_extension: The handler's extension URI; None for the
+                agent's framework adapter
+            context: Server call context used to resolve the exact owner
+
+        Returns:
+            The most recent such Task of the resolved owner, or None
+        """
+        pass

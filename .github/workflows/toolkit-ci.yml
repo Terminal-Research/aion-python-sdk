@@ -1,0 +1,138 @@
+name: Toolkit CI
+
+# The check every toolkit repository runs against the SDK. A toolkit's own
+# workflow calls this one:
+#
+#   jobs:
+#     ci:
+#       uses: Terminal-Research/aion-python-sdk/.github/workflows/toolkit-ci.yml@main
+#
+# It installs the toolkit with Poetry and the SDK from a checkout on top of
+# it, then runs the toolkit's `make tests` and `make lint`. The SDK is public,
+# so nothing here needs a token for it.
+#
+# Which SDK the toolkit is checked against, first match wins:
+#   1. `sdk_ref`, when the caller names one;
+#   2. the SDK branch named like the caller's branch, when it exists, so a
+#      change that spans both repositories uses one branch name in each;
+#   3. `main`.
+on:
+  workflow_call:
+    inputs:
+      sdk_ref:
+        description: SDK branch, tag or commit to check the toolkit against. Empty selects it from the caller's branch name.
+        type: string
+        required: false
+        default: ""
+      sdk_extras:
+        description: Extras of the SDK to install with it, comma-separated.
+        type: string
+        required: false
+        default: server
+
+permissions:
+  contents: read
+
+env:
+  POETRY_VERSION: 2.4.1
+  SDK_REPOSITORY: Terminal-Research/aion-python-sdk
+
+jobs:
+  check:
+    name: Toolkit tests and lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the toolkit
+        uses: actions/checkout@v5
+        with:
+          path: toolkit
+
+      # A pull request runs on a merge ref, so its branch is `head_ref`; any
+      # other event runs on the branch itself. The name reaches the script
+      # through the environment because a branch name is not trusted text.
+      # `ls-remote` answers 2 for "no such branch" and anything else for a
+      # failure to ask; only the first falls back to `main`, so an outage does
+      # not quietly check the toolkit against the wrong SDK.
+      - name: Resolve the SDK ref
+        id: sdk
+        env:
+          REQUESTED_REF: ${{ inputs.sdk_ref }}
+          CALLER_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ -n "$REQUESTED_REF" ]; then
+            ref="$REQUESTED_REF"
+            reason="requested by the caller"
+          else
+            status=0
+            git ls-remote --exit-code --heads \
+              "https://github.com/${SDK_REPOSITORY}" "refs/heads/${CALLER_BRANCH}" >/dev/null || status=$?
+            case "$status" in
+              0)
+                ref="$CALLER_BRANCH"
+                reason="the SDK has a branch named like the toolkit's"
+                ;;
+              2)
+                ref=main
+                reason="the SDK has no branch named ${CALLER_BRANCH}"
+                ;;
+              *)
+                echo "::error::Could not list the branches of ${SDK_REPOSITORY} (git ls-remote exited ${status})"
+                exit 1
+                ;;
+            esac
+          fi
+          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+          echo "reason=${reason}" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the SDK
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ env.SDK_REPOSITORY }}
+          ref: ${{ steps.sdk.outputs.ref }}
+          path: sdk
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: pipx install poetry==${{ env.POETRY_VERSION }}
+
+      # No cache and no lock file: the toolkit does not commit one, so nothing
+      # describes the resolution a cache could be keyed on.
+      - name: Install the toolkit
+        working-directory: toolkit
+        run: poetry install
+
+      # The toolkit's own dependency on `aionto-sdk` installed the PyPI
+      # release; pip replaces it with the checkout, which is what the tests
+      # import.
+      - name: Install the SDK from its checkout
+        working-directory: toolkit
+        env:
+          SDK_EXTRAS: ${{ inputs.sdk_extras }}
+        run: poetry run pip install -e "../sdk[${SDK_EXTRAS}]"
+
+      - name: Show the SDK under test
+        env:
+          SDK_REF: ${{ steps.sdk.outputs.ref }}
+          SDK_REASON: ${{ steps.sdk.outputs.reason }}
+        run: |
+          sha="$(git -C sdk rev-parse HEAD)"
+          echo "SDK ref ${SDK_REF} at ${sha} (${SDK_REASON})"
+          {
+            echo "### SDK under test"
+            echo
+            echo "\`${SDK_REF}\` at \`${sha}\`: ${SDK_REASON}."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run the tests
+        working-directory: toolkit
+        run: make tests
+
+      - name: Run the linter
+        working-directory: toolkit
+        run: make lint

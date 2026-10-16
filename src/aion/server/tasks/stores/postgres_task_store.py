@@ -8,7 +8,7 @@ from typing import Optional, List
 
 from a2a.server.cluster.task_store import ConcurrentTaskModificationError
 from a2a.server.context import ServerCallContext
-from a2a.server.models import TaskVersionModel
+from a2a.server.models import TaskEventModel, TaskVersionModel
 from a2a.server.owner_resolver import OwnerResolver, resolve_user_scope
 from a2a.types import Message, Task, TaskState, TaskStatus
 from a2a.types import a2a_pb2
@@ -18,6 +18,7 @@ from opentelemetry import trace
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from aion.core.a2a.enums import A2AMetadataKey
 from aion.db.postgres.manager import db_manager
 from aion.db.postgres.types import Pagination, Sorting, SortKey
 from aion.db.postgres.repositories import (
@@ -314,9 +315,9 @@ class PostgresTaskStore(BaseTaskStore):
         owner's is left as it is, exactly as in the in-memory store. ``None``
         deletes regardless of owner: the store's deliberate unfiltered access,
         which no A2A request path uses. ``task_messages`` and
-        ``task_artifacts`` rows cascade with it. The task's version row goes
-        in the same transaction, as a2a-sdk's versioned store removes it; its
-        events stay in ``task_events``, which a2a-sdk never prunes.
+        ``task_artifacts`` rows cascade with it. The task's version row and
+        its events in ``task_events`` go in the same transaction: neither has
+        a foreign key to the task.
         """
         owner_scope = self._owner_filter(context)
         try:
@@ -340,6 +341,9 @@ class PostgresTaskStore(BaseTaskStore):
                 if deleted:
                     await session.execute(
                         delete(TaskVersionModel).where(TaskVersionModel.task_id == task_id)
+                    )
+                    await session.execute(
+                        delete(TaskEventModel).where(TaskEventModel.task_id == task_id)
                     )
 
     async def list(
@@ -530,3 +534,25 @@ class PostgresTaskStore(BaseTaskStore):
             context=context,
         )
         return tasks[0] if tasks else None
+
+    async def get_context_last_routed_task(
+            self,
+            context_id: str,
+            routed_extension: Optional[str],
+            context: ServerCallContext | None = None,
+    ) -> Optional[Task]:
+        """Retrieve the resolved owner's most recent task of a context that one handler serves.
+
+        Database failures propagate, as for :meth:`get_context_last_task`.
+        """
+        async with db_manager.get_session() as session:
+            async with session.begin():
+                await self._repeatable_read(session)
+                record = await TasksRepository(session).find_latest_tagged(
+                    agent_id=self.agent_id,
+                    context_id=context_id,
+                    metadata_key=A2AMetadataKey.ROUTED_EXTENSION.value,
+                    metadata_value=routed_extension,
+                    owner_scope=self._owner_filter(context),
+                )
+                return await self._hydrate(session, record) if record is not None else None

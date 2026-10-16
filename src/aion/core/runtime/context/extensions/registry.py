@@ -5,10 +5,6 @@ from __future__ import annotations
 import dataclasses
 from typing import Iterable
 
-from aion.core.a2a.extensions.behaviour_evolution import (
-    EvolutionDirectiveEventPayload,
-    EvolutionVerdictEventPayload,
-)
 from aion.core.a2a.extensions.cards import CardActionEventPayload
 from aion.core.a2a.extensions.cron import CronExtensionV1
 from aion.core.a2a.extensions.daemon import DaemonExtensionPayload
@@ -29,7 +25,6 @@ from aion.core.constants.a2a import (
     EVENT_EXTENSION_URI_V1,
     CONTEXT_EXTENSION_URI_V1,
     MESSAGING_EXTENSION_URI_V1,
-    BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1,
     TRACEABILITY_EXTENSION_URI_V1,
     USAGE_ATTRIBUTION_EXTENSION_URI_V1,
 )
@@ -216,10 +211,11 @@ class AionA2AExtensionRegistry(metaclass=Singleton):
 
         That is a floor, not a guarantee: a published extension has what the
         deployment owes it, and a request declaring it can still be refused
-        by _verify() for a per-request co-activation this cannot see. The
-        evolution extension is the case that makes the prerequisite check
-        matter: enabling it without the daemon extension it requires leaves
-        every request declaring it refused, so the card must not offer it.
+        by _verify() for a per-request co-activation this cannot see. A
+        toolkit that requires the daemon extension is the case that makes the
+        prerequisite check matter: enabling it without the daemon extension
+        leaves every request declaring it refused, so the card must not offer
+        it.
         """
         servable = self._servable_uris()
         return tuple(
@@ -315,18 +311,6 @@ aion_a2a_extension_registry.register(
         uri=CARDS_EXTENSION_URI_V1,
         collector=MessagesCollector(CardActionEventPayload),
         description="JSX-like card rendering for the distribution extension.",
-    )
-)
-aion_a2a_extension_registry.register(
-    ExtensionDescriptor(
-        uri=BEHAVIOUR_EVOLUTION_EXTENSION_URI_V1,
-        requires=(DAEMON_EXTENSION_URI_V1,),
-        collector=MessagesCollector(
-            EvolutionDirectiveEventPayload,
-            EvolutionVerdictEventPayload,
-        ),
-        description="Self-improvement flow: daemon-driven directive/verdict/result routing.",
-        active=False,
     )
 )
 

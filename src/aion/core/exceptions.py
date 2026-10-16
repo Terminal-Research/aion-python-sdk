@@ -54,6 +54,7 @@ __all__ = [
     "AionModelPrincipalError",
     "InvalidPrincipalError",
     "AionDaemonIdentityRequired",
+    "ToolkitRejection",
 ]
 
 
@@ -103,6 +104,34 @@ class TaskFailedError(AionError):
     def public_reason(self) -> str:
         """The reason the agent gave, as it gave it."""
         return self.reason
+
+
+class ToolkitRejection(AionError):
+    """Raise from a toolkit's ``preflight`` to refuse a request before its task exists.
+
+    The caller gets a JSON-RPC ``InvalidParams`` error whose ``data`` carries
+    ``code`` and ``retryable`` (as strings: the A2A error details carry
+    string values), and no task is created.
+
+    Args:
+        code: Stable machine-readable name of the refusal, such as
+            ``invalid_payload``; never empty.
+        message: Why, in words the caller may read.
+        retryable: Whether repeating the same request can succeed.
+    """
+
+    def __init__(self, code: str, message: str, *, retryable: bool = False) -> None:
+        if not code:
+            raise ValueError("a toolkit rejection needs a code")
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.retryable = retryable
+
+    @property
+    def public_reason(self) -> str:
+        """The refusal's message, written for the caller."""
+        return self.message
 
 
 class InvalidPrincipalError(AionError, ValueError):

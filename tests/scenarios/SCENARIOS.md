@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-173 scenarios in 33 files, 397 runs across 2 frameworks: 365 run, 31 skipped, 1 independent of the framework.
+205 scenarios in 37 files, 463 runs across 2 frameworks: 430 run, 32 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -15,7 +15,7 @@ A status cell reads `✓` when it runs, `skip` when `frameworks.UNSUPPORTED`, `f
 |  | Covered | Not yet |
 |---|---|---|
 | Commands | 22 of 22: `help`, `echo`, `stream`, `typing`, `steps`, `slow`, `artifacts`, `send-file`, `card`, `outbox-task`, `outbox-message`, `ask`, `ask-twice`, `ask-fail`, `fail`, `ext`, `whoami`, `event`, `config`, `ids`, `big`, `parts` | — |
-| Suites | 17 of 17: `smoke`, `streaming`, `events`, `terminal_states`, `interrupts`, `errors`, `artifacts`, `files`, `extensions`, `daemon`, `authentication`, `config`, `lifecycle`, `contexts`, `persistence`, `distributed`, `native` | — |
+| Suites | 18 of 18: `smoke`, `streaming`, `events`, `terminal_states`, `interrupts`, `errors`, `artifacts`, `files`, `extensions`, `daemon`, `authentication`, `config`, `lifecycle`, `contexts`, `toolkits`, `persistence`, `distributed`, `native` | — |
 
 ## Frameworks
 
@@ -63,20 +63,21 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 |---|---|---|---|
 | `smoke` | agent answers at all: card, health, help, echo | 8 | `make tests-scenarios TAGS=smoke` |
 | `streaming` | chunked replies, ephemeral typing, unary send | 14 | `make tests-scenarios TAGS=streaming` |
-| `events` | event order, ids, outbox, get_task agreement | 20 | `make tests-scenarios TAGS=events` |
+| `events` | event order, ids, outbox, get_task agreement | 21 | `make tests-scenarios TAGS=events` |
 | `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 11 | `make tests-scenarios TAGS=terminal_states` |
 | `interrupts` | INPUT_REQUIRED and resume | 9 | `make tests-scenarios TAGS=interrupts` |
 | `errors` | failures that must stay reported, not crash the server | 10 | `make tests-scenarios TAGS=errors` |
 | `artifacts` | artifact and card emission | 4 | `make tests-scenarios TAGS=artifacts` |
 | `files` | inline file parts: stored, rejected, or passed through | 12 | `make tests-scenarios TAGS=files` |
 | `extensions` | extension activation and payload delivery | 12 | `make tests-scenarios TAGS=extensions` |
-| `daemon` | daemon extension identity and environment | 6 | `make tests-scenarios TAGS=daemon` |
+| `daemon` | daemon extension identity and environment | 7 | `make tests-scenarios TAGS=daemon` |
 | `authentication` | bearer tokens: required, verified, and naming the caller | 6 | `make tests-scenarios TAGS=authentication` |
-| `config` | aion.yaml configuration and deployment variants | 7 | `make tests-scenarios TAGS=config` |
-| `lifecycle` | cancel, concurrency, push notifications, startup | 5 | `make tests-scenarios TAGS=lifecycle` |
+| `config` | aion.yaml configuration and deployment variants | 8 | `make tests-scenarios TAGS=config` |
+| `lifecycle` | cancel, concurrency, push notifications, startup | 8 | `make tests-scenarios TAGS=lifecycle` |
 | `contexts` | Context extension: list, read and delete conversations | 5 | `make tests-scenarios TAGS=contexts` |
-| `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 15 | `make tests-scenarios-persistence` |
-| `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 13 | `make tests-scenarios-distributed` |
+| `toolkits` | toolkit plugins: a turn translated into A2A, a refusal before the task exists, a cancel | 14 | `make tests-scenarios TAGS=toolkits` |
+| `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 21 | `make tests-scenarios-persistence` |
+| `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 19 | `make tests-scenarios-distributed` |
 | `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 29 | `make tests-scenarios TAGS=native` |
 
 ## Scenarios by file
@@ -132,13 +133,14 @@ Configuration variable delivery through the distribution extension.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [A key present in the distribution payload is readable by the agent.](core/test_config.py#L72 "test_config_variable_reaches_the_agent") | `config` | `config` | `default` | ✓ | ✓ |
-| [A key that the platform did not send comes back ``present=False``.](core/test_config.py#L90 "test_absent_config_variable_is_reported_as_missing") | `config` | `config` | `default` | ✓ | ✓ |
-| [Without the distribution extension the environment is absent entirely.](core/test_config.py#L107 "test_config_without_distribution_sees_no_environment") | `config` | `config` | `default` | ✓ | ✓ |
-| [One payload carries many keys, and each of them arrives under its own name.](core/test_config.py#L117 "test_every_variable_of_an_environment_reaches_the_agent") | `config` | `config` | `default` | ✓ | ✓ |
-| [Nothing between the wire and the agent masks or truncates a secret.](core/test_config.py#L129 "test_a_secret_value_arrives_whole") | `config` | `config` | `default` | ✓ | ✓ |
-| [An empty string is a configured value, not an absent key.](core/test_config.py#L138 "test_an_empty_value_is_a_value") | `config` | `config` | `default` | ✓ | ✓ |
-| [The contract is a mapping of strings; nothing re-types a value in transit.](core/test_config.py#L147 "test_values_arrive_as_the_strings_they_were_sent_as") | `config` | `config` | `default` | ✓ | ✓ |
+| [A key present in the distribution payload is readable by the agent.](core/test_config.py#L74 "test_config_variable_reaches_the_agent") | `config` | `config` | `default` | ✓ | ✓ |
+| [A key that the platform did not send comes back ``present=False``.](core/test_config.py#L92 "test_absent_config_variable_is_reported_as_missing") | `config` | `config` | `default` | ✓ | ✓ |
+| [Without the distribution extension the environment is absent entirely.](core/test_config.py#L109 "test_config_without_distribution_sees_no_environment") | `config` | `config` | `default` | ✓ | ✓ |
+| [One payload carries many keys, and each of them arrives under its own name.](core/test_config.py#L119 "test_every_variable_of_an_environment_reaches_the_agent") | `config` | `config` | `default` | ✓ | ✓ |
+| [Nothing between the wire and the agent masks or truncates a secret.](core/test_config.py#L131 "test_a_secret_value_arrives_whole") | `config` | `config` | `default` | ✓ | ✓ |
+| [The distribution payload stays on the request; the stored task does not hold it.](core/test_config.py#L140 "test_the_task_keeps_no_configuration_value") | `config` | `config` | `default` | ✓ | ✓ |
+| [An empty string is a configured value, not an absent key.](core/test_config.py#L156 "test_an_empty_value_is_a_value") | `config` | `config` | `default` | ✓ | ✓ |
+| [The contract is a mapping of strings; nothing re-types a value in transit.](core/test_config.py#L165 "test_values_arrive_as_the_strings_they_were_sent_as") | `config` | `config` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_contexts.py`
 
@@ -158,12 +160,13 @@ Daemon-scoped requests: who the platform says is asking, and about what.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [Every field of the daemon payload arrives as the platform sent it.](core/test_daemon.py#L69 "test_the_daemon_payload_reaches_the_agent_whole") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
-| [The requester is optional; the daemon it is addressed to is not.](core/test_daemon.py#L87 "test_a_daemon_request_without_a_requester_is_still_addressed") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
-| [Two payloads on one request stay two payloads: the daemon answers for itself.](core/test_daemon.py#L104 "test_the_daemon_identity_is_not_the_distribution_principal") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
-| [Declaring the extension is a promise to carry it; an empty request breaks it.](core/test_daemon.py#L126 "test_a_declared_daemon_extension_without_a_payload_is_refused") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
-| [A payload that does not validate names the field, and opens no task.](core/test_daemon.py#L145 "test_a_malformed_daemon_payload_is_refused_by_field") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
-| [Co-activation satisfied: the request is served, not refused.](core/test_daemon.py#L168 "test_an_extension_gets_what_it_requires_when_both_are_declared") | `extensions`, `daemon` | `whoami` | `daemon` | ✓ | ✓ |
+| [Every field of the daemon payload arrives as the platform sent it.](core/test_daemon.py#L72 "test_the_daemon_payload_reaches_the_agent_whole") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
+| [The requester is optional; the daemon it is addressed to is not.](core/test_daemon.py#L90 "test_a_daemon_request_without_a_requester_is_still_addressed") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
+| [Two payloads on one request stay two payloads: the daemon answers for itself.](core/test_daemon.py#L107 "test_the_daemon_identity_is_not_the_distribution_principal") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
+| [Declaring the extension is a promise to carry it; an empty request breaks it.](core/test_daemon.py#L129 "test_a_declared_daemon_extension_without_a_payload_is_refused") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
+| [A payload that does not validate names the field, and opens no task.](core/test_daemon.py#L148 "test_a_malformed_daemon_payload_is_refused_by_field") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
+| [Co-activation satisfied: the request is served, not refused.](core/test_daemon.py#L171 "test_an_extension_gets_what_it_requires_when_both_are_declared") | `extensions`, `daemon` | `whoami` | `daemon` | ✓ | ✓ |
+| [``A2A-Extensions`` naming the daemon on ``GetTask`` and ``CancelTask``: no payload is looked for, nothing fails.](core/test_daemon.py#L188 "test_reading_and_cancelling_a_task_with_the_daemon_declared_activates_nothing") | `daemon` | `slow` | `daemon` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_errors.py`
 
@@ -196,12 +199,13 @@ The shape of a turn: which events arrive, in which order, under which ids.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [A plain turn is: Task SUBMITTED, WORKING, the reply, the terminal Task.](core/test_events.py#L28 "test_a_turn_opens_with_submitted_and_closes_with_the_task") | `events` | `echo` | `default` | ✓ | ✓ |
-| [`steps <n>` reports each step once, in order, before completing.](core/test_events.py#L47 "test_working_statuses_arrive_in_order") | `events` | `steps` | `default` | ✓ | ✓ |
-| [The task and context the agent reports are the ones on the wire.](core/test_events.py#L68 "test_the_agent_sees_the_ids_the_client_sees") | `events` | `ids` | `default` | ✓ | ✓ |
-| [Reusing a context keeps it and starts a fresh task under it.](core/test_events.py#L80 "test_a_second_message_in_a_context_starts_a_new_task") | `events` | `ids` | `default` | ✓ | ✓ |
-| [Reading the task back gives the state and the text the stream ended on.](core/test_events.py#L90 "test_get_task_agrees_with_the_closing_event") | `events` | `echo` | `default` | ✓ | ✓ |
-| [Nothing follows the closing Task, and the stream ends there.](core/test_events.py#L107 "test_the_stream_carries_nothing_after_the_terminal_task") | `events` | `echo` | `default` | ✓ | ✓ |
+| [A plain turn is: Task SUBMITTED, the reply as WORKING, the terminal Task.](core/test_events.py#L28 "test_a_turn_opens_with_submitted_and_closes_with_the_task") | `events` | `echo` | `default` | ✓ | ✓ |
+| [`steps <n>` reports each step once, in order, before completing.](core/test_events.py#L46 "test_working_statuses_arrive_in_order") | `events` | `steps` | `default` | ✓ | ✓ |
+| [Every status of a turn, the opening SUBMITTED included, is no earlier than the one before it.](core/test_events.py#L66 "test_status_times_follow_the_turn") | `events` | `steps` | `default` | ✓ | ✓ |
+| [The task and context the agent reports are the ones on the wire.](core/test_events.py#L81 "test_the_agent_sees_the_ids_the_client_sees") | `events` | `ids` | `default` | ✓ | ✓ |
+| [Reusing a context keeps it and starts a fresh task under it.](core/test_events.py#L93 "test_a_second_message_in_a_context_starts_a_new_task") | `events` | `ids` | `default` | ✓ | ✓ |
+| [Reading the task back gives the state and the text the stream ended on.](core/test_events.py#L103 "test_get_task_agrees_with_the_closing_event") | `events` | `echo` | `default` | ✓ | ✓ |
+| [Nothing follows the closing Task, and the stream ends there.](core/test_events.py#L120 "test_the_stream_carries_nothing_after_the_terminal_task") | `events` | `echo` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_extensions.py`
 
@@ -274,11 +278,14 @@ Push notification delivery to a real HTTP callback.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The server POSTs a terminal notification to the registered URL.](core/test_push_notifications.py#L125 "test_push_notification_reaches_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
-| [The pushed body identifies the task the notification is about.](core/test_push_notifications.py#L161 "test_push_notification_carries_the_task_id") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
-| [The callback accepts the delivery, because it arrived authenticated.](core/test_push_notifications.py#L184 "test_a_declared_credential_is_presented_to_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
-| [The callback really checks: the same delivery without credentials is rejected.](core/test_push_notifications.py#L215 "test_an_undeclared_credential_is_refused_by_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
-| [The four push config methods, on a task of this caller; a config created without an id takes the task's.](core/test_push_notifications.py#L237 "test_a_push_config_is_created_read_listed_and_deleted") | `lifecycle` | `echo` | `default` | ✓ | ✓ |
+| [The server POSTs a terminal notification to the registered URL.](core/test_push_notifications.py#L150 "test_push_notification_reaches_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The callback receives what the task stores; the live-only indicator is not stored.](core/test_push_notifications.py#L186 "test_an_ephemeral_indicator_is_streamed_but_not_pushed") | `lifecycle` | `typing` | `push` | ✓ | ✓ |
+| [The FAILED a crash leaves reaches the callback as the full Task.](core/test_push_notifications.py#L207 "test_a_crashed_agent_s_failure_is_pushed") | `lifecycle` | `fail` | `push` | ✓ | ✓ |
+| [A unary send's notifications carry status times in the order of the turn.](core/test_push_notifications.py#L226 "test_pushed_status_times_follow_the_turn_of_a_unary_send") | `lifecycle` | `steps` | `default` | ✓ | ✓ |
+| [The pushed body identifies the task the notification is about.](core/test_push_notifications.py#L257 "test_push_notification_carries_the_task_id") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The callback accepts the delivery, because it arrived authenticated.](core/test_push_notifications.py#L280 "test_a_declared_credential_is_presented_to_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The callback really checks: the same delivery without credentials is rejected.](core/test_push_notifications.py#L311 "test_an_undeclared_credential_is_refused_by_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The four push config methods, on a task of this caller; a config created without an id takes the task's.](core/test_push_notifications.py#L333 "test_a_push_config_is_created_read_listed_and_deleted") | `lifecycle` | `echo` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_resubscribe.py`
 
@@ -335,6 +342,37 @@ Replies that arrive in pieces, and the indicator sent while one is built.
 | [What was shown once is gone; what was said is kept.](core/test_streaming.py#L112 "test_the_indicator_never_reaches_task_history") | `streaming` | `typing` | `default` | ✓ | ✓ |
 | [`SendMessage` without a stream answers once: the task, completed, the reply on its status.](core/test_streaming.py#L131 "test_a_unary_send_answers_with_the_completed_task") | `streaming` | `echo` | `default` | ✓ | ✓ |
 
+### `tests/scenarios/core/test_toolkits.py`
+
+A toolkit plugin served by a real ``aion serve``: a turn on the wire, artifact versions, and a refusal.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [Messages, deltas, details and an artifact on the stream; the object whole in the task.](core/test_toolkits.py#L125 "test_a_toolkit_turn_streams_and_completes_with_its_object") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [Details without a message change the object, not what the task last said.](core/test_toolkits.py#L155 "test_a_status_update_keeps_the_status_line") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The server numbers a toolkit's artifact per context, and ``find_artifact`` reads the latest back.](core/test_toolkits.py#L176 "test_the_tasks_of_a_context_write_numbered_versions_of_an_artifact_and_find_the_latest") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The toolkit's refusal is the JSON-RPC error, with its code; no task was opened for it.](core/test_toolkits.py#L220 "test_a_refused_request_is_an_error_with_its_code_and_leaves_no_task") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [A malformed script never reaches the toolkit: every toolkit refuses it with ``invalid_payload``.](core/test_toolkits.py#L252 "test_a_payload_the_toolkits_model_refuses_is_an_error_with_the_common_code_and_leaves_no_task") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The toolkit is asked once, with the task's id and the grace period; the task ends ``CANCELED``.](core/test_toolkits.py#L304 "test_a_cancel_ends_the_turn_canceled_and_tells_the_toolkit") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The repeat is an error, the task stays as it was, and the toolkit is not asked again.](core/test_toolkits.py#L320 "test_a_second_cancel_of_the_finished_task_is_refused_and_does_not_reach_the_toolkit") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The cancel waits out the grace period; the stream and a subscription made meanwhile both close ``CANCELED``.](core/test_toolkits.py#L336 "test_a_turn_past_the_grace_period_is_cancelled_without_it_and_a_subscription_is_not_held") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The turn's own outcome stands: the cancel answers with it, and so does the stream.](core/test_toolkits.py#L360 "test_a_cancel_after_the_work_was_delivered_answers_completed") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [An installed toolkit the agent enables is an extension the card announces.](core/test_toolkits.py#L373 "test_the_card_offers_the_enabled_toolkit") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [A second directive, and a message into the running task, get ``context_busy`` naming the task.](core/test_toolkits.py#L389 "test_an_exclusive_toolkit_refuses_a_second_task_in_a_context_until_the_first_ends") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The limit is per context: two contexts each hold a running task of the toolkit.](core/test_toolkits.py#L414 "test_an_exclusive_toolkit_runs_in_several_contexts_at_once") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+| [The directive is not taken as the answer: a toolkit task starts, and the question keeps waiting for it.](core/test_toolkits.py#L430 "test_a_directive_beside_the_agents_waiting_question_starts_its_own_task") | `toolkits` | `ask` | `toolkit` | ✓ | [skip](#frameworks) |
+| [A directive without a task id resumes the toolkit's waiting task in the context.](core/test_toolkits.py#L454 "test_a_toolkit_that_waits_for_input_continues_its_own_task") | `toolkits` | — | `toolkit` | ✓ | ✓ |
+
+### `tests/scenarios/distributed/test_abandoned_tasks.py`
+
+Tasks their server abandoned - hung or dead - settled by the other server of the agent.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [No request is needed; the task waiting for input outlives the timeout untouched.](distributed/test_abandoned_tasks.py#L156 "test_a_hung_turn_is_settled_by_the_other_servers_sweep_and_a_waiting_task_is_left") | `distributed` | — | `default` | ✓ | ✓ |
+| [Past the timeout the context of an exclusive toolkit takes a new task; the old task refuses a message.](distributed/test_abandoned_tasks.py#L170 "test_an_abandoned_task_frees_its_context_and_takes_no_message") | `distributed` | — | `default` | ✓ | ✓ |
+| [A toolkit's turn and a framework turn die with their server; the survivor settles both and serves on.](distributed/test_abandoned_tasks.py#L189 "test_the_tasks_of_a_server_killed_mid_turn_are_settled_by_the_survivor") | `distributed` | `slow` | `default` | ✓ | ✓ |
+
 ### `tests/scenarios/distributed/test_cancel.py`
 
 Cancelling a task through a server that is not the one running it.
@@ -365,7 +403,17 @@ One server dies; what becomes of the tasks it was running.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The whole sequence, in the order a deployment would live it.](distributed/test_recovery.py#L44 "test_a_dead_servers_task_stays_active_until_the_survivor_cancels_it") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [The whole sequence, in the order a deployment would live it.](distributed/test_recovery.py#L46 "test_a_dead_servers_task_stays_active_until_the_survivor_cancels_it") | `distributed` | `slow` | `default` | ✓ | ✓ |
+
+### `tests/scenarios/distributed/test_toolkits.py`
+
+A toolkit's tasks across the servers of one agent.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The second server refuses a second task, and a message into the running one, with ``context_busy``.](distributed/test_toolkits.py#L95 "test_a_busy_context_is_refused_on_the_other_server") | `distributed` | — | `default` | ✓ | ✓ |
+| [``extension_unavailable``, and the waiting task keeps its state and its history.](distributed/test_toolkits.py#L119 "test_a_server_without_the_toolkit_refuses_a_message_into_its_task") | `distributed` | — | `default` | ✓ | ✓ |
+| [``CANCELED`` at once from the other server; the owner's stream closes with it and its toolkit is asked to stop.](distributed/test_toolkits.py#L142 "test_a_cancel_on_the_other_server_reaches_the_toolkit_at_the_owners_next_write") | `distributed` | — | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/native/test_distributed.py`
 
@@ -485,6 +533,19 @@ Resubscribing to a paused task in a2a-sdk's cluster mode.
 | [No second task, and nothing the pause had recorded is lost.](persistence/test_resubscribe.py#L78 "test_following_the_pause_leaves_one_task_and_its_question") | `persistence` | `ask` | `default` | ✓ | [skip](#frameworks) |
 | [Once the turn is over there is nothing to follow; tasks/get has the outcome.](persistence/test_resubscribe.py#L104 "test_a_finished_task_refuses_a_subscriber") | `persistence` | `ask` | `default` | ✓ | [skip](#frameworks) |
 
+### `tests/scenarios/persistence/test_toolkits.py`
+
+What a toolkit's task keeps across a server restart, on a real database.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [A turn that waits for input, a restart, and the answer: the new toolkit instance gets the object back.](persistence/test_toolkits.py#L100 "test_the_object_of_a_waiting_task_survives_a_restart_and_is_handed_back_on_resume") | `persistence` | — | `toolkit` | ✓ | ✓ |
+| [The first task of a context numbers its artifact 0, the first task after a restart 1, and finds the first.](persistence/test_toolkits.py#L136 "test_artifact_versions_continue_across_a_restart") | `persistence` | — | `toolkit` | ✓ | ✓ |
+| [The open stream receives the outcome, and the stored task is the toolkit's, not a settlement.](persistence/test_toolkits.py#L155 "test_a_shutdown_closes_a_running_turn_with_the_toolkits_server_shutdown_result") | `persistence` | — | `toolkit` | ✓ | ✓ |
+| [The grace period runs out; the server settles the task as ``FAILED`` with ``server_shutdown``.](persistence/test_toolkits.py#L176 "test_a_turn_that_does_not_stop_in_time_is_settled_by_the_shutdown") | `persistence` | — | `toolkit` | ✓ | ✓ |
+| [A stream on a turn that would run for minutes ends within the shutdown's bounded wait.](persistence/test_toolkits.py#L194 "test_an_open_stream_does_not_hold_the_shutdown") | `persistence` | `slow` | `toolkit` | ✓ | ✓ |
+| [A turn that stops is told the window in ``cancel()``; one that does not is settled once the window is over.](persistence/test_toolkits.py#L216 "test_a_small_shutdown_budget_gives_the_toolkits_a_shorter_window_and_says_so_in_cancel") | `persistence` | — | `toolkit` | ✓ | ✓ |
+
 ## Commands
 
 The contract from `commands.py`. `Scenarios` counts the scenarios driving the command; a framework column says whether that agent answers it - `✓` for a behaviour it has, `gap` for `not implemented: <key>`, which is what a scenario would receive.
@@ -494,22 +555,22 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | `help` | Show this menu | `smoke` | 1 | ✓ | ✓ |
 | `echo <text>` | Reply with the argument, unchanged | `smoke`, `events` | 22 | ✓ | ✓ |
 | `stream <n>` | Reply in n chunks of one message | `streaming` | 10 | ✓ | ✓ |
-| `typing` | Send an ephemeral typing status, then a reply | `streaming`, `events` | 3 | ✓ | ✓ |
-| `steps <n>` | Emit n working statuses, then complete | `events` | 2 | ✓ | ✓ |
-| `slow <sec>` | Reply after n seconds | `lifecycle` | 17 | ✓ | ✓ |
+| `typing` | Send an ephemeral typing status, then a reply | `streaming`, `events` | 4 | ✓ | ✓ |
+| `steps <n>` | Emit n working statuses, then complete | `events` | 4 | ✓ | ✓ |
+| `slow <sec>` | Reply after n seconds | `lifecycle` | 20 | ✓ | ✓ |
 | `artifacts` | Emit a two-part data artifact, an inline file and a url | `artifacts`, `files` | 2 | ✓ | [skip](#frameworks) |
 | `send-file <route>` | Send one inline file: artifact \| reply \| outbox-message \| outbox-task | `files` | 2 | ✓ | ✓ |
 | `card` | Emit one card | `artifacts` | 4 | ✓ | ✓ |
 | `outbox-task` | Return an A2A Task through the outbox | `events` | 6 | ✓ | ✓ |
 | `outbox-message` | Return an A2A Message through the outbox | `events` | 3 | ✓ | ✓ |
-| `ask` | Ask a question, then quote the answer | `interrupts` | 9 | ✓ | [skip](#frameworks) |
+| `ask` | Ask a question, then quote the answer | `interrupts` | 10 | ✓ | [skip](#frameworks) |
 | `ask-twice` | Ask two questions in a row | `interrupts` | 3 | ✓ | [skip](#frameworks) |
 | `ask-fail` | Ask a question, then fail on the answer | `interrupts`, `errors` | 3 | ✓ | [skip](#frameworks) |
-| `fail <mode>` | Fail on purpose: exception \| after-reply \| reason | `errors`, `terminal_states` | 7 | ✓ | ✓ |
+| `fail <mode>` | Fail on purpose: exception \| after-reply \| reason | `errors`, `terminal_states` | 8 | ✓ | ✓ |
 | `ext` | Report active and unknown extensions | `extensions` | 6 | ✓ | ✓ |
 | `whoami` | Report the daemon identity | `daemon` | 6 | ✓ | ✓ |
 | `event` | Report the event this turn carried | `extensions`, `events` | 4 | ✓ | ✓ |
-| `config <key>` | Report one configuration value | `config` | 7 | ✓ | ✓ |
+| `config <key>` | Report one configuration value | `config` | 8 | ✓ | ✓ |
 | `ids` | Report task and context ids | `events`, `lifecycle` | 2 | ✓ | ✓ |
 | `big <kb>` | Reply with n KB of text | `errors` | 3 | ✓ | ✓ |
 | `parts` | Report the kinds of parts the inbound message carried | `files` | 7 | ✓ | ✓ |

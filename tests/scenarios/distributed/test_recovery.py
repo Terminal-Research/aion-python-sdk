@@ -7,10 +7,12 @@ server's place, and the other server - already running, never the one
 executing those tasks - is the one asked about them.
 
 As in a2a-sdk's cluster mode, nothing detects a dead instance. Its tasks keep
-the active state they were left in, with everything they had recorded, and
-nothing settles them on its own. What the surviving server can do is what
-any server can: cancel them, by writing ``CANCELED`` over their stored
-version, which needs no execution to reach.
+the active state they were left in, with everything they had recorded, until
+they have gone without a write for longer than ``AION_STALE_TASK_TIMEOUT`` -
+an hour here, far beyond the scenario; ``test_abandoned_tasks`` covers what
+happens then. What the surviving server can do at once is what any server
+can: cancel them, by writing ``CANCELED`` over their stored version, which
+needs no execution to reach.
 """
 
 from __future__ import annotations

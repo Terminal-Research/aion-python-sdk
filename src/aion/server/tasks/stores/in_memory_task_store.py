@@ -19,6 +19,8 @@ from a2a.utils.task import (
 )
 from typing import Callable, NamedTuple, Optional, List
 
+from aion.server.a2a.utils import routed_extension_of
+
 from .base_task_store import BaseTaskStore
 
 logger = logging.getLogger(__name__)
@@ -294,6 +296,25 @@ class InMemoryTaskStore(BaseTaskStore):
         )
         return tasks[0] if tasks else None
 
+    async def get_context_last_routed_task(
+            self,
+            context_id: str,
+            routed_extension: Optional[str],
+            context: ServerCallContext | None = None,
+    ) -> Optional[Task]:
+        """Retrieve the resolved owner's most recent task of a context that one handler serves."""
+        owner = self._owner_filter(context)
+        async with self.lock:
+            tasks = self._visible(owner)
+        return next(
+            (
+                task
+                for task in reversed(tasks)
+                if task.context_id == context_id and routed_extension_of(task) == routed_extension
+            ),
+            None,
+        )
+
     async def tasks_in_context(self, context_id: str) -> list[tuple[Task, datetime]]:
         """Every owner's tasks of a context with their last write time, oldest first."""
         async with self.lock:
@@ -302,6 +323,35 @@ class InMemoryTaskStore(BaseTaskStore):
                 for stored in self.tasks.values()
                 if stored.task.context_id == context_id
             ]
+
+    async def write_times(self) -> list[tuple[Task, datetime]]:
+        """Every owner's tasks with the time of their last write, oldest first."""
+        async with self.lock:
+            return [(stored.task, stored.updated_at) for stored in self.tasks.values()]
+
+    async def last_write(self, task_id: str) -> Optional[tuple[Task, datetime]]:
+        """The task, whoever owns it, with the time of its last write; None when there is none."""
+        async with self.lock:
+            stored = self.tasks.get(task_id)
+            return None if stored is None else (stored.task, stored.updated_at)
+
+    async def replace_if_last_written_at(self, task: Task, written_at: datetime) -> bool:
+        """Write ``task`` over the stored one only if that was last written at ``written_at``.
+
+        The compare-and-swap of a store without versions: the server's own
+        write over a task it read, refused when anything wrote the task in
+        between. The task keeps its owner and its place.
+
+        Returns:
+            Whether the task was written.
+        """
+        task = self._persistable(task)
+        async with self.lock:
+            stored = self.tasks.get(task.id)
+            if stored is None or stored.updated_at != written_at:
+                return False
+            self.tasks[task.id] = _Stored(stored.owner, task, datetime.now(timezone.utc))
+            return True
 
     async def retire_context(self, context_id: str) -> list[str]:
         """Remove every task of a context and refuse any later write of them.

@@ -24,7 +24,9 @@ from aion.server.core.app.handlers import AionJsonRpcDispatcher, AionRequestHand
 from aion.server.core.app.handlers.request_preprocessors import A2ARequestPreprocessor, FilePartPreprocessor
 from aion.server.core.middlewares import AionAuthMiddleware, AionContextMiddleware, TracingMiddleware
 from aion.server.plugins import PluginFactory
+from aion.server.settings import app_settings
 from aion.server.tasks import StoreManager, PushNotificationFactory
+from aion.server.tasks.abandoned import AbandonedTasks
 from aion.server.tasks.push_notifications import push_url_validator
 from .lifespan import AppLifespan
 from .registry import app_registry
@@ -198,11 +200,6 @@ class AppFactory:
                 "store with the agent's owner_resolver"
             )
 
-        self._executor = await AionAgentRequestExecutor.create(
-            self.aion_agent,
-            file_transformer=self.file_transformer,
-        )
-
         # One push URL policy for the configs the handler accepts and the
         # deliveries the sender makes.
         url_validator = push_url_validator()
@@ -213,12 +210,29 @@ class AppFactory:
         )
         self._push_sender = push_sender
 
+        # One settler of abandoned tasks for the toolkits' admission, the
+        # messages into a task and the background sweep.
+        abandoned_tasks = AbandonedTasks(
+            self.store_manager.get_stale_tasks(),
+            timeout=app_settings.stale_task_timeout,
+            push_sender=push_sender,
+        )
+
+        self._executor = await AionAgentRequestExecutor.create(
+            self.aion_agent,
+            file_transformer=self.file_transformer,
+            context_artifacts=self.store_manager.get_context_artifacts(),
+            context_runs=self.store_manager.get_context_runs(),
+            abandoned_tasks=abandoned_tasks,
+        )
+
         return AionRequestHandler(
             agent_executor=self._executor,
             task_store=self.store_manager.get_handler_store(),
             event_stream=self.store_manager.get_event_stream(),
             admission=self.store_manager.get_admission(),
             context_catalog=self.store_manager.get_context_catalog(),
+            abandoned_tasks=abandoned_tasks,
             push_config_store=push_config_store,
             push_sender=push_sender,
             push_url_validator=url_validator,
@@ -241,6 +255,25 @@ class AppFactory:
         self.fastapi_app.add_middleware(
             AionAuthMiddleware, verifier=self.token_verifier, application_routes=self._application_routes
         )
+
+    async def stop_toolkit_turns(self, within: float) -> None:
+        """Stop the toolkits' running turns, once the server has stopped accepting requests.
+
+        The first step of a shutdown, taken before the HTTP server waits for
+        open connections: a turn that ends here closes its task, and the
+        stream a client has open on it, through its own queue. What is still
+        running afterwards is drained and settled by :meth:`shutdown`.
+
+        Args:
+            within: The toolkits' window of the shutdown budget, in seconds
+                (``aion.server.shutdown.ShutdownBudget.toolkit_turns``).
+        """
+        if self._executor is None:
+            return
+        try:
+            await self._executor.stop_extension_turns(within)
+        except Exception as exc:
+            logger.error("Error stopping the toolkits' turns", exc_info=exc)
 
     async def shutdown(self) -> None:
         """Shutdown the application and cleanup resources."""

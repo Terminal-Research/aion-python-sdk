@@ -214,6 +214,35 @@ poetry run aion db migrate
 poetry run aion db check
 ```
 
+### `aion db strip-request-metadata`
+
+Removes inbound extension payloads from the stored tasks of the PostgreSQL
+database at `POSTGRES_URL`. A task's metadata holds what the server and
+extension handlers write - the routed extension, `aion:settledReason`, a
+handler's progress. The payloads a request carries in its `params.metadata`
+belong to that request, and the daemon payload among them holds the
+environment's configuration variables in plain text; a stored task never
+takes them from a request.
+
+The keys are the URIs of every registered extension whose payload arrives in
+request metadata: daemon, distribution, cron and traceability. The command
+looks for them in the `metadata` column of `tasks` and in the `Task`
+snapshots of the `task_events` journal, which keeps a task's events until the
+task is deleted. Every other key stays, and a task left with no metadata reads
+as a task without any.
+
+Without `--apply` it only reports, per table, how many keys it would remove
+from how many rows. With `--apply` it removes them. It changes no task's
+version and may run while servers serve; running it again finds nothing
+unless a task still being written put a key back.
+
+**Usage:**
+
+```bash
+poetry run aion db strip-request-metadata
+poetry run aion db strip-request-metadata --apply
+```
+
 ## Configuration
 
 The CLI reads configuration from your `aion.yaml` file. The configuration must include:
@@ -234,7 +263,13 @@ The AION CLI supports running multiple agents simultaneously:
 - Ports are assigned automatically or can be specified via CLI options
 - Proxy server provides unified access to all agents
 - Failed agents don't prevent other agents from starting
-- System monitors all processes and provides graceful shutdown
+- System monitors all processes and provides graceful shutdown: on SIGINT or
+  SIGTERM every agent is asked to stop at once and given its own shutdown
+  budget, `AION_SHUTDOWN_TIMEOUT` (seconds, default 25), before what is
+  still running is killed. Set it a few seconds below the stop timeout of
+  the platform running `aion serve` (Kubernetes
+  `terminationGracePeriodSeconds`, `docker stop -t`); a value that is not a
+  positive number stops `aion serve` at startup
 
 ## Port Assignment Strategy
 

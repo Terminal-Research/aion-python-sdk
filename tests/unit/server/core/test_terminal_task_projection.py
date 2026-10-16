@@ -613,12 +613,12 @@ class TestDeliveryIsReported:
                 projection,
                 _task(TaskState.TASK_STATE_SUBMITTED),
                 _artifact(ArtifactId.EPHEMERAL_MESSAGE.value, last_chunk=True),
-                _artifact("evolution-diff", last_chunk=True),
+                _artifact("report-diff", last_chunk=True),
             )
 
         lines = _delivery_lines(caplog)
         assert "(ephemeral, not persisted)" in lines[1]
-        assert "artifact=evolution-diff" in lines[2]
+        assert "artifact=report-diff" in lines[2]
 
     @pytest.mark.anyio
     async def test_failure_closing_is_reported_too(self, caplog):

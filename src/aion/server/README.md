@@ -195,7 +195,11 @@ the client chooses, and the default resolver ignores it. There is no `/docs` or
 `/redoc`.
 
 Finding an interrupted task through its `contextId` goes through the same
-owner filter as everything else: a caller continues its own interrupted task.
+owner filter as everything else: a caller continues its own interrupted task,
+and only one of the handler its message addresses - a toolkit's directive a
+task of that toolkit, any other message a task of the agent's framework; a
+waiting task of another handler keeps waiting and the message starts a new
+task.
 The Context extension (`GetContexts`, `GetContext`, `DeleteContext`) answers
 by context binding instead - see [Contexts](#contexts) below. Only a call
 without a `ServerCallContext` - from Python code that holds the handler -
@@ -325,10 +329,17 @@ until it ends. Then every active task of the context, whoever owns it, is
 cancelled through the ordinary cancellation path, in groups of ten; once all
 are terminal the framework state - LangGraph checkpoints, ADK sessions - is
 deleted under the context holder's state scope, and the tasks, their messages,
-artifacts, versions and push configurations and the bindings are removed in one
-storage step. The reservation becomes `deleted`, and the next message with
-that context ID reserves it afresh: a new conversation, with nothing of the
-old one.
+artifacts, versions, journal events (`task_events`) and push configurations,
+the ADK artifact version numbers given in the context and the bindings are
+removed in one storage step. The reservation becomes `deleted`, and the next
+message with that context ID reserves it afresh: a new conversation, with
+nothing of the old one.
+
+**Retention.** A context keeps its whole history for as long as it lives:
+every task, with its messages, artifacts, versions and journal events, and
+every push configuration. Nothing expires or is pruned on a schedule, so a
+long-lived context grows with every task in it. Deleting the context is what
+removes all of it.
 
 A deletion that cannot finish in one request - a cancellation still settling
 on another server, a database error, a concurrent attempt at the same deletion
@@ -398,9 +409,11 @@ this section says otherwise.
 - **A message to a task that already has an outcome** is refused with
   `UnsupportedOperationError` (`-32004`), naming the state:
   `Task <id> is in terminal state: TASK_STATE_COMPLETED`.
-- **`CancelTask`** on a task that already has an outcome answers
-  `TaskNotCancelableError` (`-32002`); a missing task, or another caller's,
-  answers `TaskNotFoundError` (`-32001`).
+- **`CancelTask`** answers with the task's outcome: `CANCELED`, or the
+  outcome its running turn reached in the meantime. It activates none of the
+  extensions named in `A2A-Extensions`, nor does `GetTask`. On a task that
+  already has an outcome it answers `TaskNotCancelableError` (`-32002`); a
+  missing task, or another caller's, answers `TaskNotFoundError` (`-32001`).
 - **`SubscribeToTask`** on a task that already has an outcome answers
   `UnsupportedOperationError` (`-32004`), as in a2a-sdk; the result is read
   with `GetTask`.
@@ -438,6 +451,39 @@ this section says otherwise.
   created on its own or inline in `SendMessage`, and a delivery to a stored
   one is skipped. Elsewhere any URL is accepted.
 
+### How a client receives a task's updates
+
+A run belongs to the server, not to the request that started it: it goes on
+when the client disconnects, and stores its outcome either way. A client
+follows it through one of the methods below. *Durable* is what the task
+stores - status changes with their messages, artifacts, the outcome.
+*Ephemeral* is live-only progress the task never stores: response and
+thinking deltas, ephemeral messages and reactions (see [Transient stream
+artifacts](#transient-stream-artifacts)), and status updates flagged
+`aion:ephemeral`.
+
+| Method | How it is delivered | What arrives | Connection held |
+|---|---|---|---|
+| `SendStreamingMessage` | SSE on the request, opened and closed by the stored `Task` | everything, ephemeral included | until the task has an outcome or waits for input |
+| `SendMessage` | one JSON response: the `Task` once it has an outcome or waits for input; with `configuration.returnImmediately`, the task at once while the run goes on | durable only | as for the stream; none with `returnImmediately` |
+| push notifications | `configuration.taskPushNotificationConfig` on a send, or `CreateTaskPushNotificationConfig`; the server POSTs each change the task stores to the webhook, an outcome or a wait for input as the full `Task` | durable only | none |
+| `SubscribeToTask` | SSE: the stored task, then the live events until the task stops; a task that already has an outcome is refused | on the server running the task, everything; on another server the task's journal, so durable only | until the task stops |
+| `GetTask` | one JSON response: the stored task, its history cut to `historyLength` | durable only | none |
+
+Push carries every outcome the task stores, including those the run did not
+write itself: a cancel written by another server, the `FAILED` of an agent
+that raised, a task settled at shutdown or as abandoned. Deliveries are made
+one at a time from the task's event loop, each after its change is stored, so
+a webhook that answers slowly holds back the delivery of the run's later
+events, on every channel, for up to `PUSH_NOTIFICATION_TIMEOUT_SECONDS`
+(default 30 s) per delivery.
+
+A stream that closes on a `Task` that is still `SUBMITTED` or `WORKING`, and
+a `SendMessage` answered with one, did not see the run end: a2a-sdk drops a
+subscriber that falls 1024 events behind (it logs `Evicting event queue
+sink`), and a stopping server closes its connections. Resubscribe with
+`SubscribeToTask`, or poll `GetTask`, for the outcome.
+
 ### Several servers of one agent
 
 With PostgreSQL the server runs a2a-sdk's cluster mode, so any number of
@@ -458,15 +504,53 @@ servers of one agent can share the database. The rules are a2a-sdk's:
 - Nothing stops two servers from executing one task at once - a second
   message sent to another server while the first runs is executed there. The
   version decides what lands: a write over a task that another execution has
-  already finished is dropped, and that execution stops.
+  already finished is dropped, and that execution stops. A toolkit that
+  declares `exclusive_per_context` is the exception: a message into its
+  running task, or a second task of it in the context, is refused with
+  `context_busy` on any server, because the check reads the database.
+- A task routed to a toolkit is served by that toolkit only. A server
+  without it - another image during a rollout - refuses a message into the
+  task with `extension_unavailable` and leaves the task as it was.
 - `CancelTask` for a task this server holds cancels it through its executor.
-  For any other task it writes `CANCELED` over the stored version and answers
-  at once; the server executing the task stops it at its next write, without
-  calling `AgentExecutor.cancel` there.
-- A server that dies leaves its tasks in the state they had; nothing settles
-  them. Any server can cancel such a task. An orderly shutdown settles the
-  tasks it was running as `FAILED` with `aion:settledReason=server_shutdown`.
-- The journal is never pruned.
+  For any other task it writes `CANCELED` over the stored version, sends its
+  push notification and answers at once; the server executing the task stops
+  it at its next write, without calling `AgentExecutor.cancel` there. A
+  toolkit's turn stopped that way calls `Toolkit.cancel`.
+- A server that dies leaves its tasks in the state they had. Any server can
+  cancel such a task, and any server settles it once it has gone without a
+  durable write for longer than `AION_STALE_TASK_TIMEOUT` (seconds, default
+  3600, `0` turns it off): `FAILED` with
+  `aion:settledReason=task_abandoned`, and for a toolkit's task the error
+  `task_abandoned` (retryable) as a toolkit's failure carries it. Every
+  server sweeps the agent's tasks every minute (more often for a small
+  timeout), and a message into such a task, or a request into a context such
+  a task holds for an exclusive toolkit, settles it first. A server never
+  settles a task whose turn runs in its own process - it logs a WARNING for
+  one its sweep finds - and never a task waiting for input. The write is
+  versioned: a task written in the meantime keeps its state, and an
+  execution still alive somewhere stops at its next write, as after a remote
+  cancel. Keep the timeout above the longest a turn of the agent goes
+  without writing a status or an artifact.
+- An orderly shutdown stops accepting requests, then asks every toolkit turn
+  it runs to stop (`Toolkit.cancel` with `shutdown`) and waits for them
+  together: a toolkit closes its task `FAILED` with `server_shutdown`, and a
+  stream open on it receives that outcome. uvicorn then waits for the
+  connections still open, so a stream on any other task does not hold the
+  shutdown, and the tasks the server was still running are settled as
+  `FAILED` with `aion:settledReason=server_shutdown` and pushed; a webhook
+  that has not answered by the end of the settlement's share is not waited
+  for. `AION_SHUTDOWN_TIMEOUT`
+  (seconds, default 25) bounds all of it: `aion serve` kills an agent that
+  has not stopped by then, and the agent divides it among the steps
+  (`aion.server.shutdown`) - by default 15 s for the toolkits' turns, which
+  `Toolkit.cancel` receives as `within`, 5 s for open connections, 2 s for
+  the settlement and 3 s for the rest. Set it a few seconds below the stop
+  timeout of the platform running the server - Kubernetes
+  `terminationGracePeriodSeconds`, `docker stop -t` - so the server's own
+  shutdown finishes first.
+- The journal keeps every event of a task for as long as the task exists.
+  Deleting the task, or its context, removes its events in the same
+  transaction as the task.
 
 Without a database the store is in memory and the server is a2a-sdk's single
 process: no versions, no journal, nothing shared, so one server only.
@@ -502,6 +586,9 @@ HTTP+JSON routes (see [Contexts](#contexts)).
 
 The task manager delivers `aion:stream-delta`, `aion:thinking-delta`,
 `aion:ephemeral-message`, and `aion:reaction` updates to live clients without
-adding them to stored task artifacts. The deduplicator does not retain their
-IDs, so repeated chunks remain deliverable. Ordinary artifacts still persist.
-This filter does not remove artifacts from previously stored tasks.
+adding them to stored task artifacts, and skips status updates flagged
+`aion:ephemeral` the same way. Push notifications skip both, by the same
+predicate (`is_ephemeral_event`): a webhook receives what the task stores.
+The deduplicator does not retain their IDs, so repeated chunks remain
+deliverable. Ordinary artifacts still persist. This filter does not remove
+artifacts from previously stored tasks.

@@ -36,6 +36,13 @@ class ExtensionActivationError(AionError):
 
     Raised during data preparation (AionRuntimeContextBuilder), before the
     request reaches routing or any handler/agent business logic.
+
+    ``code`` is set for a refusal the server gives a stable code to - an
+    extension that is unavailable on this deployment is
+    ``extension_unavailable`` (``aion.core.toolkit.codes``), a toolkit's
+    payload its models refuse is ``invalid_payload`` - and travels in the
+    JSON-RPC error's ``data`` with ``retryable``: the error's own when it
+    sets one, otherwise the fixed answer for a code the server reserves.
     """
 
     def __init__(
@@ -44,10 +51,14 @@ class ExtensionActivationError(AionError):
         *,
         missing_requires: frozenset[str] = frozenset(),
         reason: Optional[str] = None,
+        code: Optional[str] = None,
+        retryable: Optional[bool] = None,
     ) -> None:
         self.uri = uri
         self.missing_requires = missing_requires
         self.reason = reason
+        self.code = code
+        self.retryable = retryable
         if missing_requires:
             message = (
                 f"Extension '{uri}' requires extension(s) that are not active "
@@ -245,10 +256,20 @@ class MessagesCollector:
 
     Subclass and override schema_dispatch() / known_event_types() when the
     standard ClassVar convention does not fit.
+
+    A part tagged with a known schema whose data fails its model raises
+    ExtensionActivationError. With ``invalid_payload_code`` the error carries
+    that code and ``retryable`` false, so the caller gets a coded refusal;
+    a toolkit's extension is registered so, with ``invalid_payload``.
     """
 
-    def __init__(self, *payload_classes: Type[A2ABaseModel]) -> None:
+    def __init__(
+        self,
+        *payload_classes: Type[A2ABaseModel],
+        invalid_payload_code: Optional[str] = None,
+    ) -> None:
         self._classes = payload_classes
+        self._invalid_payload_code = invalid_payload_code
 
     def collect(self, uri: str, request_context: "RequestContext") -> Optional["Event"]:
         from aion.core.runtime.context.models import Event
@@ -325,6 +346,8 @@ class MessagesCollector:
                         "a message part declared a known event schema but its "
                         f"payload failed validation: {formatted_error}"
                     ),
+                    code=self._invalid_payload_code,
+                    retryable=False if self._invalid_payload_code else None,
                 )
             return None
 
@@ -373,15 +396,15 @@ class ExtensionDescriptor:
         description: Human-readable summary, surfaced verbatim on the
             AgentCard's advertised AgentExtension entry.
         active: Whether this extension is enabled for the current agent.
-            Defaults to True - most protocol-level extensions (daemon,
-            traceability, distribution, ...) are active out of the box.
-            Agent-specific features (evolution, reflection) register with
-            active=False and rely on AgentConfig.enabled_extensions to
-            turn them on. Enablement only: it says nothing about whether
+            Defaults to True - most protocol-level extensions
+            (traceability, distribution, ...) are active out of the box.
+            Agent-specific features (the daemon extension, toolkits)
+            register with active=False and rely on
+            AgentConfig.enabled_extensions to turn them on. Enablement only: it says nothing about whether
             the extension is published on the AgentCard.
         unavailable_reason: When set, the extension is enabled but cannot
-            actually function on this deployment (e.g. its optional toolkit
-            is not installed) - a request declaring it is rejected with
+            actually function on this deployment (e.g. its toolkit cannot be
+            configured) - a request declaring it is rejected with
             exactly this user-facing message. None means available. Marked
             at startup via AionA2AExtensionRegistry.mark_unavailable() by
             whichever component owns the extension's runtime dependencies.

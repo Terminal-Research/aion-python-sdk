@@ -15,12 +15,10 @@ from a2a.utils.errors import TaskNotCancelableError, TaskNotFoundError
 from aion.core.a2a.enums import TaskSettlementReason
 from aion.server.a2a.constants import TERMINAL_TASK_STATES
 from aion.server.agent.execution.scope import set_task_manager
+from aion.server.shutdown import shutdown_budget
 from aion.server.tasks import AionTaskManager, TerminalTaskPushSender, settled_task
 
 logger = logging.getLogger(__name__)
-
-SHUTDOWN_DB_TIMEOUT_SECONDS = 2.0
-"""How long shutdown may spend settling the tasks it interrupted."""
 
 
 def _require_call_context(call_context: ServerCallContext | None) -> None:
@@ -59,13 +57,15 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
     run the same task. This class adds what is Aion's on top of that:
 
     * the task manager is ``AionTaskManager`` and the push sender is wrapped
-      per task in ``TerminalTaskPushSender``;
+      per task in ``TerminalTaskPushSender``, so the push channel carries what
+      the task stores; an outcome the execution stored past its consumer is
+      pushed once the execution is over;
     * an ``ActiveTask`` is closed once its task reaches ``INPUT_REQUIRED`` or
       ``AUTH_REQUIRED``, and a finished one is never handed out again, so the
       next turn starts a fresh ``ActiveTask`` - on whichever instance it
       arrives at;
-    * tasks left running by a shutdown are settled as ``FAILED``. The
-      registry is the only layer that may: an outcome is otherwise always
+    * tasks left running by a shutdown are settled as ``FAILED`` and pushed.
+      The registry is the only layer that may: an outcome is otherwise always
       written by the execution itself, and the registry is where the
       execution is known to be gone.
 
@@ -244,14 +244,36 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         cleanup.add_done_callback(self._cleanup_tasks.discard)
 
     async def _remove_task_for_incarnation(self, active_task: ActiveTask) -> None:
-        """Drop one object and its manager, if they are still the registered ones."""
+        """Drop one object and its manager, if they are still the registered ones.
+
+        The execution is over by then, so this is also where an outcome it
+        stored without pushing is pushed (``_push_unsent_outcome``).
+        """
         with self._lock:
-            if self._active_tasks.get(active_task.task_id) is not active_task:
-                return
-            self._active_tasks.pop(active_task.task_id, None)
-            if self._task_managers.get(active_task.task_id) is active_task._task_manager:
-                self._task_managers.pop(active_task.task_id, None)
-            logger.debug("Removed active task for %s", active_task.task_id)
+            if self._active_tasks.get(active_task.task_id) is active_task:
+                self._active_tasks.pop(active_task.task_id, None)
+                if self._task_managers.get(active_task.task_id) is active_task._task_manager:
+                    self._task_managers.pop(active_task.task_id, None)
+                logger.debug("Removed active task for %s", active_task.task_id)
+        await self._push_unsent_outcome(active_task)
+
+    @staticmethod
+    async def _push_unsent_outcome(active_task: ActiveTask) -> None:
+        """Push the outcome the execution stored past its consumer, if any.
+
+        See ``TerminalTaskPushSender.push_unsent_outcome``. ``_push_sender`` is
+        private to the SDK; it is the wrapper ``_create`` bound to this task.
+        A failure is logged: the task keeps its outcome either way.
+        """
+        push_sender = getattr(active_task, "_push_sender", None)
+        if not isinstance(push_sender, TerminalTaskPushSender):
+            return
+        try:
+            await push_sender.push_unsent_outcome(active_task.task_id)
+        except Exception:
+            logger.warning(
+                "Could not push the outcome of task %s", active_task.task_id, exc_info=True
+            )
 
     def _on_task_interrupted(self, task_id: str) -> None:
         """Schedule ActiveTask teardown after INPUT/AUTH_REQUIRED is persisted."""
@@ -336,8 +358,12 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         ``SERVER_SHUTDOWN``. See ``aion.server.tasks.settlement`` for why the
         state is terminal rather than resumable. The settlement is an ordinary
         versioned write: a task another instance has moved on in the meantime
-        refuses it, and keeps the state that instance gave it.
+        refuses it, and keeps the state that instance gave it. The settled
+        tasks are then pushed, as every stored outcome is: no execution is
+        left to push them. Writes and pushes together take at most the
+        settlement share of the shutdown budget (``aion.server.shutdown``).
         """
+        settlement_seconds = shutdown_budget().settlement
         with self._lock:
             task_managers = list(self._task_managers.values())
 
@@ -346,11 +372,15 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         if self._interruption_tasks:
             await asyncio.gather(*self._interruption_tasks, return_exceptions=True)
 
+        deadline = asyncio.get_running_loop().time() + settlement_seconds
+        settled: list[Task] = []
         try:
-            async with asyncio.timeout(SHUTDOWN_DB_TIMEOUT_SECONDS):
+            async with asyncio.timeout_at(deadline):
                 for task_manager in task_managers:
                     try:
-                        await self._settle_interrupted_task(task_manager)
+                        task = await self._settle_interrupted_task(task_manager)
+                        if task is not None:
+                            settled.append(task)
                     except ConcurrentTaskModificationError:
                         logger.info(
                             "Task %s was moved on by another writer; not settling it after shutdown",
@@ -363,21 +393,61 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
                             exc_info=exc,
                         )
         except TimeoutError:
-            logger.warning("Task shutdown settlement exceeded %.1fs", SHUTDOWN_DB_TIMEOUT_SECONDS)
+            logger.warning("Task shutdown settlement exceeded %.1fs", settlement_seconds)
+
+        await self._push_settled(settled, deadline)
 
         with self._lock:
             self._task_managers.clear()
 
+    async def _push_settled(self, settled: list[Task], deadline: float) -> None:
+        """Push the tasks the shutdown settled, all at once, until ``deadline``.
+
+        A receiver that has not answered by the end of the settlement window
+        is not waited for: the process is about to stop, and the settled task
+        stays readable through ``GetTask``. Each failed or unfinished push is
+        logged as a WARNING.
+        """
+        if not settled or self._push_sender is None:
+            return
+
+        async def push(task: Task) -> None:
+            try:
+                await self._push_sender.send_notification(task.id, task)
+            except Exception:
+                logger.warning(
+                    "Could not push the shutdown settlement of task %s", task.id, exc_info=True
+                )
+
+        pushes = [asyncio.create_task(push(task)) for task in settled]
+        _, pending = await asyncio.wait(
+            pushes, timeout=max(0.0, deadline - asyncio.get_running_loop().time())
+        )
+        for unfinished in pending:
+            unfinished.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+            logger.warning(
+                "%d of %d shutdown settlement push(es) did not finish within the "
+                "settlement window; the receivers get no notification of them",
+                len(pending),
+                len(settled),
+            )
+
     @staticmethod
-    async def _settle_interrupted_task(task_manager: AionTaskManager) -> None:
-        """Mark a single task as interrupted by shutdown, if it is still active."""
+    async def _settle_interrupted_task(task_manager: AionTaskManager) -> Task | None:
+        """Mark a single task as interrupted by shutdown, if it is still active.
+
+        Returns:
+            The settled task as written, or None when the task needed nothing.
+        """
         task = await task_manager.get_task()
         if task is None:
-            return
+            return None
 
         settled = settled_task(task, TaskSettlementReason.SERVER_SHUTDOWN)
         if settled is None:
-            return
+            return None
 
         logger.info(
             "Settling task %s left in %s by shutdown",
@@ -385,3 +455,4 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
             TaskState.Name(task.status.state),
         )
         await task_manager.save_task_event(settled)
+        return settled

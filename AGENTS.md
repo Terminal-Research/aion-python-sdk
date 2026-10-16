@@ -59,8 +59,10 @@ contracts; reconcile this file with them when behavior changes.
     the test and the mapping table;
   - check whether upstream now offers what cluster mode lacks here - a wait
     hook in `DatabaseTaskEventStream`, remote cancellation that runs
-    `AgentExecutor.cancel`, detection of a dead instance, journal cleanup -
-    and adopt it rather than writing an Aion version;
+    `AgentExecutor.cancel`, detection of a dead instance (Aion settles a
+    running task idle past `AION_STALE_TASK_TIMEOUT`,
+    `aion.server.tasks.abandoned`), journal cleanup - and adopt it rather
+    than writing an Aion version;
   - when `tests/unit/db/test_a2a_migration_registry.py` fails, a2a-sdk has a
     new revision of its own migrations: write the SDK revision that makes the
     same change, or mark it `not applied` with the reason, and add its rows
@@ -125,6 +127,18 @@ aion.cli
   `ExtensionTaskHandler` owns execution only when it claims that extension's
   URI. Read `docs/development/extension-exposure.md` before changing
   extension exposure or routing.
+- Toolkits are plugins: a package registers an `aion.core.toolkit.Toolkit`
+  under the `aion.toolkits` entry point group, and the server's toolkit host
+  finds it, admits requests before a task exists, drives its turns and
+  translates what it yields into A2A. The SDK holds no code for a particular
+  toolkit; the protocol in `aion.core.toolkit` imports no a2a type. The host
+  also numbers a toolkit's artifacts per context (`metadata.version`, the key
+  ADK writes), serves `ToolkitContext.find_artifact` within the context's
+  holder, refuses a second task of an `exclusive_per_context` toolkit with
+  `context_busy`, and cancels by the a2a-sdk model. Read
+  `docs/development/toolkit-host.md` before changing the protocol or the host.
+  A real toolkit is checked against the SDK by its own CI through the reusable
+  `.github/workflows/toolkit-ci.yml`; the SDK's CI installs no toolkit.
 - Preserve the external streaming contract: close every outbound stream with
   a full `Task`, including completed and failed executions and the
   initial-task resume path. Cancellation is a `Message`. Keep the shared
@@ -229,7 +243,8 @@ was run. There is no need to run every suite for a documentation-only edit.
 ## Repository map
 
 - `aion.core`: protocol models, extension registry, configuration and runtime
-  abstractions, settings, logging types, and the public exception hierarchy.
+  abstractions, settings, logging types, the public exception hierarchy, and
+  the toolkit plugin protocol (`aion.core.toolkit`).
 - `aion.api`: GraphQL and HTTP control-plane clients, token management,
   capability addressing, Files and model-service clients.
 - `aion.mcp`: base-install MCP endpoint builders and a lazily loaded ASGI
@@ -239,8 +254,9 @@ was run. There is no need to run every suite for a documentation-only edit.
 - `aion.db`: PostgreSQL manager, repositories and migrations, including
   a2a-sdk's `task_versions` and `task_events` tables.
 - `aion.server`: generic A2A app, plugin discovery, task and file lifecycle,
-  platform link, extensions, push notifications, and observability. Response
-  and thinking deltas remain live-only artifacts outside durable task storage.
+  platform link, extensions and the toolkit host, push notifications, and
+  observability. Response and thinking deltas remain live-only artifacts
+  outside durable task storage.
 - `aion.proxy`: public multi-agent proxy and streaming response handling.
 - `aion.langgraph.server` and `aion.adk.server`: framework plugins and
   adapters for execution, state, streams, and A2A conversion.

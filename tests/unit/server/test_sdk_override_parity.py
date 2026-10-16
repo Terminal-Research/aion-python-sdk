@@ -65,6 +65,7 @@ OVERRIDES = [
     (AionRequestHandler, DefaultRequestHandlerV2, "on_get_task"),
     (AionRequestHandler, DefaultRequestHandlerV2, "on_list_tasks"),
     (AionRequestHandler, DefaultRequestHandlerV2, "on_cancel_task"),
+    (AionRequestHandler, DefaultRequestHandlerV2, "_write_cancel"),
     (AionRequestHandler, DefaultRequestHandlerV2, "on_message_send"),
     (AionRequestHandler, DefaultRequestHandlerV2, "on_message_send_stream"),
     (AionRequestHandler, DefaultRequestHandlerV2, "on_subscribe_to_task"),
@@ -134,6 +135,7 @@ COPIED_BODIES = {
 AION_TASK_STORE_EXTENSIONS = [
     "get_context_tasks",
     "get_context_last_task",
+    "get_context_last_routed_task",
     "write",
     "get_in_session",
     "tasks_in_context",
