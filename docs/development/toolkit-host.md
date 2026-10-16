@@ -444,5 +444,5 @@ nothing installed.
 | scenarios | `tests/scenarios/distributed/test_abandoned_tasks.py` (`make tests-scenarios-distributed`) | two servers with a small `AION_STALE_TASK_TIMEOUT`: a hung turn settled by the other server's sweep and a waiting task left, an abandoned task freeing its context and refusing a message, a server killed mid-turn whose toolkit and framework tasks the survivor settles |
 | scenarios | `tests/scenarios/core/test_daemon.py` (`TAGS=daemon`) | `GetTask` and `CancelTask` with the daemon named in `A2A-Extensions` |
 
-A real toolkit is checked against the SDK by its own CI; see
+A toolkit itself is tested in its own repository; see
 [Continuous integration](ci.md#toolkits).
