@@ -300,8 +300,7 @@ class TerminalTaskProjection:
                 TaskState.Name(expected_state),
                 TaskState.Name(task.status.state),
             )
-            # Answer from a copy: the snapshot that opened this stream may be
-            # the very same object, and it has already been sent to the client.
+            # Answer from a copy, leaving the snapshot as the store returned it.
             declared = Task()
             declared.CopyFrom(task)
             declared.status.state = expected_state

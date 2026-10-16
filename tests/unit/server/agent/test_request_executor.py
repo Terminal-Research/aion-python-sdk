@@ -18,7 +18,6 @@ from a2a.types import (
 )
 from google.protobuf.json_format import MessageToDict, MessageToJson
 from a2a.utils.errors import (
-    InternalError,
     InvalidParamsError,
     TaskNotCancelableError,
     TaskNotFoundError,
@@ -925,9 +924,9 @@ class TestCreateFactory:
 class TestFailureClosesTheTask:
     """A crashing producer must leave the task in a terminal state.
 
-    The JSON-RPC error only reaches the caller of that one request; without a
-    terminal status the task stays WORKING in the store forever, and any client
-    that reconnects or polls sees work that never ends.
+    Without a terminal status the task stays WORKING in the store forever, and
+    any client that reconnects or polls sees work that never ends. The crash
+    ends the request normally: the FAILED is its answer.
     """
 
     @staticmethod
@@ -956,8 +955,7 @@ class TestFailureClosesTheTask:
                 with patch.object(
                     executor, "_get_task_for_execution", new=AsyncMock(return_value=(task, True))
                 ):
-                    with pytest.raises(InternalError):
-                        await executor.execute(ctx, event_queue)
+                    await executor.execute(ctx, event_queue)
 
             updater.failed.assert_awaited_once()
 
@@ -981,13 +979,12 @@ class TestFailureClosesTheTask:
                 with patch.object(
                     executor, "_get_task_for_execution", new=AsyncMock(return_value=(task, True))
                 ):
-                    with pytest.raises(InternalError):
-                        await executor.execute(ctx, event_queue)
+                    await executor.execute(ctx, event_queue)
 
             updater.failed.assert_not_awaited()
 
     @pytest.mark.anyio
-    async def test_failure_to_mark_failed_does_not_mask_the_original_error(self):
+    async def test_failure_to_mark_failed_does_not_escape(self):
         executor = AionAgentRequestExecutor(aion_agent=_make_agent())
         task = _make_task()
         ctx = _make_context(task=task)
@@ -1004,9 +1001,8 @@ class TestFailureClosesTheTask:
                 with patch.object(
                     executor, "_get_task_for_execution", new=AsyncMock(return_value=(task, True))
                 ):
-                    # InternalError, not ConnectionError.
-                    with pytest.raises(InternalError):
-                        await executor.execute(ctx, event_queue)
+                    # The crash is already logged; the ConnectionError is too.
+                    await executor.execute(ctx, event_queue)
 
     @pytest.mark.anyio
     async def test_updater_is_per_execution_not_shared_state(self):

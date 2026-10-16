@@ -36,6 +36,13 @@ def _list_sort_key(task: Task) -> tuple[bool, int, str]:
     )
 
 
+def _copy(task: Task) -> Task:
+    """A deep copy of ``task``, so the store and its callers never share an object."""
+    copy = Task()
+    copy.CopyFrom(task)
+    return copy
+
+
 def _cursor_for(task: Task) -> ListTasksCursor:
     """The cursor naming ``task``'s position in the ``ListTasks`` order."""
     has_timestamp, timestamp_ns, task_id = _list_sort_key(task)
@@ -53,6 +60,10 @@ class InMemoryTaskStore(BaseTaskStore):
 
     Stores every task once, keyed by task_id, with the owner its first write
     fixed. Task data is lost when the server process stops.
+
+    Every task goes in and comes out as a copy, as with a2a-sdk's own
+    in-memory store: a caller that changes a task it wrote or read changes
+    nothing stored until it saves again, exactly as with ``PostgresTaskStore``.
 
     The dictionary keeps creation order across owners: a task takes its
     place when it is first written, an update leaves it there, a delete
@@ -120,7 +131,7 @@ class InMemoryTaskStore(BaseTaskStore):
             ConcurrentTaskModificationError: If the task was removed by a
                 context deletion, or is new and its context is being deleted.
         """
-        task = self._persistable(task)
+        task = _copy(self._persistable(task))
         write_owner = self._write_owner(context)
 
         async with self.lock:
@@ -156,7 +167,7 @@ class InMemoryTaskStore(BaseTaskStore):
                     task_id,
                     owner,
                 )
-                return task
+                return _copy(task)
             logger.debug(
                 'Task %s not found in store for owner %s.', task_id, owner
             )
@@ -172,7 +183,7 @@ class InMemoryTaskStore(BaseTaskStore):
         logger.debug('Listing tasks for owner %s with params %s', owner, params)
 
         async with self.lock:
-            tasks = self._visible(owner)
+            tasks = [_copy(task) for task in self._visible(owner)]
 
         # Filter tasks
         if params.context_id:
@@ -277,7 +288,7 @@ class InMemoryTaskStore(BaseTaskStore):
             if skipped < offset:
                 skipped += 1
                 continue
-            matching_tasks.append(task)
+            matching_tasks.append(_copy(task))
             if limit and len(matching_tasks) >= limit:
                 break
 
@@ -308,7 +319,7 @@ class InMemoryTaskStore(BaseTaskStore):
             tasks = self._visible(owner)
         return next(
             (
-                task
+                _copy(task)
                 for task in reversed(tasks)
                 if task.context_id == context_id and routed_extension_of(task) == routed_extension
             ),
@@ -319,7 +330,7 @@ class InMemoryTaskStore(BaseTaskStore):
         """Every owner's tasks of a context with their last write time, oldest first."""
         async with self.lock:
             return [
-                (stored.task, stored.updated_at)
+                (_copy(stored.task), stored.updated_at)
                 for stored in self.tasks.values()
                 if stored.task.context_id == context_id
             ]
@@ -327,13 +338,13 @@ class InMemoryTaskStore(BaseTaskStore):
     async def write_times(self) -> list[tuple[Task, datetime]]:
         """Every owner's tasks with the time of their last write, oldest first."""
         async with self.lock:
-            return [(stored.task, stored.updated_at) for stored in self.tasks.values()]
+            return [(_copy(stored.task), stored.updated_at) for stored in self.tasks.values()]
 
     async def last_write(self, task_id: str) -> Optional[tuple[Task, datetime]]:
         """The task, whoever owns it, with the time of its last write; None when there is none."""
         async with self.lock:
             stored = self.tasks.get(task_id)
-            return None if stored is None else (stored.task, stored.updated_at)
+            return None if stored is None else (_copy(stored.task), stored.updated_at)
 
     async def replace_if_last_written_at(self, task: Task, written_at: datetime) -> bool:
         """Write ``task`` over the stored one only if that was last written at ``written_at``.
@@ -345,7 +356,7 @@ class InMemoryTaskStore(BaseTaskStore):
         Returns:
             Whether the task was written.
         """
-        task = self._persistable(task)
+        task = _copy(self._persistable(task))
         async with self.lock:
             stored = self.tasks.get(task.id)
             if stored is None or stored.updated_at != written_at:

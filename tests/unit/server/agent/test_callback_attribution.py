@@ -1,6 +1,7 @@
 """Attribution follows the accepted invocation, not a task or a process global."""
 
 import asyncio
+from contextlib import nullcontext
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -8,7 +9,7 @@ import pytest
 from a2a.server.agent_execution import RequestContext
 from a2a.server.context import ServerCallContext
 from a2a.types import Message, Part, Role, SendMessageRequest, Task, TaskState, TaskStatus
-from a2a.utils.errors import InternalError, InvalidParamsError
+from a2a.utils.errors import InvalidParamsError
 
 from aion.core.constants import AION_USAGE_ATTRIBUTION_HEADER, USAGE_ATTRIBUTION_EXTENSION_URI_V1
 from aion.core.exceptions import AionAuthenticationError
@@ -94,7 +95,8 @@ async def test_nested_execution_restores_context_even_on_failure(error):
 
     async def outer(context):
         current = get_aion_runtime_context()
-        with pytest.raises(InternalError if error is RuntimeError else error):
+        # A crash fails its task and returns; a cancel propagates.
+        with nullcontext() if error is RuntimeError else pytest.raises(error):
             await executor(inner).execute(request(2)[0], AsyncMock())
         assert get_aion_runtime_context() is current
         if False:

@@ -27,7 +27,6 @@ from a2a.server.agent_execution import RequestContext
 from a2a.server.context import ServerCallContext
 from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
 from a2a.types import Message, Part, Role, Task, TaskState, TaskStatus, TaskStatusUpdateEvent
-from a2a.utils.errors import InternalError
 
 from aion.core.runtime.context import (
     AionRuntimeContext,
@@ -411,15 +410,17 @@ async def test_an_sdk_error_naming_what_is_missing_says_so_without_ids(queue, ru
     assert "01a13ac7" not in reason
 
 
-async def test_a_crash_says_it_crashed_and_where_to_look(queue, runtime_context) -> None:
+async def test_a_crash_says_it_crashed_and_where_to_look(queue, runtime_context, caplog) -> None:
     """The exception's text stays in the log; the task names the crash and its task id."""
-    raised = await _run_failing(RuntimeError("secret at https://internal.host"), queue)
+    with caplog.at_level(logging.ERROR):
+        raised = await _run_failing(RuntimeError("secret at https://internal.host"), queue)
 
-    assert isinstance(raised, InternalError)
+    assert raised is None, "a raised error would have a2a-sdk write a FAILED of its own"
     reason = _failed_reason(queue)
     assert reason == CRASH_REASON.format(task_id=TASK_ID)
     assert "internal.host" not in reason
-    assert raised.message == reason
+    crash, = [record for record in caplog.records if record.levelno == logging.ERROR]
+    assert "internal.host" in crash.getMessage() and crash.exc_info is not None
 
 
 @pytest.mark.parametrize("error,expected", [
