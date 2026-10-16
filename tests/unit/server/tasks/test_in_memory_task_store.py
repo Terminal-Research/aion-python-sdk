@@ -60,3 +60,33 @@ async def test_context_directory_isolated_by_resolved_owner():
         task.id
         for task in await store.get_context_tasks("ctx-1", context="bob")
     ] == ["bob"]
+
+
+async def test_a_task_changes_in_the_store_only_when_saved():
+    """Tasks go in and come out as copies, as from a database.
+
+    A caller holding a task it saved or read - a task manager's cached
+    snapshot, say - must not change what the store holds by changing it:
+    a write the manager decides not to make has to stay unmade.
+    """
+    store = InMemoryTaskStore(owner_resolver=lambda _: "test")
+    context = ServerCallContext()
+    saved = _task("t1")
+    saved.status.state = a2a_pb2.TASK_STATE_FAILED
+    await store.save(saved, context)
+
+    saved.status.state = a2a_pb2.TASK_STATE_COMPLETED
+    read = await store.get("t1", context)
+    assert read.status.state == a2a_pb2.TASK_STATE_FAILED
+
+    read.status.state = a2a_pb2.TASK_STATE_COMPLETED
+    for task in (
+        await store.get("t1", context),
+        (await store.list(a2a_pb2.ListTasksRequest(), context)).tasks[0],
+        (await store.get_context_tasks("ctx-1", context=context))[0],
+        (await store.last_write("t1"))[0],
+    ):
+        assert task.status.state == a2a_pb2.TASK_STATE_FAILED
+        task.status.state = a2a_pb2.TASK_STATE_COMPLETED
+
+    assert (await store.get("t1", context)).status.state == a2a_pb2.TASK_STATE_FAILED

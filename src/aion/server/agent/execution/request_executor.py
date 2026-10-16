@@ -7,7 +7,6 @@ from a2a.server.tasks import TaskUpdater
 from a2a.types import Message, Part, Task
 from a2a.helpers import new_task_from_user_message
 from a2a.utils.errors import (
-    InternalError,
     InvalidParamsError,
     TaskNotCancelableError,
     TaskNotFoundError,
@@ -139,8 +138,8 @@ class AionAgentRequestExecutor(AgentExecutor):
     could not be stored and any error carrying a ``public_reason`` - the
     agent's own ``TaskFailedError``, or an SDK error naming what the
     deployment lacks - give their sentence, and the request ends normally.
-    Any other error is a crash: the task names it as one and points at the
-    log, and the error is raised for a2a-sdk to report.
+    Any other error is a crash: it is logged with its traceback, the task
+    names it as one and points at the log, and the request ends normally too.
     What a cancel hook publishes, and the message it closes the CANCELED with,
     have their files stored the same way; there a file that could not be
     stored is dropped and the task is canceled regardless. Inline bytes never
@@ -352,11 +351,14 @@ class AionAgentRequestExecutor(AgentExecutor):
                 logger.warning("Task failed: %s", ex)
                 await self._close_failed_task(task_updater, pipeline, reason=reason)
                 return
-            # A crash. a2a-sdk logs the error raised here with its traceback,
-            # the original exception included as its cause.
+            # A crash: logged here with its traceback, and the task fails
+            # saying it crashed. The request ends normally, so the FAILED with
+            # that sentence is the task's only outcome: a raised error would
+            # have a2a-sdk write a bare FAILED of its own, directly to the
+            # store and ahead of the queued one.
             crash = CRASH_REASON.format(task_id=task.id)
+            logger.exception("Task crashed: %s", ex)
             await self._close_failed_task(task_updater, pipeline, reason=crash)
-            raise InternalError(message=crash) from ex
         finally:
             if routed_extension_of(task) in self._extension_handlers:
                 # An extension handler's turn is closed here, however the
