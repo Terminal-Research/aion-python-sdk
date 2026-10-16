@@ -20,6 +20,8 @@ TASK_EVENTS_TABLE = "task_events"
 """a2a-sdk's append-only event journal (``a2a.server.models.TaskEventModel``)."""
 CONTEXT_RESERVATIONS_TABLE = "context_reservations"
 CONTEXT_BINDINGS_TABLE = "context_bindings"
+ADK_ARTIFACT_VERSIONS_TABLE = "adk_artifact_versions"
+"""Every version number the ADK artifact service gave an artifact, one row per number, so no two servers give the same one."""
 
 LANGGRAPH_SCHEMA = "aion_langgraph"
 """Schema of the LangGraph checkpoint tables the SDK's checkpointer keeps on this database."""

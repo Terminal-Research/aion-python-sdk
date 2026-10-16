@@ -11,6 +11,8 @@ import time
 from a2a.types import Artifact
 from aion.adk.authoring.transformers import convert_a2a_part_to_genai_part
 from aion.core.db import DbManagerProtocol
+from aion.core.exceptions import AionError
+from aion.db.postgres.repositories.adk_artifact_versions import AdkArtifactVersionsRepository
 from aion.db.postgres.repositories.tasks.repository import TasksRepository
 from google.adk.artifacts import BaseArtifactService
 from google.adk.artifacts.base_artifact_service import ArtifactVersion, ensure_part
@@ -21,6 +23,13 @@ from typing import Any, Optional, List, Union
 from .base import ArtifactServiceBackend
 
 logger = logging.getLogger(__name__)
+
+VERSION_ATTEMPTS = 10
+"""How many numbers one save tries: each conflict means another server gave the number meanwhile."""
+
+
+class ArtifactVersionConflictError(AionError):
+    """Every version number a save tried was given by another server meanwhile."""
 
 
 @dataclasses.dataclass
@@ -37,10 +46,19 @@ class A2AArtifactService(BaseArtifactService):
     existed before this service started.
 
     Version numbering stays continuous across restarts and eviction cycles:
-    on the first write to an empty path, we ask DB how many versions already
-    exist and use that count as an offset, so new versions pick up where the
+    on the first write to an empty path, we ask DB which versions already
+    exist and number from the next one, so new versions pick up where the
     last one left off. When memory is evicted, the offset is cleared so the
     next write re-syncs with DB.
+
+    With a database, every number of a session-scoped artifact is also
+    recorded as it is given (``adk_artifact_versions``), and the next number
+    counts the recorded ones too. Several servers of an agent, or several
+    processes, saving one artifact at once therefore never give one number
+    twice: a number another server recorded first is refused, and the save
+    numbers again from what the database holds, up to ``VERSION_ATTEMPTS``
+    times. The versions one service holds in memory can then have gaps - the
+    numbers other servers gave - so memory is searched by version number.
 
     ADK's session_id maps to context_id on the DB side. Versions are zero-based
     integers and stored as strings in artifact metadata.
@@ -140,8 +158,14 @@ class A2AArtifactService(BaseArtifactService):
     ) -> int:
         """Appends a new version of the artifact to memory and returns its logical version number.
 
-        On the first write to an empty path, queries DB for the current version count
-        and uses it as an offset so logical versions stay continuous with what's in DB.
+        On the first write to an empty path, queries DB for the next version
+        number so logical versions stay continuous with what's in DB. With a
+        database, the number is recorded before it is used (see the class
+        docstring).
+
+        Raises:
+            ArtifactVersionConflictError: Other servers gave every number this
+                save tried.
         """
         artifact = ensure_part(artifact)
         path = self._artifact_path(app_name, user_id, filename, session_id)
@@ -156,7 +180,11 @@ class A2AArtifactService(BaseArtifactService):
 
         entries = self._artifacts.setdefault(path, [])
         offset = self._version_offsets[path]
-        logical_version = len(entries) + offset
+        logical_version = entries[-1].artifact_version.version + 1 if entries else offset
+        if session_id and not self._file_has_user_namespace(filename) and self._is_db_available():
+            logical_version = await self._record_version(
+                app_name=app_name, user_id=user_id, session_id=session_id, filename=filename, version=logical_version
+            )
 
         artifact_version = ArtifactVersion(
             version=logical_version,
@@ -172,6 +200,52 @@ class A2AArtifactService(BaseArtifactService):
         self._timestamps[path] = time.monotonic()
         self._ensure_cleanup_task()
         return logical_version
+
+    async def _record_version(
+            self, *, app_name: str, user_id: str, session_id: str, filename: str, version: int
+    ) -> int:
+        """Record ``version`` as given, or the next number no other server gave first; the number recorded.
+
+        When the database fails to answer, the number is used unrecorded:
+        the service goes on from memory, as its reads do.
+
+        Raises:
+            ArtifactVersionConflictError: Other servers gave every number tried.
+        """
+        assert self._db_manager is not None
+        for _ in range(VERSION_ATTEMPTS):
+            try:
+                async with self._db_manager.get_session() as db_session:
+                    async with db_session.begin():
+                        recorded = await AdkArtifactVersionsRepository(db_session).claim(
+                            agent_id=app_name,
+                            owner_scope=user_id,
+                            context_id=session_id,
+                            artifact_name=filename,
+                            version=version,
+                        )
+            except Exception as e:
+                logger.warning(f"Recording version {version} of '{filename}' failed: {e}", exc_info=True)
+                return version
+            if recorded:
+                return version
+            given = version
+            version = max(
+                version + 1,
+                await self._resolve_db_version_offset(
+                    app_name=app_name, user_id=user_id, session_id=session_id, filename=filename
+                ),
+            )
+            logger.debug(f"Version {given} of '{filename}' was given elsewhere; trying {version}")
+        raise ArtifactVersionConflictError(
+            f"Version numbers of artifact '{filename}' in context {session_id} were given elsewhere "
+            f"{VERSION_ATTEMPTS} times in a row"
+        )
+
+    @staticmethod
+    def _entry(entries: list[_ArtifactEntry], version: int) -> Optional[_ArtifactEntry]:
+        """The entry in memory holding ``version``, if this service saved it."""
+        return next((entry for entry in entries if entry.artifact_version.version == version), None)
 
     @override
     async def load_artifact(
@@ -204,10 +278,8 @@ class A2AArtifactService(BaseArtifactService):
                 session_id=session_id, filename=filename, version=version
             )
         else:
-            mem_index = version - offset
-            try:
-                entry = entries[mem_index]
-            except IndexError:
+            entry = self._entry(entries, version)
+            if entry is None:
                 return await self._load_from_db(app_name=app_name, user_id=user_id, 
                     session_id=session_id, filename=filename, version=version
                 )
@@ -273,7 +345,7 @@ class A2AArtifactService(BaseArtifactService):
         entries = self._artifacts.get(path)
         if entries:
             offset = self._version_offsets.get(path, 0)
-            return list(range(0, offset + len(entries)))
+            return sorted(set(range(offset)) | {entry.artifact_version.version for entry in entries})
 
         if not session_id:
             return []
@@ -353,10 +425,9 @@ class A2AArtifactService(BaseArtifactService):
             if version is None:
                 return entries[-1].artifact_version
             if version >= offset:
-                try:
-                    return entries[version - offset].artifact_version
-                except IndexError:
-                    pass
+                entry = self._entry(entries, version)
+                if entry is not None:
+                    return entry.artifact_version
 
         return await self._build_artifact_version_from_db(
             app_name=app_name,
@@ -471,15 +542,37 @@ class A2AArtifactService(BaseArtifactService):
     ) -> int:
         """Returns the next available version number based on what's already in DB.
 
-        Returns 0 if there are no existing records, 1 if records exist but
-        have no version metadata (treating them collectively as version 0),
-        or max(version) + 1 if version metadata is present.
+        Counts the versions the tasks hold - 0 if there are no records, 1 if
+        records exist but have no version metadata (treating them collectively
+        as version 0), max(version) + 1 if version metadata is present - and
+        the numbers recorded as given, which a task may not hold yet: the
+        higher of the two.
         """
         artifacts = await self._fetch_db_artifacts(app_name=app_name, user_id=user_id, session_id=session_id, filename=filename)
-        if not artifacts:
-            return 0
-        versions = self._parse_versions_from_db(artifacts)
-        return max(versions) + 1 if versions else 1
+        next_stored = 0
+        if artifacts:
+            versions = self._parse_versions_from_db(artifacts)
+            next_stored = max(versions) + 1 if versions else 1
+        latest_recorded = await self._fetch_latest_recorded_version(
+            app_name=app_name, user_id=user_id, session_id=session_id, filename=filename
+        )
+        return max(next_stored, latest_recorded + 1) if latest_recorded is not None else next_stored
+
+    async def _fetch_latest_recorded_version(
+            self, *, app_name: str, user_id: str, session_id: str, filename: str
+    ) -> Optional[int]:
+        """The highest version number recorded as given, or None. None on any failure."""
+        if not self._is_db_available():
+            return None
+        assert self._db_manager is not None
+        try:
+            async with self._db_manager.get_session() as db_session:
+                return await AdkArtifactVersionsRepository(db_session).latest(
+                    agent_id=app_name, owner_scope=user_id, context_id=session_id, artifact_name=filename
+                )
+        except Exception as e:
+            logger.warning(f"DB fetch of recorded versions failed for '{filename}': {e}", exc_info=True)
+            return None
 
     async def _load_from_db(
             self,

@@ -329,10 +329,11 @@ until it ends. Then every active task of the context, whoever owns it, is
 cancelled through the ordinary cancellation path, in groups of ten; once all
 are terminal the framework state - LangGraph checkpoints, ADK sessions - is
 deleted under the context holder's state scope, and the tasks, their messages,
-artifacts, versions, journal events (`task_events`) and push configurations and
-the bindings are removed in one storage step. The reservation becomes
-`deleted`, and the next message with that context ID reserves it afresh: a new
-conversation, with nothing of the old one.
+artifacts, versions, journal events (`task_events`) and push configurations,
+the ADK artifact version numbers given in the context and the bindings are
+removed in one storage step. The reservation becomes `deleted`, and the next
+message with that context ID reserves it afresh: a new conversation, with
+nothing of the old one.
 
 **Retention.** A context keeps its whole history for as long as it lives:
 every task, with its messages, artifacts, versions and journal events, and

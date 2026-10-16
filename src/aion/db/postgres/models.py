@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Integer,
     PrimaryKeyConstraint,
     String,
     Text,
@@ -21,6 +22,7 @@ from google.protobuf.struct_pb2 import Struct
 from a2a.types import Artifact, Message, TaskStatus
 
 from .constants import (
+    ADK_ARTIFACT_VERSIONS_TABLE,
     CONTEXT_BINDINGS_TABLE,
     CONTEXT_RESERVATIONS_TABLE,
     TASK_ARTIFACTS_TABLE,
@@ -30,6 +32,7 @@ from .constants import (
 from .fields import ProtobufType
 
 __all__ = [
+    "AdkArtifactVersionModel",
     "BaseModel",
     "ContextBindingModel",
     "ContextReservationModel",
@@ -262,4 +265,34 @@ class ContextBindingModel(BaseModel):
         nullable=False,
         server_default=func.clock_timestamp(),
         doc="When the caller was first admitted into the context.",
+    )
+
+
+class AdkArtifactVersionModel(BaseModel):
+    """A version number the ADK artifact service gave an artifact.
+
+    The service numbers the versions of an artifact per agent, owner, context
+    and name, the key it reads them back by from the ``tasks`` and
+    ``task_artifacts`` tables; the artifact itself reaches ``task_artifacts``
+    later, with the task that carries it. Each number is written here when
+    it is given, under that key as the primary key, so two servers saving the
+    same artifact at once cannot give the same number: the second insert
+    conflicts, and its server numbers again from what the database holds.
+    """
+
+    __tablename__ = ADK_ARTIFACT_VERSIONS_TABLE
+    __table_args__ = (
+        PrimaryKeyConstraint("agent_id", "owner_scope", "context_id", "artifact_name", "version"),
+    )
+
+    agent_id = Column(Text, nullable=False, doc="The agent whose artifact this is (ADK's ``app_name``).")
+    owner_scope = Column(Text, nullable=False, doc="The owner the artifact was saved for (ADK's ``user_id``).")
+    context_id = Column(Text, nullable=False, doc="The A2A context ID (ADK's ``session_id``).")
+    artifact_name = Column(Text, nullable=False, doc="The artifact's name (ADK's ``filename``).")
+    version = Column(Integer, nullable=False, doc="The version number given.")
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.clock_timestamp(),
+        doc="When the number was given.",
     )

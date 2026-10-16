@@ -19,7 +19,7 @@ from aion.db.postgres.models import (
     TaskRecordModel,
 )
 from aion.db.postgres.records import ContextReservationRecord
-from aion.db.postgres.repositories import ContextReservationsRepository
+from aion.db.postgres.repositories import AdkArtifactVersionsRepository, ContextReservationsRepository
 from aion.server.a2a.constants import TERMINAL_TASK_STATES
 from aion.server.tasks.admission import ACTIVE, DELETED, DELETING, holder_of_record
 
@@ -256,6 +256,9 @@ class PostgresContextCatalog:
                     )
                     # Messages and artifacts cascade with their task.
                     await session.execute(delete(TaskRecordModel).where(TaskRecordModel.id.in_(task_ids)))
+                # The ADK artifact versions given in the context go with the
+                # artifacts, so a context reused afterwards numbers from 0.
+                await AdkArtifactVersionsRepository(session).delete_context(self._agent_id, context_id)
                 await reservations.mark_deleted(self._agent_id, context_id)
                 return FinishOutcome.FINISHED, [str(task_id) for task_id in task_ids]
 
