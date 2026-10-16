@@ -104,16 +104,15 @@ class DataPart(_Model):
 
 
 class FilePart(_Model):
-    """A file, given by exactly one of ``raw``, ``path`` or ``url``.
+    """A file, given by exactly one of ``raw`` or ``url``, as an A2A file part.
 
-    ``raw`` (bytes in memory) and ``path`` (a file on the toolkit's host) are
-    stored by the server and delivered as a link; ``url`` is a file that is
-    already hosted. A file the server cannot store fails the task.
+    ``raw`` is the file's bytes, which the server stores and delivers as a
+    link; ``url`` is a file that is already hosted. A file the server cannot
+    store fails the task.
     """
 
     kind: Literal["file"] = "file"
     raw: Optional[bytes] = None
-    path: Optional[str] = None
     url: Optional[str] = None
     filename: Optional[str] = None
     media_type: Optional[str] = None
@@ -121,9 +120,9 @@ class FilePart(_Model):
 
     @model_validator(mode="after")
     def _one_source(self) -> "FilePart":
-        sources = [name for name in ("raw", "path", "url") if getattr(self, name) is not None]
+        sources = [name for name in ("raw", "url") if getattr(self, name) is not None]
         if len(sources) != 1:
-            raise ValueError(f"a file part has exactly one of raw, path, url; got {sources or 'none'}")
+            raise ValueError(f"a file part has exactly one of raw, url; got {sources or 'none'}")
         return self
 
 

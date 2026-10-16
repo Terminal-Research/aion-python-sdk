@@ -60,8 +60,10 @@ from aion.server.agent.execution.extensions.toolkit.translation import (
     error_schema,
 )
 
+from aion.server.files.storage import StubFileStorageBackend
 from tests.support.scripted_toolkit.contract import URI
 from tests.support.scripted_toolkit.toolkit import Script, ScriptedToolkit
+from tests.unit.support.files import RecordingBackend, StoringTransformer
 
 TASK_ID = "task-1"
 CONTEXT_ID = "ctx-1"
@@ -352,34 +354,42 @@ async def test_an_error_without_a_message_gets_one() -> None:
 # -- parts ----------------------------------------------------------------------
 
 
-async def test_files_travel_as_bytes_or_as_their_link(tmp_path) -> None:
-    on_disk = tmp_path / "report.txt"
-    on_disk.write_bytes(b"from disk")
+async def test_files_travel_as_bytes_or_as_their_link() -> None:
     files = Message(
         parts=[
             FilePart(raw=b"in memory", filename="a.bin", media_type="application/octet-stream"),
-            FilePart(path=str(on_disk), media_type="text/plain"),
             FilePart(url="https://files.example.com/b.pdf", filename="b.pdf"),
         ]
     )
 
     events = await run(handler(ToolkitMessageEvent(message=files), completed()))
 
-    raw, path, url = events[0].status.message.parts
+    raw, url = events[0].status.message.parts
     assert (raw.raw, raw.filename, raw.media_type) == (b"in memory", "a.bin", "application/octet-stream")
-    assert (path.raw, path.filename, path.media_type) == (b"from disk", "report.txt", "text/plain")
     assert (url.url, url.filename) == ("https://files.example.com/b.pdf", "b.pdf")
 
 
-async def test_a_file_the_server_cannot_read_fails_the_turn(tmp_path, caplog) -> None:
-    missing = Message(parts=[FilePart(path=str(tmp_path / "missing.txt"))])
+async def test_a_binary_artifact_file_is_stored_by_the_file_uploader() -> None:
+    """Bytes of any media type reach the pipeline as a raw part, which the uploader replaces with a link."""
+    content = bytes(range(256)) * 4
+    bundle = Artifact(
+        id="rescue",
+        parts=[FilePart(raw=content, media_type="application/x-git-bundle", filename=f"{CONTEXT_ID}.bundle")],
+    )
 
-    with caplog.at_level(logging.ERROR):
-        events = await run(handler(ToolkitMessageEvent(message=missing), completed()))
+    events = await run(handler(ToolkitArtifactEvent(artifact=bundle, last_chunk=True), completed()))
+    update = next(event for event in events if isinstance(event, TaskArtifactUpdateEvent))
+    (translated,) = update.artifact.parts
+    assert (translated.raw, translated.media_type) == (content, "application/x-git-bundle")
 
-    assert len(events) == 1
-    assert final(events).status.state == TaskState.TASK_STATE_FAILED
-    assert "missing.txt" in caplog.text
+    backend = RecordingBackend()
+    stored = (await StoringTransformer(backend).transform(update)).event
+
+    (part,) = stored.artifact.parts
+    assert part.url.startswith(StubFileStorageBackend.BASE_URI) and not part.raw
+    assert (part.filename, part.media_type) == (f"{CONTEXT_ID}.bundle", "application/x-git-bundle")
+    (upload,) = backend.batches[0]
+    assert (upload.data, upload.media_type) == (content, "application/x-git-bundle")
 
 
 # -- invariants -----------------------------------------------------------------

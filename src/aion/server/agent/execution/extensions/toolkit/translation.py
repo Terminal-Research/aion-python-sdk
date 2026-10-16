@@ -48,21 +48,18 @@ What the server enforces whatever the toolkit does:
   and to ``MAX_ARTIFACT_TEXT_LENGTH`` in an artifact;
 * at most ``MAX_DURABLE_MESSAGES_PER_TURN`` messages of a turn are stored;
   later ones are delivered to the subscribers connected now only;
-* a file given as bytes or as a path on this host travels as bytes, which the
-  pipeline stores and replaces with a link; a file the toolkit gives as a URL
-  is passed on as one;
+* a file given as bytes travels as bytes, which the pipeline stores and
+  replaces with a link; a file the toolkit gives as a URL is passed on as one;
 * the final status closes an open stream delta and every artifact the turn
   left unfinished.
 """
 
 from __future__ import annotations
 
-import asyncio
 import copy
 import logging
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
-from pathlib import Path
 from typing import Any, Optional
 
 from a2a.server.events import Event
@@ -223,8 +220,8 @@ class TurnTranslator:
         """The A2A events of one event the toolkit yielded.
 
         Raises:
-            ToolkitProtocolError: The event cannot be translated - a file at a
-                path the server cannot read, metadata that is not JSON.
+            ToolkitProtocolError: The event cannot be translated - metadata
+                that is not JSON.
         """
         try:
             if isinstance(event, ToolkitMessageEvent):
@@ -508,25 +505,16 @@ class TurnTranslator:
                 built.metadata[EVENT_EXTENSION_URI_V1] = schema.model_dump(by_alias=True)
             return built
         if isinstance(part, FilePart):
-            return await self._file_part(part, metadata)
+            return self._file_part(part, metadata)
         raise ToolkitProtocolError(f"{type(part).__name__} is not a part")
 
-    async def _file_part(self, part: FilePart, metadata: Optional[struct_pb2.Struct]) -> A2APart:
-        filename = part.filename
+    def _file_part(self, part: FilePart, metadata: Optional[struct_pb2.Struct]) -> A2APart:
         if part.url is not None:
             built = A2APart(url=self._masker.text(part.url), metadata=metadata)
-        elif part.raw is not None:
-            built = A2APart(raw=part.raw, metadata=metadata)
         else:
-            path = Path(part.path)
-            try:
-                content = await asyncio.to_thread(path.read_bytes)
-            except OSError as error:
-                raise ToolkitProtocolError(f"cannot read the file part at {part.path}: {error}") from error
-            built = A2APart(raw=content, metadata=metadata)
-            filename = filename or path.name
-        if filename:
-            built.filename = self._masker.text(filename)
+            built = A2APart(raw=part.raw, metadata=metadata)
+        if part.filename:
+            built.filename = self._masker.text(part.filename)
         if part.media_type:
             built.media_type = part.media_type
         return built

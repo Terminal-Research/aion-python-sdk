@@ -202,7 +202,7 @@ delivers and stores:
 | `ToolkitArtifactEvent` | `TaskArtifactUpdateEvent` with the artifact's id, name, description, parts and metadata plus the server's `version` ([Artifact versions](#artifact-versions)), `append`, `last_chunk`; its `task_metadata` follows as a `WORKING` update with no message |
 | `ToolkitStatusEvent` | a `WORKING` update with no message, carrying only the object |
 | `ToolkitResult` | its artifacts with `last_chunk`, then the final status in the mapped `TaskState`; its message is the result's, closed for a failure by a text part with the error's message and a data part `{code, message, retryable}` with schema `{uri}#ToolkitError` |
-| `TextPart` / `DataPart` / `FilePart` | `Part.text` / `Part.data` with `application/json` / `Part.raw` for bytes and for a path the server reads, `Part.url` for a URL; filename and media type carried |
+| `TextPart` / `DataPart` / `FilePart` | `Part.text` / `Part.data` with `application/json` / `Part.raw` for bytes, `Part.url` for a URL - a file part has exactly one of them, as in A2A; filename and media type carried |
 
 Every message gets the Event extension's markup: `message.metadata[<event
 uri>]` holds `type` (the toolkit's, or `to.aion.toolkit.message` when it
@@ -221,6 +221,16 @@ than merging into it, so a whole object is the only write that means what it
 says. `AionTaskManager` keeps the current `status.message` on a `WORKING`
 update with no message that carries metadata, so a status event or an
 artifact's details do not blank the task's status line.
+
+### Numbers
+
+A payload and the toolkit's object travel as protobuf `Struct` values - a
+data part of a message, `task.metadata` - and a `Struct` holds every number
+as a double: an integer a client sends in a directive, or one the toolkit
+wrote into its object, arrives as `3.0`. A payload model declares an integer
+field as `int`, which pydantic (in its default, non-strict mode) fills from
+`3.0` and refuses for `1.5`, and a fractional one as `float`. Numbers are
+never sent as strings.
 
 ### Artifact versions
 
@@ -274,9 +284,10 @@ number; a toolkit that needs one run per context sets
 - At most `MAX_DURABLE_MESSAGES_PER_TURN` messages of a turn are stored;
   later ones are delivered ephemerally, with their object write as a separate
   details update, and a WARNING is logged.
-- A file in bytes or at a path travels as `Part.raw`, which
-  `A2AFileTransformer` stores and replaces with a link; a file that cannot be
-  stored fails the task, as for any agent.
+- A file in bytes travels as `Part.raw`, which `A2AFileTransformer` stores
+  and replaces with a link, whatever its media type; a file that cannot be
+  stored fails the task, as for any agent. A file on the toolkit's host goes
+  out as its bytes in `raw`; the server reads no path.
 - The final status closes an open stream delta and gives every artifact the
   turn left unfinished an empty `last_chunk` update.
 

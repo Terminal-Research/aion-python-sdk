@@ -28,12 +28,15 @@ def _text(text: str = "hello") -> Message:
 class TestParts:
     def test_a_file_has_exactly_one_source(self):
         FilePart(raw=b"x")
-        FilePart(path="/tmp/x")
         FilePart(url="https://example.com/x")
         with pytest.raises(ValidationError):
             FilePart()
         with pytest.raises(ValidationError):
             FilePart(raw=b"x", url="https://example.com/x")
+
+    def test_a_file_on_the_toolkits_host_is_not_a_source(self):
+        with pytest.raises(ValidationError):
+            FilePart(path="/tmp/x")
 
     @pytest.mark.parametrize(
         "key",
