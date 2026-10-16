@@ -137,8 +137,9 @@ aion.cli
   holder, refuses a second task of an `exclusive_per_context` toolkit with
   `context_busy`, and cancels by the a2a-sdk model. Read
   `docs/development/toolkit-host.md` before changing the protocol or the host.
-  A real toolkit is checked against the SDK by its own CI through the reusable
-  `.github/workflows/toolkit-ci.yml`; the SDK's CI installs no toolkit.
+  The SDK's tests check the host against the scripted toolkit in
+  `tests/support/scripted_toolkit`; the SDK's CI installs no real toolkit, and
+  a toolkit is tested in its own repository.
 - Preserve the external streaming contract: close every outbound stream with
   a full `Task`, including completed and failed executions and the
   initial-task resume path. Cancellation is a `Message`. Keep the shared

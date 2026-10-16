@@ -522,8 +522,8 @@ servers of one agent can share the database. The rules are a2a-sdk's:
   3600, `0` turns it off): `FAILED` with
   `aion:settledReason=task_abandoned`, and for a toolkit's task the error
   `task_abandoned` (retryable) as a toolkit's failure carries it. Every
-  server sweeps the agent's tasks every minute (more often for a small
-  timeout), and a message into such a task, or a request into a context such
+  server runs the sweep, one at a time per agent under a lock, every 60
+  seconds or every half of the timeout when that is shorter, and a message into such a task, or a request into a context such
   a task holds for an exclusive toolkit, settles it first. A server never
   settles a task whose turn runs in its own process - it logs a WARNING for
   one its sweep finds - and never a task waiting for input. The write is
