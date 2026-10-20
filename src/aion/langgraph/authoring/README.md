@@ -239,6 +239,23 @@ def streaming_node(state: dict, writer: StreamWriter):
 
 ---
 
+## Reading the conversation
+
+`emit_*` write what a turn says; `aion.core.agent.conversation` reads what the
+conversation already holds - its earlier tasks and the versions of their
+artifacts - for the turn the server is running. A node calls it without
+arguments: the server installs the turn's history before the graph runs.
+
+```python
+from aion.core.agent import conversation
+
+async def my_node(state: dict):
+    report = await conversation.find_artifact("analysis")
+    earlier = await conversation.tasks()
+```
+
+---
+
 ## Client Events Reference
 
 | Trigger | Client receives |

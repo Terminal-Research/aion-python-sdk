@@ -136,11 +136,13 @@ aion.cli
   of a cancel or a shutdown is the server's - and the pool is only a lookup.
   Executable extensions are registered from the list `aion.server` ships
   (`EXECUTABLE_EXTENSIONS`) in one step of `AppFactory._initialize`, and
-  their executors are created once the stores exist, with their `aion.yaml`
-  options and the server's `ExtensionServices`; an executor that cannot be
-  created stops the server. Everything particular to an extension - its
-  payload, its callers, one task per context, artifact versions - is inside
-  its executor. Behavior evolution is a thin wrapper that imports its toolkit
+  their executors are created with their `aion.yaml` options; an executor
+  that cannot be created stops the server. Everything particular to an
+  extension - its payload, its callers, one task per context, artifact
+  versions - is inside its executor. Every turn, of any executor, reads its
+  conversation (tasks, generation, artifact versions) with
+  `aion.core.agent.conversation`, which the server installs on the turn's
+  runtime context. Behavior evolution is a thin wrapper that imports its toolkit
   lazily. Read `docs/development/executable-extensions.md` before changing
   them. The SDK's tests use `tests/support/executors.py`, the scripted
   executor and a stand-in evolution toolkit in

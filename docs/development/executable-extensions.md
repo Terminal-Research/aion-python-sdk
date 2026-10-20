@@ -30,10 +30,12 @@ extensions.
 | `src/aion/server/agent/execution/request_executor.py` | `AionAgentRequestExecutor`: one path for every executor - the turn, its outcome, cancel, shutdown. |
 | `src/aion/server/agent/execution/extensions/executable.py` | `ExtensionExecutor`, `ExecutableExtensionDescriptor`, `parse_options`. |
 | `src/aion/server/agent/execution/extensions/registration.py` | `EXECUTABLE_EXTENSIONS`, `register_extensions` and `create_extension_executors`, the two steps of `AppFactory`. |
-| `src/aion/server/agent/execution/extensions/services.py`, `artifacts.py`, `secret_values.py` | What the server offers an extension's executor: `ExtensionServices` (a context's generation, its unfinished task, the versions of an artifact - `TurnArtifacts`), access to the Aion model service on a caller's behalf, the deployment's secret values. |
+| `src/aion/server/agent/execution/extensions/model_service.py`, `secret_values.py` | Access to the Aion model service on a caller's behalf, and the deployment's secret values. |
+| `src/aion/core/agent/conversation.py`, `src/aion/core/runtime/context/conversation.py` | The history of a turn's conversation, which every executor reads: its tasks, its generation, the versions of an artifact and the number a task writes one under. |
+| `src/aion/server/tasks/conversation.py` | `StoredConversations`: the history of each turn over the server's stores, installed on the turn's runtime context. |
 | `src/aion/server/agent/execution/extensions/evolution.py` | `EvolutionExecutor`, its options (`EvolutionOptions`) and its descriptor. |
 | `src/aion/core/a2a/codes.py`, `src/aion/core/a2a/errors.py` | The codes the server reserves and the A2A shape of an extension's error; in core, so an executor that needs only the SDK base uses them. |
-| `src/aion/server/tasks/context_artifacts.py`, `context_runs.py` | The readers of an artifact's versions and of a context's generation and unfinished task, over the in-memory store or PostgreSQL. |
+| `src/aion/server/tasks/context_artifacts.py`, `context_runs.py` | The readers of an artifact's versions, and of who holds a context, its generation and its tasks, over the in-memory store or PostgreSQL. |
 | `tests/support/scripted_executor/`, `tests/support/executors.py` | The executors the SDK's own tests drive the server with, and a stand-in for the evolution toolkit; see [Testing](#testing). |
 
 ## Registration and creation
@@ -45,11 +47,11 @@ extensions.
    (`register_protocol_extensions`) and the executable extensions of
    `EXECUTABLE_EXTENSIONS`, and activates every URI `enabled_extensions`
    lists. It returns the enabled executable extensions with their options.
-2. `create_extension_executors(enabled, services)`, once the agent is built
-   and the stores exist: each enabled executable extension's executor is
-   created with its options and the server's `ExtensionServices`. The pool
-   is the agent's framework executor plus these, and the request executor is
-   built over it.
+2. `create_extension_executors(enabled)`, once the agent is built: each
+   enabled executable extension's executor is created with its options. The
+   pool is the agent's framework executor plus these, and the request
+   executor is built over it, with the history of each turn over the stores
+   (`StoredConversations`).
 
 An executor that cannot be created - options it refuses, a package, a
 variable or a program it needs missing on this deployment - raises
@@ -80,24 +82,26 @@ the card's `AgentExtension.params` stays empty.
 
 ## An extension's executor
 
-`ExtensionExecutor(options, services)` is created once and serves every task
-of its extension, concurrently. `stream(context, config)` and
+`ExtensionExecutor(options)` is created once and serves every task of its
+extension, concurrently. `stream(context, config)` and
 `resume(context, config)` get the a2a `RequestContext` - the message, the
 call context with the caller (`verified_caller`), the task - and the
 `ExecutionConfig` of the turn; the request's runtime context, with its
-extensions and callback attribution, is current while the turn runs
-(`AionRuntimeContextRegistry`). `cancel(config, within=)` stops the turn; see
-[Cancel](#cancel) and [Stopping](#stopping).
+extensions, callback attribution and the history of the turn's conversation,
+is current while the turn runs (`AionRuntimeContextRegistry`).
+`cancel(config, within=)` stops the turn; see [Cancel](#cancel) and
+[Stopping](#stopping).
 
 Everything particular to the extension is the executor's own:
 
 - **its payload** - read from the message with a `MessagesCollector` over its
   payload models;
 - **who may call it, what it may run** - checked when the turn starts;
-- **one task per context**, if it needs it - `services.unfinished_task(context_id,
-  uri)` names the oldest unfinished task of the extension in the context,
-  whoever owns it; the read holds across the servers of the agent, and
-  nothing locks the context between it and the task's first write;
+- **one task per context**, if it needs it - `conversation.tasks(unfinished=True)`
+  lists the context's tasks without an outcome, oldest first, whoever owns
+  them, and the executor picks its own by their route
+  (`routed_extension_of`); the read holds across the servers of the agent,
+  and nothing locks the context between it and the task's first write;
 - **artifact versions** - see [Artifact versions](#artifact-versions);
 - **a message into its running task** - `message_to_busy_task`, `"refuse"`
   for an extension: the server refuses it with `task_busy` before the
@@ -151,33 +155,49 @@ field as `int`, which pydantic (in its default, non-strict mode) fills from
 `3.0` and refuses for `1.5`, and a fractional one as `float`. Numbers are
 never sent as strings.
 
+### The conversation of a turn
+
+The request executor installs the history of every turn it runs on the
+turn's runtime context (`AionRuntimeContext.conversation`), for the
+framework executor and an extension's alike: `StoredConversations.for_turn`
+over the task store, `ContextRuns` and `ContextArtifacts`. An executor - or
+an agent's own code - reads it with `aion.core.agent.conversation`, whose
+functions take the current turn's history; outside a turn they raise
+`ConversationUnavailableError`. `conversation.history()` returns the history
+object itself, so an executor can hand its bound methods on, as the
+evolution wrapper hands `find_artifact` to its toolkit.
+
+Every read is of the turn's context, for the holder the caller was admitted
+as (`holder_of`): a private context's tasks are its user's, a shared
+context's are all its participants'. Each read first checks that this holder
+still holds the context (`ContextRuns.holds`), so a context being deleted,
+or one another holder presents under the same id, reads as empty. This is
+the holder, not the task owner. Every read is a query, not a cache, so any
+server of the agent answers from what the store holds.
+
+| Read | Answer |
+| --- | --- |
+| `current_task()`, `get_task(task_id)` | A task of the context as the store holds it, with its history and artifacts; None for any other task. |
+| `tasks(unfinished=False)` | The context's tasks, oldest first; with `unfinished`, those without an outcome. |
+| `generation()` | An opaque marker of this use of the context id: new when a deleted context's id is taken again. |
+| `find_artifact(id)`, `artifact_versions(id)` | The newest version of an artifact in the context, or all of them, newest task first, as `ArtifactVersion` (`task_id`, `artifact`, `version`, `updated_at`). |
+| `artifact_version_to_write(id)` | The number the turn's task writes an artifact under. |
+
 ### Artifact versions
 
 The same artifact id in several tasks of a context is one artifact in
 several versions, numbered from 0 in the artifact's `metadata["version"]` -
 the key and the decimal-string value the ADK adapter writes too, so a client,
 `GetContext` and a lookup read it alike for either kind of agent. An
-executor that versions its artifacts takes `services.artifacts(context)`, a
-`TurnArtifacts` of the turn's task:
-
-- `stamp(event)` writes the number into an artifact event before it is
-  yielded. On the first event of an artifact id it reads the context's
-  versions of that id from the store (`number`) and takes the next number;
-  chunks and replacements of the artifact in the same task, and the artifact
-  in a later turn of the task, keep the number it already has. The count is a
-  query, not a cache, so any server of the agent numbers from what the store
-  holds.
-- `find(id)` returns the newest version of the id in the task's context as a
-  `ContextArtifactVersion`: the A2A artifact as its task last wrote it, the
-  writing `task_id`, `version` and `updated_at`; None when there is none.
-- Both see only the tasks of the context holder the caller was admitted as
-  (`holder_of`): a private context's tasks are its user's, a shared
-  context's are all its participants'. A caller that does not hold the
-  context sees none, so it numbers from 0 and finds nothing. This is the
-  holder, not the task owner.
-- `ContextArtifacts` has an in-memory reader and a PostgreSQL one
-  (`TasksRepository.find_artifact_versions`, which filters by
-  `artifact_id`); without one, `services.artifacts` is None.
+executor that versions its artifacts calls
+`conversation.stamp_artifact_version(event)` before it yields an artifact
+event: on the first event of an artifact id it reads the context's versions
+of that id (`artifact_version_to_write`) and takes the next number; chunks
+and replacements of the artifact in the same turn, and the artifact in a
+later turn of the task, keep the number the task already has. A caller that
+does not hold the context sees no versions, so it numbers from 0.
+`ContextArtifacts` has an in-memory reader and a PostgreSQL one
+(`TasksRepository.find_artifact_versions`, which filters by `artifact_id`).
 
 Two tasks of one context that run at the same time can compute the same
 number; an extension that needs one run per context refuses a second one.
@@ -217,7 +237,7 @@ Its options (`EvolutionOptions`):
   model service's base URL, a token minted for every call and the caller's
   attribution header; the custom endpoint, with its key read at every call
   when it has one; nothing for `local_session` - and hands the toolkit the
-  context's generation (`services.context_generation`), the deployment's
+  context's generation (`conversation.generation()`), the deployment's
   secret values (`deployment_secret_values`), which it masks in what it
   reports, and the lookup of the context's `evolution-spec`. The toolkit
   yields the run's A2A events; the wrapper numbers the artifacts among them.
@@ -438,8 +458,9 @@ before it yields anything, crash after some outputs, look an artifact up in
 its context, or wait for `cancel()` - writing on a tick meanwhile, and then
 reporting the `within` it was given as `stopped_within` in its object and
 ending without an outcome, ending `COMPLETED`, or not ending at all. It
-numbers and looks up its artifacts with the server's services, as an
-extension's executor does. A script with `report` has a turn say what the
+numbers and looks up its artifacts with the turn's history
+(`aion.core.agent.conversation`), as an extension's executor does; a turn it
+runs without one, outside the request executor, neither numbers nor finds. A script with `report` has a turn say what the
 executor was handed: how the turn began, its task, the object the task held
 and every `cancel()` it was asked for - which is how a scenario, whose server
 is another process, reads the record.
@@ -452,13 +473,14 @@ the SDK's CI.
 
 | Suite | Where | What |
 | --- | --- | --- |
-| unit | `tests/unit/server/agent/test_turns.py` | the turn for every executor: outcome, refusal, crash, resume, cancel and its grace period, a turn torn down, a run without a consumer, the route, a message into a running task by the executor's `message_to_busy_task`, shutdown |
+| unit | `tests/unit/server/agent/test_turns.py` | the turn for every executor: outcome, refusal, crash, resume, cancel and its grace period, a turn torn down, a run without a consumer, the route, a message into a running task by the executor's `message_to_busy_task`, the conversation every turn reads, shutdown |
 | unit | `tests/unit/server/agent/test_request_executor.py`, `tests/unit/server/core/test_preprocessor_ordering.py` | the pool's routing in `execute` and `cancel`, the route of a new and a continued task |
 | unit | `tests/unit/server/agent/extensions/` | registration, creating the executors and the options of `aion.yaml`; artifact versions and their lookup; the evolution wrapper with the stand-in toolkit and without it |
+| unit | `tests/unit/server/tasks/test_conversation.py` | the conversation of a turn: its tasks, oldest first and unfinished, its generation, artifact versions, a caller that does not hold the context, a context being deleted, a read outside a turn |
 | unit | `tests/unit/server/test_server.py`, `tests/unit/server/test_shutdown.py` | the order of a shutdown, `AION_SHUTDOWN_TIMEOUT` and its division among the steps |
 | unit | `tests/unit/server/tasks/test_abandoned.py`, `tests/unit/server/core/test_request_handlers.py` | what is abandoned and what its settlement writes, a message into an abandoned task |
 | integration | `tests/integration/server/tasks/test_extension_admission_postgres.py` | a refusal closes its task `REJECTED`; a message into a running extension task refused on every server; a message into an extension's task on a server without the extension refused; an abandoned task settled by a message, the server still running it stopping at its next write |
-| integration | `tests/integration/server/tasks/test_context_artifacts_parity.py`, `test_context_runs_parity.py`, `test_abandoned_tasks_postgres.py` | artifact versions, the context's generation and unfinished task, the settlement - on the in-memory store and on PostgreSQL |
+| integration | `tests/integration/server/tasks/test_context_artifacts_parity.py`, `test_context_runs_parity.py`, `test_abandoned_tasks_postgres.py` | artifact versions, who holds a context, its generation and its tasks, the settlement - on the in-memory store and on PostgreSQL |
 | scenarios | `tests/scenarios/core/test_evolution.py` (`TAGS=evolution`) | evolution through a real `aion serve` with the stand-in toolkit: the standard path and the object in the task, numbered artifact versions, refusals as `REJECTED` tasks, a server without the toolkit that does not start, a cancel, the grace period, `context_busy` and `task_busy`, a directive beside the agent's waiting question, a waiting task continued |
 | scenarios | `tests/scenarios/persistence/test_evolution.py`, `tests/scenarios/distributed/test_evolution.py`, `tests/scenarios/distributed/test_abandoned_tasks.py` | the versions across a restart, a shutdown, a small shutdown budget; `context_busy`, `task_busy`, `extension_unavailable` and a remote cancel across servers; abandoned tasks |
 

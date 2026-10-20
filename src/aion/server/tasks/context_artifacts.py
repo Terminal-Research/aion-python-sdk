@@ -4,8 +4,8 @@ In A2A an artifact belongs to its task, and the same ``artifact_id`` in
 several tasks of a context is one artifact in several versions. The version
 number lives in the artifact's ``metadata["version"]``, the key the ADK
 adapter writes too, as a decimal string. This module reads the versions back
-from the task store: the number of the next version a task writes, and the
-latest version an executable extension looks up.
+from the task store for the history of a turn (``aion.core.agent.conversation``),
+which finds the latest one and the number a task writes the next one under.
 
 A context belongs to one holder (``aion.server.tasks.admission``), and the
 tasks in it are the holder's: a private context's are its user's, a shared
@@ -19,20 +19,18 @@ extension that needs one run per context refuses a second one itself.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
-from typing import Optional, Protocol
+from typing import Protocol
 
 from a2a.types import Artifact
 
 from aion.core.a2a.artifacts import ARTIFACT_VERSION_KEY
+from aion.core.runtime.context.conversation import ArtifactVersion
 from aion.db.postgres import DbManager
 from aion.db.postgres.repositories import ContextReservationsRepository, TasksRepository
 from aion.server.tasks.admission import ACTIVE, ContextHolder, InMemoryContextAdmission, holder_of_record
 from aion.server.tasks.stores.in_memory_task_store import InMemoryTaskStore
 
 __all__ = [
-    "ContextArtifactVersion",
     "ContextArtifacts",
     "InMemoryContextArtifacts",
     "PostgresContextArtifacts",
@@ -50,30 +48,12 @@ def artifact_version(artifact: Artifact) -> int:
     return 0
 
 
-@dataclass(frozen=True)
-class ContextArtifactVersion:
-    """One version of an artifact, as the task that wrote it holds it.
-
-    Attributes:
-        task_id: The task that wrote this version.
-        artifact: The artifact as that task last wrote it.
-        version: Its version number, read with :func:`artifact_version`.
-        updated_at: When the version was last written. The in-memory store
-            keeps no time per artifact, so there it is the task's.
-    """
-
-    task_id: str
-    artifact: Artifact
-    version: int
-    updated_at: Optional[datetime] = None
-
-
 class ContextArtifacts(Protocol):
     """Reads the versions of an artifact among the tasks of a context."""
 
     async def versions(
             self, context_id: str, artifact_id: str, holder: ContextHolder
-    ) -> list[ContextArtifactVersion]:
+    ) -> list[ArtifactVersion]:
         """Every version of ``artifact_id`` in the context, newest task first.
 
         Empty when ``holder`` does not hold the context, when nothing was
@@ -90,14 +70,14 @@ class InMemoryContextArtifacts:
 
     async def versions(
             self, context_id: str, artifact_id: str, holder: ContextHolder
-    ) -> list[ContextArtifactVersion]:
+    ) -> list[ArtifactVersion]:
         async with self._admission.lock:
             entry = self._admission.entries.get(context_id)
             if entry is None or entry.state != ACTIVE or entry.holder != holder:
                 return []
         tasks = await self._store.tasks_in_context(context_id)
         return [
-            ContextArtifactVersion(task.id, artifact, artifact_version(artifact), updated_at)
+            ArtifactVersion(task.id, artifact, artifact_version(artifact), updated_at)
             for task, updated_at in reversed(tasks)
             for artifact in task.artifacts
             if artifact.artifact_id == artifact_id
@@ -118,7 +98,7 @@ class PostgresContextArtifacts:
 
     async def versions(
             self, context_id: str, artifact_id: str, holder: ContextHolder
-    ) -> list[ContextArtifactVersion]:
+    ) -> list[ArtifactVersion]:
         async with self._db_manager.get_session() as session:
             held = await ContextReservationsRepository(session).held(self._agent_id, context_id)
             if held is None or held.state != ACTIVE or holder_of_record(held) != holder:
@@ -127,6 +107,6 @@ class PostgresContextArtifacts:
                 self._agent_id, context_id, artifact_id
             )
         return [
-            ContextArtifactVersion(str(row.task_id), row.artifact, artifact_version(row.artifact), row.updated_at)
+            ArtifactVersion(str(row.task_id), row.artifact, artifact_version(row.artifact), row.updated_at)
             for row in rows
         ]

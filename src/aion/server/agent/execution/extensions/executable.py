@@ -8,9 +8,10 @@ that activates the extension starts a task of its executor, and every later
 message and cancel of that task goes to the same executor.
 
 The executor is created once, when the server is built, with the options
-``aion.yaml`` gives the extension and the server's services
-(``ExtensionServices``). It checks its options and what it needs on this
-deployment itself: a constructor that raises stops the server. Everything
+``aion.yaml`` gives the extension. It checks its options and what it needs on
+this deployment itself: a constructor that raises stops the server. A turn
+reads its conversation - earlier tasks, artifact versions - with
+``aion.core.agent.conversation``, as the agent's framework does. Everything
 particular to the extension - who may call it, its payload, one task per
 context - is the executor's own: it refuses a request by raising
 ``aion.core.exceptions.ExtensionRejection`` before it yields anything, and
@@ -28,16 +29,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import Any, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
 from aion.core.exceptions import ConfigurationError
 from aion.core.runtime.context.extensions import ExtensionDescriptor
 from aion.server.agent.adapters import TaskExecutor
-
-if TYPE_CHECKING:
-    from .services import ExtensionServices
 
 __all__ = [
     "ExecutableExtensionDescriptor",
@@ -56,7 +54,6 @@ class ExtensionExecutor(TaskExecutor):
             (``enabled_extensions: [{<uri>: {...}}]``), as written; empty for
             a bare URI. The executor validates them itself
             (:func:`parse_options`).
-        services: The server's services an executor reads a context with.
 
     Raises:
         ConfigurationError: The options are not valid, or the extension
@@ -65,8 +62,8 @@ class ExtensionExecutor(TaskExecutor):
 
     message_to_busy_task = "refuse"
 
-    def __init__(self, options: Mapping[str, Any], services: "ExtensionServices") -> None:
-        self.services = services
+    def __init__(self, options: Mapping[str, Any]) -> None:
+        """Create the executor from the extension's options; see the class."""
 
 
 def parse_options(model: type[OptionsModel], uri: str, given: Mapping[str, Any]) -> OptionsModel:

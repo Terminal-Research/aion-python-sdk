@@ -1,21 +1,20 @@
-"""What the server reads about a context before it runs an executable extension's task in it.
+"""What the server reads about a context for the history of a turn (``aion.core.agent.conversation``).
 
-Two facts, read from the store on every call, so any server of the agent
+Three facts, read from the store on every call, so any server of the agent
 answers from what the database holds:
 
-* **the generation of the context's id** - the time the id was reserved
-  (``aion.server.tasks.admission``). A context that is deleted and taken again
-  under the same id is reserved afresh, so its generation is new; an
-  executor that keeps state outside the server under the context's id (a
-  branch, a file) tells the current holder of the id from an earlier one by
-  it. The value is opaque: an executor compares it, never parses it.
-* **the unfinished task of one extension** - the oldest task of the context
-  routed to an executable extension (``task.metadata["aion:routedExtension"]``)
-  that has no outcome yet, whoever owns it. An executor that runs one task per
-  context refuses a second one with it.
-
-Who may use the context is decided before either is read (context
-admission), so neither checks the caller.
+* **who holds the context** - the holder its reservation names, while the
+  context is active (``aion.server.tasks.admission``); a context being
+  deleted is held by nobody. The history of a turn reads a context only for
+  its holder.
+* **the generation of the context's id** - the time the id was reserved. A
+  context that is deleted and taken again under the same id is reserved
+  afresh, so its generation is new; state kept outside the server under the
+  context's id (a branch, a file) tells the current holder of the id from an
+  earlier one by it. The value is opaque: compare it, never parse it.
+* **the tasks of the context** - every owner's, oldest first, optionally only
+  those without an outcome yet: the participants of a shared context share
+  its history.
 """
 
 from __future__ import annotations
@@ -25,12 +24,10 @@ from typing import Optional, Protocol
 
 from a2a.types import TaskState
 
-from aion.core.a2a.enums import A2AMetadataKey
 from aion.db.postgres import DbManager
 from aion.db.postgres.repositories import ContextReservationsRepository, TasksRepository
 from aion.server.a2a.constants import TERMINAL_TASK_STATES
-from aion.server.a2a.utils import routed_extension_of
-from aion.server.tasks.admission import ACTIVE, InMemoryContextAdmission
+from aion.server.tasks.admission import ACTIVE, ContextHolder, InMemoryContextAdmission, holder_of_record
 from aion.server.tasks.stores.in_memory_task_store import InMemoryTaskStore
 
 __all__ = [
@@ -47,13 +44,16 @@ def generation_of(reserved_at: datetime) -> str:
 
 
 class ContextRuns(Protocol):
-    """Reads the generation of a context and its unfinished tasks of one extension."""
+    """Reads who holds a context, its generation and its tasks."""
+
+    async def holds(self, context_id: str, holder: ContextHolder) -> bool:
+        """Whether ``holder`` holds the context, and the context is active."""
 
     async def generation(self, context_id: str) -> Optional[str]:
         """The generation of the context's id; None when the context is not reserved and active."""
 
-    async def unfinished_task(self, context_id: str, routed_extension: str) -> Optional[str]:
-        """The id of the oldest task of the context routed to ``routed_extension`` without an outcome, or None."""
+    async def task_ids(self, context_id: str, *, unfinished: bool = False) -> list[str]:
+        """The ids of every owner's tasks of the context, oldest first; with ``unfinished``, only those without an outcome."""
 
 
 class InMemoryContextRuns:
@@ -63,6 +63,11 @@ class InMemoryContextRuns:
         self._store = task_store
         self._admission = admission
 
+    async def holds(self, context_id: str, holder: ContextHolder) -> bool:
+        async with self._admission.lock:
+            entry = self._admission.entries.get(context_id)
+            return entry is not None and entry.state == ACTIVE and entry.holder == holder
+
     async def generation(self, context_id: str) -> Optional[str]:
         async with self._admission.lock:
             entry = self._admission.entries.get(context_id)
@@ -70,17 +75,13 @@ class InMemoryContextRuns:
                 return None
             return generation_of(entry.created_at)
 
-    async def unfinished_task(self, context_id: str, routed_extension: str) -> Optional[str]:
+    async def task_ids(self, context_id: str, *, unfinished: bool = False) -> list[str]:
         tasks = await self._store.tasks_in_context(context_id)
-        return next(
-            (
-                task.id
-                for task, _updated_at in tasks
-                if task.status.state not in TERMINAL_TASK_STATES
-                and routed_extension_of(task) == routed_extension
-            ),
-            None,
-        )
+        return [
+            task.id
+            for task, _updated_at in tasks
+            if not (unfinished and task.status.state in TERMINAL_TASK_STATES)
+        ]
 
 
 class PostgresContextRuns:
@@ -101,13 +102,14 @@ class PostgresContextRuns:
             return None
         return generation_of(held.created_at)
 
-    async def unfinished_task(self, context_id: str, routed_extension: str) -> Optional[str]:
+    async def holds(self, context_id: str, holder: ContextHolder) -> bool:
         async with self._db_manager.get_session() as session:
-            task_id = await TasksRepository(session).find_oldest_tagged_id(
-                self._agent_id,
-                context_id,
-                A2AMetadataKey.ROUTED_EXTENSION.value,
-                routed_extension,
-                excluded_states=[TaskState.Name(state) for state in TERMINAL_TASK_STATES],
+            held = await ContextReservationsRepository(session).held(self._agent_id, context_id)
+        return held is not None and held.state == ACTIVE and holder_of_record(held) == holder
+
+    async def task_ids(self, context_id: str, *, unfinished: bool = False) -> list[str]:
+        excluded = [TaskState.Name(state) for state in TERMINAL_TASK_STATES] if unfinished else []
+        async with self._db_manager.get_session() as session:
+            return await TasksRepository(session).find_context_task_ids(
+                self._agent_id, context_id, excluded_states=excluded
             )
-        return str(task_id) if task_id is not None else None

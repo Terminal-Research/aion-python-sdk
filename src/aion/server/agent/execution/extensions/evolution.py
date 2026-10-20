@@ -21,10 +21,14 @@ logic, only what connects the toolkit to the server:
   Aion model service on the caller's behalf, a fresh token for every call; a
   custom endpoint with its key, when it has one; none for the operator's own
   Codex login), the context's generation, the deployment's secret values,
-  which the toolkit masks in what it reports, and the context's
-  ``evolution-spec`` artifact, the plan a run may start from;
+  which the toolkit masks in what it reports, and the lookup of the
+  context's ``evolution-spec`` artifact, the plan a run may start from;
 * the version number of every artifact the run writes in the context
   (``metadata["version"]``).
+
+What the wrapper reads of the context - its generation, its unfinished
+evolution task, its artifact versions - comes from the turn's history
+(``aion.core.agent.conversation``), which the server installs for every turn.
 
 The toolkit is imported lazily: a server that does not enable the extension
 never imports it. The toolkit yields the A2A events of a run itself; the
@@ -55,17 +59,19 @@ from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from pydantic import BaseModel, ConfigDict, Field
 
 from aion.core.a2a import codes
+from aion.core.agent import conversation
 from aion.core.constants.a2a import BEHAVIOR_EVOLUTION_EXTENSION_URI_V1, DAEMON_EXTENSION_URI_V1
 from aion.core.exceptions import ConfigurationError, ExtensionRejection
 from aion.core.runtime.context.extensions import ExtensionActivationError, MessagesCollector
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.core.settings import api_settings
+from aion.server.a2a.utils import routed_extension_of
 from aion.server.agent.adapters import ExecutionConfig
 from aion.server.auth import AuthenticatedCaller, CredentialKind, verified_caller
 
 from .executable import ExecutableExtensionDescriptor, ExtensionExecutor, parse_options
 from .secret_values import deployment_secret_values
-from .services import ExtensionServices, model_service_access
+from .model_service import model_service_access
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
@@ -155,8 +161,8 @@ class EvolutionExecutor(ExtensionExecutor):
             cannot run here.
     """
 
-    def __init__(self, options: Mapping[str, Any], services: ExtensionServices) -> None:
-        super().__init__(options, services)
+    def __init__(self, options: Mapping[str, Any]) -> None:
+        super().__init__(options)
         self.options = parse_options(EvolutionOptions, URI, options)
         try:
             toolkit = _toolkit_module()
@@ -184,21 +190,21 @@ class EvolutionExecutor(ExtensionExecutor):
             ExtensionRejection: The request is refused before the run starts
                 (see the module's docstring).
         """
-        request, model = await self._admit(context, config)
+        history = conversation.history()
+        request, model = await self._admit(context, config, history)
         toolkit = _toolkit_module()
-        artifacts = self.services.artifacts(context)
         run = toolkit.EvolutionRun(
             task_id=config.task_id,
             context_id=config.context_id,
             turn_id=context.message.message_id,
-            context_generation=await self.services.context_generation(config.context_id),
+            context_generation=await history.generation(),
             model=model,
             secret_values=tuple(deployment_secret_values()),
-            **({"find_artifact": artifacts.find} if artifacts is not None else {}),
+            find_artifact=history.find_artifact,
         )
         async for event in self._toolkit.start(request, run):
-            if artifacts is not None and isinstance(event, TaskArtifactUpdateEvent):
-                await artifacts.stamp(event)
+            if isinstance(event, TaskArtifactUpdateEvent):
+                await history.stamp_artifact_version(event)
             yield event
 
     async def resume(
@@ -218,7 +224,9 @@ class EvolutionExecutor(ExtensionExecutor):
 
     # -- internals ------------------------------------------------------------
 
-    async def _admit(self, context: "RequestContext", config: ExecutionConfig) -> tuple[Any, Any]:
+    async def _admit(
+            self, context: "RequestContext", config: ExecutionConfig, history: conversation.ConversationHistory
+    ) -> tuple[Any, Any]:
         """The toolkit's request and the run's model access; refuses what may not run.
 
         The caller comes first, so a caller the options do not allow learns
@@ -244,8 +252,15 @@ class EvolutionExecutor(ExtensionExecutor):
         model = await self._model_endpoint()
         request = self._evolution_request(context)
         await self._toolkit.preflight(request)
-        blocking = await self.services.unfinished_task(config.context_id, URI)
-        if blocking is not None and blocking != config.task_id:
+        blocking = next(
+            (
+                task.id
+                for task in await history.tasks(unfinished=True)
+                if routed_extension_of(task) == URI and task.id != config.task_id
+            ),
+            None,
+        )
+        if blocking is not None:
             raise ExtensionRejection(
                 codes.CONTEXT_BUSY,
                 (

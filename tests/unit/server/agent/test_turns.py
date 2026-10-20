@@ -14,6 +14,7 @@ from a2a.utils.errors import InvalidParamsError
 from google.protobuf.json_format import MessageToDict
 
 from aion.core.a2a import codes
+from aion.core.agent import conversation
 from aion.core.exceptions import ExtensionRejection
 from aion.core.runtime.context.extensions import AionRuntimeExtensions
 from aion.server.agent.adapters import ExecutionConfig
@@ -28,6 +29,7 @@ from tests.support.scripted_executor.contract import URI
 from tests.support.scripted_executor.executor import ScriptedExecutor
 from tests.support.scripted_executor.script import COMPLETED, Refusal, Script
 from tests.unit.support.events import RecordingQueue
+from tests.support.conversation import InMemoryConversations
 from tests.support.executors import FakeFrameworkExecutor, request_executor
 
 TASK_ID = "task-1"
@@ -101,7 +103,8 @@ def new_request(route: Optional[str] = URI, message: Optional[Message] = None) -
 
 
 def continuing(task: Task, message: Optional[Message] = None) -> RequestContext:
-    """A request into the stored ``task``."""
+    """A request into the stored ``task``, in an execution scope of its own, as the middleware sets up."""
+    init_execution_scope()
     return RequestContext(
         call_context=ServerCallContext(),
         request=SendMessageRequest(message=message or user_message()),
@@ -232,6 +235,47 @@ async def test_the_execution_an_executor_gets() -> None:
     assert (kind, handed) == ("start", context)
     assert (config.task_id, config.context_id) == (TASK_ID, CONTEXT_ID)
     assert config.state_scope.agent_id == "agent"
+
+
+@pytest.mark.parametrize("route", [None, URI], ids=["framework", "extension"])
+async def test_every_turn_reads_the_conversation_of_its_task(route) -> None:
+    seen = []
+
+    async def read(_context):
+        history = conversation.history()
+        seen.append((history.context_id, history.task_id))
+        return
+        yield  # pragma: no cover - makes this a generator
+
+    class Reading(ScriptedExecutor):
+        def stream(self, context, config):
+            return read(context)
+
+    requests = request_executor(
+        FakeFrameworkExecutor(stream=read),
+        extensions={URI: Reading()},
+        conversations=InMemoryConversations().conversations,
+    )
+
+    await requests.execute(new_request(route=route), RecordingQueue())
+
+    assert seen == [(CONTEXT_ID, TASK_ID)]
+
+
+async def test_a_turn_of_a_server_without_conversations_reads_none() -> None:
+    unavailable = []
+
+    async def read(_context):
+        try:
+            conversation.history()
+        except conversation.ConversationUnavailableError:
+            unavailable.append(True)
+        return
+        yield  # pragma: no cover - makes this a generator
+
+    await request_executor(FakeFrameworkExecutor(stream=read)).execute(new_request(route=None), RecordingQueue())
+
+    assert unavailable == [True]
 
 
 async def test_a_task_without_a_route_runs_on_the_framework_executor() -> None:

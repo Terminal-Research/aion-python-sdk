@@ -14,7 +14,7 @@ All other Aion subpackages depend on this one; it has no internal Aion dependenc
 |---|---|
 | `aion.core.exceptions` | `AionError`, the root every SDK exception descends from, and the public ones: `MissingOptionalDependency`, `ConfigurationError`, `AionAuthenticationError`, `AionModelPrincipalError` |
 | `aion.core.a2a` | A2A protocol models, enums, request/response types, extension payloads |
-| `aion.core.agent` | `BaseThread`, `BaseMessage`, `User` — the base invocation abstractions (`card`, `message`, `thread`) frameworks build on |
+| `aion.core.agent` | `BaseThread`, `BaseMessage`, `User` — the base invocation abstractions (`card`, `message`, `thread`) frameworks build on; `conversation` — the history of the conversation the current turn belongs to |
 | `aion.core.constants` | Shared A2A extension URI constants |
 | `aion.core.runtime` | `AionRuntimeContext` — invocation-scoped context carrier |
 | `aion.core.a2a.codes`, `aion.core.a2a.errors` | The error codes the server reserves for executable extensions, and the A2A shape of an extension's error (`{uri}#ExtensionError`) |
@@ -26,6 +26,25 @@ All other Aion subpackages depend on this one; it has no internal Aion dependenc
 | `aion.core.http` | `HealthResponse` — the standard response models HTTP endpoints answer with |
 | `aion.core.metaclasses` | `Singleton`, `SingletonABCMeta` |
 | `aion.core.utils` | Pydantic, text, and URL helpers, plus `missing_extra_error`, which names the extra a missing library belongs to and raises `aion.core.exceptions.MissingOptionalDependency` |
+
+## Conversation history
+
+`aion.core.agent.conversation` reads what the conversation of the current turn
+already holds - its tasks, the generation of its id, the versions of an
+artifact - the way `emit_*` write a turn's output. The server installs the
+history of every turn on the turn's runtime context, for the agent's framework
+and an executable extension alike, so the functions need no arguments for the
+context; outside a turn they raise `ConversationUnavailableError`.
+
+```python
+from aion.core.agent import conversation
+
+spec = await conversation.find_artifact("evolution-spec")
+waiting = await conversation.tasks(unfinished=True)
+```
+
+A turn reads the context of its task as the context's holder: every
+participant's tasks of a shared conversation, nothing of another context.
 
 ## Caller IDs
 

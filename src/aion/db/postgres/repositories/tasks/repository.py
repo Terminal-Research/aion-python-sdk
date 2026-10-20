@@ -587,36 +587,30 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
         )
         return bool(acquired)
 
-    async def find_oldest_tagged_id(
+    async def find_context_task_ids(
             self,
             agent_id: str,
             context_id: str,
-            metadata_key: str,
-            metadata_value: str,
             excluded_states: Iterable[str] = (),
-    ) -> Optional[uuid.UUID]:
-        """The id of the oldest task of a context whose ``metadata[metadata_key]`` is ``metadata_value``.
+    ) -> List[str]:
+        """The ids of every owner's tasks of a context, oldest first.
 
-        Every owner's tasks are searched: who may use the context is decided
+        Every owner's tasks are listed: who may read the context is decided
         before the search is made (context admission).
 
         Args:
             agent_id: Restrict to this agent's tasks.
-            context_id: The context to search.
-            metadata_key: A top-level key of the task's metadata, read as text.
-            metadata_value: The value it must hold.
-            excluded_states: States, by their protobuf name, a matching task
+            context_id: The context to list.
+            excluded_states: States, by their protobuf name, a listed task
                 must not be in.
 
         Returns:
-            The id of the oldest matching task by ``created_at``, or None.
+            The task ids as strings, by ``created_at``.
         """
-        stmt = select(self.model_class.id).where(
-            self.model_class.task_metadata[metadata_key].astext == metadata_value
-        )
+        stmt = select(self.model_class.id)
         excluded = list(excluded_states)
         if excluded:
             stmt = stmt.where(self.model_class.state.not_in(excluded))
         stmt = self._apply_filter(stmt, agent_id=agent_id, context_id=context_id)
-        stmt = stmt.order_by(asc(self.model_class.created_at), asc(self.model_class.id)).limit(1)
-        return (await self._session.execute(stmt)).scalar_one_or_none()
+        stmt = stmt.order_by(asc(self.model_class.created_at), asc(self.model_class.id))
+        return [str(task_id) for task_id in (await self._session.execute(stmt)).scalars().all()]

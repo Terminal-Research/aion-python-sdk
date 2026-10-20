@@ -1,8 +1,8 @@
 """The versions of an executor's artifacts in a context: numbering at write, and finding the latest.
 
 Each test drives the scripted executor, which numbers and looks up its
-artifacts with the server's services (``ExtensionServices.artifacts``), over
-the in-memory store and context reservations, the way the server wires it: a
+artifacts with the turn's history (``aion.core.agent.conversation``), over the
+in-memory store and context reservations, the way the server wires it: a
 task's events are applied to the task and saved, so the next task of the
 context counts them.
 """
@@ -11,10 +11,10 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from a2a.auth.user import User
 from a2a.server.agent_execution import RequestContext
 from a2a.server.context import ServerCallContext
-from a2a.server.owner_resolver import resolve_user_scope
 from a2a.server.tasks.task_manager import append_artifact_to_task
 from a2a.types import (
     Message as A2AMessage,
@@ -27,15 +27,16 @@ from a2a.types import (
     TaskStatus,
 )
 
+from aion.core.agent import conversation
 from aion.server.agent.adapters import ExecutionConfig
-from aion.server.agent.execution.extensions import ExtensionServices
-from aion.server.tasks.admission import ContextHolder, InMemoryContextAdmission
-from aion.server.tasks.context_artifacts import InMemoryContextArtifacts
-from aion.server.tasks.contexts import InMemoryContextCatalog
-from aion.server.tasks.stores.in_memory_task_store import InMemoryTaskStore
+from aion.server.tasks.admission import ContextHolder
+from aion.server.tasks.conversation import StoredConversations
 
+from tests.support.conversation import InMemoryConversations, install
 from tests.support.scripted_executor.executor import ScriptedExecutor
 from tests.support.scripted_executor.script import COMPLETED, Script
+
+pytestmark = pytest.mark.usefixtures("runtime_provider")
 
 CONTEXT_ID = "ctx-1"
 SPEC = "evolution-spec"
@@ -71,22 +72,21 @@ class Context:
     """One in-memory context's store and reservations, and the tasks that wrote into it."""
 
     def __init__(self) -> None:
-        self.store = InMemoryTaskStore(resolve_user_scope)
-        self.admission = InMemoryContextAdmission()
-        InMemoryContextCatalog(self.store, self.admission)
-        self.ledger = InMemoryContextArtifacts(self.store, self.admission)
-        self.executor = ScriptedExecutor(
-            services=ExtensionServices(context_artifacts=self.ledger, owner_resolver=resolve_user_scope)
-        )
+        self.memory = InMemoryConversations()
+        self.store = self.memory.store
+        self.ledger = self.memory.artifacts
+        self.executor = ScriptedExecutor()
 
     async def write(
             self, task_id: str, *outputs: Any, user: str = "alice", context_id: str = CONTEXT_ID
     ) -> list[Any]:
         """Run the first turn of a new task and save what it wrote, as the pipeline does."""
-        await self.admission.admit(context_id, ContextHolder.private(user), user)
+        await self.memory.hold(context_id, user)
         self.executor.script = Script(outputs=list(outputs))
         current = Task(id=task_id, context_id=context_id, status=TaskStatus(state=TaskState.TASK_STATE_WORKING))
-        events = [event async for event in self.executor.stream(self._request(current, user), _config(current))]
+        request = self._request(current, user)
+        install(self.memory.for_turn(request.call_context, current))
+        events = [event async for event in self.executor.stream(request, _config(current))]
         await self._save(current, events, user)
         return events
 
@@ -94,7 +94,9 @@ class Context:
         """Run a later turn of an existing task and save what it wrote."""
         self.executor.script = Script(outputs=list(outputs))
         current = await self.store.get(task_id, _caller(user))
-        events = [event async for event in self.executor.resume(self._request(current, user), _config(current))]
+        request = self._request(current, user)
+        install(self.memory.for_turn(request.call_context, current))
+        events = [event async for event in self.executor.resume(request, _config(current))]
         await self._save(current, events, user)
         return events
 
@@ -116,8 +118,7 @@ class Context:
     async def found(self, task_id: str = "reader", user: str = "alice", artifact_id: str = SPEC):
         """What the lookup answers in a turn of a task read by `user`."""
         await self.write(task_id, COMPLETED, user=user)
-        _, context, _ = self.executor.turns[-1]
-        return await self.executor.services.artifacts(context).find(artifact_id)
+        return await conversation.find_artifact(artifact_id)
 
 
 def _config(task: Task) -> ExecutionConfig:
@@ -196,22 +197,11 @@ async def test_a_caller_that_does_not_hold_the_context_numbers_from_zero() -> No
     assert versions_of(events) == ["0"]
 
 
-async def test_an_executor_without_context_storage_does_not_number() -> None:
-    executor = ScriptedExecutor(script=Script(outputs=[spec(), COMPLETED]))
-    current = Task(id="t1", context_id=CONTEXT_ID, status=TaskStatus(state=TaskState.TASK_STATE_WORKING))
-    request = RequestContext(
-        call_context=ServerCallContext(),
-        request=SendMessageRequest(message=_message()),
-        task_id="t1",
-        context_id=CONTEXT_ID,
-        task=current,
-    )
-
-    events = [event async for event in executor.stream(request, _config(current))]
-
-    [artifact_event] = [event for event in events if isinstance(event, TaskArtifactUpdateEvent)]
-    assert "version" not in artifact_event.artifact.metadata
-    assert executor.services.artifacts(request) is None
+async def test_outside_a_turn_there_is_no_conversation_to_number_or_find_in() -> None:
+    with pytest.raises(conversation.ConversationUnavailableError):
+        await conversation.artifact_version_to_write(SPEC)
+    with pytest.raises(conversation.ConversationUnavailableError):
+        await conversation.find_artifact(SPEC)
 
 
 # -- finding the latest version --------------------------------------------------------
@@ -251,6 +241,12 @@ async def test_the_lookup_sees_only_the_context_its_caller_holds() -> None:
 async def test_a_caller_without_a_holder_finds_nothing() -> None:
     context = Context()
     await context.write("t1", spec(), COMPLETED)
-    context.executor.services = ExtensionServices(context_artifacts=context.ledger, owner_resolver=lambda _: "")
+    nobody = StoredConversations(
+        task_store=context.store,
+        context_runs=context.memory.runs,
+        context_artifacts=context.ledger,
+        owner_resolver=lambda _: "",
+    )
+    install(nobody.for_turn(_caller("alice"), Task(id="reader", context_id=CONTEXT_ID)))
 
-    assert await context.found() is None
+    assert await conversation.find_artifact(SPEC) is None

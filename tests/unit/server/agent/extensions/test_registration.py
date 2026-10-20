@@ -14,7 +14,6 @@ from aion.core.exceptions import ConfigurationError
 from aion.core.runtime.context.extensions import ExtensionDescriptor
 from aion.server.agent.execution.extensions import (
     EXECUTABLE_EXTENSIONS,
-    ExtensionServices,
     create_extension_executors,
     parse_options,
     register_extensions,
@@ -33,8 +32,8 @@ class Options(BaseModel):
 
 
 class WithOptions(ScriptedExecutor):
-    def __init__(self, options=None, services=None, **kwargs) -> None:
-        super().__init__(None, services, **kwargs)
+    def __init__(self, options=None, **kwargs) -> None:
+        super().__init__(None, **kwargs)
         self.options = parse_options(Options, URI, options or {})
 
 
@@ -43,7 +42,7 @@ class Unavailable(ScriptedExecutor):
 
 
 class ConstructorRaises(ScriptedExecutor):
-    def __init__(self, options=None, services=None, **kwargs):
+    def __init__(self, options=None, **kwargs):
         raise RuntimeError("cannot start")
 
 
@@ -118,20 +117,17 @@ def test_a_protocol_extension_listed_with_an_empty_block_is_enabled(isolated_reg
 # -- creating the executors ------------------------------------------------------------------
 
 
-def test_every_enabled_extension_gets_its_executor_with_the_services(isolated_registry) -> None:
-    services = ExtensionServices()
-
-    executors = create_extension_executors(register(config(URI), registry=isolated_registry), services)
+def test_every_enabled_extension_gets_its_executor(isolated_registry) -> None:
+    executors = create_extension_executors(register(config(URI), registry=isolated_registry))
 
     assert list(executors) == [URI]
     assert isinstance(executors[URI], ScriptedExecutor)
-    assert executors[URI].services is services
 
 
 def test_the_options_reach_the_executor_validated(isolated_registry) -> None:
     enabled = register(config({URI: {"mode": "slow", "limit": "5"}}), descriptor(WithOptions), registry=isolated_registry)
 
-    executors = create_extension_executors(enabled, ExtensionServices())
+    executors = create_extension_executors(enabled)
 
     assert executors[URI].options == Options(mode="slow", limit=5)
 
@@ -148,7 +144,7 @@ def test_options_the_executor_refuses_stop_the_startup(isolated_registry, option
     enabled = register(config({URI: options}), descriptor(WithOptions), registry=isolated_registry)
 
     with pytest.raises(ConfigurationError) as error:
-        create_extension_executors(enabled, ExtensionServices())
+        create_extension_executors(enabled)
 
     assert URI in str(error.value)
     assert named in str(error.value)
@@ -158,7 +154,7 @@ def test_options_given_to_an_executor_that_takes_none_stop_the_startup(isolated_
     enabled = register(config({URI: {"mode": "slow"}}), registry=isolated_registry)
 
     with pytest.raises(ConfigurationError, match="does not take: mode"):
-        create_extension_executors(enabled, ExtensionServices())
+        create_extension_executors(enabled)
 
 
 @pytest.mark.parametrize(
@@ -173,7 +169,7 @@ def test_an_extension_that_cannot_work_here_stops_the_startup_with_the_reason(is
     enabled = register(config(URI), descriptor(executor), registry=isolated_registry)
 
     with pytest.raises(ConfigurationError) as error:
-        create_extension_executors(enabled, ExtensionServices())
+        create_extension_executors(enabled)
 
     assert URI in str(error.value)
     assert reason in str(error.value)

@@ -1,9 +1,9 @@
 """An executor's artifacts numbered and found by context, held alike by the in-memory and PostgreSQL backends.
 
-Each test runs the scripted executor, with the server's services
-(``ExtensionServices``) over a real task store, context reservations and
-artifact reader of one kind, and saves the events a turn yields as the
-server's pipeline does:
+Each test runs the scripted executor, with the turn's history
+(``aion.core.agent.conversation``) over a real task store, context
+reservations and artifact reader of one kind, and saves the events a turn
+yields as the server's pipeline does:
 
 * the tasks of a context write one artifact id as versions 0, 1, 2, and the
   lookup answers the latest;
@@ -15,7 +15,6 @@ server's pipeline does:
 from __future__ import annotations
 
 import uuid
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -41,8 +40,9 @@ from .postgres_support import POSTGRES_TEST_URL, prepared_database, stores as po
 
 from aion.core.principal import Principal
 from aion.db.postgres.manager import db_manager
+from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.agent.adapters import ExecutionConfig
-from aion.server.agent.execution.extensions import ExtensionServices
+from aion.server.agent.execution.context.providers import RequestScopeRuntimeContextProvider
 from aion.server.auth import (
     Assurance,
     AuthenticatedCaller,
@@ -52,9 +52,12 @@ from aion.server.auth import (
 )
 from aion.server.tasks.admission import ContextHolder, InMemoryContextAdmission, PostgresContextAdmission
 from aion.server.tasks.context_artifacts import InMemoryContextArtifacts, PostgresContextArtifacts
+from aion.server.tasks.context_runs import InMemoryContextRuns, PostgresContextRuns
 from aion.server.tasks.contexts import InMemoryContextCatalog
+from aion.server.tasks.conversation import StoredConversations
 from aion.server.tasks.stores.in_memory_task_store import InMemoryTaskStore
 
+from tests.support.conversation import install
 from tests.support.scripted_executor.executor import ScriptedExecutor
 from tests.support.scripted_executor.script import COMPLETED, Script
 
@@ -105,8 +108,18 @@ async def _database():
         yield manager
 
 
+@pytest.fixture(autouse=True)
+def _runtime_provider():
+    provider = RequestScopeRuntimeContextProvider()
+    AionRuntimeContextRegistry.set_provider(provider)
+    provider.set_current_context(None)
+    yield
+    provider.set_current_context(None)
+    AionRuntimeContextRegistry.clear_provider()
+
+
 class _Backend:
-    """One backend's store, admission and artifact reader, and an extension's executor over them."""
+    """One backend's store, admission and readers, the history of a turn over them, and an extension's executor."""
 
     def __init__(self, kind: str) -> None:
         self.kind = kind
@@ -116,19 +129,22 @@ class _Backend:
             self.admission = InMemoryContextAdmission()
             InMemoryContextCatalog(self.store, self.admission)
             self.ledger = InMemoryContextArtifacts(self.store, self.admission)
+            runs = InMemoryContextRuns(self.store, self.admission)
         else:
             agent_id = f"agent-{uuid.uuid4()}"
             self.store, self.versioned = postgres_stores(agent_id)
             self.admission = PostgresContextAdmission(agent_id, db_manager)
             self.ledger = PostgresContextArtifacts(agent_id, db_manager)
-        self.executor = ScriptedExecutor(
-            services=ExtensionServices(context_artifacts=self.ledger, owner_resolver=resolve_user_scope)
+            runs = PostgresContextRuns(agent_id, db_manager)
+        self.conversations = StoredConversations(
+            task_store=self.store, context_runs=runs, context_artifacts=self.ledger, owner_resolver=resolve_user_scope
         )
+        self.executor = ScriptedExecutor()
 
     async def write(
             self, context_id: str, name: str, *outputs: Any, holder: ContextHolder | None = None
     ) -> tuple[Task, Any]:
-        """Run a new task of ``name`` in the context, save it, and return it with the lookup its turn had."""
+        """Run a new task of ``name`` in the context, save it, and return it with the history its turn had."""
         shared = holder is not None and holder.kind == "shared"
         await self.admission.admit(context_id, holder or ContextHolder.private(name), name)
         self.executor.script = Script(outputs=list(outputs) or [COMPLETED])
@@ -144,6 +160,8 @@ class _Backend:
             task=task,
         )
         config = ExecutionConfig(task_id=task.id, context_id=context_id)
+        history = self.conversations.for_turn(request.call_context, task)
+        install(history)
         events = [event async for event in self.executor.stream(request, config)]
         for event in events:
             if isinstance(event, TaskArtifactUpdateEvent):
@@ -152,7 +170,7 @@ class _Backend:
         await self.versioned.save(
             task, event=task, prev=None, prev_version=TaskVersion.MISSING, context=_caller(name, shared=shared)
         )
-        return task, SimpleNamespace(find_artifact=self.executor.services.artifacts(request).find)
+        return task, history
 
     async def spec(self, context_id: str, name: str, text: str, **kwargs) -> Task:
         task, _ = await self.write(context_id, name, _spec(text), COMPLETED, **kwargs)

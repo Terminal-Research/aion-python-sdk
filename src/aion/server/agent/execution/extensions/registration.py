@@ -8,11 +8,11 @@ Two steps of building the application (``AppFactory``):
    activates every URI ``enabled_extensions`` lists. Options given to a URI
    that is not an executable extension of this server are a configuration
    error;
-2. ``create_extension_executors``, once the server's services exist: each
-   enabled executable extension's executor is created with its options and
-   the services. An executor that cannot be created - options it refuses,
-   something it needs missing on this deployment - is a configuration error,
-   and the server does not start.
+2. ``create_extension_executors``, when the application is built: each
+   enabled executable extension's executor is created with its options. An
+   executor that cannot be created - options it refuses, something it needs
+   missing on this deployment - is a configuration error, and the server does
+   not start.
 """
 
 from __future__ import annotations
@@ -31,7 +31,6 @@ from aion.core.runtime.context.extensions import (
 
 from .evolution import EVOLUTION_EXTENSION
 from .executable import ExecutableExtensionDescriptor, ExtensionExecutor
-from .services import ExtensionServices
 
 __all__ = [
     "EXECUTABLE_EXTENSIONS",
@@ -106,14 +105,11 @@ def register_extensions(
     return enabled_executables
 
 
-def create_extension_executors(
-        enabled: Iterable[EnabledExtension], services: ExtensionServices
-) -> dict[str, ExtensionExecutor]:
+def create_extension_executors(enabled: Iterable[EnabledExtension]) -> dict[str, ExtensionExecutor]:
     """Create the executor of every enabled executable extension.
 
     Args:
         enabled: What ``register_extensions`` returned.
-        services: The server's services, handed to every executor.
 
     Returns:
         The executors by URI, in ``enabled`` order.
@@ -126,7 +122,7 @@ def create_extension_executors(
     for extension in enabled:
         uri = extension.descriptor.uri
         try:
-            executors[uri] = extension.descriptor.executor(extension.options, services)
+            executors[uri] = extension.descriptor.executor(extension.options)
         except ConfigurationError:
             raise
         except Exception as error:

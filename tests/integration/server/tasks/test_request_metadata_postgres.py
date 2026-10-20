@@ -49,7 +49,7 @@ from aion.core.runtime import aion_a2a_extension_registry
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.agent.adapters import AgentFrameworkExecutor
 from aion.server.agent.execution import AionAgentRequestExecutor
-from aion.server.agent.execution.extensions import ExtensionExecutor, ExtensionServices
+from aion.server.agent.execution.extensions import ExtensionExecutor
 from aion.server.agent.execution.context.providers import RequestScopeRuntimeContextProvider
 from aion.server.agent.execution.request_context_builder import AionRequestContextBuilder
 from aion.server.agent.execution.scope import init_execution_scope
@@ -134,7 +134,7 @@ class _Extension(ExtensionExecutor):
     """An extension's executor that keeps its object in the task and completes."""
 
     def __init__(self) -> None:
-        super().__init__({}, ExtensionServices())
+        super().__init__({})
 
     async def stream(self, context, config):
         yield _completed(context, metadata={TOOLKIT: PROGRESS})

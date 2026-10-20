@@ -20,7 +20,6 @@ from typing import Optional
 from aion.server.agent.execution import AionAgentRequestExecutor, AionRequestContextBuilder
 from aion.server.agent.execution.extensions import (
     EnabledExtension,
-    ExtensionServices,
     create_extension_executors,
     register_extensions,
 )
@@ -33,6 +32,7 @@ from aion.server.plugins import PluginFactory
 from aion.server.settings import app_settings
 from aion.server.tasks import StoreManager, PushNotificationFactory
 from aion.server.tasks.abandoned import AbandonedTasks
+from aion.server.tasks.conversation import StoredConversations
 from aion.server.tasks.push_notifications import push_url_validator
 from .lifespan import AppLifespan
 from .registry import app_registry
@@ -230,15 +230,17 @@ class AppFactory:
             push_sender=push_sender,
         )
 
-        extension_services = ExtensionServices(
-            context_artifacts=self.store_manager.get_context_artifacts(),
+        conversations = StoredConversations(
+            task_store=self.store_manager.get_store(),
             context_runs=self.store_manager.get_context_runs(),
+            context_artifacts=self.store_manager.get_context_artifacts(),
             owner_resolver=self.aion_agent.owner_resolver,
         )
         self._executor = AionAgentRequestExecutor(
             self.aion_agent,
             file_transformer=self.file_transformer,
-            extensions=create_extension_executors(self._enabled_extensions, extension_services),
+            extensions=create_extension_executors(self._enabled_extensions),
+            conversations=conversations,
         )
 
         return AionRequestHandler(

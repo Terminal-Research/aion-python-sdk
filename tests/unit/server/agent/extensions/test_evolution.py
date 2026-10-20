@@ -14,8 +14,6 @@ import pytest
 from a2a.auth.user import User
 from a2a.server.agent_execution import RequestContext
 from a2a.server.context import ServerCallContext
-from a2a.server.owner_resolver import resolve_user_scope
-from aion.server.tasks.stores.in_memory_task_store import InMemoryTaskStore
 from a2a.types import Artifact, Part, SendMessageRequest, Task, TaskArtifactUpdateEvent, TaskState, TaskStatus
 from google.protobuf.json_format import MessageToDict
 from pydantic import ValidationError
@@ -28,12 +26,9 @@ from aion.core.principal import Principal
 from aion.core.runtime.context.models import AionRuntimeContext
 from aion.server.agent.adapters import ExecutionConfig
 from aion.server.agent.execution.context.attribution import callback_attribution
-from aion.server.agent.execution.extensions import (
-    ExtensionServices,
-    create_extension_executors,
-    register_extensions,
-)
-from aion.server.agent.execution.extensions import evolution, services
+from aion.server.agent.execution.extensions import create_extension_executors, register_extensions
+from aion.server.agent.execution.extensions import evolution
+from aion.server.agent.execution.extensions import model_service as model_access
 from aion.server.agent.execution.extensions.evolution import (
     EVOLUTION_EXTENSION,
     Caller,
@@ -42,10 +37,9 @@ from aion.server.agent.execution.extensions.evolution import (
     Provider,
 )
 from aion.server.auth import Assurance, AuthenticatedCaller, CallerCredentials, CredentialKind
-from aion.server.tasks.admission import ContextHolder, InMemoryContextAdmission
-from aion.server.tasks.context_artifacts import InMemoryContextArtifacts
-from aion.server.tasks.context_runs import InMemoryContextRuns
+from aion.server.auth.caller import GatewayCoordinates
 
+from tests.support.conversation import InMemoryConversations, install
 from tests.support.scripted_executor.contract import EVOLUTION_URI
 from tests.support.scripted_executor.script import COMPLETED, Refusal, scripted_message
 
@@ -53,6 +47,8 @@ URI = BEHAVIOR_EVOLUTION_EXTENSION_URI_V1
 CONTEXT_ID = "ctx-1"
 TASK_ID = "task-1"
 ROUTED = "aion:routedExtension"
+
+pytestmark = pytest.mark.usefixtures("runtime_provider")
 
 
 def test_the_contract_uri_is_the_sdks_constant() -> None:
@@ -87,8 +83,8 @@ def test_options_the_extension_does_not_allow_are_refused(given) -> None:
 # -- creating the executor ------------------------------------------------------------------
 
 
-def executor(services_: Optional[ExtensionServices] = None, **options: Any) -> EvolutionExecutor:
-    return EvolutionExecutor(options, services_ or ExtensionServices())
+def executor(**options: Any) -> EvolutionExecutor:
+    return EvolutionExecutor(options)
 
 
 def test_without_the_toolkit_the_executor_cannot_be_created_and_says_how_to_install_it(no_toolkit) -> None:
@@ -181,7 +177,7 @@ def test_without_the_toolkit_an_enabled_evolution_stops_the_startup(no_toolkit, 
     enabled = register_extensions(evolution_config(provider="local_session"), registry=isolated_registry)
 
     with pytest.raises(ConfigurationError, match="not installed"):
-        create_extension_executors(enabled, ExtensionServices())
+        create_extension_executors(enabled)
 
 
 def test_with_the_toolkit_an_enabled_evolution_serves_with_its_options(fake_toolkit, isolated_registry) -> None:
@@ -189,7 +185,7 @@ def test_with_the_toolkit_an_enabled_evolution_serves_with_its_options(fake_tool
         evolution_config(callers=["anonymous_session"], provider="local_session"), registry=isolated_registry
     )
 
-    executors = create_extension_executors(enabled, ExtensionServices())
+    executors = create_extension_executors(enabled)
 
     assert executors[URI].options == EvolutionOptions(callers=(Caller.ANONYMOUS_SESSION,), provider=Provider.LOCAL_SESSION)
 
@@ -198,12 +194,14 @@ def test_with_the_toolkit_an_enabled_evolution_serves_with_its_options(fake_tool
 
 
 def caller(credential: CredentialKind) -> AuthenticatedCaller:
+    gateway = GatewayCoordinates("identity-1", "environment-1", "terminal-1") if credential is CredentialKind.INVOCATION else None
     return AuthenticatedCaller(
         Principal("ExternalAnonymous", "caller-1"),
         credential=credential,
         assurance=Assurance.SESSION,
         issuer="aion.io",
         claims={},
+        gateway=gateway,
     )
 
 
@@ -250,13 +248,21 @@ def config() -> ExecutionConfig:
     return ExecutionConfig(task_id=TASK_ID, context_id=CONTEXT_ID)
 
 
-async def run(evolution: EvolutionExecutor, context: RequestContext) -> list[Any]:
+async def run(
+        evolution: EvolutionExecutor, context: RequestContext, memory: Optional[InMemoryConversations] = None
+) -> list[Any]:
+    """Run the turn ``context`` starts, over the history of ``memory`` - an empty context by default."""
+    memory = memory or InMemoryConversations()
+    await memory.hold(CONTEXT_ID, "alice")
+    install(memory.for_turn(context.call_context, context.current_task))
     return [event async for event in evolution.stream(context, config())]
 
 
-async def refusal(evolution: EvolutionExecutor, context: RequestContext) -> ExtensionRejection:
+async def refusal(
+        evolution: EvolutionExecutor, context: RequestContext, memory: Optional[InMemoryConversations] = None
+) -> ExtensionRejection:
     with pytest.raises(ExtensionRejection) as error:
-        await run(evolution, context)
+        await run(evolution, context, memory)
     return error.value
 
 
@@ -329,7 +335,7 @@ async def test_the_toolkits_refusal_reaches_the_caller(fake_toolkit) -> None:
 async def test_the_aion_provider_refuses_a_caller_the_model_service_cannot_serve(fake_toolkit, monkeypatch) -> None:
     monkeypatch.setattr(evolution, "api_settings", SimpleNamespace(has_credentials=True))
     evolution_executor = executor(callers=["anonymous_session"])
-    monkeypatch.setattr(services, "api_settings", SimpleNamespace(has_credentials=False))
+    monkeypatch.setattr(model_access, "api_settings", SimpleNamespace(has_credentials=False))
 
     refused = await refusal(evolution_executor, request(CredentialKind.SESSION))
 
@@ -340,12 +346,12 @@ async def test_the_aion_provider_refuses_a_caller_the_model_service_cannot_serve
 # -- one task per context ---------------------------------------------------------------------
 
 
-async def context_services(*tasks: Task) -> ExtensionServices:
-    """Services over a store holding ``tasks``, each owned by the anonymous caller."""
-    store = InMemoryTaskStore()
+async def context_with(*tasks: Task) -> InMemoryConversations:
+    """A store holding ``tasks``, each owned by the anonymous caller."""
+    memory = InMemoryConversations()
     for stored in tasks:
-        await store.save(stored, ServerCallContext())
-    return ExtensionServices(context_runs=InMemoryContextRuns(store, InMemoryContextAdmission()))
+        await memory.store.save(stored, ServerCallContext())
+    return memory
 
 
 def routed_task(task_id: str, state: TaskState, uri: str = URI, context_id: str = CONTEXT_ID) -> Task:
@@ -355,20 +361,20 @@ def routed_task(task_id: str, state: TaskState, uri: str = URI, context_id: str 
 
 
 async def test_a_second_evolution_in_a_context_is_refused_naming_the_unfinished_one(fake_toolkit) -> None:
-    held = await context_services(routed_task("running", TaskState.TASK_STATE_WORKING))
-    evolution = executor(held, callers=["anonymous_session"], provider="local_session")
+    held = await context_with(routed_task("running", TaskState.TASK_STATE_WORKING))
+    evolution = executor(callers=["anonymous_session"], provider="local_session")
 
-    refused = await refusal(evolution, request(CredentialKind.SESSION))
+    refused = await refusal(evolution, request(CredentialKind.SESSION), held)
 
     assert (refused.code, refused.retryable) == (codes.CONTEXT_BUSY, True)
     assert "running" in refused.message
 
 
 async def test_a_caller_the_options_do_not_list_learns_nothing_of_the_context(fake_toolkit) -> None:
-    held = await context_services(routed_task("running", TaskState.TASK_STATE_WORKING))
-    evolution = executor(held, callers=["platform"], provider="local_session")
+    held = await context_with(routed_task("running", TaskState.TASK_STATE_WORKING))
+    evolution = executor(callers=["platform"], provider="local_session")
 
-    refused = await refusal(evolution, request(CredentialKind.SESSION))
+    refused = await refusal(evolution, request(CredentialKind.SESSION), held)
 
     assert refused.code == codes.CALLER_NOT_ALLOWED
     assert "running" not in refused.message
@@ -384,9 +390,9 @@ async def test_a_caller_the_options_do_not_list_learns_nothing_of_the_context(fa
     ],
 )
 async def test_an_evolution_starts_when_the_context_holds_no_other_unfinished_one(fake_toolkit, existing) -> None:
-    evolution = executor(await context_services(existing), callers=["anonymous_session"], provider="local_session")
+    evolution = executor(callers=["anonymous_session"], provider="local_session")
 
-    await run(evolution, request(CredentialKind.SESSION))
+    await run(evolution, request(CredentialKind.SESSION), await context_with(existing))
 
     assert len(fake_toolkit.EvolutionToolkit.created[-1].turns) == 1
 
@@ -402,8 +408,8 @@ def reported(events: list[Any]) -> dict:
 def model_service(monkeypatch):
     """A deployment with platform credentials, whose model service lives at a test URL."""
     monkeypatch.setattr(evolution, "api_settings", SimpleNamespace(has_credentials=True))
-    monkeypatch.setattr(services, "api_settings", SimpleNamespace(has_credentials=True))
-    monkeypatch.setattr(services, "aion_model_base_url", lambda: "https://api.example.test/v1")
+    monkeypatch.setattr(model_access, "api_settings", SimpleNamespace(has_credentials=True))
+    monkeypatch.setattr(model_access, "aion_model_base_url", lambda: "https://api.example.test/v1")
 
 
 async def test_a_run_with_the_aion_provider_calls_the_model_service_on_the_callers_behalf(
@@ -426,7 +432,7 @@ async def test_a_run_with_the_aion_provider_calls_the_model_service_on_the_calle
     }
     assert events[-1].status.state == TaskState.TASK_STATE_COMPLETED
     _kind, _request, run_handed = fake_toolkit.EvolutionToolkit.created[-1].turns[0]
-    assert run_handed.model.secret is services.aion_jwt_api_key
+    assert run_handed.model.secret is model_access.aion_jwt_api_key
     assert (run_handed.task_id, run_handed.context_id, run_handed.turn_id) == (TASK_ID, CONTEXT_ID, "m-user")
 
 
@@ -468,10 +474,7 @@ async def test_a_run_with_the_local_session_provider_gets_no_model_endpoint(fake
 
 
 async def test_a_run_gets_the_generation_of_its_context(fake_toolkit) -> None:
-    reservations = InMemoryContextAdmission()
-    await reservations.admit(CONTEXT_ID, ContextHolder.private("owner-1"), None)
-    held = ExtensionServices(context_runs=InMemoryContextRuns(InMemoryTaskStore(), reservations))
-    evolution_executor = executor(held, callers=["anonymous_session"], provider="local_session")
+    evolution_executor = executor(callers=["anonymous_session"], provider="local_session")
 
     events = await run(evolution_executor, request(CredentialKind.SESSION, script={"report": True, "outputs": [COMPLETED]}))
 
@@ -479,20 +482,15 @@ async def test_a_run_gets_the_generation_of_its_context(fake_toolkit) -> None:
 
 
 async def test_the_artifacts_a_run_writes_are_numbered_in_the_context(fake_toolkit) -> None:
-    store = InMemoryTaskStore(resolve_user_scope)
-    reservations = InMemoryContextAdmission()
-    await reservations.admit(CONTEXT_ID, ContextHolder.private("alice"), "alice")
+    memory = InMemoryConversations()
     earlier = routed_task("earlier", TaskState.TASK_STATE_COMPLETED)
     earlier.artifacts.append(Artifact(artifact_id="evolution-spec", parts=[Part(text="v0")]))
     earlier.artifacts[0].metadata["version"] = "0"
-    await store.save(earlier, call_context(CredentialKind.SESSION))
-    held = ExtensionServices(
-        context_artifacts=InMemoryContextArtifacts(store, reservations), owner_resolver=resolve_user_scope
-    )
-    evolution_executor = executor(held, callers=["anonymous_session"], provider="local_session")
+    await memory.store.save(earlier, call_context(CredentialKind.SESSION))
+    evolution_executor = executor(callers=["anonymous_session"], provider="local_session")
     script = {"outputs": [{"kind": "artifact", "id": "evolution-spec", "text": "v1"}, COMPLETED]}
 
-    events = await run(evolution_executor, request(CredentialKind.SESSION, script=script))
+    events = await run(evolution_executor, request(CredentialKind.SESSION, script=script), memory)
 
     [written] = [event for event in events if isinstance(event, TaskArtifactUpdateEvent)]
     assert written.artifact.metadata["version"] == "1"

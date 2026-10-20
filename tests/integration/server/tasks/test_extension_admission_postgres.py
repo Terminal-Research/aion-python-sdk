@@ -44,19 +44,17 @@ from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.db.postgres.manager import db_manager
 from aion.server.agent.execution import AionAgentRequestExecutor
 from aion.server.agent.execution.context.providers import RequestScopeRuntimeContextProvider
-from aion.server.agent.execution.extensions import (
-    ExtensionServices,
-    create_extension_executors,
-    register_extensions,
-)
+from aion.server.agent.execution.extensions import create_extension_executors, register_extensions
 from aion.server.agent.execution.request_context_builder import AionRequestContextBuilder
 from aion.server.auth import JwksKeySource, TokenVerifier
 from aion.server.core.app.handlers import AionJsonRpcDispatcher, AionRequestHandler
 from aion.server.core.middlewares import AionAuthMiddleware, AionContextMiddleware
 from aion.server.tasks.abandoned import AbandonedTasks, PostgresStaleTasks
 from aion.server.tasks.admission import PostgresContextAdmission
+from aion.server.tasks.context_artifacts import PostgresContextArtifacts
 from aion.server.tasks.context_runs import PostgresContextRuns
 from aion.server.tasks.contexts import PostgresContextCatalog
+from aion.server.tasks.conversation import StoredConversations
 
 from tests.support.aion_tokens import CLIENT_ID, ISSUER, SigningKey
 from tests.support.executors import FakeFrameworkExecutor, agent_of
@@ -209,7 +207,7 @@ async def _server(
         pytest.skip("POSTGRES_TEST_URL is not set")
     if fresh:
         await truncate()
-    _, versioned_store = stores(AGENT_ID)
+    task_store, versioned_store = stores(AGENT_ID)
     abandoned_tasks = AbandonedTasks(
         PostgresStaleTasks(AGENT_ID, db_manager, versioned_store), timeout=stale_timeout
     )
@@ -219,8 +217,15 @@ async def _server(
     enabled = register_extensions(
         AgentConfig(path="agent:graph", enabled_extensions=[extension.uri]), executables=[extension]
     )
-    services = ExtensionServices(context_runs=PostgresContextRuns(AGENT_ID, db_manager))
-    executor = AionAgentRequestExecutor(agent, extensions=create_extension_executors(enabled, services))
+    conversations = StoredConversations(
+        task_store=task_store,
+        context_runs=PostgresContextRuns(AGENT_ID, db_manager),
+        context_artifacts=PostgresContextArtifacts(AGENT_ID, db_manager),
+        owner_resolver=agent.owner_resolver,
+    )
+    executor = AionAgentRequestExecutor(
+        agent, extensions=create_extension_executors(enabled), conversations=conversations
+    )
     return ExtensionServer(executor, abandoned_tasks)
 
 

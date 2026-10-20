@@ -188,7 +188,7 @@ class StoreManager:
         return self._context_artifacts
 
     def get_context_runs(self) -> ContextRuns:
-        """Return the reader of a context's generation and unfinished tasks over the active store.
+        """Return the reader of who holds a context, its generation and its tasks over the active store.
 
         Raises:
             RuntimeError: If called before initialization.

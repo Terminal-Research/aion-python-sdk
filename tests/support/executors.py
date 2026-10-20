@@ -75,11 +75,16 @@ def request_executor(
         *,
         extensions: Optional[Mapping[str, ExtensionExecutor]] = None,
         file_transformer: Any = None,
+        conversations: Any = None,
         **agent: Any,
 ) -> AionAgentRequestExecutor:
-    """The request executor over ``framework`` (a ``FakeFrameworkExecutor`` by default) and ``extensions``."""
+    """The request executor over ``framework`` (a ``FakeFrameworkExecutor`` by default) and ``extensions``.
+
+    Its turns read no conversation history unless ``conversations`` builds it.
+    """
     return AionAgentRequestExecutor(
         agent_of(framework if framework is not None else FakeFrameworkExecutor(), **agent),
         file_transformer=file_transformer,
         extensions=extensions,
+        conversations=conversations,
     )

@@ -43,6 +43,7 @@ from aion.core.a2a.extensions import (
 from .extensions import AionRuntimeExtensions
 from .attribution import CallbackAttribution, ForwardedAttribution
 from aion.core.exceptions import AionAuthenticationError
+from .conversation import ConversationHistory
 
 
 class EventKind(str, Enum):
@@ -127,6 +128,11 @@ class AionRuntimeContext:
     """Extra kwargs passed by the graph framework, such as LangGraph config."""
     callback_attribution: Optional[CallbackAttribution]
     """Transient callback mode populated from this request, never checkpoint state."""
+    conversation: Optional[ConversationHistory]
+    """Transient history of the turn's conversation, installed by the server for the turn, never checkpoint state.
+
+    Read it through ``aion.core.agent.conversation``.
+    """
 
     def __init__(
             self,
@@ -135,6 +141,7 @@ class AionRuntimeContext:
             distribution_extension_payload: Optional[DistributionExtensionV1] = None,
             extensions: Optional[AionRuntimeExtensions] = None,
             callback_attribution: Optional[CallbackAttribution] = None,
+            conversation: Optional[ConversationHistory] = None,
             **graph_kwargs: Any,
     ) -> None:
         """Create an Aion runtime context.
@@ -150,6 +157,8 @@ class AionRuntimeContext:
                 pipeline.
             callback_attribution: Transient forwarded or reported-direct callback
                 input. It conveys no independent authorization to the SDK.
+            conversation: The history of the turn's conversation, which the
+                server installs for every turn it runs.
             **graph_kwargs: Extra framework-specific values passed by the graph
                 runtime.
         """
@@ -167,6 +176,7 @@ class AionRuntimeContext:
         object.__setattr__(self, "extensions", extensions)
         object.__setattr__(self, "graph_kwargs", graph_kwargs)
         object.__setattr__(self, "callback_attribution", callback_attribution)
+        object.__setattr__(self, "conversation", conversation)
 
     def get_callback_attribution(self) -> Optional[CallbackAttribution]:
         """Return explicit callback input without inferring direct mode from absence.

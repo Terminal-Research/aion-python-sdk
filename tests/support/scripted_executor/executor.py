@@ -10,15 +10,12 @@ from a2a.types import Task, TaskArtifactUpdateEvent
 from google.protobuf import struct_pb2
 
 from aion.core.a2a import codes
+from aion.core.agent import conversation
 from aion.core.exceptions import ConfigurationError, ExtensionRejection
 from aion.core.runtime.context.extensions import ExtensionActivationError, MessagesCollector
 from aion.core.utils.protobuf import proto_to_dict
 from aion.server.agent.adapters import ExecutionConfig
-from aion.server.agent.execution.extensions import (
-    ExecutableExtensionDescriptor,
-    ExtensionExecutor,
-    ExtensionServices,
-)
+from aion.server.agent.execution.extensions import ExecutableExtensionDescriptor, ExtensionExecutor
 
 from .contract import URI
 from .script import Script, ScriptPayload, ScriptRunner
@@ -33,11 +30,12 @@ class ScriptedExecutor(ExtensionExecutor):
     """Yields its script and records what the server handed it, as an extension's executor does.
 
     It reads its script from the request, numbers the artifacts it writes
-    and looks them up in the context with the server's services.
+    and looks them up in the context with the turn's history
+    (``aion.core.agent.conversation``); a turn run without one, outside the
+    request executor, neither numbers nor finds.
 
     Args:
         options: The extension's options; the scripted executor takes none.
-        services: The server's services; none by default.
         script: The script of a turn whose request carries none.
 
     Class attributes a test may set on a subclass:
@@ -49,11 +47,10 @@ class ScriptedExecutor(ExtensionExecutor):
     def __init__(
             self,
             options: Optional[Mapping[str, Any]] = None,
-            services: Optional[ExtensionServices] = None,
             *,
             script: Optional[Script] = None,
     ) -> None:
-        super().__init__(options or {}, services or ExtensionServices())
+        super().__init__(options or {})
         if options:
             raise ConfigurationError(f"enabled_extensions gives {URI} options it does not take: {', '.join(options)}")
         if self.unavailable is not None:
@@ -79,18 +76,18 @@ class ScriptedExecutor(ExtensionExecutor):
 
     async def _turn(self, kind: str, context: RequestContext, config: ExecutionConfig) -> AsyncIterator[Any]:
         self.turns.append((kind, context, config))
-        artifacts = self.services.artifacts(context)
+        history = _history()
         events = self.runner.run(
             kind,
             self._script(context),
             task_id=config.task_id,
             context_id=config.context_id,
             state=_state_of(context.current_task),
-            find_artifact=artifacts.find if artifacts is not None else None,
+            find_artifact=history.find_artifact if history is not None else None,
         )
         async for event in events:
-            if artifacts is not None and isinstance(event, TaskArtifactUpdateEvent):
-                await artifacts.stamp(event)
+            if history is not None and isinstance(event, TaskArtifactUpdateEvent):
+                await history.stamp_artifact_version(event)
             yield event
 
     def _script(self, context: RequestContext) -> Script:
@@ -101,6 +98,14 @@ class ScriptedExecutor(ExtensionExecutor):
         if event is not None and isinstance(event.payload, ScriptPayload):
             return Script.from_payload(event.payload)
         return self.script
+
+
+def _history() -> Optional[conversation.ConversationHistory]:
+    """The turn's history; None for a turn run without one."""
+    try:
+        return conversation.history()
+    except conversation.ConversationUnavailableError:
+        return None
 
 
 def _state_of(task: Optional[Task]) -> dict[str, Any]:

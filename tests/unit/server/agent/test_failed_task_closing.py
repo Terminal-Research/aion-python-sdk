@@ -37,7 +37,7 @@ from aion.server.a2a.response_extensions import ResponseServiceParameters
 from aion.server.agent.execution.context.providers import RequestScopeRuntimeContextProvider
 from aion.server.agent.execution.event_pipeline import AionEventPipeline
 from aion.server.agent.adapters import AgentFrameworkExecutor
-from aion.server.agent.execution.extensions import ExtensionExecutor, ExtensionServices
+from aion.server.agent.execution.extensions import ExtensionExecutor
 from aion.server.agent.execution.request_executor import (
     CRASH_REASON,
     AionAgentRequestExecutor,
@@ -310,7 +310,7 @@ async def test_an_extensions_executor_is_not_asked(queue, runtime_context) -> No
 
     class _Extension(ExtensionExecutor):
         def __init__(self) -> None:
-            super().__init__({}, ExtensionServices())
+            super().__init__({})
             self._agent = _Agent()
 
         async def stream(self, context, config):  # pragma: no cover - only resumed turns run here

@@ -34,6 +34,7 @@ from aion.server.agent.adapters import AgentFrameworkExecutor, ExecutionConfig, 
 from aion.server.agent.aion_agent import AionAgent
 from aion.server.agent.execution.scope import set_task_id
 from aion.server.files.a2a import A2AFileTransformer
+from aion.server.tasks.conversation import StoredConversations
 
 from .context.attribution import callback_attribution
 from .event_pipeline import AionEventPipeline, OutboundFileNotStoredError
@@ -173,6 +174,7 @@ class AionAgentRequestExecutor(AgentExecutor):
             aion_agent: AionAgent,
             file_transformer: Optional[A2AFileTransformer] = None,
             extensions: Optional[Mapping[str, ExtensionExecutor]] = None,
+            conversations: Optional[StoredConversations] = None,
     ):
         """Build the executor over the agent's framework executor and the extensions' executors.
 
@@ -182,10 +184,14 @@ class AionAgentRequestExecutor(AgentExecutor):
             file_transformer: Stores the inline files the agent sends out.
             extensions: The executor of each executable extension the agent
                 enables, by URI.
+            conversations: Builds the history of each turn's conversation,
+                installed on the turn's runtime context; without it a turn
+                reads no history (``aion.core.agent.conversation``).
         """
         self.agent = aion_agent
         self.pool = TaskExecutorPool(default=aion_agent.get_executor(), extensions=dict(extensions or {}))
         self._file_transformer = file_transformer
+        self._conversations = conversations
         # The turn each task is running in this process.
         self._turns: dict[str, _Turn] = {}
 
@@ -295,7 +301,7 @@ class AionAgentRequestExecutor(AgentExecutor):
         task_updater = TaskUpdater(event_queue, task.id, task.context_id)
 
         try:
-            response_parameters = await self._setup_runtime_context(context)
+            response_parameters = await self._setup_runtime_context(context, task)
         except (ExtensionActivationError, AionAuthenticationError, InvalidPrincipalError) as ex:
             raise InvalidParamsError(message=str(ex)) from ex
 
@@ -587,9 +593,8 @@ class AionAgentRequestExecutor(AgentExecutor):
         except Exception:
             logger.exception("Telling the executor of task %s about its cancel failed", task.id)
 
-    @staticmethod
-    async def _setup_runtime_context(context: RequestContext) -> ResponseServiceParameters:
-        """Set runtime context and return its verified invocation activation."""
+    async def _setup_runtime_context(self, context: RequestContext, task: Task) -> ResponseServiceParameters:
+        """Set the turn's runtime context, with the history of its conversation, and return its verified activation."""
         runtime_context = AionRuntimeContextBuilder.from_request_context(context)
         if runtime_context is None:
             runtime_context = AionRuntimeContext()
@@ -599,6 +604,9 @@ class AionAgentRequestExecutor(AgentExecutor):
             distribution_extension_payload=runtime_context.distribution_extension_payload,
             extensions=runtime_context.extensions,
             callback_attribution=callback_attribution(context.call_context, runtime_context),
+            conversation=(
+                self._conversations.for_turn(context.call_context, task) if self._conversations is not None else None
+            ),
             **runtime_context.graph_kwargs,
         )
         await AionRuntimeContextRegistry.aset_current_context(runtime_context)

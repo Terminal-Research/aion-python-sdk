@@ -1,13 +1,14 @@
-"""What the toolkit host reads about a context, held alike by the in-memory and PostgreSQL backends.
+"""What the server reads about a context, held alike by the in-memory and PostgreSQL backends.
 
+* A context is held by the holder admitted into it first, while it lives;
+  another holder, or anyone once the context is deleted, does not hold it.
 * The generation of a context's id is the same on every read while the
   context lives, None before anything is admitted into it, and new once a
   deleted context's id is reserved again.
-* The unfinished task of a handler is the context's oldest task routed to it
-  without an outcome, whoever owns it; finished tasks, other handlers' and
-  other contexts' tasks do not count.
+* The tasks of a context are every owner's, oldest first; the unfinished ones
+  are those without an outcome. Other contexts' tasks do not count.
 * The waiting task a message continues is the caller's newest task of the
-  handler it addresses; a task without a route is the framework adapter's.
+  executor it addresses; a task without a route is the framework executor's.
 """
 
 from __future__ import annotations
@@ -32,8 +33,8 @@ from aion.server.tasks.stores.in_memory_task_store import InMemoryTaskStore
 pytestmark = [pytest.mark.asyncio(loop_scope="module")]
 
 ROUTED = "aion:routedExtension"
-TOOLKIT = "https://example.invalid/toolkits/a/1.0.0"
-OTHER_TOOLKIT = "https://example.invalid/toolkits/b/1.0.0"
+EXTENSION = "https://example.invalid/extensions/a/1.0.0"
+OTHER_EXTENSION = "https://example.invalid/extensions/b/1.0.0"
 
 
 class _User(User):
@@ -120,32 +121,41 @@ async def test_the_generation_lives_with_the_reservation(backend: _Backend) -> N
     assert first is not None and second is not None and second != first
 
 
-async def test_the_unfinished_task_of_a_handler_is_the_oldest_whoever_owns_it(backend: _Backend) -> None:
+async def test_a_context_is_held_by_its_first_holder_while_it_lives(backend: _Backend) -> None:
     context_id = f"ctx-{uuid.uuid4()}"
-    await backend.admission.admit(context_id, ContextHolder.private("alice"), "alice")
-    await backend.task(context_id, TaskState.TASK_STATE_CANCELED, TOOLKIT)
-    await backend.task(context_id, TaskState.TASK_STATE_WORKING, OTHER_TOOLKIT)
-    await backend.task(context_id, TaskState.TASK_STATE_WORKING, None)
-    await backend.task(f"ctx-{uuid.uuid4()}", TaskState.TASK_STATE_WORKING, TOOLKIT)
+    alice, bob = ContextHolder.private("alice"), ContextHolder.private("bob")
 
-    assert await backend.runs.unfinished_task(context_id, TOOLKIT) is None
+    assert not await backend.runs.holds(context_id, alice)
+    await backend.admission.admit(context_id, alice, "alice")
+    await backend.admission.admit(context_id, bob, "bob")
 
-    oldest = await backend.task(context_id, TaskState.TASK_STATE_INPUT_REQUIRED, TOOLKIT, owner="bob")
-    await backend.task(context_id, TaskState.TASK_STATE_WORKING, TOOLKIT)
-
-    assert await backend.runs.unfinished_task(context_id, TOOLKIT) == oldest
+    assert (await backend.runs.holds(context_id, alice), await backend.runs.holds(context_id, bob)) == (True, False)
+    await backend.forget(context_id)
+    assert not await backend.runs.holds(context_id, alice)
 
 
-async def test_the_newest_task_of_a_handler_is_the_callers_own(backend: _Backend) -> None:
+async def test_the_tasks_of_a_context_are_every_owners_oldest_first(backend: _Backend) -> None:
+    context_id = f"ctx-{uuid.uuid4()}"
+    canceled = await backend.task(context_id, TaskState.TASK_STATE_CANCELED, EXTENSION)
+    waiting = await backend.task(context_id, TaskState.TASK_STATE_INPUT_REQUIRED, EXTENSION, owner="bob")
+    framework = await backend.task(context_id, TaskState.TASK_STATE_WORKING, None)
+    other = await backend.task(context_id, TaskState.TASK_STATE_COMPLETED, OTHER_EXTENSION)
+    await backend.task(f"ctx-{uuid.uuid4()}", TaskState.TASK_STATE_WORKING, EXTENSION)
+
+    assert await backend.runs.task_ids(context_id) == [canceled, waiting, framework, other]
+    assert await backend.runs.task_ids(context_id, unfinished=True) == [waiting, framework]
+
+
+async def test_the_newest_task_of_an_executor_is_the_callers_own(backend: _Backend) -> None:
     context_id = f"ctx-{uuid.uuid4()}"
     graph = await backend.task(context_id, TaskState.TASK_STATE_INPUT_REQUIRED, None)
-    toolkit = await backend.task(context_id, TaskState.TASK_STATE_INPUT_REQUIRED, TOOLKIT)
-    await backend.task(context_id, TaskState.TASK_STATE_WORKING, OTHER_TOOLKIT)
-    await backend.task(context_id, TaskState.TASK_STATE_INPUT_REQUIRED, TOOLKIT, owner="bob")
+    extension = await backend.task(context_id, TaskState.TASK_STATE_INPUT_REQUIRED, EXTENSION)
+    await backend.task(context_id, TaskState.TASK_STATE_WORKING, OTHER_EXTENSION)
+    await backend.task(context_id, TaskState.TASK_STATE_INPUT_REQUIRED, EXTENSION, owner="bob")
 
     alice = _caller("alice")
     found_graph = await backend.store.get_context_last_routed_task(context_id, None, alice)
-    found_toolkit = await backend.store.get_context_last_routed_task(context_id, TOOLKIT, alice)
+    found_extension = await backend.store.get_context_last_routed_task(context_id, EXTENSION, alice)
     found_nothing = await backend.store.get_context_last_routed_task(context_id, "https://x.invalid/t", alice)
 
-    assert (found_graph.id, found_toolkit.id, found_nothing) == (graph, toolkit, None)
+    assert (found_graph.id, found_extension.id, found_nothing) == (graph, extension, None)
