@@ -5,7 +5,7 @@ import inspect
 from pathlib import Path
 from typing import Any, Optional
 
-from aion.server.agent.adapters import AgentAdapter, ExecutorAdapter
+from aion.server.agent.adapters import AgentAdapter, AgentFrameworkExecutor
 from aion.server.agent.exceptions import AdapterConfigurationError
 from aion.core.config.models import AgentConfig
 from aion.core.db import DbManagerProtocol
@@ -84,7 +84,7 @@ class ADKAdapter(AgentAdapter):
             f"Expected an ADK agent instance or a callable that returns an agent."
         )
 
-    async def create_executor(self, agent: Any, config: AgentConfig) -> ExecutorAdapter:
+    async def create_executor(self, agent: Any, config: AgentConfig) -> AgentFrameworkExecutor:
         """Build and return an ADKExecutor wired with session and artifact services."""
         logger.debug("Creating executor for ADK agent")
 

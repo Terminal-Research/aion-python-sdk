@@ -169,7 +169,7 @@ class AionJsonRpcDispatcher(JsonRpcDispatcher):
             context: Invocation-local authentication and service parameters.
 
         Returns:
-            An unconsumed generator after extension preflight succeeds.
+            An unconsumed generator after the request's extensions are verified.
         """
         if context.state.get('method') != 'SendStreamingMessage':
             return await super()._process_streaming_request(

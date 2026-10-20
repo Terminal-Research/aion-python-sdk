@@ -9,8 +9,8 @@ crashing. That outcome is the authoritative one, and a second terminal event
 would contradict it. No authoring surface lets an agent report a terminal
 state - `a2a_outbox` is read from the final state, which a crash never
 reaches - so this case cannot be driven from a scenario agent, and is stated
-here instead. It is reachable in production: an extension handler that emits
-its own terminal event and then fails.
+here instead. It is reachable in production: an executable extension's
+executor that emits its own terminal event and then fails.
 
 A file the agent produced that could not be stored ends the run the same way:
 what the agent said beside it still reaches the client, and the task is
@@ -36,6 +36,8 @@ from aion.core.runtime.context import (
 from aion.server.a2a.response_extensions import ResponseServiceParameters
 from aion.server.agent.execution.context.providers import RequestScopeRuntimeContextProvider
 from aion.server.agent.execution.event_pipeline import AionEventPipeline
+from aion.server.agent.adapters import AgentFrameworkExecutor
+from aion.server.agent.execution.extensions import ExtensionExecutor, ExtensionServices
 from aion.server.agent.execution.request_executor import (
     CRASH_REASON,
     AionAgentRequestExecutor,
@@ -52,10 +54,12 @@ from aion.server.files.a2a import A2AFileTransformer
 from aion.server.files.storage import FileUploadErrorCode, FileUploadManager, UploadFailure
 from aion.server.tasks.task_manager import AionTaskManager
 from tests.unit.support.events import RecordingQueue
+from tests.support.executors import request_executor
 from tests.unit.support.files import OutcomeBackend, distribution_payload, principal
 
 TASK_ID = "task-1"
 CONTEXT_ID = "ctx-1"
+FRAMEWORK_TASK = Task(id=TASK_ID, context_id=CONTEXT_ID, status=TaskStatus(state=TaskState.TASK_STATE_WORKING))
 
 
 @pytest.fixture(autouse=True)
@@ -112,7 +116,7 @@ async def test_a_crash_with_nothing_reported_closes_the_task_as_failed(
         )
     )
 
-    await AionAgentRequestExecutor._close_failed_task(updater, pipeline)
+    await AionAgentRequestExecutor._close_task(updater, pipeline, FRAMEWORK_TASK)
 
     assert _terminal_states(queue) == [TaskState.TASK_STATE_FAILED]
     assert not queue.events[-1].status.HasField("message"), "a crash's text is internal"
@@ -133,7 +137,7 @@ async def test_a_reported_outcome_is_not_overwritten(queue, updater, pipeline) -
         )
     )
 
-    await AionAgentRequestExecutor._close_failed_task(updater, pipeline)
+    await AionAgentRequestExecutor._close_task(updater, pipeline, FRAMEWORK_TASK)
 
     assert _terminal_states(queue) == [TaskState.TASK_STATE_COMPLETED]
 
@@ -151,7 +155,7 @@ async def test_a_failure_while_closing_is_swallowed(queue, updater, pipeline) ->
 
     updater.failed = _unavailable
 
-    await AionAgentRequestExecutor._close_failed_task(updater, pipeline)
+    await AionAgentRequestExecutor._close_task(updater, pipeline, FRAMEWORK_TASK)
 
     assert _terminal_states(queue) == []
 
@@ -174,14 +178,18 @@ def runtime_context():
     AionRuntimeContextRegistry.clear_provider()
 
 
-class _Agent:
-    """An agent whose turn answers with a report the storage service refuses."""
+class _Agent(AgentFrameworkExecutor):
+    """A framework executor whose turn answers with a report the storage service refuses."""
 
     def __init__(self) -> None:
         self.reached_the_end = False
         self.discard_undelivered = AsyncMock()
 
-    async def resume(self, *, context):
+    async def stream(self, context, config):  # pragma: no cover - only resumed turns run here
+        return
+        yield
+
+    async def resume(self, context, config):
         message = Message(
             message_id="m-1",
             role=Role.ROLE_AGENT,
@@ -200,7 +208,7 @@ class _Agent:
         )
 
 
-async def _run_refused(agent, queue, *, extension_handlers=(), metadata=None):
+async def _run_refused(agent, queue, *, extensions=None, metadata=None):
     """Run one resumed turn of ``agent`` against storage that refuses every file.
 
     Returns the reason the FAILED status gives, and the request context. The
@@ -208,10 +216,10 @@ async def _run_refused(agent, queue, *, extension_handlers=(), metadata=None):
     outcome, not a crash of the request.
     """
     backend = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)])
-    executor = AionAgentRequestExecutor(
+    executor = request_executor(
         agent,
         file_transformer=A2AFileTransformer(FileUploadManager(backend)),
-        extension_handlers=extension_handlers,
+        extensions=extensions,
     )
     task = Task(
         id=TASK_ID,
@@ -279,8 +287,8 @@ async def test_the_agent_forgets_the_undelivered_event_before_the_task_fails(que
 
     _, context = await _run_refused(agent, queue)
 
-    passed_context, event = agent.discard_undelivered.call_args.args
-    assert passed_context is context
+    config, event = agent.discard_undelivered.call_args.args
+    assert (config.task_id, config.context_id) == (TASK_ID, CONTEXT_ID)
     assert event.status.message.parts[1] == REPORT, "the event as the agent produced it"
     assert closed_when_discarded == [[]]
 
@@ -296,28 +304,32 @@ async def test_a_failure_to_forget_does_not_change_the_outcome(queue, runtime_co
     assert "Could not discard" in caplog.text
 
 
-async def test_an_extension_handler_without_a_copy_is_not_asked(queue, runtime_context) -> None:
-    """The task's own handler is asked, and one that keeps nothing is skipped."""
+async def test_an_extensions_executor_is_not_asked(queue, runtime_context) -> None:
+    """Only a framework executor keeps a copy of what it emits; a task of an extension asks nobody."""
+    uri = "https://example.com/ext"
 
-    class _Handler:
-        uri = "https://example.com/ext"
-
+    class _Extension(ExtensionExecutor):
         def __init__(self) -> None:
+            super().__init__({}, ExtensionServices())
             self._agent = _Agent()
 
-        def resume(self, *, context, event_queue=None):
-            return self._agent.resume(context=context)
+        async def stream(self, context, config):  # pragma: no cover - only resumed turns run here
+            return
+            yield
+
+        def resume(self, context, config):
+            return self._agent.resume(context, config)
 
     agent = _Agent()
 
     reason, _ = await _run_refused(
         agent,
         queue,
-        extension_handlers=[_Handler()],
-        metadata={A2AMetadataKey.ROUTED_EXTENSION.value: _Handler.uri},
+        extensions={uri: _Extension()},
+        metadata={A2AMetadataKey.ROUTED_EXTENSION.value: uri},
     )
 
-    assert reason == FileUploadErrorCode.STORAGE_FORBIDDEN.public_reason
+    assert reason.strip() == FileUploadErrorCode.STORAGE_FORBIDDEN.public_reason, "said in the extension's error shape"
     agent.discard_undelivered.assert_not_called()
     assert _terminal_states(queue) == [TaskState.TASK_STATE_FAILED]
 
@@ -326,13 +338,17 @@ async def test_an_extension_handler_without_a_copy_is_not_asked(queue, runtime_c
 # Why a failed task failed
 # --------------------------------------------------------------------------
 
-class _FailingAgent:
-    """An agent whose turn says something, then raises ``error``."""
+class _FailingAgent(AgentFrameworkExecutor):
+    """A framework executor whose turn says something, then raises ``error``."""
 
     def __init__(self, error: BaseException) -> None:
         self._error = error
 
-    async def resume(self, *, context):
+    async def stream(self, context, config):  # pragma: no cover - only resumed turns run here
+        return
+        yield
+
+    async def resume(self, context, config):
         yield TaskStatusUpdateEvent(
             task_id=TASK_ID,
             context_id=CONTEXT_ID,
@@ -357,7 +373,7 @@ def _wrapped(error: BaseException) -> BaseException:
 
 async def _run_failing(error: BaseException, queue: RecordingQueue):
     """Run one resumed turn that ends on ``error``; return what it raised, if anything."""
-    executor = AionAgentRequestExecutor(_FailingAgent(error))
+    executor = request_executor(_FailingAgent(error))
     task = Task(id=TASK_ID, context_id=CONTEXT_ID, status=TaskStatus(state=TaskState.TASK_STATE_WORKING))
     context = RequestContext(ServerCallContext(), task_id=TASK_ID, context_id=CONTEXT_ID, task=task)
     with patch.object(

@@ -42,6 +42,8 @@ __all__ = [
     # Context extension
     "CONTEXT_EXTENSION_URI_V1",
     "CONTEXT_HTTP_PATHS",
+    # Behavior evolution extension
+    "BEHAVIOR_EVOLUTION_EXTENSION_URI_V1",
 ]
 
 # Scheduled invocation provenance (message content remains in ordinary parts).
@@ -103,6 +105,13 @@ CONTEXT_HTTP_PATHS: dict[str, str] = {
     "context:delete": "DeleteContext",
 }
 """HTTP+JSON path, relative to the A2A endpoint, for each Context method."""
+
+# Behavior evolution extension (an executable extension: the evolution
+# toolkit runs the task in place of the agent's framework)
+# See: https://docs.aion.to/a2a/extensions/aion/behavior/evolution/1.0.0
+BEHAVIOR_EVOLUTION_EXTENSION_URI_V1 = (
+    "https://docs.aion.to/a2a/extensions/aion/behavior/evolution/1.0.0"
+)
 
 # Optional agent-generated opening message; Voice keeps its configured greeting.
 WELCOME_MESSAGE_EXTENSION_URI_V1 = (

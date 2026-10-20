@@ -52,8 +52,7 @@ from typing import override
 import uuid
 
 from aion.server.agent.execution import AionActiveTaskRegistry
-from aion.server.agent.execution.extensions import EXTENSION_ROUTE_STATE_KEY
-from aion.server.agent.execution.extensions.toolkit import refusal_data
+from aion.server.agent.execution.pool import EXTENSION_ROUTE_STATE_KEY, refusal_data
 from aion.server.a2a.constants import ACTIVE_TASK_STATES, TERMINAL_TASK_STATES
 from aion.server.auth import has_individual_access
 from aion.server.tasks.abandoned import AbandonedTasks
@@ -167,8 +166,8 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         route of a new task first means a request the agent is about to
         reject can never trigger that side effect, nor write a push config or
         a task, and the preprocessor works from the verified projection
-        instead of re-reading the raw request. Unary and streaming sends, and
-        every extension handler behind them, come through here.
+        instead of re-reading the raw request. Unary and streaming sends, to
+        every executor of the pool, come through here.
 
         A message into an abandoned task settles the task first
         (``_settle_if_abandoned``), and is then refused like any message into
@@ -270,33 +269,32 @@ class AionRequestHandler(DefaultRequestHandlerV2):
     ) -> None:
         """Decide which task the message belongs to and admit it there, before any task is created or changed.
 
-        The handler the message addresses is the toolkit whose extension it
-        activates (``AionAgentRequestExecutor.routed_extension``), or the
-        agent's framework adapter. Then:
+        The executor the message addresses is the executable extension's it
+        activates (``AionAgentRequestExecutor.route``), or the agent's
+        framework executor. Then:
 
         * a message that continues a task - the one it names, or the
-          addressed handler's task waiting for input (``_continued_task``) -
-          is checked by the task's own handler
+          addressed executor's task waiting for input (``_continued_task``) -
+          is checked against the task's route
           (``AionAgentRequestExecutor.admit_continuation``): a task routed to
           an extension this server does not serve is refused with
-          ``extension_unavailable``, a running task of an exclusive toolkit
-          with ``context_busy``;
-        * any other message starts a task; one routed to a toolkit is checked
-          by that toolkit (``admit_new_task``: the caller check, one task per
-          context, ``preflight``).
+          ``extension_unavailable``, a running task whose executor refuses a
+          message with ``task_busy``;
+        * any other message starts a task, and the extension it is routed
+          to, if any, is kept on the call context for the request executor.
 
         A refusal here is a JSON-RPC error, and no task is created or
-        changed. The admitted route of a new task belongs to this request
-        alone: a route an earlier request left on a reused call context is
-        dropped first.
+        changed. The route of a new task belongs to this request alone: a
+        route an earlier request left on a reused call context is dropped
+        first.
 
         Raises:
             a2a.utils.errors.A2AError: The route refused the request.
         """
         call_context.state.pop(EXTENSION_ROUTE_STATE_KEY, None)
         executor = self.agent_executor
-        routed_extension = getattr(executor, "routed_extension", None)
-        uri = routed_extension(extensions) if routed_extension is not None else None
+        route = getattr(executor, "route", None)
+        uri = route(extensions) if route is not None else None
         task = named_task or await self._continued_task(params, call_context, uri)
         if task is not None:
             admit_continuation = getattr(executor, "admit_continuation", None)
@@ -304,7 +302,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
                 admit_continuation(task)
             return
         if uri is not None:
-            await executor.admit_new_task(uri, params.message, extensions, call_context)
+            call_context.state[EXTENSION_ROUTE_STATE_KEY] = uri
 
     async def _continued_task(
             self,
@@ -314,10 +312,10 @@ class AionRequestHandler(DefaultRequestHandlerV2):
     ) -> Task | None:
         """The task waiting for input that a message without a task id continues, or None.
 
-        Only a task of the handler the message addresses is continued: a
-        toolkit's directive continues that toolkit's task, any other message
-        the framework adapter's (``AionRequestContextBuilder.interrupted_task``).
-        A waiting task of another handler keeps waiting, and the message
+        Only a task of the executor the message addresses is continued: an
+        executable extension's request continues that extension's task, any other message
+        the framework executor's (``AionRequestContextBuilder.interrupted_task``).
+        A waiting task of another executor keeps waiting, and the message
         starts a new task. The message is made to name the task it
         continues, so a2a-sdk and the request context builder take it as an
         explicit continuation and nothing decides again.
@@ -387,8 +385,8 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         pipeline rejects it here with the extension-authored reason - never
         silently handing the request to the primary flow the client
         explicitly asked to bypass. That refusal carries the code
-        ``extension_unavailable`` in its ``data``, and a toolkit's payload its
-        models refuse ``invalid_payload``, as every refusal
+        ``extension_unavailable`` in its ``data``, and an executable
+        extension's payload its models refuse ``invalid_payload``, as every refusal
         with a code does: ``{"code": ..., "retryable": "true" | "false"}``.
 
         Returns:
@@ -601,8 +599,8 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         a complete Task snapshot with all accumulated state at stream end.
 
         How much detail a run's own events carry is not decided here: it is a
-        property of the request an extension parses (a toolkit's own payload,
-        say), so the producer shapes and drops its events before they reach
+        property of the request an extension parses (an executable
+        extension's own payload, say), so the producer shapes and drops its events before they reach
         this handler. This layer knows nothing about any extension's
         payload.
 

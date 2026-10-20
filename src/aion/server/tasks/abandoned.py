@@ -6,9 +6,10 @@ produces; when the server running it dies or hangs, the task keeps its active
 state and nothing will ever write it again. A task whose last durable write is
 older than ``AION_STALE_TASK_TIMEOUT`` is taken for such a task - abandoned -
 and settled ``FAILED`` with ``aion:settledReason=task_abandoned``, the
-settlement ``aion.server.tasks.settlement`` describes. A toolkit's task also
-gets the error a toolkit's failed turn closes with, coded ``task_abandoned``
-(``aion.core.toolkit.codes``), so its client reads it the same way.
+settlement ``aion.server.tasks.settlement`` describes. A task of an
+executable extension also gets the error its failed turn closes with, coded
+``task_abandoned`` (``aion.core.a2a.codes``), so its client reads it the same
+way.
 
 The settlement is a write over the task as it was read: with versions
 (PostgreSQL) a write at the version read, without them (the in-memory store)
@@ -48,11 +49,11 @@ from a2a.server.cluster.task_store import ConcurrentTaskModificationError, Versi
 from a2a.types import Message, Role, Task, TaskState, TaskStatusUpdateEvent
 
 from aion.core.a2a.enums import A2AMetadataKey, TaskSettlementReason
-from aion.core.toolkit import codes
+from aion.core.a2a import codes
+from aion.core.a2a.errors import error_parts
 from aion.db.postgres import DbManager
 from aion.db.postgres.repositories import TasksRepository
 from aion.server.a2a.constants import ACTIVE_TASK_STATES
-from aion.server.a2a.toolkit_errors import error_parts
 from aion.server.a2a.utils import routed_extension_of
 
 from .settlement import settled_task
@@ -78,7 +79,7 @@ ABANDONED_MESSAGE = (
     "The task stopped making progress: the server running it stopped or stopped responding. "
     "Send the request again."
 )
-"""The error message a toolkit's abandoned task is settled with."""
+"""The error message an executable extension's abandoned task is settled with."""
 
 
 @dataclass(frozen=True)
@@ -222,8 +223,8 @@ def abandoned_task(task: Task) -> Optional[tuple[Task, TaskStatusUpdateEvent]]:
     """The settled copy of an abandoned task and the event that records it; None for a task not running.
 
     The copy is ``FAILED`` with ``aion:settledReason=task_abandoned``. A task
-    routed to a toolkit (``aion:routedExtension``) also gets, as its status
-    message, the error a toolkit's failed turn closes with: code
+    routed to an executable extension (``aion:routedExtension``) also gets,
+    as its status message, the error its failed turn closes with: code
     ``task_abandoned``, retryable.
     """
     settled = settled_task(task, TaskSettlementReason.TASK_ABANDONED)

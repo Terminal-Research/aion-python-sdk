@@ -3,7 +3,6 @@
 Focus areas:
   - AionAgent init and property access
   - Port validation (type, range)
-  - stream/resume/cancel raise RuntimeError when not built
   - from_adapter() factory: validates config, initializes, creates executor
   - build() factory: already-built guard, missing path, no adapter, adapter discovery
   - AgentManager: create_agent, set_agent_config, get_agent, clear, Singleton guard
@@ -17,23 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from a2a.auth.user import User
-from a2a.server.context import ServerCallContext
-
-from aion.server.agent.adapters.interfaces.executor import ExecutionConfig, ExecutorAdapter, StateScope
-
-
-class _NamedUser(User):
-    def __init__(self, name: str) -> None:
-        self._name = name
-
-    @property
-    def is_authenticated(self) -> bool:
-        return True
-
-    @property
-    def user_name(self) -> str:
-        return self._name
+from aion.server.agent.adapters.interfaces.executor import AgentFrameworkExecutor
 from aion.server.agent.adapters.interfaces.agent import AgentAdapter
 from aion.server.agent.aion_agent.agent import AionAgent
 from aion.server.agent.aion_agent.manager import AgentManager
@@ -55,13 +38,13 @@ def _make_mock_adapter(framework: str = "test-fw") -> MagicMock:
     adapter.framework_name.return_value = framework
     adapter.validate_config.return_value = None
     adapter.initialize_agent = AsyncMock(side_effect=lambda agent, cfg: agent)
-    adapter.create_executor = AsyncMock(return_value=MagicMock(spec=ExecutorAdapter))
+    adapter.create_executor = AsyncMock(return_value=MagicMock(spec=AgentFrameworkExecutor))
     adapter.can_handle.return_value = True
     adapter.get_supported_types.return_value = [object]
     return adapter
 
 def _make_mock_executor() -> MagicMock:
-    executor = MagicMock(spec=ExecutorAdapter)
+    executor = MagicMock(spec=AgentFrameworkExecutor)
 
     async def _stream(*a, **kw):
         return
@@ -156,36 +139,6 @@ class TestAionAgentPort:
         """AionAgent raises TypeError when port is set to a non-integer value."""
         with pytest.raises(TypeError):
             _make_agent(port="8080")  # type: ignore[arg-type]
-
-class TestAionAgentNotBuiltGuard:
-    async def test_stream_raises_when_not_built(self):
-        """stream raises RuntimeError with 'not built' message on an unbuilt agent."""
-        agent = _make_agent()
-        ctx = MagicMock()
-        with pytest.raises(RuntimeError, match="not built"):
-            async for _ in agent.stream(ctx):
-                pass
-
-    async def test_resume_raises_when_not_built(self):
-        """resume raises RuntimeError with 'not built' message on an unbuilt agent."""
-        agent = _make_agent()
-        ctx = MagicMock()
-        with pytest.raises(RuntimeError, match="not built"):
-            async for _ in agent.resume(ctx):
-                pass
-
-    async def test_cancel_raises_when_not_built(self):
-        """cancel raises RuntimeError with 'not built' message on an unbuilt agent."""
-        agent = _make_agent()
-        ctx = MagicMock(task_id="t1", context_id="ctx-1")
-        with pytest.raises(RuntimeError, match="not built"):
-            await agent.cancel(ctx)
-
-    async def test_discard_undelivered_raises_when_not_built(self):
-        agent = _make_agent()
-        ctx = MagicMock(task_id="t1", context_id="ctx-1")
-        with pytest.raises(RuntimeError, match="not built"):
-            await agent.discard_undelivered(ctx, MagicMock())
 
 class TestAionAgentFromAdapter:
     async def test_creates_agent_with_correct_id(self):
@@ -321,66 +274,6 @@ class TestAionAgentBuild:
                     result = await agent.build()
 
         assert result is agent
-
-class TestAionAgentExecution:
-    def _built_agent(self) -> AionAgent:
-        executor = _make_mock_executor()
-        adapter = _make_mock_adapter()
-        agent = _make_agent()
-        agent._executor = executor
-        agent._adapter = adapter
-        agent._is_built = True
-        agent._logger = MagicMock()
-        return agent
-
-    async def test_cancel_delegates_to_executor(self):
-        """cancel on a built agent delegates to the executor's cancel method."""
-        agent = self._built_agent()
-        ctx = MagicMock(task_id="t1", context_id="ctx-1")
-
-        await agent.cancel(ctx)
-
-        agent._executor.cancel.assert_called_once()
-        config = agent._executor.cancel.call_args.args[0]
-        assert config.task_id == "t1"
-        assert config.context_id == "ctx-1"
-
-    async def test_discard_undelivered_delegates_under_the_callers_scope(self):
-        """The executor forgets the event under the scope the execution used."""
-        agent = self._built_agent()
-        agent._executor.discard_undelivered = AsyncMock()
-        ctx = MagicMock(task_id="t1", context_id="ctx-1", call_context=ServerCallContext(user=_NamedUser("alice")))
-        event = MagicMock()
-
-        await agent.discard_undelivered(ctx, event)
-
-        config, passed = agent._executor.discard_undelivered.call_args.args
-        assert passed is event
-        assert config.task_id == "t1"
-        assert config.context_id == "ctx-1"
-        assert config.state_scope == StateScope(agent_id=agent.id, owner_scope="alice")
-
-    async def test_stream_delegates_to_executor(self):
-        """stream on a built agent delegates to the executor's stream method."""
-        agent = self._built_agent()
-
-        async def _events(*a, **kw):
-            return
-            yield
-
-        agent._executor.stream = MagicMock(return_value=_events())
-        ctx = MagicMock(task_id="t1", context_id="ctx-1")
-
-        events = []
-        async for ev in agent.stream(ctx):
-            events.append(ev)
-
-        agent._executor.stream.assert_called_once()
-        call_args = agent._executor.stream.call_args
-        assert call_args.args[0] is ctx
-        config = call_args.args[1]
-        assert config.task_id == "t1"
-        assert config.context_id == "ctx-1"
 
 class TestAionAgentCard:
     def test_card_lazy_loaded(self):

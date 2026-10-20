@@ -1,11 +1,12 @@
-"""A toolkit's artifacts numbered and found by context, held alike by the in-memory and PostgreSQL backends.
+"""An executor's artifacts numbered and found by context, held alike by the in-memory and PostgreSQL backends.
 
-Each test runs the scripted toolkit through a ``ToolkitTaskHandler`` over a
-real task store, context reservations and artifact reader of one kind, and
-saves the events a turn yields as the server's pipeline does:
+Each test runs the scripted executor, with the server's services
+(``ExtensionServices``) over a real task store, context reservations and
+artifact reader of one kind, and saves the events a turn yields as the
+server's pipeline does:
 
-* the tasks of a context write one artifact id as versions 0, 1, 2, and
-  ``find_artifact`` answers the latest;
+* the tasks of a context write one artifact id as versions 0, 1, 2, and the
+  lookup answers the latest;
 * a caller that does not hold the context numbers from 0 and finds nothing,
   even for a ``context_id`` another holder uses;
 * a shared context's tasks are every participant's, whoever wrote them.
@@ -14,6 +15,7 @@ saves the events a turn yields as the server's pipeline does:
 from __future__ import annotations
 
 import uuid
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -38,9 +40,9 @@ from a2a.types import (
 from .postgres_support import POSTGRES_TEST_URL, prepared_database, stores as postgres_stores, truncate
 
 from aion.core.principal import Principal
-from aion.core.toolkit import Artifact, TextPart, ToolkitArtifactEvent, ToolkitRequest, ToolkitResult, ToolkitState
 from aion.db.postgres.manager import db_manager
-from aion.server.agent.execution.extensions.toolkit import ToolkitAdmission, ToolkitTaskHandler
+from aion.server.agent.adapters import ExecutionConfig
+from aion.server.agent.execution.extensions import ExtensionServices
 from aion.server.auth import (
     Assurance,
     AuthenticatedCaller,
@@ -53,7 +55,8 @@ from aion.server.tasks.context_artifacts import InMemoryContextArtifacts, Postgr
 from aion.server.tasks.contexts import InMemoryContextCatalog
 from aion.server.tasks.stores.in_memory_task_store import InMemoryTaskStore
 
-from tests.support.scripted_toolkit.toolkit import Script, ScriptedToolkit
+from tests.support.scripted_executor.executor import ScriptedExecutor
+from tests.support.scripted_executor.script import COMPLETED, Script
 
 pytestmark = [pytest.mark.asyncio(loop_scope="module")]
 
@@ -89,11 +92,8 @@ def _caller(name: str, *, shared: bool = False) -> ServerCallContext:
     return ServerCallContext(user=_User(name), state={"auth": CallerCredentials(caller)})
 
 
-def _spec(text: str) -> ToolkitArtifactEvent:
-    return ToolkitArtifactEvent(
-        artifact=Artifact(id=SPEC, name="Spec", parts=[TextPart(text=text)], metadata={"specPath": "spec.md"}),
-        last_chunk=True,
-    )
+def _spec(text: str) -> dict:
+    return {"kind": "artifact", "id": SPEC, "text": text, "metadata": {"specPath": "spec.md"}}
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
@@ -106,7 +106,7 @@ async def _database():
 
 
 class _Backend:
-    """One backend's store, admission and artifact reader, and a toolkit handler over them."""
+    """One backend's store, admission and artifact reader, and an extension's executor over them."""
 
     def __init__(self, kind: str) -> None:
         self.kind = kind
@@ -121,18 +121,17 @@ class _Backend:
             self.store, self.versioned = postgres_stores(agent_id)
             self.admission = PostgresContextAdmission(agent_id, db_manager)
             self.ledger = PostgresContextArtifacts(agent_id, db_manager)
-        self.toolkit = ScriptedToolkit()
-        self.handler = ToolkitTaskHandler(
-            self.toolkit, context_artifacts=self.ledger, owner_resolver=resolve_user_scope, secret_values=lambda: ()
+        self.executor = ScriptedExecutor(
+            services=ExtensionServices(context_artifacts=self.ledger, owner_resolver=resolve_user_scope)
         )
 
     async def write(
             self, context_id: str, name: str, *outputs: Any, holder: ContextHolder | None = None
     ) -> tuple[Task, Any]:
-        """Run a new task of ``name`` in the context, save it, and return it with the turn's toolkit context."""
+        """Run a new task of ``name`` in the context, save it, and return it with the lookup its turn had."""
         shared = holder is not None and holder.kind == "shared"
         await self.admission.admit(context_id, holder or ContextHolder.private(name), name)
-        self.toolkit.script = Script(outputs=list(outputs) or [ToolkitResult(state=ToolkitState.COMPLETED)])
+        self.executor.script = Script(outputs=list(outputs) or [COMPLETED])
         task = Task(
             id=str(uuid.uuid4()), context_id=context_id, status=TaskStatus(state=TaskState.TASK_STATE_WORKING)
         )
@@ -144,10 +143,8 @@ class _Backend:
             context_id=context_id,
             task=task,
         )
-        admission = ToolkitAdmission(
-            request=ToolkitRequest(message_id="m-user", text="go"), daemon_variables={}, model_service=None
-        )
-        events = [event async for event in self.handler.stream(request, admission)]
+        config = ExecutionConfig(task_id=task.id, context_id=context_id)
+        events = [event async for event in self.executor.stream(request, config)]
         for event in events:
             if isinstance(event, TaskArtifactUpdateEvent):
                 append_artifact_to_task(task, event)
@@ -155,12 +152,10 @@ class _Backend:
         await self.versioned.save(
             task, event=task, prev=None, prev_version=TaskVersion.MISSING, context=_caller(name, shared=shared)
         )
-        return task, self.toolkit.turns[-1][2]
+        return task, SimpleNamespace(find_artifact=self.executor.services.artifacts(request).find)
 
     async def spec(self, context_id: str, name: str, text: str, **kwargs) -> Task:
-        task, _ = await self.write(
-            context_id, name, _spec(text), ToolkitResult(state=ToolkitState.COMPLETED), **kwargs
-        )
+        task, _ = await self.write(context_id, name, _spec(text), COMPLETED, **kwargs)
         return task
 
     async def stored_version(self, task: Task) -> str:
@@ -184,15 +179,12 @@ async def test_three_tasks_write_versions_0_1_2_and_the_latest_is_found(backend)
 
     assert [await backend.stored_version(task) for task in (first, second, third)] == ["0", "1", "2"]
 
-    _, toolkit_context = await backend.write("ctx", "alice")
-    found = await toolkit_context.find_artifact(SPEC)
+    _, turn = await backend.write("ctx", "alice")
+    found = await turn.find_artifact(SPEC)
 
     assert (found.task_id, found.version) == (third.id, 2)
-    assert (found.artifact.id, found.artifact.name, found.artifact.metadata) == (
-        SPEC,
-        "Spec",
-        {"specPath": "spec.md"},
-    )
+    assert found.artifact.artifact_id == SPEC
+    assert dict(found.artifact.metadata) == {"specPath": "spec.md", "version": "2"}
     assert [part.text for part in found.artifact.parts] == ["three"]
     assert found.updated_at is not None
 
@@ -213,12 +205,10 @@ async def test_a_holder_that_does_not_hold_the_context_numbers_from_zero_and_fin
     assert await backend.ledger.versions("ctx", SPEC, GATEWAY) == []
     assert len(await backend.ledger.versions("ctx", SPEC, ContextHolder.private("alice"))) == 1
 
-    stranger, toolkit_context = await backend.write(
-        "ctx", "bob", _spec("bob's plan"), ToolkitResult(state=ToolkitState.COMPLETED)
-    )
+    stranger, turn = await backend.write("ctx", "bob", _spec("bob's plan"), COMPLETED)
 
     assert stranger.artifacts[0].metadata["version"] == "0"
-    assert await toolkit_context.find_artifact(SPEC) is None
+    assert await turn.find_artifact(SPEC) is None
 
 
 async def test_the_tasks_of_a_shared_context_are_every_participants(backend):

@@ -12,6 +12,10 @@ from a2a.types import (
 )
 
 from aion.core.a2a.enums import A2AMetadataKey, ArtifactId
+# Defined in core, where an executor that needs only the SDK base marks its
+# events; an ephemeral status update is dropped before the task manager folds
+# its message into history (``AionTaskManager._check_process_skip_event``).
+from aion.core.a2a.metadata import mark_status_event_ephemeral
 from aion.server.a2a.constants import (
     EPHEMERAL_STATUS_METADATA_KEY,
     INTERRUPT_TASK_STATES,
@@ -152,17 +156,6 @@ def _message_suffix(status: TaskStatus) -> str:
     return f' message_id={status.message.message_id or "<unidentified>"}'
 
 
-def mark_status_event_ephemeral(event: TaskStatusUpdateEvent) -> None:
-    """Flag a status update as ephemeral.
-
-    An ephemeral status update is streamed to the client for live progress but
-    never persisted into task history — see
-    ``AionTaskManager._check_process_skip_event``, which drops flagged events
-    before the base manager can fold their message into history.
-    """
-    event.metadata[EPHEMERAL_STATUS_METADATA_KEY] = True
-
-
 def is_ephemeral_status_event(event: object) -> bool:
     """Return True when ``event`` is a status update flagged ephemeral."""
     if not isinstance(event, TaskStatusUpdateEvent):
@@ -280,7 +273,7 @@ def empty_input_warning(message: Optional[Message]) -> str:
 
 
 def routed_extension_of(task: Task) -> Optional[str]:
-    """The extension whose handler serves the task, or None for the agent's framework adapter.
+    """The extension whose executor serves the task, or None for the agent's framework executor.
 
     The executor records it in ``task.metadata["aion:routedExtension"]`` when
     the task is created, and only the server writes that key.

@@ -16,6 +16,7 @@ from a2a.utils.errors import InvalidParamsError, TaskNotFoundError
 from aion.core.constants.a2a import DAEMON_EXTENSION_URI_V1
 from aion.core.runtime import aion_a2a_extension_registry
 from aion.core.runtime.context import AionRuntimeExtensions
+from aion.server.agent.execution.pool import EXTENSION_ROUTE_STATE_KEY
 from aion.server.core.app.handlers import AionRequestHandler
 
 
@@ -38,22 +39,17 @@ class SpyPreprocessor:
 
 
 class RouteRecorder:
-    """An executor that routes every new task to one extension, records its admissions, and may refuse them."""
+    """An executor that routes every request to one extension and records what it was asked."""
 
-    URI = "https://example.invalid/toolkits/recorded/1.0.0"
+    URI = "https://example.invalid/extensions/recorded/1.0.0"
 
-    def __init__(self, raises: Exception | None = None) -> None:
-        self.admitted: list = []
+    def __init__(self) -> None:
+        self.routed: list = []
         self.continued: list = []
-        self._raises = raises
 
-    def routed_extension(self, extensions) -> str:
+    def route(self, extensions) -> str:
+        self.routed.append(extensions)
         return self.URI
-
-    async def admit_new_task(self, uri, message, extensions, call_context) -> None:
-        self.admitted.append(extensions)
-        if self._raises is not None:
-            raise self._raises
 
     def admit_continuation(self, task) -> None:
         self.continued.append(task)
@@ -65,7 +61,7 @@ def handler(*preprocessors, executor: RouteRecorder | None = None) -> AionReques
     Built without ``__init__``: the full constructor wires a task store, an
     executor and a push sender, none of which take part in ordering.
     Admission into the context is recorded in ``admitted`` instead of run,
-    and the route of a new task is admitted by a ``RouteRecorder``.
+    and the route of a new task is decided by a ``RouteRecorder``.
     """
     instance = AionRequestHandler.__new__(AionRequestHandler)
     instance._preprocessors = list(preprocessors)
@@ -124,40 +120,42 @@ class TestOrdering:
         with pytest.raises(InvalidParamsError):
             await handler(spy, executor=executor)._setup_active_task(request, call_context())
 
-        assert executor.admitted == []
+        assert executor.routed == []
         assert spy.calls == []
         assert accepting_super == []
 
-    async def test_the_route_of_a_new_task_is_admitted_before_preprocessing(self, accepting_super):
-        """A route that refuses the request leaves no preprocessor side effect and no task."""
+    async def test_the_route_of_a_new_task_is_kept_before_preprocessing(self, accepting_super):
+        """The executor a new task goes to is decided once, from the verified extensions, before any side effect."""
         aion_a2a_extension_registry.reset_to_default()
         spy = SpyPreprocessor()
-        executor = RouteRecorder(raises=InvalidParamsError(message="refused"))
+        executor = RouteRecorder()
+        context = call_context()
 
-        with pytest.raises(InvalidParamsError, match="refused"):
-            await handler(spy, executor=executor)._setup_active_task(params(), call_context())
+        await handler(spy, executor=executor)._setup_active_task(params(), context)
 
-        assert len(executor.admitted) == 1
-        assert isinstance(executor.admitted[0], AionRuntimeExtensions)
-        assert spy.calls == []
-        assert accepting_super == []
+        [verified] = executor.routed
+        assert isinstance(verified, AionRuntimeExtensions)
+        assert context.state[EXTENSION_ROUTE_STATE_KEY] == RouteRecorder.URI
+        assert len(spy.calls) == 1
+        assert accepting_super == ["setup"]
 
     async def test_a_message_continuing_a_task_keeps_its_route(self, accepting_super):
-        """Only a message that starts a task has its route decided; its task's handler checks the message."""
+        """Only a message that starts a task has its route kept; its task's route checks the message."""
         executor = RouteRecorder()
         request = params()
         request.message.task_id = "task-1"
+        context = call_context()
 
-        await handler(executor=executor)._setup_active_task(request, call_context())
+        await handler(executor=executor)._setup_active_task(request, context)
 
-        assert executor.admitted == []
+        assert EXTENSION_ROUTE_STATE_KEY not in context.state
         assert [task.id for task in executor.continued] == ["task-1"]
         assert accepting_super == ["setup"]
 
     async def test_a_message_the_builder_hands_to_an_interrupted_task_keeps_its_route(
         self, accepting_super
     ):
-        """A message without a task id that continues the addressed handler's waiting task names that task."""
+        """A message without a task id that continues the addressed executor's waiting task names that task."""
         executor = RouteRecorder()
         instance = handler(executor=executor)
         asked = []
@@ -170,16 +168,17 @@ class TestOrdering:
         instance._request_context_builder = Builder()
         request = params()
         request.message.context_id = "ctx-1"
+        context = call_context()
 
-        await instance._setup_active_task(request, call_context())
+        await instance._setup_active_task(request, context)
 
         assert asked == [RouteRecorder.URI]
-        assert executor.admitted == []
+        assert EXTENSION_ROUTE_STATE_KEY not in context.state
         assert request.message.task_id == "task-9"
         assert [task.id for task in executor.continued] == ["task-9"]
 
     async def test_a_refused_continuation_reaches_no_preprocessor_and_no_task(self, accepting_super):
-        """The task's handler refusing the message leaves the task and the request untouched."""
+        """A refusal of the message into the task leaves the task and the request untouched."""
         spy = SpyPreprocessor()
         executor = RouteRecorder()
 

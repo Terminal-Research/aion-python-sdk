@@ -123,23 +123,29 @@ aion.cli
 - Keep extension identity, activation, availability, advertisement, transport
   bindings, and task ownership distinct. A method extension is not merely a
   message extension; a registered method is not automatically advertised.
-  Generated Agent Cards use `get_advertised()`. An
-  `ExtensionTaskHandler` owns execution only when it claims that extension's
+  Generated Agent Cards use `get_advertised()`. An extension owns a task's
+  execution only when the server's executor pool holds an executor for its
   URI. Read `docs/development/extension-exposure.md` before changing
   extension exposure or routing.
-- Toolkits are plugins: a package registers an `aion.core.toolkit.Toolkit`
-  under the `aion.toolkits` entry point group, and the server's toolkit host
-  finds it, admits requests before a task exists, drives its turns and
-  translates what it yields into A2A. The SDK holds no code for a particular
-  toolkit; the protocol in `aion.core.toolkit` imports no a2a type. The host
-  also numbers a toolkit's artifacts per context (`metadata.version`, the key
-  ADK writes), serves `ToolkitContext.find_artifact` within the context's
-  holder, refuses a second task of an `exclusive_per_context` toolkit with
-  `context_busy`, and cancels by the a2a-sdk model. Read
-  `docs/development/toolkit-host.md` before changing the protocol or the host.
-  The SDK's tests check the host against the scripted toolkit in
-  `tests/support/scripted_toolkit`; the SDK's CI installs no real toolkit, and
-  a toolkit is tested in its own repository.
+- Every task runs on an executor from one pool (`TaskExecutorPool`) through one
+  API, `TaskExecutor` (`stream`, `resume`, `cancel`): the agent's framework
+  executor (`AgentFrameworkExecutor`, created by the LangGraph or ADK
+  plugin) or the `ExtensionExecutor` of an executable extension the agent
+  enables. The request executor drives every turn the same way - a raised
+  error fails the task, an `ExtensionRejection` rejects it, the final status
+  of a cancel or a shutdown is the server's - and the pool is only a lookup.
+  Executable extensions are registered from the list `aion.server` ships
+  (`EXECUTABLE_EXTENSIONS`) in one step of `AppFactory._initialize`, and
+  their executors are created once the stores exist, with their `aion.yaml`
+  options and the server's `ExtensionServices`; an executor that cannot be
+  created stops the server. Everything particular to an extension - its
+  payload, its callers, one task per context, artifact versions - is inside
+  its executor. Behavior evolution is a thin wrapper that imports its toolkit
+  lazily. Read `docs/development/executable-extensions.md` before changing
+  them. The SDK's tests use `tests/support/executors.py`, the scripted
+  executor and a stand-in evolution toolkit in
+  `tests/support/scripted_executor`; the SDK's CI installs no real toolkit,
+  and a toolkit is tested in its own repository.
 - Preserve the external streaming contract: close every outbound stream with
   a full `Task`, including completed and failed executions and the
   initial-task resume path. Cancellation is a `Message`. Keep the shared
@@ -245,7 +251,7 @@ was run. There is no need to run every suite for a documentation-only edit.
 
 - `aion.core`: protocol models, extension registry, configuration and runtime
   abstractions, settings, logging types, the public exception hierarchy, and
-  the toolkit plugin protocol (`aion.core.toolkit`).
+  the codes and error shape executable extensions share (`aion.core.a2a`).
 - `aion.api`: GraphQL and HTTP control-plane clients, token management,
   capability addressing, Files and model-service clients.
 - `aion.mcp`: base-install MCP endpoint builders and a lazily loaded ASGI
@@ -254,9 +260,9 @@ was run. There is no need to run every suite for a documentation-only edit.
   authoring helpers, model routing, tools, and invocation support.
 - `aion.db`: PostgreSQL manager, repositories and migrations, including
   a2a-sdk's `task_versions` and `task_events` tables.
-- `aion.server`: generic A2A app, plugin discovery, task and file lifecycle,
-  platform link, extensions and the toolkit host, push notifications, and
-  observability. Response and thinking deltas remain live-only artifacts
+- `aion.server`: generic A2A app, plugin discovery, the executor pool, task
+  and file lifecycle, platform link, extensions and their executors, push
+  notifications, and observability. Response and thinking deltas remain live-only artifacts
   outside durable task storage.
 - `aion.proxy`: public multi-agent proxy and streaming response handling.
 - `aion.langgraph.server` and `aion.adk.server`: framework plugins and

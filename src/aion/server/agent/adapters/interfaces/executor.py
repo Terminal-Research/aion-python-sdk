@@ -1,17 +1,16 @@
-"""Abstract base class for agent execution adapters.
+"""The executors the server runs tasks with, and what one execution is told.
 
-This module defines ExecutorAdapter and related classes for executing agents
-in a framework-agnostic way. It provides abstractions for:
-- Synchronous and asynchronous agent invocation
-- Streaming execution with events
-- Keying framework state by agent and owner, and deleting it
-- Resume/recovery from interrupts
+``TaskExecutor`` is the API every executor has: ``stream``, ``resume`` and
+``cancel``. ``AgentFrameworkExecutor`` is the agent's framework executor,
+which also keeps framework state keyed by agent and owner (``StateScope``)
+and deletes it; an executable extension's executor is
+``aion.server.agent.execution.extensions.ExtensionExecutor``.
 """
 
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, ClassVar, Literal, Optional, TYPE_CHECKING
 from urllib.parse import quote
 
 
@@ -171,41 +170,46 @@ class ExecutionConfig:
         return self.state_scope
 
 
-class ExecutorAdapter(ABC):
-    """Abstract base for framework-specific agent execution.
+class TaskExecutor(ABC):
+    """Runs the turns of A2A tasks: the one API the server calls every executor through.
 
-    Subclasses must implement all abstract methods to provide framework-specific
-    streaming and resume; the remaining hooks have defaults.
+    The server keeps a pool of executors - the agent's framework executor
+    (``AgentFrameworkExecutor``) and one per executable extension the agent
+    enables (``ExtensionExecutor``) - and calls whichever a task belongs to
+    the same way: ``stream`` for a new task, ``resume`` for a message that
+    continues one, ``cancel`` to stop its running turn. A turn yields A2A
+    events, which go the standard way (``AionEventPipeline``); the server
+    owns the turn around them: a turn that raises fails the task, and the
+    final status of a cancel or a shutdown is the server's.
 
-    The ExecutorAdapter handles:
-    - Streaming execution with real-time events
-    - Resume/recovery from interrupts
-    - Deleting a context's framework state
-    - Cancellation
+    One instance serves every task, concurrently.
 
-    Note: This adapter is designed for A2A protocol which always uses streaming
-    execution. All execution flows use the stream() method to generate events
-    that are then either streamed to the client (message/stream) or aggregated
-    into a final Task object (message/send).
+    Attributes:
+        message_to_busy_task: What a message into a task of this executor
+            gets while the task's turn runs (``SUBMITTED``, ``WORKING``).
+            ``"queue"`` admits it, as a2a-sdk does: it becomes the task's
+            next turn (``resume``), after the running one on the server
+            running it and alongside it on another server, where the task's
+            version decides which writes land; it never reaches the running
+            turn. ``"refuse"`` refuses it before the task changes, with the
+            JSON-RPC error ``task_busy`` naming the task. A task waiting
+            for input takes a message either way.
     """
+
+    message_to_busy_task: ClassVar[Literal["queue", "refuse"]] = "queue"
+
     @abstractmethod
     async def stream(
         self,
         context: "RequestContext",
-        config: Optional[ExecutionConfig] = None,
+        config: ExecutionConfig,
     ) -> AsyncIterator[TaskStatusUpdateEvent | TaskArtifactUpdateEvent]:
-        """Stream agent execution, yielding A2A events in real-time.
+        """Run the first turn of a new task, yielding A2A events.
 
         Args:
-            context: A2A request context with message, metadata, and task information
-            config: Execution configuration (task_id, context_id, timeout, etc.)
-
-        Yields:
-            AgentEvent: A2A events emitted during execution
-
-        Raises:
-            TimeoutError: If execution exceeds configured timeout
-            Exception: Any framework-specific errors during execution
+            context: A2A request context with the message and the task.
+            config: The task, its context and whose framework state the turn
+                uses.
         """
         pass
 
@@ -215,20 +219,50 @@ class ExecutorAdapter(ABC):
         context: "RequestContext",
         config: ExecutionConfig,
     ) -> AsyncIterator[TaskStatusUpdateEvent | TaskArtifactUpdateEvent]:
-        """Resume a paused/interrupted agent execution.
+        """Run the next turn of a task, yielding A2A events.
 
         Args:
-            context: A2A request context with message, metadata, and task information
-            config: Execution configuration specifying which execution to resume
-
-        Yields:
-            AgentEvent: A2A events emitted during resumed execution
-
-        Raises:
-            KeyError: If execution not found
-            ValueError: If execution is not in a resumable state
+            context: A2A request context with the message and the task.
+            config: The task, its context and whose framework state the turn
+                uses.
         """
         pass
+
+    async def cancel(self, config: ExecutionConfig, *, within: Optional[float] = None) -> None:
+        """Stop the turn running for ``config.task_id`` in this process.
+
+        Called for a caller's cancel and at a server shutdown. The server
+        then waits up to ``within`` seconds for the turn to end and writes
+        the task's final status itself: ``CANCELED``, or ``FAILED`` coded
+        ``server_shutdown``. What the turn yields while it stops reaches the
+        task first. Idempotent; a task with no turn here is not an error.
+
+        Args:
+            config: Identifies the task.
+            within: How long the server waits for the turn to end; None when
+                it waits for none.
+
+        Raises:
+            UnsupportedOperationError: Default - the executor cannot stop a
+                turn, and the server does not wait for it.
+        """
+        raise UnsupportedOperationError()
+
+
+class AgentFrameworkExecutor(TaskExecutor):
+    """The executor of the agent's framework (LangGraph, ADK, ...), created by its plugin.
+
+    It serves every task no executable extension takes. Besides the turns,
+    it owns the framework's state of a context - a LangGraph checkpoint, an
+    ADK session - kept outside the task, which ``DeleteContext`` removes
+    through :meth:`delete_state`.
+
+    Attributes:
+        framework: The framework's name, as its plugin's adapter names it
+            (``AgentAdapter.framework_name``).
+    """
+
+    framework: ClassVar[str] = ""
 
     @property
     def supports_state_deletion(self) -> bool:
@@ -238,7 +272,7 @@ class ExecutorAdapter(ABC):
         state could not be removed is refused up front rather than half
         deleted. Defaults to whether :meth:`delete_state` is overridden.
         """
-        return type(self).delete_state is not ExecutorAdapter.delete_state
+        return type(self).delete_state is not AgentFrameworkExecutor.delete_state
 
     async def delete_state(self, config: ExecutionConfig) -> None:
         """Delete the framework state kept for ``config.context_id`` under ``config.state_scope``.
@@ -278,17 +312,3 @@ class ExecutorAdapter(ABC):
             event: The event as the executor produced it.
         """
         return None
-
-    async def cancel(self, config: ExecutionConfig) -> None:
-        """Framework-specific cancellation hook.
-
-        Override to interrupt active execution (cancel asyncio tasks, set stop flags,
-        release resources, etc.). Called before the A2A CANCELED state is emitted.
-
-        Args:
-            config: Execution configuration identifying the task to cancel
-
-        Raises:
-            UnsupportedOperationError: Default — framework does not support cancellation.
-        """
-        raise UnsupportedOperationError()

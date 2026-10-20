@@ -30,12 +30,12 @@ from aion.core.exceptions import AionDaemonIdentityRequired
 from aion.core.principal import Principal
 from aion.core.runtime.context import AionRuntimeContext, AionRuntimeContextRegistry, DirectAttribution
 from aion.mcp import aion_mcp_endpoint
-from aion.server.agent.execution import AionAgentRequestExecutor
 from aion.server.agent.execution.context.providers import RequestScopeRuntimeContextProvider
 from aion.server.agent.execution.scope import init_execution_scope, clear_execution_scope
 from aion.server.auth import Assurance, AuthenticatedCaller, CallerCredentials, CredentialKind
 from aion.server.files.storage import FileUpload, UploadContext, UploadReceipt
 from aion.server.files.storage.backends.aion import AionFileStorageBackend
+from tests.support.executors import FakeFrameworkExecutor, request_executor
 
 
 class VersionToken:
@@ -240,7 +240,7 @@ async def test_all_clients_keep_concurrent_execution_attribution(api, resume):
         if False:
             yield
 
-    worker = AionAgentRequestExecutor(SimpleNamespace(stream=stream, resume=stream))
+    worker = request_executor(FakeFrameworkExecutor(stream=stream))
     try:
         async def self_initiated():
             async for _ in stream(None):

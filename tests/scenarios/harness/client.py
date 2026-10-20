@@ -381,9 +381,15 @@ class ScenarioClient:
         response.raise_for_status()
         return response.json()
 
-    def stream(self, text: str, **kwargs: Any) -> AsyncIterator:
-        """Raw streaming send, for scenarios that read events as they arrive."""
+    def stream(self, text: str, *, metadata: Optional[Mapping[str, Any]] = None, **kwargs: Any) -> AsyncIterator:
+        """Raw streaming send, for scenarios that read events as they arrive.
+
+        ``metadata`` is the request's, keyed by extension URI; the rest is
+        what ``build_message`` takes.
+        """
         request = SendMessageRequest(message=self.build_message(text, **kwargs))
+        if metadata:
+            request.metadata.CopyFrom(_struct(metadata))
         return self._client(True).send_message(request)
 
     async def close(self) -> None:

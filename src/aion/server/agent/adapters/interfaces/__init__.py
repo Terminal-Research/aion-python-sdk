@@ -1,7 +1,8 @@
 from .agent import AgentAdapter
 from .executor import (
-    ExecutorAdapter,
+    AgentFrameworkExecutor,
     ExecutionConfig,
+    TaskExecutor,
     LegacyStateError,
     StateScope,
     is_state_key,
@@ -16,8 +17,9 @@ __all__ = [
     # Agent
     "AgentAdapter",
     # Executor
-    "ExecutorAdapter",
+    "AgentFrameworkExecutor",
     "ExecutionConfig",
+    "TaskExecutor",
     "LegacyStateError",
     "StateScope",
     "is_state_key",

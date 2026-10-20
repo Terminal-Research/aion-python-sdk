@@ -29,18 +29,19 @@ but it is not a substitute for a required pull request check.
 the release workflow's checks of the built wheel. `TEST_PYTHONS` in the
 `Makefile` is the `unit` job's matrix; change the two together.
 
-## Toolkits
+## Executable extensions and toolkits
 
-The SDK's CI installs no toolkit. It checks the toolkit host against the
-scripted toolkit in `tests/support/scripted_toolkit`, which is built on the
-protocol models of `aion.core.toolkit` alone (see
-[Toolkit host](toolkit-host.md#testing)).
+The SDK's CI installs no toolkit. It checks the turn the server drives for
+an executable extension's executor and the standard path of its events with
+the scripted executor in `tests/support/scripted_executor`, and the
+evolution wrapper with a stand-in for the evolution toolkit's module and
+without it (see [Executors and executable extensions](executable-extensions.md#testing)).
 
 A toolkit is tested in its own repository, by its own CI, which installs the
-SDK like any other dependency. When the server loads a toolkit it compares
-the protocol version the toolkit declares with its own, so an installation
-that skipped the dependency resolver still cannot run a toolkit built for
-another protocol.
+SDK like any other dependency: on every supported Python against the SDK
+branch of the same name (else `main`), and nightly against `main`. There is
+no protocol version between them; the toolkit's `aionto-sdk` range is the
+compatibility.
 
 ## Require the checks before merging
 

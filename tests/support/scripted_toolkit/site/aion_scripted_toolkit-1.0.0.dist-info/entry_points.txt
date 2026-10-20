@@ -1,3 +1,0 @@
-[aion.toolkits]
-scripted = tests.support.scripted_toolkit.toolkit:toolkit
-scripted-exclusive = tests.support.scripted_toolkit.toolkit:exclusive_toolkit

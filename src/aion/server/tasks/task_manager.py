@@ -238,7 +238,7 @@ class AionTaskManager(TaskManager):
           with a bare status, which would bury the answer in history and lose
           it entirely for a `historyLength=0` request;
         * a `WORKING` update that only changes details in its metadata - the
-          object a toolkit keeps in the task metadata, say - which would leave
+          object an executable extension keeps in the task metadata, say - which would leave
           the running task with an empty status line.
 
         So when such an update arrives, the pending message is moved onto it:

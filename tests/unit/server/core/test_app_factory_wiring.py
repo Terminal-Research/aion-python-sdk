@@ -23,9 +23,8 @@ from aion.server.core.middlewares import (
 @pytest.fixture
 def create_push(monkeypatch) -> Mock:
     """Stands in for everything the request handler is built from; returns the push factory's ``create``."""
-    monkeypatch.setattr(
-        factory_module.AionAgentRequestExecutor, "create", AsyncMock(return_value=Mock())
-    )
+    monkeypatch.setattr(factory_module, "AionAgentRequestExecutor", Mock(return_value=Mock()))
+    monkeypatch.setattr(factory_module, "create_extension_executors", Mock(return_value={}))
     create = Mock(return_value=(Mock(), Mock()))
     monkeypatch.setattr(factory_module.PushNotificationFactory, "create", create)
     monkeypatch.setattr(factory_module, "AionRequestHandler", Mock())
@@ -190,6 +189,7 @@ async def test_the_registered_routes_are_the_applications_and_the_rest_stays_clo
         factory._add_extra_middlewares()
 
     monkeypatch.setattr(factory, "_build_app", build_app)
+    monkeypatch.setattr(factory_module, "register_extensions", Mock(return_value=[]))
     custom = APIRouter(prefix="/api/custom")
     custom.add_api_route("/health", lambda: "custom", methods=["GET"])
     clashing = APIRouter()

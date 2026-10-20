@@ -1,21 +1,21 @@
 """Tasks their server abandoned - hung or dead - settled by the other server of the agent.
 
-Two ``aion serve`` with the scripted toolkits run over one database with a
+Two ``aion serve`` with the evolution extension and its stand-in toolkit run over one database with a
 small ``AION_STALE_TASK_TIMEOUT``, as an agent of their own: the other
 distributed scenarios share the database, and a sweep reads its own agent's
 tasks only. A task that stays ``SUBMITTED`` or
 ``WORKING`` without a durable write for longer than that is taken for
 abandoned and settled ``FAILED`` with ``aion:settledReason=task_abandoned``;
-a toolkit's task also carries the error ``task_abandoned`` in the shape of a
-toolkit's failure.
+an executable extension's task also carries the error ``task_abandoned`` in
+the shape of an extension's failure.
 
 * A turn that hangs on one server is left alone by that server - it is
   alive there - and settled by the other one's background sweep, with no
   request needed; a task waiting for input is never touched.
-* A context an abandoned task of an exclusive toolkit held takes a new task
+* A context an abandoned evolution task held takes a new task
   again, and a message into the abandoned task is refused like one into a
   finished task.
-* A server killed outright leaves its tasks - a toolkit's and the
+* A server killed outright leaves its tasks - an evolution's and the
   framework's - to the survivor, which settles them and admits the next
   task of the context.
 """
@@ -37,16 +37,14 @@ from google.protobuf.json_format import MessageToDict
 from tests.scenarios.frameworks import Framework
 from tests.scenarios.harness import ScenarioClient, ServeProcess, run_until_working
 from tests.scenarios.harness.pg import postgres_env
-from tests.scenarios.toolkits import (
+from tests.scenarios.evolution import (
     COMPLETED,
-    EXCLUSIVE_URI,
-    TOOLKIT,
+    EVOLUTION,
     data_parts,
     rpc_script,
     run_script,
     start_working,
 )
-from tests.support.scripted_toolkit.contract import URI
 
 pytestmark = [pytest.mark.distributed]
 
@@ -68,15 +66,15 @@ SLOW_SECONDS = 300
 
 
 def _pair(framework: Framework) -> Iterator[tuple[ServeProcess, ServeProcess]]:
-    """Two servers with the toolkits on one database, with the small timeout; taken away afterwards."""
+    """Two servers with the evolution extension on one database, with the small timeout; taken away afterwards."""
     processes = [
         ServeProcess(
             framework,
             dataclasses.replace(
-                TOOLKIT,
+                EVOLUTION,
                 agent_ids=(AGENT_ID,),
                 env={
-                    **TOOLKIT.env,
+                    **EVOLUTION.env,
                     **postgres_env(),
                     "HOST_NAME": host,
                     "AION_STALE_TASK_TIMEOUT": str(STALE_SECONDS),
@@ -143,13 +141,13 @@ async def settled(client: ScenarioClient, task_id: str):
         await asyncio.sleep(0.5)
 
 
-def assert_abandoned(stored, *, toolkit: bool) -> None:
-    """``FAILED`` with the reason, and for a toolkit's task the toolkit error ``task_abandoned``."""
+def assert_abandoned(stored, *, extension: bool) -> None:
+    """``FAILED`` with the reason, and for an extension's task the extension error ``task_abandoned``."""
     assert stored.status.state == TaskState.TASK_STATE_FAILED
     assert MessageToDict(stored.metadata)[SETTLED_REASON_KEY] == "task_abandoned"
     errors = [data for data in data_parts(stored) if data.get("code") == "task_abandoned"]
-    assert bool(errors) == toolkit, data_parts(stored)
-    if toolkit:
+    assert bool(errors) == extension, data_parts(stored)
+    if extension:
         assert errors[-1]["retryable"] is True
 
 
@@ -158,31 +156,31 @@ async def test_a_hung_turn_is_settled_by_the_other_servers_sweep_and_a_waiting_t
 ) -> None:
     """No request is needed; the task waiting for input outlives the timeout untouched."""
     owner, other = clients
-    waiting = await run_script(owner, URI, outputs=[{"kind": "result", "state": "input-required"}])
-    task_id, stream = await start_working(owner, URI)
+    waiting = await run_script(owner, outputs=[{"kind": "status", "state": "input-required"}])
+    task_id, stream = await start_working(owner)
     with contextlib.suppress(Exception):
         await stream.aclose()
 
-    assert_abandoned(await settled(other, task_id), toolkit=True)
+    assert_abandoned(await settled(other, task_id), extension=True)
     assert (await other.get_task(waiting.id)).status.state == TaskState.TASK_STATE_INPUT_REQUIRED
 
 
 async def test_an_abandoned_task_frees_its_context_and_takes_no_message(
     clients: tuple[ScenarioClient, ScenarioClient],
 ) -> None:
-    """Past the timeout the context of an exclusive toolkit takes a new task; the old task refuses a message."""
+    """Past the timeout the context of an evolution takes a new task; the old task refuses a message."""
     owner, other = clients
     context_id = f"abandoned-{uuid.uuid4().hex}"
-    task_id, stream = await start_working(owner, EXCLUSIVE_URI, context_id=context_id)
+    task_id, stream = await start_working(owner, context_id=context_id)
     with contextlib.suppress(Exception):
         await stream.aclose()
     await asyncio.sleep(STALE_SECONDS + 0.5)
 
-    into_the_task = await rpc_script(other, EXCLUSIVE_URI, task_id=task_id, outputs=[COMPLETED])
-    after = await run_script(other, EXCLUSIVE_URI, context_id=context_id, outputs=[COMPLETED])
+    into_the_task = await rpc_script(other, task_id=task_id, outputs=[COMPLETED])
+    after = await run_script(other, context_id=context_id, outputs=[COMPLETED])
 
     assert "terminal state" in into_the_task["error"]["message"], into_the_task
-    assert_abandoned(await other.get_task(task_id), toolkit=True)
+    assert_abandoned(await other.get_task(task_id), extension=True)
     assert after.status.state == TaskState.TASK_STATE_COMPLETED
 
 
@@ -191,18 +189,18 @@ async def test_the_tasks_of_a_server_killed_mid_turn_are_settled_by_the_survivor
     fresh_pair: tuple[ServeProcess, ServeProcess],
     fresh_clients: tuple[ScenarioClient, ScenarioClient],
 ) -> None:
-    """A toolkit's turn and a framework turn die with their server; the survivor settles both and serves on."""
+    """An evolution turn and a framework turn die with their server; the survivor settles both and serves on."""
     dead_server, _ = fresh_pair
     owner, survivor = fresh_clients
     context_id = f"killed-{uuid.uuid4().hex}"
-    toolkit_task, stream = await start_working(owner, EXCLUSIVE_URI, context_id=context_id, tick_seconds=0.5)
+    evolution_task, stream = await start_working(owner, context_id=context_id, tick_seconds=0.5)
     with contextlib.suppress(Exception):
         await stream.aclose()
     framework_task, _ = await run_until_working(owner, f"slow {SLOW_SECONDS}")
 
     dead_server.kill()
 
-    assert_abandoned(await settled(survivor, toolkit_task), toolkit=True)
-    assert_abandoned(await settled(survivor, framework_task), toolkit=False)
-    after = await run_script(survivor, EXCLUSIVE_URI, context_id=context_id, outputs=[COMPLETED])
+    assert_abandoned(await settled(survivor, evolution_task), extension=True)
+    assert_abandoned(await settled(survivor, framework_task), extension=False)
+    after = await run_script(survivor, context_id=context_id, outputs=[COMPLETED])
     assert after.status.state == TaskState.TASK_STATE_COMPLETED

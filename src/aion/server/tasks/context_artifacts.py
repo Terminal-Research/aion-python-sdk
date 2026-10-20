@@ -5,7 +5,7 @@ several tasks of a context is one artifact in several versions. The version
 number lives in the artifact's ``metadata["version"]``, the key the ADK
 adapter writes too, as a decimal string. This module reads the versions back
 from the task store: the number of the next version a task writes, and the
-latest version a toolkit looks up.
+latest version an executable extension looks up.
 
 A context belongs to one holder (``aion.server.tasks.admission``), and the
 tasks in it are the holder's: a private context's are its user's, a shared
@@ -13,8 +13,8 @@ context's are the conversation's participants'. Only the holder that holds the
 context sees its versions - another holder presenting the same ``context_id``
 sees none - and every owner's task in it is searched, not only the caller's,
 because the tasks of a shared context share their artifacts. Nothing locks two
-tasks of one context against numbering the same version; a toolkit that needs
-one run per context declares ``exclusive_per_context``.
+tasks of one context against numbering the same version; an executable
+extension that needs one run per context refuses a second one itself.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from typing import Optional, Protocol
 
 from a2a.types import Artifact
 
-from aion.core.toolkit import ARTIFACT_VERSION_KEY
+from aion.core.a2a.artifacts import ARTIFACT_VERSION_KEY
 from aion.db.postgres import DbManager
 from aion.db.postgres.repositories import ContextReservationsRepository, TasksRepository
 from aion.server.tasks.admission import ACTIVE, ContextHolder, InMemoryContextAdmission, holder_of_record

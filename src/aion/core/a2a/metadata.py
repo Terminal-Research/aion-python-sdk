@@ -30,13 +30,18 @@ refuses.
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping
+
+if TYPE_CHECKING:
+    from a2a.types import TaskStatusUpdateEvent
 
 __all__ = [
+    "EPHEMERAL_STATUS_METADATA_KEY",
     "PLATFORM_METADATA_PREFIX",
     "PLATFORM_METADATA_PREFIXES",
     "is_platform_metadata_key",
     "agent_metadata",
+    "mark_status_event_ephemeral",
 ]
 
 PLATFORM_METADATA_PREFIX = "https://docs.aion.to"
@@ -44,6 +49,18 @@ PLATFORM_METADATA_PREFIX = "https://docs.aion.to"
 
 PLATFORM_METADATA_PREFIXES: tuple[str, ...] = (PLATFORM_METADATA_PREFIX, "aion:")
 """Every namespace reserved for the platform. Not open for extension by callers."""
+
+EPHEMERAL_STATUS_METADATA_KEY = "aion:ephemeral"
+"""Flag on a status update that is delivered to the live stream and never stored.
+
+The status-message counterpart of the transient artifact ids: live progress
+that must not accumulate in the durable task record.
+"""
+
+
+def mark_status_event_ephemeral(event: "TaskStatusUpdateEvent") -> None:
+    """Flag a status update as ephemeral: streamed to the client, never persisted into the task."""
+    event.metadata[EPHEMERAL_STATUS_METADATA_KEY] = True
 
 
 def is_platform_metadata_key(key: Any) -> bool:

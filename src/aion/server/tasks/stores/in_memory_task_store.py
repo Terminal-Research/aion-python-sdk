@@ -313,7 +313,7 @@ class InMemoryTaskStore(BaseTaskStore):
             routed_extension: Optional[str],
             context: ServerCallContext | None = None,
     ) -> Optional[Task]:
-        """Retrieve the resolved owner's most recent task of a context that one handler serves."""
+        """Retrieve the resolved owner's most recent task of a context that one executor serves."""
         owner = self._owner_filter(context)
         async with self.lock:
             tasks = self._visible(owner)

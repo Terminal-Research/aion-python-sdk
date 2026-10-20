@@ -8,7 +8,7 @@ from .descriptors import (
     ExtensionDescriptor,
 )
 from .pipeline import AionRuntimeExtensions, UnknownExtension
-from .registry import AionA2AExtensionRegistry, aion_a2a_extension_registry
+from .registry import AionA2AExtensionRegistry, aion_a2a_extension_registry, register_protocol_extensions
 
 __all__ = [
     "ExtensionActivationError",
@@ -22,4 +22,5 @@ __all__ = [
     "UnknownExtension",
     "AionA2AExtensionRegistry",
     "aion_a2a_extension_registry",
+    "register_protocol_extensions",
 ]

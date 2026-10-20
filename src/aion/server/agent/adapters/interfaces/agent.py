@@ -7,7 +7,7 @@ The AgentAdapter is responsible for:
 - Identifying if an agent object is compatible with the framework
 - Discovering agents from modules based on configuration
 - Initializing agents with framework-specific setup
-- Creating ExecutorAdapter instances for running agents
+- Creating AgentFrameworkExecutor instances for running agents
 - Validating agent configurations before execution
 - Providing framework metadata
 
@@ -20,7 +20,7 @@ from typing import Any
 
 from aion.core.config.models import AgentConfig
 
-from .executor import ExecutorAdapter
+from .executor import AgentFrameworkExecutor
 
 
 class AgentAdapter(ABC):
@@ -82,7 +82,7 @@ class AgentAdapter(ABC):
         pass
 
     @abstractmethod
-    async def create_executor(self, agent: Any, config: AgentConfig) -> ExecutorAdapter:
+    async def create_executor(self, agent: Any, config: AgentConfig) -> AgentFrameworkExecutor:
         """Create an executor for the given agent.
 
         Args:
@@ -90,7 +90,7 @@ class AgentAdapter(ABC):
             config: Agent configuration
 
         Returns:
-            ExecutorAdapter: An executor capable of running the agent
+            AgentFrameworkExecutor: An executor capable of running the agent
         """
         pass
 

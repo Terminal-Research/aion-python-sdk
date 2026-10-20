@@ -26,7 +26,7 @@ from aion.server.tasks.abandoned import ABANDONED_MESSAGE, AbandonedTasks, InMem
 from aion.server.tasks.stores import InMemoryTaskStore
 
 TIMEOUT = 60.0
-URI = "https://example.invalid/toolkits/scripted/1.0.0"
+URI = "https://example.invalid/extensions/scripted/1.0.0"
 SETTLED_REASON = A2AMetadataKey.SETTLED_REASON.value
 
 
@@ -73,7 +73,7 @@ async def test_a_running_task_silent_past_the_timeout_is_settled_failed_with_the
     assert kept.status.message.parts[0].text == "thinking", "a framework task keeps what it last said"
 
 
-async def test_a_toolkit_task_says_why_in_the_shape_of_a_toolkit_failure() -> None:
+async def test_an_extension_task_says_why_in_the_shape_of_an_extension_failure() -> None:
     store = InMemoryTaskStore()
     await stored(store, task("t-1", TaskState.TASK_STATE_SUBMITTED, routed=URI), idle=TIMEOUT + 1)
 
@@ -82,7 +82,7 @@ async def test_a_toolkit_task_says_why_in_the_shape_of_a_toolkit_failure() -> No
     text, data = settled.status.message.parts
     assert text.text == ABANDONED_MESSAGE
     assert MessageToDict(data.data) == {"code": "task_abandoned", "message": ABANDONED_MESSAGE, "retryable": True}
-    assert MessageToDict(data.metadata)[EVENT_EXTENSION_URI_V1] == {"schema": f"{URI}#ToolkitError"}
+    assert MessageToDict(data.metadata)[EVENT_EXTENSION_URI_V1] == {"schema": f"{URI}#ExtensionError"}
     assert settled.metadata[SETTLED_REASON] == "task_abandoned"
 
 

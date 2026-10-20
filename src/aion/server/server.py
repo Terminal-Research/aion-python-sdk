@@ -27,18 +27,18 @@ class MissingAPIKeyError(AionError):
 
 
 class _AgentServer(uvicorn.Server):
-    """uvicorn's server, which stops the toolkits' turns as soon as it stops accepting requests.
+    """uvicorn's server, which stops the running turns as soon as it stops accepting requests.
 
     uvicorn's shutdown stops listening, asks every connection to close once
     its response is complete, waits for open connections up to
     ``timeout_graceful_shutdown`` and only then runs the application's
-    shutdown. A stream on a toolkit's task closes with the turn; a stream on
-    any other task would hold the shutdown for as long as its turn runs, so
-    after that wait uvicorn cancels the requests still open and the drain of
-    the active tasks settles what they were following. A toolkit's turn has to be asked to stop before that wait, so
-    that the stream open on its task closes with the turn's outcome rather
-    than holding the wait; ``before_drain`` runs right after the server stops
-    accepting.
+    shutdown. A stream on a task whose turn stops closes with the turn; a
+    stream on any other task would hold the shutdown for as long as its turn
+    runs, so after that wait uvicorn cancels the requests still open and the
+    drain of the active tasks settles what they were following. The turns
+    have to be asked to stop before that wait, so that the stream open on
+    their task closes with its outcome rather than holding the wait;
+    ``before_drain`` runs right after the server stops accepting.
     """
 
     def __init__(self, config: uvicorn.Config, before_drain: Callable[[], Awaitable[None]]) -> None:
@@ -92,11 +92,11 @@ async def async_serve(
         budget = shutdown_budget()
         if budget.too_short:
             logger.warning(
-                "AION_SHUTDOWN_TIMEOUT=%gs is below %gs: a toolkit's turn gets %.1fs to stop and save its work, "
+                "AION_SHUTDOWN_TIMEOUT=%gs is below %gs: a running turn gets %.1fs to stop and save its work, "
                 "uvicorn %.1fs for open connections, and the settlement of interrupted tasks %.1fs",
                 budget.total,
                 MIN_SANE_SHUTDOWN_SECONDS,
-                budget.toolkit_turns,
+                budget.turns,
                 budget.graceful,
                 budget.settlement,
             )
@@ -120,7 +120,7 @@ async def async_serve(
         # If we have sockets, we need to manually set them on the server
         server = _AgentServer(
             config=uconfig,
-            before_drain=functools.partial(app_factory.stop_toolkit_turns, budget.toolkit_turns),
+            before_drain=functools.partial(app_factory.stop_turns, budget.turns),
         )
         if sockets is not None:
             server.servers = []  # Clear default servers

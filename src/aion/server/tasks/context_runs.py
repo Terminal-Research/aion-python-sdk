@@ -1,18 +1,18 @@
-"""What the toolkit host reads about a context before it runs a toolkit's task in it.
+"""What the server reads about a context before it runs an executable extension's task in it.
 
 Two facts, read from the store on every call, so any server of the agent
 answers from what the database holds:
 
 * **the generation of the context's id** - the time the id was reserved
   (``aion.server.tasks.admission``). A context that is deleted and taken again
-  under the same id is reserved afresh, so its generation is new; a toolkit
-  that keeps state outside the server under the context's id (a branch, a
-  file) tells the current holder of the id from an earlier one by it. The
-  value is opaque: a toolkit compares it, never parses it.
-* **the unfinished task of one handler** - the oldest task of the context
-  routed to a handler (``task.metadata["aion:routedExtension"]``) that has no
-  outcome yet, whoever owns it. A toolkit that runs one task per context
-  (``exclusive_per_context``) refuses a second one with it.
+  under the same id is reserved afresh, so its generation is new; an
+  executor that keeps state outside the server under the context's id (a
+  branch, a file) tells the current holder of the id from an earlier one by
+  it. The value is opaque: an executor compares it, never parses it.
+* **the unfinished task of one extension** - the oldest task of the context
+  routed to an executable extension (``task.metadata["aion:routedExtension"]``)
+  that has no outcome yet, whoever owns it. An executor that runs one task per
+  context refuses a second one with it.
 
 Who may use the context is decided before either is read (context
 admission), so neither checks the caller.
@@ -47,7 +47,7 @@ def generation_of(reserved_at: datetime) -> str:
 
 
 class ContextRuns(Protocol):
-    """Reads the generation of a context and its unfinished tasks of one handler."""
+    """Reads the generation of a context and its unfinished tasks of one extension."""
 
     async def generation(self, context_id: str) -> Optional[str]:
         """The generation of the context's id; None when the context is not reserved and active."""

@@ -18,11 +18,11 @@ from aion.core.runtime.context import (
     AionRuntimeContext, AionRuntimeContextRegistry, AionRuntimeExtensions,
     DirectAttribution, ForwardedAttribution, get_aion_runtime_context,
 )
-from aion.server.agent.execution import AionAgentRequestExecutor
 from aion.server.agent.execution.context.attribution import callback_attribution
 from aion.server.agent.execution.context.providers import RequestScopeRuntimeContextProvider
 from aion.server.agent.execution.scope import init_execution_scope, clear_execution_scope
 from aion.server.auth import Assurance, AuthenticatedCaller, CallerCredentials, CredentialKind
+from tests.support.executors import FakeFrameworkExecutor, request_executor
 
 
 @pytest.fixture(autouse=True)
@@ -54,7 +54,7 @@ def request(number=1, *, carrier=None, resume=False):
 
 
 def executor(stream):
-    return AionAgentRequestExecutor(SimpleNamespace(stream=stream, resume=stream))
+    return request_executor(FakeFrameworkExecutor(stream=stream))
 
 
 @pytest.mark.parametrize("resume", [False, True])
@@ -127,9 +127,9 @@ async def test_background_work_inherits_only_its_explicit_execution_scope():
 
 async def test_cancel_receives_current_request_attribution():
     context, caller = request(resume=True)
-    async def cancel(**kwargs):
+    async def cancel(config, within):
         assert get_aion_runtime_context().get_callback_attribution() == DirectAttribution(caller)
-    worker = AionAgentRequestExecutor(SimpleNamespace(cancel=cancel))
+    worker = request_executor(FakeFrameworkExecutor(cancel=cancel))
     await worker.cancel(context, AsyncMock())
     assert get_aion_runtime_context() is None
 

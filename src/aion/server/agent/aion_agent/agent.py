@@ -9,27 +9,22 @@ from __future__ import annotations
 import logging
 
 import time
-from a2a.server.events import Event
-from a2a.types import TaskStatusUpdateEvent, TaskArtifactUpdateEvent
 from aion.server.agent.adapters import (
     ExecutionConfig,
     AgentAdapter,
-    ExecutorAdapter,
+    AgentFrameworkExecutor,
     StateScope,
 )
 from a2a.server.owner_resolver import OwnerResolver, resolve_user_scope
 from aion.server.agent.card import AionAgentCard
 from aion.core.config.models import AgentConfig
 from aion.core.logging.base import AionLogger
-from collections.abc import AsyncIterator
 from typing import Any, Optional, TYPE_CHECKING
 
 from .models import AgentMetadata
 
 if TYPE_CHECKING:
     from aion.core.logging.base import AionLogger
-    from a2a.server.agent_execution import RequestContext
-    from a2a.server.events import EventQueue
 
 
 
@@ -46,7 +41,7 @@ class AionAgent:
     Architecture:
         - AionAgent: Framework-agnostic domain entity (this class)
         - AgentAdapter: Framework discovery and initialization
-        - ExecutorAdapter: Framework-specific execution logic
+        - AgentFrameworkExecutor: Framework-specific execution logic
         - Native agent: Framework's native agent object (encapsulated)
 
     Note:
@@ -59,7 +54,7 @@ class AionAgent:
             agent_id: str,
             config: AgentConfig,
             adapter: Optional[AgentAdapter] = None,
-            executor: Optional[ExecutorAdapter] = None,
+            executor: Optional[AgentFrameworkExecutor] = None,
             native_agent: Optional[Any] = None,
             port: Optional[int] = None,
             metadata: Optional[AgentMetadata] = None,
@@ -192,81 +187,6 @@ class AionAgent:
     def host(self):
         return "0.0.0.0"
 
-    async def stream(
-            self,
-            context: "RequestContext",
-            timeout: Optional[float] = None,
-            **metadata,
-    ) -> AsyncIterator[TaskStatusUpdateEvent | TaskArtifactUpdateEvent]:
-        """Execute agent with streaming output.
-
-        Args:
-            context: A2A request context with message, metadata, and task information
-            timeout: Maximum execution time in seconds
-            **metadata: Additional execution metadata
-
-        Yields:
-            ExecutionEvent: Events emitted during execution
-
-        Raises:
-            RuntimeError: If agent is not built yet
-            ExecutionError: If execution fails
-            TimeoutError: If execution exceeds timeout
-        """
-        if not self._is_built:
-            raise RuntimeError(
-                f"Agent '{self._id}' is not built yet. Call build() before executing."
-            )
-
-        config = ExecutionConfig(
-            task_id=context.task_id,
-            context_id=context.context_id,
-            timeout=timeout,
-            metadata=metadata,
-            state_scope=StateScope.for_call(self._id, context.call_context, self._owner_resolver),
-        )
-
-        async for event in self._executor.stream(context, config):
-            yield event
-
-    async def resume(
-            self,
-            context: "RequestContext",
-            **metadata,
-    ) -> AsyncIterator[TaskStatusUpdateEvent | TaskArtifactUpdateEvent]:
-        """Resume interrupted execution.
-
-        Args:
-            context: A2A request context with message, metadata, and task information
-            **metadata: Additional execution metadata
-
-        Yields:
-            ExecutionEvent: Events emitted during resumed execution
-
-        Raises:
-            RuntimeError: If agent is not built yet
-            ExecutionError: If resume fails
-            ValueError: If execution is not in resumable state
-        """
-        if not self._is_built:
-            raise RuntimeError(
-                f"Agent '{self._id}' is not built yet. Call build() before resuming."
-            )
-
-        config = ExecutionConfig(
-            task_id=context.task_id,
-            context_id=context.context_id,
-            metadata=metadata,
-            state_scope=StateScope.for_call(self._id, context.call_context, self._owner_resolver),
-        )
-
-        self.logger.debug(
-            f"Resuming agent '{self.id}', task_id={context.task_id}, context_id={context.context_id}"
-        )
-
-        async for event in self._executor.resume(context, config):
-            yield event
-
     @property
     def supports_context_state_deletion(self) -> bool:
         """Whether the framework executor can delete a context's state.
@@ -306,63 +226,6 @@ class AionAgent:
             raise RuntimeError(f"Agent '{self._id}' is not built yet.")
         scope = StateScope(agent_id=self._id, owner_scope=owner_scope or "", gateway=gateway)
         await self._executor.delete_state(ExecutionConfig(context_id=context_id, state_scope=scope))
-
-    async def cancel(
-        self, context: "RequestContext", event_queue: Optional["EventQueue"] = None
-    ) -> None:
-        """Notify the framework executor to cancel an active task.
-
-        Args:
-            context: A2A request context identifying the task to cancel
-            event_queue: Unused here - accepted only to match
-                `ExtensionTaskHandler.cancel`'s signature, since the executor
-                calls whichever handler a task is routed to the same way.
-
-        Raises:
-            RuntimeError: If agent is not built yet
-            UnsupportedOperationError: If the framework does not support cancellation
-        """
-        if not self._is_built:
-            raise RuntimeError(
-                f"Agent '{self._id}' is not built yet. Call build() before canceling."
-            )
-
-        config = ExecutionConfig(
-            task_id=context.task_id,
-            context_id=context.context_id,
-            state_scope=StateScope.for_call(self._id, context.call_context, self._owner_resolver),
-        )
-
-        self.logger.debug(
-            f"Notifying framework executor to cancel task '{context.task_id}' "
-            f"(context_id={context.context_id})'"
-        )
-
-        await self._executor.cancel(config)
-
-    async def discard_undelivered(
-        self,
-        context: "RequestContext",
-        event: Event,
-    ) -> None:
-        """Let the framework executor forget an event the server could not deliver.
-
-        Args:
-            context: A2A request context of the execution that produced the event
-            event: The event as the agent produced it
-
-        Raises:
-            RuntimeError: If agent is not built yet
-        """
-        if not self._is_built:
-            raise RuntimeError(f"Agent '{self._id}' is not built yet.")
-
-        config = ExecutionConfig(
-            task_id=context.task_id,
-            context_id=context.context_id,
-            state_scope=StateScope.for_call(self._id, context.call_context, self._owner_resolver),
-        )
-        await self._executor.discard_undelivered(config, event)
 
     # ===== Factory Methods =====
 
@@ -548,11 +411,11 @@ class AionAgent:
         """
         return self._adapter
 
-    def get_executor(self) -> ExecutorAdapter:
-        """Get the executor adapter.
+    def get_executor(self) -> Optional[AgentFrameworkExecutor]:
+        """Get the framework executor.
 
         Returns:
-            ExecutorAdapter: Framework-specific executor
+            The executor the framework's plugin created; None before build().
         """
         return self._executor
 

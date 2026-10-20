@@ -13,7 +13,7 @@ from aion.server.shutdown import ShutdownBudget, shutdown_budget
 def test_the_default_budget_is_fifteen_five_two_and_three_seconds() -> None:
     budget = shutdown_budget()
 
-    assert (budget.total, budget.toolkit_turns, budget.graceful, budget.settlement, budget.cleanup) == (
+    assert (budget.total, budget.turns, budget.graceful, budget.settlement, budget.cleanup) == (
         25.0,
         15.0,
         5.0,
@@ -23,11 +23,11 @@ def test_the_default_budget_is_fifteen_five_two_and_three_seconds() -> None:
     assert not budget.too_short
 
 
-def test_a_larger_budget_goes_to_the_toolkits() -> None:
+def test_a_larger_budget_goes_to_the_extensions_turns() -> None:
     budget = ShutdownBudget.of(60)
 
     assert (budget.graceful, budget.settlement, budget.cleanup) == (5.0, 2.0, 3.0)
-    assert budget.toolkit_turns == 50.0
+    assert budget.turns == 50.0
 
 
 @pytest.mark.parametrize("total", [2.0, 5.0, 10.0, 20.0])
@@ -35,14 +35,14 @@ def test_a_small_budget_shrinks_the_fixed_steps_and_adds_up(total: float) -> Non
     budget = ShutdownBudget.of(total)
 
     assert budget.graceful <= 0.2 * total
-    assert budget.toolkit_turns >= 1.0
-    assert budget.toolkit_turns + budget.graceful + budget.settlement + budget.cleanup == pytest.approx(total)
+    assert budget.turns >= 1.0
+    assert budget.turns + budget.graceful + budget.settlement + budget.cleanup == pytest.approx(total)
 
 
-def test_the_toolkits_get_at_least_a_second() -> None:
+def test_the_extensions_turns_get_at_least_a_second() -> None:
     budget = ShutdownBudget.of(0.5)
 
-    assert budget.toolkit_turns == 1.0
+    assert budget.turns == 1.0
     assert budget.too_short
 
 

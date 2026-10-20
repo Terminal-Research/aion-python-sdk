@@ -17,7 +17,7 @@ All other Aion subpackages depend on this one; it has no internal Aion dependenc
 | `aion.core.agent` | `BaseThread`, `BaseMessage`, `User` — the base invocation abstractions (`card`, `message`, `thread`) frameworks build on |
 | `aion.core.constants` | Shared A2A extension URI constants |
 | `aion.core.runtime` | `AionRuntimeContext` — invocation-scoped context carrier |
-| `aion.core.toolkit` | The toolkit plugin protocol: `Toolkit`, `ToolkitDescriptor`, the values a toolkit yields (`ToolkitMessageEvent`, `ToolkitArtifactEvent`, `ToolkitStatusEvent`, `ToolkitResult`) and the error codes the server reserves |
+| `aion.core.a2a.codes`, `aion.core.a2a.errors` | The error codes the server reserves for executable extensions, and the A2A shape of an extension's error (`{uri}#ExtensionError`) |
 | `aion.core.principal` | Canonical caller-ID codec shared by server token subjects, distribution metadata and callback attribution |
 | `aion.core.logging` | `AionLogger` / `AionLogRecord` — the logger class every Aion logger is created from, carrying the context fields `aion.server` fills in |
 | `aion.core.config` | `aion.yaml` models (`AionConfig`, `AgentConfig`, `AgentSkill`), `AionConfigReader`, the publication collectors (`ConfigurationError` is re-exported here from `aion.core.exceptions`) |

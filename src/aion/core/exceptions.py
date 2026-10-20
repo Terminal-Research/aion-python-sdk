@@ -54,7 +54,7 @@ __all__ = [
     "AionModelPrincipalError",
     "InvalidPrincipalError",
     "AionDaemonIdentityRequired",
-    "ToolkitRejection",
+    "ExtensionRejection",
 ]
 
 
@@ -106,12 +106,13 @@ class TaskFailedError(AionError):
         return self.reason
 
 
-class ToolkitRejection(AionError):
-    """Raise from a toolkit's ``preflight`` to refuse a request before its task exists.
+class ExtensionRejection(AionError):
+    """Raise from an executor's turn to refuse its request.
 
-    The caller gets a JSON-RPC ``InvalidParams`` error whose ``data`` carries
-    ``code`` and ``retryable`` (as strings: the A2A error details carry
-    string values), and no task is created.
+    Raised before the turn yields anything: the server closes the task
+    ``REJECTED``, and a task of an executable extension carries the
+    refusal's ``code``, message and ``retryable`` in the extension's error
+    shape (``aion.core.a2a.errors``).
 
     Args:
         code: Stable machine-readable name of the refusal, such as
@@ -122,7 +123,7 @@ class ToolkitRejection(AionError):
 
     def __init__(self, code: str, message: str, *, retryable: bool = False) -> None:
         if not code:
-            raise ValueError("a toolkit rejection needs a code")
+            raise ValueError("an extension rejection needs a code")
         super().__init__(message)
         self.code = code
         self.message = message

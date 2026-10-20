@@ -12,7 +12,7 @@ guard for untrusted **public-API** input, so a client cannot spoof platform
 metadata (routing hints, progress structs, the plan-gate stash, ...).
 
 A ``trusted_source=True`` deduplicator lifts that guard: the platform's own
-components (the agent runtime and extension handlers streaming their outbound
+components (the executors of the agent and its extensions streaming their outbound
 events through the event pipeline) ARE allowed to emit metadata under the
 reserved namespace. Without this, an agent's own progress struct and the
 plan-gate stash would be sanitized out of its status events before they could
@@ -54,7 +54,7 @@ class A2ATaskDeduplicator:
             original_task: The authoritative task to normalize against.
                           Message and artifact IDs are cached for efficient lookups.
             trusted_source: When ``True``, payloads are treated as produced by
-                the platform itself (the agent runtime / extension handlers) and
+                the platform itself (the agent's executors) and
                 are allowed to carry metadata under the reserved
                 ``https://docs.aion.to`` namespace. When ``False`` (default, the
                 public-API stance) those keys are stripped and can never be set

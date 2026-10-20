@@ -9,7 +9,7 @@ import uvicorn
 from aion.server import server as server_module
 
 
-async def test_the_toolkits_turns_stop_once_nothing_new_is_accepted_and_before_open_connections_are_awaited(
+async def test_the_extensions_turns_stop_once_nothing_new_is_accepted_and_before_open_connections_are_awaited(
     monkeypatch,
 ) -> None:
     order: list[str] = []
@@ -19,7 +19,7 @@ async def test_the_toolkits_turns_stop_once_nothing_new_is_accepted_and_before_o
     connection.shutdown.side_effect = lambda: order.append("close idle connections")
 
     async def before_drain() -> None:
-        order.append("stop toolkit turns")
+        order.append("stop extension turns")
 
     async def uvicorn_shutdown(self, sockets=None) -> None:
         order.append("wait for open connections")
@@ -34,12 +34,12 @@ async def test_the_toolkits_turns_stop_once_nothing_new_is_accepted_and_before_o
     assert order == [
         "stop listening",
         "close idle connections",
-        "stop toolkit turns",
+        "stop extension turns",
         "wait for open connections",
     ]
 
 
-async def test_a_forced_exit_does_not_wait_for_the_toolkits(monkeypatch) -> None:
+async def test_a_forced_exit_does_not_wait_for_the_extensions(monkeypatch) -> None:
     before_drain = AsyncMock()
     monkeypatch.setattr(uvicorn.Server, "shutdown", AsyncMock())
     server = server_module._AgentServer(uvicorn.Config(app=MagicMock()), before_drain=before_drain)

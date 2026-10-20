@@ -46,7 +46,8 @@ from aion.core.config.models import AgentConfig
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.langgraph.server.adapter import LangGraphAdapter
 from aion.server.agent.aion_agent.agent import AionAgent
-from aion.server.agent.adapters import StateScope
+from aion.server.agent.adapters import ExecutionConfig, StateScope
+from aion.server.agent.execution import AionAgentRequestExecutor
 from aion.server.auth import (
     Assurance,
     AuthenticatedCaller,
@@ -137,6 +138,22 @@ async def _built(agent_id: str, adapter, native) -> AionAgent:
     return agent
 
 
+def _stream(agent: AionAgent, context: RequestContext):
+    """The first turn of the request's task, run by the agent's framework executor as the server runs it."""
+    return agent.get_executor().stream(context, _execution(agent, context))
+
+
+def _resume(agent: AionAgent, context: RequestContext):
+    """The next turn of the request's task, run by the agent's framework executor as the server runs it."""
+    return agent.get_executor().resume(context, _execution(agent, context))
+
+
+def _execution(agent: AionAgent, context: RequestContext) -> ExecutionConfig:
+    """The execution the request executor gives a turn of the request's task."""
+    task = Task(id=context.task_id, context_id=context.context_id)
+    return AionAgentRequestExecutor(agent)._config(context, task)
+
+
 def _scope(agent: AionAgent, user: ServerCallContext) -> StateScope:
     """The state scope the agent gives a request from ``user``."""
     return StateScope.for_call(agent.id, user, agent.owner_resolver)
@@ -173,34 +190,34 @@ async def test_langgraph_two_users_with_one_context_keep_their_own_memory(db) ->
     agent = await _langgraph(db)
     context_id = str(uuid.uuid4())
 
-    assert await _answer(agent.stream(_request(ALICE, context_id, "a1"))) == "turns=1"
-    assert await _answer(agent.stream(_request(MALLORY, context_id, "m1"))) == "turns=1"
-    assert await _answer(agent.stream(_request(ALICE, context_id, "a2"))) == "turns=2"
+    assert await _answer(_stream(agent, _request(ALICE, context_id, "a1"))) == "turns=1"
+    assert await _answer(_stream(agent, _request(MALLORY, context_id, "m1"))) == "turns=1"
+    assert await _answer(_stream(agent, _request(ALICE, context_id, "a2"))) == "turns=2"
 
 
 async def test_langgraph_two_agents_with_one_context_keep_their_own_memory(db) -> None:
     first, second = await _langgraph(db, "graph-a"), await _langgraph(db, "graph-b")
     context_id = str(uuid.uuid4())
 
-    assert await _answer(first.stream(_request(ALICE, context_id, "a1"))) == "turns=1"
-    assert await _answer(second.stream(_request(ALICE, context_id, "b1"))) == "turns=1"
+    assert await _answer(_stream(first, _request(ALICE, context_id, "a1"))) == "turns=1"
+    assert await _answer(_stream(second, _request(ALICE, context_id, "b1"))) == "turns=1"
 
 
 async def test_langgraph_resume_does_not_reach_another_users_interrupt(db) -> None:
     agent = await _langgraph(db)
     context_id = str(uuid.uuid4())
-    await _answer(agent.stream(_request(ALICE, context_id, "ask")))
+    await _answer(_stream(agent, _request(ALICE, context_id, "ask")))
 
     # Another user's message on the same context is their own first turn,
     # not an answer to the question the owner was asked.
-    assert await _answer(agent.resume(_request(MALLORY, context_id, "hijack"))) == "turns=1"
-    assert await _answer(agent.resume(_request(ALICE, context_id, "yes"))) == "answered=yes"
+    assert await _answer(_resume(agent, _request(MALLORY, context_id, "hijack"))) == "turns=1"
+    assert await _answer(_resume(agent, _request(ALICE, context_id, "yes"))) == "answered=yes"
 
 
 async def test_langgraph_checkpoint_is_saved_under_the_callers_key(db) -> None:
     agent = await _langgraph(db)
     context_id = str(uuid.uuid4())
-    await _answer(agent.stream(_request(ALICE, context_id, "a1")))
+    await _answer(_stream(agent, _request(ALICE, context_id, "a1")))
 
     graph = agent._executor.compiled_graph
     own = await graph.aget_state({"configurable": {"thread_id": _scope(agent, ALICE).key_for(context_id)}})
@@ -222,7 +239,7 @@ async def test_langgraph_state_saved_under_the_context_alone_is_refused(db) -> N
 
     for user in (ALICE, MALLORY):
         with pytest.raises(ExecutionError, match="predates"):
-            await _answer(agent.stream(_request(user, context_id, "hello")))
+            await _answer(_stream(agent, _request(user, context_id, "hello")))
 
     legacy = await graph.aget_state({"configurable": {"thread_id": context_id}})
     assert [m.text for m in legacy.values["messages"]] == ["legacy", "turns=1"]
@@ -252,9 +269,9 @@ async def test_adk_two_users_with_one_context_keep_their_own_memory(db) -> None:
     agent = await _adk(db)
     context_id = str(uuid.uuid4())
 
-    assert await _answer(agent.stream(_request(ALICE, context_id, "a1"))) == "turns=1"
-    assert await _answer(agent.stream(_request(MALLORY, context_id, "m1"))) == "turns=1"
-    assert await _answer(agent.stream(_request(ALICE, context_id, "a2"))) == "turns=2"
+    assert await _answer(_stream(agent, _request(ALICE, context_id, "a1"))) == "turns=1"
+    assert await _answer(_stream(agent, _request(MALLORY, context_id, "m1"))) == "turns=1"
+    assert await _answer(_stream(agent, _request(ALICE, context_id, "a2"))) == "turns=2"
 
 
 async def test_adk_two_agents_with_one_context_keep_their_own_memory(db) -> None:
@@ -262,14 +279,14 @@ async def test_adk_two_agents_with_one_context_keep_their_own_memory(db) -> None
     first, second = await _adk(db, "adk-a"), await _adk(db, "adk-b")
     context_id = str(uuid.uuid4())
 
-    assert await _answer(first.stream(_request(ALICE, context_id, "a1"))) == "turns=1"
-    assert await _answer(second.stream(_request(ALICE, context_id, "b1"))) == "turns=1"
+    assert await _answer(_stream(first, _request(ALICE, context_id, "a1"))) == "turns=1"
+    assert await _answer(_stream(second, _request(ALICE, context_id, "b1"))) == "turns=1"
 
 
 async def test_adk_session_is_saved_under_the_callers_owner(db) -> None:
     agent = await _adk(db)
     context_id = str(uuid.uuid4())
-    await _answer(agent.stream(_request(ALICE, context_id, "a1")))
+    await _answer(_stream(agent, _request(ALICE, context_id, "a1")))
 
     async def session_of(user: ServerCallContext):
         scope = _scope(agent, user)
@@ -294,7 +311,7 @@ async def test_adk_session_saved_under_the_shared_user_is_refused(db) -> None:
 
     for user in (ALICE, MALLORY):
         with pytest.raises(ExecutionError, match="predates"):
-            await _answer(agent.stream(_request(user, context_id, "hello")))
+            await _answer(_stream(agent, _request(user, context_id, "hello")))
 
     kept = await sessions.get_session(app_name=SHARED_NAME, user_id="default-user", session_id=context_id)
     assert [event.content.parts[0].text for event in kept.events] == ["legacy"]
@@ -410,9 +427,9 @@ async def test_a_custom_owner_resolver_names_one_owner_for_the_task_and_the_stat
     context_id = str(uuid.uuid4())
 
     assert store.owner_resolver is agent.owner_resolver
-    assert await _answer(agent.stream(_request(alice, context_id, "a1"))) == "turns=1"
-    assert await _answer(agent.stream(_request(carol, context_id, "c1"))) == "turns=1"
-    assert await _answer(agent.stream(_request(bob, context_id, "b1"))) == "turns=2"
+    assert await _answer(_stream(agent, _request(alice, context_id, "a1"))) == "turns=1"
+    assert await _answer(_stream(agent, _request(carol, context_id, "c1"))) == "turns=1"
+    assert await _answer(_stream(agent, _request(bob, context_id, "b1"))) == "turns=2"
 
     task_id = str(uuid.uuid4())
     await store.save(
@@ -478,16 +495,16 @@ async def test_participants_of_one_gateway_conversation_share_its_memory(db, _sh
     agent = await _agent_for(db, _shared_framework)
     context_id = str(uuid.uuid4())
 
-    assert await _answer(agent.stream(_request(_gateway("alice"), context_id, "a1"))) == "turns=1"
-    assert await _answer(agent.stream(_request(_gateway("bob"), context_id, "b1"))) == "turns=2"
+    assert await _answer(_stream(agent, _request(_gateway("alice"), context_id, "a1"))) == "turns=1"
+    assert await _answer(_stream(agent, _request(_gateway("bob"), context_id, "b1"))) == "turns=2"
 
 
 async def test_another_edge_environment_is_another_conversation(db, _shared_framework) -> None:
     agent = await _agent_for(db, _shared_framework)
     context_id = str(uuid.uuid4())
 
-    assert await _answer(agent.stream(_request(_gateway("alice"), context_id, "a1"))) == "turns=1"
-    assert await _answer(agent.stream(_request(_gateway("alice", _OTHER_EDGE), context_id, "a2"))) == "turns=1"
+    assert await _answer(_stream(agent, _request(_gateway("alice"), context_id, "a1"))) == "turns=1"
+    assert await _answer(_stream(agent, _request(_gateway("alice", _OTHER_EDGE), context_id, "a2"))) == "turns=1"
 
 
 async def test_a_direct_session_keeps_private_memory_apart_from_the_gateway(db, _shared_framework) -> None:
@@ -496,6 +513,6 @@ async def test_a_direct_session_keeps_private_memory_apart_from_the_gateway(db, 
     session = _verified(Principal("AnonymousSession", str(uuid.uuid4())), credential=CredentialKind.SESSION)
     guest = _verified(Principal("AnonymousSession", str(uuid.uuid4())), credential=CredentialKind.INVOCATION)
 
-    assert await _answer(agent.stream(_request(guest, context_id, "g1"))) == "turns=1"
-    assert await _answer(agent.stream(_request(session, context_id, "s1"))) == "turns=1"
-    assert await _answer(agent.stream(_request(_gateway("alice"), context_id, "a1"))) == "turns=2"
+    assert await _answer(_stream(agent, _request(guest, context_id, "g1"))) == "turns=1"
+    assert await _answer(_stream(agent, _request(session, context_id, "s1"))) == "turns=1"
+    assert await _answer(_stream(agent, _request(_gateway("alice"), context_id, "a1"))) == "turns=2"

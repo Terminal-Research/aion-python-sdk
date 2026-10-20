@@ -293,7 +293,7 @@ class AionEventPipeline:
             return event
 
         if self._deduplicator is None:
-            # Events here are produced by the agent runtime / extension handlers,
+            # Events here are produced by the server's executors,
             # not the public API, so they are allowed to carry platform-owned
             # (`https://docs.aion.to`) metadata — progress structs and the
             # plan-gate stash reach Task.metadata through this path.

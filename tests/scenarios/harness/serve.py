@@ -13,7 +13,7 @@ import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator, Mapping, Optional
+from typing import Any, Iterator, Mapping, Optional, Union
 
 import httpx
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
@@ -101,8 +101,9 @@ class ServeVariant:
 
     Attributes:
         name: Template name under ``configs/``, without the ``.yaml.j2``.
-        enabled_extensions: URIs written into the agent's
-            ``enabled_extensions``.
+        enabled_extensions: The entries written into the agent's
+            ``enabled_extensions``: a URI, or a mapping of a URI to the
+            options of an executable extension.
         env: Extra environment for the server process.
         expect_healthy: False for a variant that is supposed to start badly;
             readiness then only waits for the proxy itself.
@@ -110,7 +111,7 @@ class ServeVariant:
     """
 
     name: str = "default"
-    enabled_extensions: tuple[str, ...] = ()
+    enabled_extensions: tuple[Union[str, Mapping[str, Any]], ...] = ()
     env: Mapping[str, str] = field(default_factory=dict)
     expect_healthy: bool = True
     agent_ids: tuple[str, ...] = (DEFAULT_AGENT_ID,)

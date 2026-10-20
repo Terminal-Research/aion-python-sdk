@@ -217,9 +217,9 @@ poetry run aion db check
 ### `aion db strip-request-metadata`
 
 Removes inbound extension payloads from the stored tasks of the PostgreSQL
-database at `POSTGRES_URL`. A task's metadata holds what the server and
-extension handlers write - the routed extension, `aion:settledReason`, a
-handler's progress. The payloads a request carries in its `params.metadata`
+database at `POSTGRES_URL`. A task's metadata holds what the server and its
+executors write - the routed extension, `aion:settledReason`, an executable
+extension's progress. The payloads a request carries in its `params.metadata`
 belong to that request, and the daemon payload among them holds the
 environment's configuration variables in plain text; a stored task never
 takes them from a request.

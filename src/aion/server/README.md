@@ -196,10 +196,10 @@ the client chooses, and the default resolver ignores it. There is no `/docs` or
 
 Finding an interrupted task through its `contextId` goes through the same
 owner filter as everything else: a caller continues its own interrupted task,
-and only one of the handler its message addresses - a toolkit's directive a
-task of that toolkit, any other message a task of the agent's framework; a
-waiting task of another handler keeps waiting and the message starts a new
-task.
+and only one of the executor its message addresses - an executable
+extension's request a task of that extension, any other message a task of the
+agent's framework; a waiting task of another executor keeps waiting and the
+message starts a new task.
 The Context extension (`GetContexts`, `GetContext`, `DeleteContext`) answers
 by context binding instead - see [Contexts](#contexts) below. Only a call
 without a `ServerCallContext` - from Python code that holds the handler -
@@ -246,7 +246,7 @@ A context is one or the other, never both, and its holder never changes.
 Admission comes first in `SendMessage` and `SendStreamingMessage`, ahead of
 extension verification, preprocessing (file uploads), push configuration and
 the task, so a refused message leaves nothing behind - no task, no push
-config, no reservation - and every extension handler runs behind it. A
+config, no reservation - and every executor runs behind it. A
 message that continues a task takes the task's context: the task has to be
 the caller's own, and a `contextId` sent with it has to match. A message with
 neither gets a new context ID, reserved like any other. In a shared context
@@ -348,7 +348,7 @@ on another server, a database error, a concurrent attempt at the same deletion
 request resumes it, and a server resumes every pending deletion of its agent
 in the background when it starts. A definitive refusal - a cancellation the
 agent rejects, or framework state its executor cannot delete
-(`ExecutorAdapter.supports_state_deletion`, asked before any task is
+(`AgentFrameworkExecutor.supports_state_deletion`, asked before any task is
 cancelled) - returns the context to `active` without the caller's binding and
 answers `ContextNotDeletable` (`1002`, HTTP `409`).
 
@@ -504,37 +504,40 @@ servers of one agent can share the database. The rules are a2a-sdk's:
 - Nothing stops two servers from executing one task at once - a second
   message sent to another server while the first runs is executed there. The
   version decides what lands: a write over a task that another execution has
-  already finished is dropped, and that execution stops. A toolkit that
-  declares `exclusive_per_context` is the exception: a message into its
-  running task, or a second task of it in the context, is refused with
-  `context_busy` on any server, because the check reads the database.
-- A task routed to a toolkit is served by that toolkit only. A server
+  already finished is dropped, and that execution stops. An executable
+  extension's task is the exception by default: a message into its running
+  task is refused with `task_busy` on any server, unless its executor
+  queues one (`message_to_busy_task = "queue"`). An extension that runs one task
+  per context - behavior evolution - rejects a second one with `context_busy`
+  on any server too, because its check reads the database.
+- A task routed to an executable extension is served by that extension only. A server
   without it - another image during a rollout - refuses a message into the
   task with `extension_unavailable` and leaves the task as it was.
 - `CancelTask` for a task this server holds cancels it through its executor.
   For any other task it writes `CANCELED` over the stored version, sends its
   push notification and answers at once; the server executing the task stops
-  it at its next write, without calling `AgentExecutor.cancel` there. A
-  toolkit's turn stopped that way calls `Toolkit.cancel`.
+  it at its next write, without calling `AgentExecutor.cancel` there; the turn
+  stopped that way asks its executor to stop (`TaskExecutor.cancel`).
 - A server that dies leaves its tasks in the state they had. Any server can
   cancel such a task, and any server settles it once it has gone without a
   durable write for longer than `AION_STALE_TASK_TIMEOUT` (seconds, default
   3600, `0` turns it off): `FAILED` with
-  `aion:settledReason=task_abandoned`, and for a toolkit's task the error
-  `task_abandoned` (retryable) as a toolkit's failure carries it. Every
+  `aion:settledReason=task_abandoned`, and for an executable extension's
+  task the error `task_abandoned` (retryable) as the extension's failure
+  carries it. Every
   server runs the sweep, one at a time per agent under a lock, every 60
-  seconds or every half of the timeout when that is shorter, and a message into such a task, or a request into a context such
-  a task holds for an exclusive toolkit, settles it first. A server never
+  seconds or every half of the timeout when that is shorter, and a message
+  into such a task settles it first. A server never
   settles a task whose turn runs in its own process - it logs a WARNING for
   one its sweep finds - and never a task waiting for input. The write is
   versioned: a task written in the meantime keeps its state, and an
   execution still alive somewhere stops at its next write, as after a remote
   cancel. Keep the timeout above the longest a turn of the agent goes
   without writing a status or an artifact.
-- An orderly shutdown stops accepting requests, then asks every toolkit turn
-  it runs to stop (`Toolkit.cancel` with `shutdown`) and waits for them
-  together: a toolkit closes its task `FAILED` with `server_shutdown`, and a
-  stream open on it receives that outcome. uvicorn then waits for the
+- An orderly shutdown stops accepting requests, then asks every turn it runs
+  to stop (`TaskExecutor.cancel`) and waits together for the ones whose
+  executor can stop them: the server closes such a turn's task `FAILED` with
+  `server_shutdown`, and a stream open on it receives that outcome. uvicorn then waits for the
   connections still open, so a stream on any other task does not hold the
   shutdown, and the tasks the server was still running are settled as
   `FAILED` with `aion:settledReason=server_shutdown` and pushed; a webhook
@@ -542,8 +545,8 @@ servers of one agent can share the database. The rules are a2a-sdk's:
   for. `AION_SHUTDOWN_TIMEOUT`
   (seconds, default 25) bounds all of it: `aion serve` kills an agent that
   has not stopped by then, and the agent divides it among the steps
-  (`aion.server.shutdown`) - by default 15 s for the toolkits' turns, which
-  `Toolkit.cancel` receives as `within`, 5 s for open connections, 2 s for
+  (`aion.server.shutdown`) - by default 15 s for the running turns, which
+  `TaskExecutor.cancel` receives as `within`, 5 s for open connections, 2 s for
   the settlement and 3 s for the rest. Set it a few seconds below the stop
   timeout of the platform running the server - Kubernetes
   `terminationGracePeriodSeconds`, `docker stop -t` - so the server's own

@@ -1,7 +1,7 @@
 """Inbound extension payloads in stored tasks: finding them and removing them.
 
-A task's metadata holds what the server and trusted handlers write - the
-routed extension, a settlement reason, an extension handler's own state. The
+A task's metadata holds what the server and its executors write - the
+routed extension, a settlement reason, an executable extension's own state. The
 payloads of inbound extensions arrive in a request's ``params.metadata`` and
 belong to that request: the agent reads them from the request, and the daemon
 payload among them carries the environment's configuration variables in plain

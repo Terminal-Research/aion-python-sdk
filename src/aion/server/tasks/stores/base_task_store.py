@@ -157,16 +157,16 @@ class BaseTaskStore(TaskStore):
             routed_extension: Optional[str],
             context: Optional[ServerCallContext] = None,
     ) -> Optional[Task]:
-        """Retrieve the most recent task of a context that one handler serves.
+        """Retrieve the most recent task of a context that one executor serves.
 
-        A task's handler is the extension recorded in its
-        ``metadata["aion:routedExtension"]``, or the agent's framework adapter
-        when the key is absent.
+        A task's executor is the extension's recorded in its
+        ``metadata["aion:routedExtension"]``, or the agent's framework
+        executor when the key is absent.
 
         Args:
             context_id: The context identifier to search
-            routed_extension: The handler's extension URI; None for the
-                agent's framework adapter
+            routed_extension: The executor's extension URI; None for the
+                agent's framework executor
             context: Server call context used to resolve the exact owner
 
         Returns:

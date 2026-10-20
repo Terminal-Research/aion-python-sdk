@@ -28,7 +28,7 @@ from aion.server.tasks.task_manager import AionTaskManager
 
 TASK_ID = "task-1"
 CONTEXT_ID = "ctx-1"
-TOOLKIT_URI = "https://example.invalid/toolkit"
+EXTENSION_URI = "https://example.invalid/extension"
 
 NON_ACTIVE_STATES = [
     TaskState.TASK_STATE_COMPLETED,
@@ -64,9 +64,9 @@ def _status(state: TaskState, message: Message | None = None) -> TaskStatusUpdat
 
 
 def _details(details: dict) -> TaskStatusUpdateEvent:
-    """A WORKING update with no message that writes ``details`` under a toolkit's key."""
+    """A WORKING update with no message that writes ``details`` under an executable extension's key."""
     event = _status(TaskState.TASK_STATE_WORKING)
-    event.metadata[TOOLKIT_URI] = details
+    event.metadata[EXTENSION_URI] = details
     return event
 
 
@@ -289,7 +289,7 @@ class TestMessagePlacement:
         task = await task_manager.get_task()
         assert [m.message_id for m in task.history] == ["msg-user"]
         assert task.status.message.message_id == "msg-agent"
-        assert task.metadata[TOOLKIT_URI]["stage"] == "running"
+        assert task.metadata[EXTENSION_URI]["stage"] == "running"
         assert _conversation(task) == ["msg-user", "msg-agent"]
         assert not details.status.HasField("message")
 
