@@ -113,19 +113,19 @@ OVERRIDES = [
 # supported range whose copy has been compared with the override.
 COPIED_BODIES = {
     (ActiveTaskRegistry, "get"): {
-        "1.2.2": "038ae198bdf3d13402709dd84f42c88afcbcb0786d4ab1cc03dcb21114218744",
+        "1.2.3": "038ae198bdf3d13402709dd84f42c88afcbcb0786d4ab1cc03dcb21114218744",
     },
     (ActiveTaskRegistry, "get_or_create"): {
-        "1.2.2": "08bcf2740e25ab6e98557ae2003ae98c3a77b0263b5b7e333976ce9b0f8d41cc",
+        "1.2.3": "08bcf2740e25ab6e98557ae2003ae98c3a77b0263b5b7e333976ce9b0f8d41cc",
     },
     (ActiveTaskRegistry, "_on_active_task_cleanup"): {
-        "1.2.2": "40595a22c2b71e62ebdfe9d816e7fd4a386deeb08ad4b7383d0cb8055651bc91",
+        "1.2.3": "40595a22c2b71e62ebdfe9d816e7fd4a386deeb08ad4b7383d0cb8055651bc91",
     },
     (BasePushNotificationSender, "send_notification"): {
-        "1.2.2": "18d0ee14c71993e519652a6e87f5d3bca610987c739a3196312ef448da801a95",
+        "1.2.3": "607c9ca10b90f37a19927b4d78fcc52dcc52b6b412625e6f50c4af6219d9d9ea",
     },
     (BasePushNotificationSender, "_dispatch_notification"): {
-        "1.2.2": "1bae1aa38d4cce000e323a27bf42fc131c590603a7b786dec2f85b8d22e759ee",
+        "1.2.3": "583dceed037db7c0d250d4a3427e083ab3bd4fcc697830904814f3fb876ea113",
     },
 }
 

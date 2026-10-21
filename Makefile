@@ -309,8 +309,8 @@ chat-bundle-check: $(CHAT_UI)/node_modules/.package-lock.json ## Check that the 
 
 # The other direction of the compatibility question. Every other target here
 # runs against the newest release in each declared range; this one installs the
-# oldest, so that `a2a-sdk>=1.2.2`, `langgraph>=1.0.0` and `google-adk>=1.27.1`
-# mean what the manifest says rather than only having been typed there.
+# oldest, so that `langgraph>=1.0.0` and `google-adk>=1.27.1` mean what the
+# manifest says rather than only having been typed there.
 #
 # uv rather than Poetry, for the one thing Poetry cannot do: `--resolution
 # lowest-direct` takes every dependency this project declares to the oldest
@@ -342,7 +342,7 @@ chat-bundle-check: $(CHAT_UI)/node_modules/.package-lock.json ## Check that the 
 # whatever RAISED_BY_SIBLING change the new resolution needs. The jobs that
 # install the newest releases keep covering everything published since.
 FLOORS_PYTHON ?= 3.12
-FLOORS_EXCLUDE_NEWER ?= 2026-10-06
+FLOORS_EXCLUDE_NEWER ?= 2026-10-20
 FLOORS_VENV := .venv-floors
 FLOORS_PY := $(FLOORS_VENV)/bin/python
 FLOORS_UV_PIP = $(UV) pip install --python $(FLOORS_PY) --exclude-newer $(FLOORS_EXCLUDE_NEWER)

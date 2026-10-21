@@ -40,8 +40,9 @@ def _has_finished(active_task: ActiveTask) -> bool:
     """Report whether the SDK has closed this ActiveTask for good.
 
     ``_is_finished`` is private to the SDK, and it is also the only signal for
-    this: the event is set exactly once, when the consumer loop exits, and both
-    ``start`` and ``subscribe`` refuse to run afterwards. Read in one place so
+    this: the event is set when the consumer loop exits, or as soon as the
+    agent answers with a direct ``Message``, and both ``start`` and
+    ``subscribe`` refuse to run afterwards. Read in one place so
     the dependency is a single line to revisit if the SDK grows a public
     equivalent.
     """
