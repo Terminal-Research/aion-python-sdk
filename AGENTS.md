@@ -47,7 +47,13 @@ contracts; reconcile this file with them when behavior changes.
   (`PostgresVersionedTaskStore`) and a2a-sdk's `DatabaseTaskEventStream`.
   Stay close to upstream; adapt only what the Aion schema or contract
   requires. `docs/development/a2a-sdk-mapping.md` is the map of every a2a-sdk
-  server entry point to what Aion does with it. On every `a2a-sdk` bump:
+  server entry point to what Aion does with it. `a2a-sdk` is pinned to one
+  release in `pyproject.toml` (and in the checking tools of
+  `.github/workflows/publish-python.yml`): the overrides copy bodies of its
+  methods, which change even in a patch release. Each SDK release moves the
+  pin to the newest `a2a-sdk` release once `make tests-full` passes on it,
+  with `FLOORS_EXCLUDE_NEWER` in the `Makefile` moved past that release's
+  upload date. On every `a2a-sdk` bump:
   - diff its `DefaultRequestHandlerV2`, `ActiveTaskRegistry`, `ActiveTask`,
     `TaskManager`, `JSONRPC03Adapter` and `a2a.server.cluster` against the
     Aion overrides, and update the mapping table in the same change;
