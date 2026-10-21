@@ -213,21 +213,21 @@ The evolution extension served by a real ``aion serve``: the standard path, arti
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [Status updates and an artifact on the stream; the object the executor writes whole in the task.](core/test_evolution.py#L131 "test_a_turn_takes_the_standard_path_and_completes_with_its_object") | `evolution` | — | `evolution` | ✓ | ✓ |
-| [Details without a message change the object, not what the task last said.](core/test_evolution.py#L154 "test_a_status_update_keeps_the_status_line") | `evolution` | — | `evolution` | ✓ | ✓ |
-| [The executor's artifacts are numbered per context, and the next task reads the latest back.](core/test_evolution.py#L172 "test_the_tasks_of_a_context_write_numbered_versions_of_an_artifact_and_find_the_latest") | `evolution` | — | `evolution` | ✓ | ✓ |
-| [The toolkit's refusal is the task's outcome, with its code and message.](core/test_evolution.py#L196 "test_a_refused_request_closes_its_task_rejected_with_the_code") | `evolution` | — | `evolution` | ✓ | ✓ |
-| [A malformed directive never reaches the toolkit: its task is rejected with ``invalid_payload``.](core/test_evolution.py#L214 "test_a_directive_its_model_refuses_is_rejected_with_the_common_code") | `evolution` | — | `evolution` | ✓ | ✓ |
-| [The toolkit is asked once, with the task's id and the grace period; the task ends ``CANCELED``.](core/test_evolution.py#L266 "test_a_cancel_ends_the_turn_canceled_and_tells_the_toolkit") | `evolution` | — | `evolution` | ✓ | ✓ |
-| [The repeat is an error, the task stays as it was, and the toolkit is not asked again.](core/test_evolution.py#L282 "test_a_second_cancel_of_the_finished_task_is_refused_and_does_not_reach_the_toolkit") | `evolution` | — | `evolution` | ✓ | ✓ |
-| [The cancel waits out the grace period; the stream and a subscription made meanwhile both close ``CANCELED``.](core/test_evolution.py#L298 "test_a_turn_past_the_grace_period_is_cancelled_without_it_and_a_subscription_is_not_held") | `evolution` | — | `evolution` | ✓ | ✓ |
-| [The turn's own outcome stands: the cancel answers with it, and so does the stream.](core/test_evolution.py#L322 "test_a_turn_that_closes_its_task_on_the_cancel_keeps_its_outcome") | `evolution` | — | `evolution` | ✓ | ✓ |
-| [An enabled evolution whose toolkit is installed is an extension the card announces, without its options.](core/test_evolution.py#L335 "test_the_card_offers_the_enabled_evolution") | `evolution` | — | `evolution` | ✓ | ✓ |
-| [``aion serve`` exits, and its output says what the agent lacks.](core/test_evolution.py#L344 "test_without_the_toolkit_an_agent_that_enables_evolution_does_not_start") | `evolution` | — | `evolution-without-toolkit` | ✓ | ✓ |
-| [A second directive is rejected with ``context_busy``, and a message into the running task refused with ``task_busy``.](core/test_evolution.py#L361 "test_evolution_refuses_a_second_task_in_a_context_until_the_first_ends") | `evolution` | — | `evolution` | ✓ | ✓ |
-| [The limit is per context: two contexts each hold a running evolution.](core/test_evolution.py#L387 "test_evolution_runs_in_several_contexts_at_once") | `evolution` | — | `evolution` | ✓ | ✓ |
-| [The directive is not taken as the answer: an evolution task starts, and the question keeps waiting for it.](core/test_evolution.py#L403 "test_a_directive_beside_the_agents_waiting_question_starts_its_own_task") | `evolution` | `ask` | `evolution` | ✓ | [skip](#frameworks) |
-| [A directive without a task id resumes the extension's waiting task in the context.](core/test_evolution.py#L427 "test_an_evolution_that_waits_for_input_continues_its_own_task") | `evolution` | — | `evolution` | ✓ | ✓ |
+| [Status updates and an artifact on the stream; the object the executor writes whole in the task.](core/test_evolution.py#L137 "test_a_turn_takes_the_standard_path_and_completes_with_its_object") | `evolution` | — | `evolution` | ✓ | ✓ |
+| [Details without a message change the object, not what the task last said.](core/test_evolution.py#L160 "test_a_status_update_keeps_the_status_line") | `evolution` | — | `evolution` | ✓ | ✓ |
+| [The executor's artifacts are numbered per context, and the next task reads the latest back.](core/test_evolution.py#L178 "test_the_tasks_of_a_context_write_numbered_versions_of_an_artifact_and_find_the_latest") | `evolution` | — | `evolution` | ✓ | ✓ |
+| [The toolkit's refusal is the task's outcome, with its code and message.](core/test_evolution.py#L202 "test_a_refused_request_closes_its_task_rejected_with_the_code") | `evolution` | — | `evolution` | ✓ | ✓ |
+| [A malformed directive never reaches the toolkit: its task is rejected with ``invalid_payload``.](core/test_evolution.py#L220 "test_a_directive_its_model_refuses_is_rejected_with_the_common_code") | `evolution` | — | `evolution` | ✓ | ✓ |
+| [The toolkit is asked once, with the task's id and the grace period; the task ends ``CANCELED``.](core/test_evolution.py#L272 "test_a_cancel_ends_the_turn_canceled_and_tells_the_toolkit") | `evolution` | — | `evolution` | ✓ | ✓ |
+| [The repeat is an error, the task stays as it was, and the toolkit is not asked again.](core/test_evolution.py#L288 "test_a_second_cancel_of_the_finished_task_is_refused_and_does_not_reach_the_toolkit") | `evolution` | — | `evolution` | ✓ | ✓ |
+| [The cancel waits out the grace period; the stream and a subscription made meanwhile both close ``CANCELED``.](core/test_evolution.py#L304 "test_a_turn_past_the_grace_period_is_cancelled_without_it_and_a_subscription_is_not_held") | `evolution` | — | `evolution` | ✓ | ✓ |
+| [The turn's own outcome stands: the cancel answers with it, and so does the stream.](core/test_evolution.py#L328 "test_a_turn_that_closes_its_task_on_the_cancel_keeps_its_outcome") | `evolution` | — | `evolution` | ✓ | ✓ |
+| [An enabled evolution whose toolkit is installed is an extension the card announces, without its options.](core/test_evolution.py#L341 "test_the_card_offers_the_enabled_evolution") | `evolution` | — | `evolution` | ✓ | ✓ |
+| [``aion serve`` exits, and its output says what the agent lacks.](core/test_evolution.py#L350 "test_without_the_toolkit_an_agent_that_enables_evolution_does_not_start") | `evolution` | — | `evolution-without-toolkit` | ✓ | ✓ |
+| [A second directive is rejected with ``context_busy``, and a message into the running task refused with ``task_busy``.](core/test_evolution.py#L367 "test_evolution_refuses_a_second_task_in_a_context_until_the_first_ends") | `evolution` | — | `evolution` | ✓ | ✓ |
+| [The limit is per context: two contexts each hold a running evolution.](core/test_evolution.py#L393 "test_evolution_runs_in_several_contexts_at_once") | `evolution` | — | `evolution` | ✓ | ✓ |
+| [The directive is not taken as the answer: an evolution task starts, and the question keeps waiting for it.](core/test_evolution.py#L409 "test_a_directive_beside_the_agents_waiting_question_starts_its_own_task") | `evolution` | `ask` | `evolution` | ✓ | [skip](#frameworks) |
+| [A directive without a task id reaches the extension's waiting task, which fails: an evolution never waits for input.](core/test_evolution.py#L433 "test_a_directive_into_an_evolution_task_left_waiting_fails_it") | `evolution` | — | `evolution` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_extensions.py`
 

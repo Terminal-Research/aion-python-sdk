@@ -244,6 +244,11 @@ Its options (`EvolutionOptions`):
 - **A cancel or a shutdown** reaches the toolkit's `cancel(task_id,
   within=)`: the run rescues its work and reports its closing in a `WORKING`
   update, and the server writes the final status.
+- **A further message** never reaches the toolkit: an evolution never waits
+  for input, the server refuses a message into its running task with
+  `task_busy`, and a finished task takes none. One that reaches a task left
+  waiting for input is a fault: `resume` raises, and the server logs it and
+  fails the task with `internal_error`.
 - The extension requires the daemon extension.
 
 ## Routing: before a task exists
@@ -481,7 +486,7 @@ the SDK's CI.
 | unit | `tests/unit/server/tasks/test_abandoned.py`, `tests/unit/server/core/test_request_handlers.py` | what is abandoned and what its settlement writes, a message into an abandoned task |
 | integration | `tests/integration/server/tasks/test_extension_admission_postgres.py` | a refusal closes its task `REJECTED`; a message into a running extension task refused on every server; a message into an extension's task on a server without the extension refused; an abandoned task settled by a message, the server still running it stopping at its next write |
 | integration | `tests/integration/server/tasks/test_context_artifacts_parity.py`, `test_context_runs_parity.py`, `test_abandoned_tasks_postgres.py` | artifact versions, who holds a context, its generation and its tasks, the settlement - on the in-memory store and on PostgreSQL |
-| scenarios | `tests/scenarios/core/test_evolution.py` (`TAGS=evolution`) | evolution through a real `aion serve` with the stand-in toolkit: the standard path and the object in the task, numbered artifact versions, refusals as `REJECTED` tasks, a server without the toolkit that does not start, a cancel, the grace period, `context_busy` and `task_busy`, a directive beside the agent's waiting question, a waiting task continued |
+| scenarios | `tests/scenarios/core/test_evolution.py` (`TAGS=evolution`) | evolution through a real `aion serve` with the stand-in toolkit: the standard path and the object in the task, numbered artifact versions, refusals as `REJECTED` tasks, a server without the toolkit that does not start, a cancel, the grace period, `context_busy` and `task_busy`, a directive beside the agent's waiting question, a directive into an evolution task left waiting failing it |
 | scenarios | `tests/scenarios/persistence/test_evolution.py`, `tests/scenarios/distributed/test_evolution.py`, `tests/scenarios/distributed/test_abandoned_tasks.py` | the versions across a restart, a shutdown, a small shutdown budget; `context_busy`, `task_busy`, `extension_unavailable` and a remote cancel across servers; abandoned tasks |
 
 The evolution toolkit is tested in its own repository; see

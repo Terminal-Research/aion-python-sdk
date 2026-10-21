@@ -21,7 +21,7 @@ from pydantic import ValidationError
 from aion.core.a2a import codes
 from aion.core.config import AgentConfig
 from aion.core.constants.a2a import BEHAVIOR_EVOLUTION_EXTENSION_URI_V1, DAEMON_EXTENSION_URI_V1
-from aion.core.exceptions import ConfigurationError, ExtensionRejection
+from aion.core.exceptions import AionError, ConfigurationError, ExtensionRejection
 from aion.core.principal import Principal
 from aion.core.runtime.context.models import AionRuntimeContext
 from aion.server.agent.adapters import ExecutionConfig
@@ -503,3 +503,13 @@ async def test_a_cancel_reaches_the_toolkit_with_how_long_the_server_waits(fake_
     await evolution_executor.cancel(ExecutionConfig(task_id="t-2"))
 
     assert fake_toolkit.EvolutionToolkit.created[-1].runner.cancels == [("t-1", 15.0), ("t-2", None)]
+
+
+def test_a_message_continuing_an_evolution_task_is_a_fault_the_toolkit_never_sees(fake_toolkit) -> None:
+    """An evolution never waits for input: continuing its task raises, and the server fails the task."""
+    evolution_executor = executor(provider="local_session")
+
+    with pytest.raises(AionError, match="never waits for input"):
+        evolution_executor.resume(request(), config())
+
+    assert fake_toolkit.EvolutionToolkit.created[-1].turns == []

@@ -96,9 +96,6 @@ class EvolutionToolkit:
     def start(self, request: EvolutionRequest, run: EvolutionRun) -> AsyncIterator[Any]:
         return self._turn("start", request, run)
 
-    def resume(self, request: EvolutionRequest, run: EvolutionRun) -> AsyncIterator[Any]:
-        return self._turn("resume", request, run)
-
     async def cancel(self, task_id: str, *, within: Optional[float] = None) -> None:
         self.runner.cancel(task_id, within)
 

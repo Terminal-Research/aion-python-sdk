@@ -30,7 +30,9 @@ running task is refused with ``task_busy``, until that task ends; other
 contexts are not held back. A message without a task id continues a task
 waiting for input only when the task is the addressed executor's: a
 directive starts a task of its own beside the agent's waiting question, and
-the answer still reaches the question.
+the answer still reaches the question. An evolution never waits for input:
+a directive that reaches an evolution task the stand-in toolkit left waiting
+fails it with ``internal_error``, and the toolkit is not asked.
 """
 
 from __future__ import annotations
@@ -425,19 +427,20 @@ async def test_a_directive_beside_the_agents_waiting_question_starts_its_own_tas
 
 
 @pytest.mark.variant("evolution")
-async def test_an_evolution_that_waits_for_input_continues_its_own_task(evolution_client: ScenarioClient) -> None:
-    """A directive without a task id resumes the extension's waiting task in the context."""
+async def test_a_directive_into_an_evolution_task_left_waiting_fails_it(evolution_client: ScenarioClient) -> None:
+    """A directive without a task id reaches the extension's waiting task, which fails: an evolution never waits for input."""
     context_id = f"evolution-waits-{uuid.uuid4().hex}"
     waiting = await run_script(
         evolution_client, context_id=context_id, outputs=[{"kind": "status", "state": "input-required"}]
     )
 
-    resumed = await run_script(evolution_client, context_id=context_id, report=True, outputs=[COMPLETED])
+    failed = await run_script(evolution_client, context_id=context_id, report=True, outputs=[COMPLETED])
 
-    [report] = reports(resumed)
-    assert resumed.id == waiting.id
-    assert (report["kind"], report["task_id"]) == ("resume", waiting.id)
-    assert resumed.status.state == TaskState.TASK_STATE_COMPLETED
+    assert failed.id == waiting.id
+    assert failed.status.state == TaskState.TASK_STATE_FAILED
+    error = _plain(failed.status.message.parts[-1].data)
+    assert (error["code"], error["retryable"]) == ("internal_error", False)
+    assert reports(failed) == []
 
 
 def _plain(struct) -> dict:

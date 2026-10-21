@@ -61,7 +61,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from aion.core.a2a import codes
 from aion.core.agent import conversation
 from aion.core.constants.a2a import BEHAVIOR_EVOLUTION_EXTENSION_URI_V1, DAEMON_EXTENSION_URI_V1
-from aion.core.exceptions import ConfigurationError, ExtensionRejection
+from aion.core.exceptions import AionError, ConfigurationError, ExtensionRejection
 from aion.core.runtime.context.extensions import ExtensionActivationError, MessagesCollector
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.core.settings import api_settings
@@ -207,16 +207,18 @@ class EvolutionExecutor(ExtensionExecutor):
                 await history.stamp_artifact_version(event)
             yield event
 
-    async def resume(
+    def resume(
             self, context: "RequestContext", config: ExecutionConfig
     ) -> AsyncIterator[TaskStatusUpdateEvent | TaskArtifactUpdateEvent]:
-        """Hand a further message to the toolkit, which refuses it: an evolution never waits for input."""
-        toolkit = _toolkit_module()
-        run = toolkit.EvolutionRun(
-            task_id=config.task_id, context_id=config.context_id, turn_id=context.message.message_id
-        )
-        async for event in self._toolkit.resume(self._evolution_request(context), run):
-            yield event
+        """Fail: an evolution never waits for input, so no message is meant to continue its task.
+
+        The server refuses a message into a running evolution task
+        (``task_busy``), and a finished task takes none. A message that
+        reaches this found the task waiting for input, which the toolkit
+        never leaves it: the server logs the fault and fails the task with
+        ``internal_error``.
+        """
+        raise AionError(f"Evolution task {config.task_id} was continued, but an evolution never waits for input.")
 
     async def cancel(self, config: ExecutionConfig, *, within: Optional[float] = None) -> None:
         """Stop the run of ``config.task_id`` in this process; it rescues its work within ``within`` seconds."""
