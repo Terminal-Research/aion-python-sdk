@@ -52,9 +52,26 @@ The REST helpers target these control-plane endpoints:
 | `POST /auth/tokens` | Exchanges Aion client credentials for an API token. |
 | `GET /v1/models` | Lists model-service catalog entries available through Aion. |
 | `GET /v1/models/{model}` | Retrieves one model-service catalog entry. |
+| `POST /alpha/decisions` | Evaluates named questions using the experimental Decisions API. |
 | `POST /v1/chat/completions` | Creates a model-service chat completion, including streaming responses when requested. |
 | `POST /files/agent-artifacts` | Creates protected agent output. |
 | `PUT /files/{fileId}` | Replaces a File under an exact version/revision fence. |
+
+### Decisions
+
+`create_decision` and `create_decision_async` wrap a caller-owned OpenAI client
+configured for Aion. They select the alpha endpoint on the configured host,
+attach current request attribution, and disable additional SDK retries for the
+call. The client retains its credentials, timeout and lifecycle. The async helper
+accepts `AsyncOpenAI`; use `aion_jwt_api_key` as its asynchronous key provider.
+
+Request and discriminated answer types live in `aion.api.decisions`. The helpers
+preserve the named-question JSON contract; Aion performs runtime validation.
+They do not require a native OpenAI Decisions resource. Install `openai` when
+using these helpers; importing the base Aion SDK does not require it.
+
+See [Decisions](https://docs.aion.to/docs/resources/model-service/decisions)
+for executable examples, media limits and response pricing.
 
 ### Files
 
