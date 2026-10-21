@@ -313,9 +313,44 @@ class TestPushUrlCheck:
 
         client.post.assert_awaited_once()
 
+    @pytest.mark.anyio
+    async def test_a_url_check_that_raises_rejects_the_url(self, caplog):
+        """A URL that could not be checked is never posted to, and the failure stays in the log."""
+        client = _client()
+        sender = AionPushNotificationSender(
+            httpx_client=client,
+            config_store=_store(_config()),
+            push_url_validator=AsyncMock(side_effect=OSError("resolver unavailable")),
+        )
+
+        with caplog.at_level(logging.ERROR, logger="aion.server.tasks.push_sender"):
+            delivered = await sender._dispatch_notification(_event(), _config(), TASK_ID)
+
+        assert delivered is False
+        client.post.assert_not_awaited()
+        [record] = caplog.records
+        assert WEBHOOK_URL in record.getMessage()
+        assert record.exc_info is not None
+
 
 class TestFailureHandling:
     """A rejected delivery is reported, not raised, and never leaks the credential."""
+
+    @pytest.mark.anyio
+    async def test_an_unreadable_config_store_sends_nothing_and_does_not_raise(self, caplog):
+        """Delivery is best effort: a config store that fails is logged, and the task never sees it."""
+        client = _client()
+        store = Mock()
+        store.get_info_for_dispatch = AsyncMock(side_effect=RuntimeError("database unavailable"))
+        sender = AionPushNotificationSender(httpx_client=client, config_store=store)
+
+        with caplog.at_level(logging.ERROR, logger="aion.server.tasks.push_sender"):
+            await sender.send_notification(TASK_ID, _event())
+
+        client.post.assert_not_awaited()
+        [record] = caplog.records
+        assert "push-notification configs" in record.getMessage()
+        assert record.exc_info is not None
 
     @pytest.mark.anyio
     async def test_rejected_delivery_does_not_raise(self):

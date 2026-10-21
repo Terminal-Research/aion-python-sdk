@@ -101,7 +101,10 @@ class AionPushNotificationSender(BasePushNotificationSender):
     Delivery is the base class's contract: the same headers - the
     notification token as ``X-A2A-Notification-Token``, a config's
     ``authentication`` as ``Authorization`` - the same push URL check, the
-    same concurrent fan-out with failures swallowed. What this class adds is
+    same concurrent fan-out with failures swallowed, and the same best effort:
+    a config store that cannot be read or a URL check that raises is logged
+    and never reaches the task, and a URL check that raises rejects the URL.
+    What this class adds is
     the log: a refusal is reported with the receiver's status and message
     rather than a traceback, a timeout with the setting that bounds it, an
     accepted delivery with how long the receiver took, and a fan-out summary
@@ -140,11 +143,21 @@ class AionPushNotificationSender(BasePushNotificationSender):
         receiver, and then with the counts, so the log states how much of the
         fan-out got through without the reader tallying it.
 
+        A config store that cannot be read is logged and nothing is sent:
+        delivery is best effort, and its failure must not reach the task.
+
         Args:
             task_id: Identifier of the task the event belongs to.
             event: The event to deliver.
         """
-        push_configs = await self._config_store.get_info_for_dispatch(task_id)
+        try:
+            push_configs = await self._config_store.get_info_for_dispatch(task_id)
+        except Exception:
+            logger.exception(
+                'Could not read the push-notification configs; nothing is sent — %s',
+                describe_event(event),
+            )
+            return
         if not push_configs:
             return
 
@@ -185,16 +198,25 @@ class AionPushNotificationSender(BasePushNotificationSender):
                 same value twice on the same line.
 
         Returns:
-            True when the webhook accepted the delivery, False when the request
-            failed. Failures are logged and swallowed, matching the base class:
-            one unreachable webhook must not abort the fan-out to the others.
+            True when the webhook accepted the delivery, False when the URL
+            check refused it or the request failed. Failures are logged and
+            swallowed, matching the base class: one unreachable webhook must
+            not abort the fan-out to the others. A URL check that raises
+            rejects the URL: an unchecked URL is never posted to.
         """
         url = push_info.url
-        if (
-            self._push_url_validator is not None
-            and not await self._push_url_validator(url)
-        ):
-            return False
+        if self._push_url_validator is not None:
+            try:
+                accepted = await self._push_url_validator(url)
+            except Exception:
+                logger.exception(
+                    'Push-notification URL check failed for URL: %s; the URL is rejected — %s',
+                    url,
+                    describe_event(event),
+                )
+                return False
+            if not accepted:
+                return False
         try:
             response = await self._client.post(
                 url,
