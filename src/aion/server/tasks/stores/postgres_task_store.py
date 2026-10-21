@@ -541,7 +541,7 @@ class PostgresTaskStore(BaseTaskStore):
             routed_extension: Optional[str],
             context: ServerCallContext | None = None,
     ) -> Optional[Task]:
-        """Retrieve the resolved owner's most recent task of a context that one handler serves.
+        """Retrieve the resolved owner's most recent task of a context that one executor serves.
 
         Database failures propagate, as for :meth:`get_context_last_task`.
         """

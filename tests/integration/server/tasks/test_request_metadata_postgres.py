@@ -47,7 +47,9 @@ from aion.core.constants.a2a import (
 )
 from aion.core.runtime import aion_a2a_extension_registry
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
+from aion.server.agent.adapters import AgentFrameworkExecutor
 from aion.server.agent.execution import AionAgentRequestExecutor
+from aion.server.agent.execution.extensions import ExtensionExecutor
 from aion.server.agent.execution.context.providers import RequestScopeRuntimeContextProvider
 from aion.server.agent.execution.request_context_builder import AionRequestContextBuilder
 from aion.server.agent.execution.scope import init_execution_scope
@@ -56,6 +58,8 @@ from aion.server.tasks.admission import PostgresContextAdmission
 from aion.server.tasks.contexts import PostgresContextCatalog
 from aion.server.tasks import request_metadata
 from aion.server.tasks.request_metadata import strip_request_metadata
+
+from tests.support.executors import agent_of
 
 from .postgres_support import POSTGRES_TEST_URL, prepared_database, stores, truncate
 from .postgres_support import db_manager as _db_manager
@@ -116,25 +120,27 @@ def _completed(context, metadata: dict | None = None) -> TaskStatusUpdateEvent:
     )
 
 
-class _Agent:
-    """The agent's framework adapter: answers and completes."""
+class _Agent(AgentFrameworkExecutor):
+    """The agent's framework executor: answers and completes."""
 
-    supports_context_state_deletion = False
+    async def stream(self, context, config):
+        yield _completed(context)
 
-    async def stream(self, context):
+    async def resume(self, context, config):  # pragma: no cover - every request here starts a task
         yield _completed(context)
 
 
-class _ToolkitHandler:
-    """An extension handler that keeps its object in the task and completes."""
+class _Extension(ExtensionExecutor):
+    """An extension's executor that keeps its object in the task and completes."""
 
-    uri = TOOLKIT
+    def __init__(self) -> None:
+        super().__init__({})
 
-    async def admit(self, message, extensions, call_context):
-        return None
-
-    async def stream(self, context, admission, event_queue=None):
+    async def stream(self, context, config):
         yield _completed(context, metadata={TOOLKIT: PROGRESS})
+
+    async def resume(self, context, config):  # pragma: no cover - every request here starts a task
+        yield _completed(context)
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
@@ -168,7 +174,7 @@ async def handler(_database, runtime_context, toolkit_enabled):
     card = Mock()
     card.capabilities.streaming = True
     built = AionRequestHandler(
-        agent_executor=AionAgentRequestExecutor(_Agent(), extension_handlers=[_ToolkitHandler()]),
+        agent_executor=AionAgentRequestExecutor(agent_of(_Agent()), extensions={TOOLKIT: _Extension()}),
         task_store=versioned,
         agent_card=card,
         event_stream=DatabaseTaskEventStream(_db_manager.get_engine(), create_table=False, poll_interval_s=0.05),

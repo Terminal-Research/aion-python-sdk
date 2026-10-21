@@ -18,6 +18,11 @@ from starlette.routing import BaseRoute, Route
 from typing import Optional
 
 from aion.server.agent.execution import AionAgentRequestExecutor, AionRequestContextBuilder
+from aion.server.agent.execution.extensions import (
+    EnabledExtension,
+    create_extension_executors,
+    register_extensions,
+)
 from aion.server.agent.factory import AgentFactory
 from aion.server.core.app.api import AionExtraHTTPRoutes, ContextHTTPRoutes
 from aion.server.core.app.handlers import AionJsonRpcDispatcher, AionRequestHandler
@@ -27,6 +32,7 @@ from aion.server.plugins import PluginFactory
 from aion.server.settings import app_settings
 from aion.server.tasks import StoreManager, PushNotificationFactory
 from aion.server.tasks.abandoned import AbandonedTasks
+from aion.server.tasks.conversation import StoredConversations
 from aion.server.tasks.push_notifications import push_url_validator
 from .lifespan import AppLifespan
 from .registry import app_registry
@@ -84,6 +90,7 @@ class AppFactory:
         self.file_transformer = A2AFileTransformer(self.upload_manager)
 
         self.fastapi_app: Optional[FastAPI] = None
+        self._enabled_extensions: list[EnabledExtension] = []
         self._executor: Optional[AionAgentRequestExecutor] = None
         self._request_handler: Optional[AionRequestHandler] = None
         self._push_sender = None
@@ -126,19 +133,24 @@ class AppFactory:
         if await self.db_factory.initialize():
             await prepare_database(self.db_factory.db_manager)
 
-        # 2. Build FastAPI application
-        await self._build_app()
+        # 2. Register the extensions and activate what aion.yaml enables,
+        #    before the card lists them
+        self._enabled_extensions = register_extensions(self.aion_agent.config)
 
         # 3. Initialize plugins - Phase 1: infrastructure setup
         await self.plugin_factory.initialize()
 
-        # 4. Build agent
+        # 4. Build agent: its framework executor exists from here on
         await self.agent_factory.build()
 
-        # 5. Configure app - Phase 2: integrate plugins with built app and agent
+        # 5. Build FastAPI application, with the executors of the agent and of
+        #    its executable extensions
+        await self._build_app()
+
+        # 6. Configure app - Phase 2: integrate plugins with built app and agent
         await self.plugin_factory.configure_app(self.fastapi_app, self.aion_agent)
 
-        # 6. Apply custom app extensions from AppRegistry
+        # 7. Apply custom app extensions from AppRegistry
         self._application_routes.extend(app_registry.apply_to_app(self.fastapi_app))
 
         logger.info("Agent '%s' initialized at http://%s:%s",
@@ -210,20 +222,25 @@ class AppFactory:
         )
         self._push_sender = push_sender
 
-        # One settler of abandoned tasks for the toolkits' admission, the
-        # messages into a task and the background sweep.
+        # One settler of abandoned tasks for the messages into a task and the
+        # background sweep.
         abandoned_tasks = AbandonedTasks(
             self.store_manager.get_stale_tasks(),
             timeout=app_settings.stale_task_timeout,
             push_sender=push_sender,
         )
 
-        self._executor = await AionAgentRequestExecutor.create(
+        conversations = StoredConversations(
+            task_store=self.store_manager.get_store(),
+            context_runs=self.store_manager.get_context_runs(),
+            context_artifacts=self.store_manager.get_context_artifacts(),
+            owner_resolver=self.aion_agent.owner_resolver,
+        )
+        self._executor = AionAgentRequestExecutor(
             self.aion_agent,
             file_transformer=self.file_transformer,
-            context_artifacts=self.store_manager.get_context_artifacts(),
-            context_runs=self.store_manager.get_context_runs(),
-            abandoned_tasks=abandoned_tasks,
+            extensions=create_extension_executors(self._enabled_extensions),
+            conversations=conversations,
         )
 
         return AionRequestHandler(
@@ -256,8 +273,8 @@ class AppFactory:
             AionAuthMiddleware, verifier=self.token_verifier, application_routes=self._application_routes
         )
 
-    async def stop_toolkit_turns(self, within: float) -> None:
-        """Stop the toolkits' running turns, once the server has stopped accepting requests.
+    async def stop_turns(self, within: float) -> None:
+        """Stop the turns running here, once the server has stopped accepting requests.
 
         The first step of a shutdown, taken before the HTTP server waits for
         open connections: a turn that ends here closes its task, and the
@@ -265,15 +282,15 @@ class AppFactory:
         running afterwards is drained and settled by :meth:`shutdown`.
 
         Args:
-            within: The toolkits' window of the shutdown budget, in seconds
-                (``aion.server.shutdown.ShutdownBudget.toolkit_turns``).
+            within: The running turns' window of the shutdown budget, in
+                seconds (``aion.server.shutdown.ShutdownBudget.turns``).
         """
         if self._executor is None:
             return
         try:
-            await self._executor.stop_extension_turns(within)
+            await self._executor.stop_turns(within)
         except Exception as exc:
-            logger.error("Error stopping the toolkits' turns", exc_info=exc)
+            logger.error("Error stopping the running turns", exc_info=exc)
 
     async def shutdown(self) -> None:
         """Shutdown the application and cleanup resources."""

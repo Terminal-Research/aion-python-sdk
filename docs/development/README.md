@@ -6,8 +6,8 @@ Everything you need to start contributing to the Aion Python SDK.
 
 - **[Environment Setup](environment.md)** — Python version requirements and environment configuration
 - **[Dependencies Management](dependencies.md)** — Installing the project, changing dependencies, and feature branch testing
-- **[Extension exposure](extension-exposure.md)** — Known, active, advertised, unavailable, and which extension owns a task
-- **[Toolkit host](toolkit-host.md)** — Toolkit plugins: discovery, admission before a task exists, translation into A2A, the server's invariants
+- **[Extension exposure](extension-exposure.md)** — Known, active, advertised, unavailable, and which executor owns a task
+- **[Executors and executable extensions](executable-extensions.md)** — The executor pool, extensions whose executor runs the task: registration and `aion.yaml` options, routing, the turn, cancel and shutdown, behavior evolution
 - **[Scenario tests](../../tests/scenarios/README.md)** — The suite that starts a real `aion serve` and drives it over A2A
 - **[Continuous integration](ci.md)** — Full pull request checks and the GitHub ruleset that makes them required
 - **[Open items](open-items.md)** — Known gaps that remain open on purpose, one section per `TODO(<slug>)`

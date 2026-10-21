@@ -12,6 +12,7 @@ from .context import (
     AionRuntimeExtensions,
     AionA2AExtensionRegistry,
     aion_a2a_extension_registry,
+    register_protocol_extensions,
     aget_aion_runtime_context,
     get_aion_runtime_context,
 )

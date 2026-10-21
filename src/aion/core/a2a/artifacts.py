@@ -14,6 +14,13 @@ from google.protobuf import json_format, struct_pb2
 from aion.core.a2a.extensions.messaging import FileActionPayload
 from aion.core.constants.a2a import MESSAGING_EXTENSION_URI_V1
 
+ARTIFACT_VERSION_KEY = "version"
+"""Artifact metadata key the server sets on an executable extension's artifact.
+
+The same artifact id in several tasks of a context is one artifact in several
+versions, numbered from 0; an executor never sets the key itself.
+"""
+
 
 def url_artifact(
     url: str,
@@ -104,4 +111,4 @@ def data_artifact(
     )
 
 
-__all__ = ["url_artifact", "file_artifact", "data_artifact"]
+__all__ = ["ARTIFACT_VERSION_KEY", "url_artifact", "file_artifact", "data_artifact"]

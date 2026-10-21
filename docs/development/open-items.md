@@ -29,7 +29,9 @@ other configs without it.
 - **Status:** Planned
 - **Code:** none
 
-Agents have no SDK call that reads the recent messages of the conversation.
-An agent that needs earlier turns reads them from its framework's own state,
+`aion.core.agent.conversation` reads the tasks of the conversation and the
+versions of its artifacts, but has no call that reads its recent messages:
+which messages a participant of a shared conversation sees is not settled. An
+agent that needs earlier turns reads them from its framework's own state,
 which the server keeps per conversation: the LangGraph checkpoint or the ADK
 session.

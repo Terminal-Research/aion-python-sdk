@@ -12,9 +12,10 @@ The adapter architecture allows for flexible framework support by:
 from .interfaces import (
     AgentAdapter,
     ExecutionConfig,
-    ExecutorAdapter,
+    AgentFrameworkExecutor,
     LegacyStateError,
     StateScope,
+    TaskExecutor,
     is_state_key,
     normalize_role_to_a2a,
     create_message_from_parts,
@@ -25,7 +26,8 @@ __all__ = [
     # Interfaces
     "AgentAdapter",
     "ExecutionConfig",
-    "ExecutorAdapter",
+    "TaskExecutor",
+    "AgentFrameworkExecutor",
     "LegacyStateError",
     "StateScope",
     "is_state_key",

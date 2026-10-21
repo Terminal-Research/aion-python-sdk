@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 from typing import Optional, Union
 
 from aion.core.a2a.extensions import DistributionExtensionV1
-from aion.core.constants import DISTRIBUTION_EXTENSION_URI_V1
 from aion.core.exceptions import AionAuthenticationError
 from aion.core.runtime.context import (
     AionRuntimeContext, AionRuntimeExtensions, ForwardedAttribution,
@@ -68,9 +67,7 @@ def resolve_upload_context(
         return UploadFailure(FileUploadErrorCode.STORAGE_UNAUTHORIZED, cause=error)
     if attribution is None:
         return UploadFailure(FileUploadErrorCode.NO_ATTRIBUTION)
-    payload = runtime.distribution_extension_payload or runtime.extensions.get(
-        DISTRIBUTION_EXTENSION_URI_V1
-    )
+    payload = runtime.distribution_extension_payload
     return UploadContext(
         usage_attribution=(
             attribution.carrier if isinstance(attribution, ForwardedAttribution) else None

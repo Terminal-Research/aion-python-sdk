@@ -12,7 +12,7 @@ from typing import Any, Optional, TYPE_CHECKING
 
 from aion.server.agent.adapters import (
     ExecutionConfig,
-    ExecutorAdapter,
+    AgentFrameworkExecutor,
     LegacyStateError,
 )
 from aion.server.agent.exceptions import ExecutionError, StateRetrievalError
@@ -33,8 +33,10 @@ AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent | Task | Message
 logger = logging.getLogger(__name__)
 
 
-class LangGraphExecutor(ExecutorAdapter):
+class LangGraphExecutor(AgentFrameworkExecutor):
     """Orchestrator for LangGraph agent execution."""
+
+    framework = "langgraph"
 
     def __init__(
             self,

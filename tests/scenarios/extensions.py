@@ -6,9 +6,9 @@ so the server's own extension pipeline has something to verify.
 
 Two of the SDK's rules have no production extension that can demonstrate them
 on a deployment a scenario can start. No extension the SDK registers itself
-declares ``requires`` - a toolkit may, and whether one is installed is decided
-by the deployment, so a scenario built on it would be asserting the toolkit's
-presence, not the co-activation rule. The router's ``on_event`` fallback needs
+declares ``requires`` but behavior evolution, whose toolkit the deployment may
+or may not have installed, so a scenario built on it would be asserting the
+toolkit's presence, not the co-activation rule. The router's ``on_event`` fallback needs
 an event kind that no kind-specific handler claims, and every kind the core
 vocabularies define has one.
 

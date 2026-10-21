@@ -1,12 +1,19 @@
-"""Extension routing: the ExtensionTaskHandler contract and the toolkit host behind it."""
+"""Executable extensions: their executors and their registration."""
 
-from .base import EXTENSION_ROUTE_STATE_KEY, ExtensionRoute, ExtensionTaskHandler
-from .toolkit import ToolkitTaskHandler, load_toolkit_handlers
+from .executable import ExecutableExtensionDescriptor, ExtensionExecutor, parse_options
+from .registration import (
+    EXECUTABLE_EXTENSIONS,
+    EnabledExtension,
+    create_extension_executors,
+    register_extensions,
+)
 
 __all__ = [
-    "EXTENSION_ROUTE_STATE_KEY",
-    "ExtensionRoute",
-    "ExtensionTaskHandler",
-    "ToolkitTaskHandler",
-    "load_toolkit_handlers",
+    "EXECUTABLE_EXTENSIONS",
+    "EnabledExtension",
+    "ExecutableExtensionDescriptor",
+    "ExtensionExecutor",
+    "create_extension_executors",
+    "parse_options",
+    "register_extensions",
 ]

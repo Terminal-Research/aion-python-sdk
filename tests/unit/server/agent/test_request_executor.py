@@ -21,24 +21,23 @@ from a2a.utils.errors import (
     InvalidParamsError,
     TaskNotCancelableError,
     TaskNotFoundError,
-    UnsupportedOperationError,
 )
 
-from aion.server.agent.execution import AionAgentRequestExecutor
 from aion.core.a2a.enums import A2AMetadataKey
 from aion.core.constants.a2a import DAEMON_EXTENSION_URI_V1
 from aion.core.runtime import aion_a2a_extension_registry
-from aion.server.agent.execution.extensions import EXTENSION_ROUTE_STATE_KEY, ExtensionRoute
+from aion.server.agent.execution.pool import EXTENSION_ROUTE_STATE_KEY
 from aion.core.runtime.context.extensions import AionRuntimeExtensions
 from aion.server.agent.execution.scope import init_execution_scope
 from aion.core.runtime.context.models import AionRuntimeContext
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.agent.execution.context.providers import RequestScopeRuntimeContextProvider
-from aion.server.files.storage import FileUploadErrorCode, StubFileStorageBackend, UploadFailure
 from aion.server.tasks.task_manager import AionTaskManager
+from tests.support.scripted_executor.executor import ScriptedExecutor
+from tests.support.scripted_executor.script import Script
 from tests.unit.support.daemon import daemon_payload
 from tests.unit.support.events import RecordingQueue
-from tests.unit.support.files import OutcomeBackend, StoringTransformer
+from tests.support.executors import FakeFrameworkExecutor, request_executor
 
 ROUTED = A2AMetadataKey.ROUTED_EXTENSION.value
 
@@ -67,27 +66,23 @@ def _make_context(task=None):
     ctx.current_task = task
     ctx.task_id = task.id if task else None
     ctx.context_id = task.context_id if task else None
+    ctx.call_context = ServerCallContext()
     return ctx
 
 
-def _make_agent(cancel_side_effect=None):
-    """Create a mock AionAgent with configurable cancel behavior."""
-    agent = MagicMock()
-    if cancel_side_effect is not None:
-        agent.cancel = AsyncMock(side_effect=cancel_side_effect)
-    else:
-        agent.cancel = AsyncMock()
-    return agent
+async def _nothing(_context):
+    return
+    yield
 
 
 @pytest.fixture
-def agent():
-    return _make_agent()
+def framework():
+    return FakeFrameworkExecutor()
 
 
 @pytest.fixture
-def executor(agent):
-    return AionAgentRequestExecutor(aion_agent=agent)
+def executor(framework):
+    return request_executor(framework)
 
 
 @pytest.fixture
@@ -104,13 +99,10 @@ class TestExecuteRuntimeContext:
     @pytest.mark.anyio
     async def test_execute_builds_and_sets_runtime_context(self):
         """Verify that execute() builds AionRuntimeContext and stores in scope."""
-        executor = AionAgentRequestExecutor(aion_agent=_make_agent())
+        executor = request_executor()
         task = _make_task(state=TaskState.TASK_STATE_WORKING)
         ctx = _make_context(task=task)
         event_queue = AsyncMock(spec=EventQueue)
-
-        # Mock agent stream and AionRuntimeContextBuilder
-        executor.agent.stream = AsyncMock(return_value=AsyncMock(__aenter__=AsyncMock(), __aexit__=AsyncMock()))
 
         # Initialize execution scope for the test
         init_execution_scope()
@@ -125,11 +117,6 @@ class TestExecuteRuntimeContext:
                 with patch("aion.server.agent.execution.request_executor.AionEventPipeline"):
                     # Mock _get_task_for_execution to return our task
                     with patch.object(executor, "_get_task_for_execution", new=AsyncMock(return_value=(task, True))):
-                        async def empty_stream(*args, **kwargs):
-                            return
-                            yield
-                        executor.agent.stream = empty_stream
-
                         await executor.execute(ctx, event_queue)
 
                         # Verify context was built from request context
@@ -144,7 +131,7 @@ class TestExecuteRuntimeContext:
     @pytest.mark.anyio
     async def test_execute_handles_missing_runtime_context(self):
         """Verify that execute() handles case when context is unavailable."""
-        executor = AionAgentRequestExecutor(aion_agent=_make_agent())
+        executor = request_executor()
         task = _make_task(state=TaskState.TASK_STATE_WORKING)
         ctx = _make_context(task=task)
         event_queue = AsyncMock(spec=EventQueue)
@@ -160,11 +147,6 @@ class TestExecuteRuntimeContext:
                 MockRegistry.aget_current_context = AsyncMock(return_value=None)
                 with patch("aion.server.agent.execution.request_executor.AionEventPipeline"):
                     with patch.object(executor, "_get_task_for_execution", new=AsyncMock(return_value=(task, True))):
-                        async def empty_stream(*args, **kwargs):
-                            return
-                            yield
-                        executor.agent.stream = empty_stream
-
                         await executor.execute(ctx, event_queue)
 
                         # Verify builder was called
@@ -229,23 +211,20 @@ class TestTaskForExecution:
         assert result == (make_task.return_value, True)
 
     @pytest.mark.anyio
-    async def test_execute_on_terminal_task_runs_nothing(self, executor, event_queue):
+    async def test_execute_on_terminal_task_runs_nothing(self, executor, framework, event_queue):
         """A skipped request must not raise: the SDK reads that as agent failure."""
-        executor.agent.stream = MagicMock()
-        executor.agent.resume = MagicMock()
         ctx = _make_context(task=_make_task(state=TaskState.TASK_STATE_COMPLETED))
 
         await executor.execute(ctx, event_queue)
 
-        executor.agent.stream.assert_not_called()
-        executor.agent.resume.assert_not_called()
+        assert framework.calls == []
         event_queue.enqueue_event.assert_not_awaited()
 
 
 SECRET = "sk-configuration-secret"
 """A configuration variable's value, as the daemon payload carries it in plain text."""
 
-TOOLKIT = "https://example.invalid/toolkits/scripted/1.0.0"
+EXTENSION = "https://example.invalid/extensions/scripted/1.0.0"
 
 
 def _request_metadata() -> dict:
@@ -255,7 +234,7 @@ def _request_metadata() -> dict:
             configuration_variables={"MODEL_API_KEY": SECRET},
         ).model_dump(mode="json", by_alias=True, exclude_none=True),
         A2AMetadataKey.SETTLED_REASON.value: "server_shutdown",
-        ROUTED: TOOLKIT,
+        ROUTED: EXTENSION,
         "aion:custom": "planted",
         "client-note": "for this turn",
     }
@@ -277,18 +256,9 @@ def daemon_enabled():
     aion_a2a_extension_registry.reset_to_default()
 
 
-class _ExtensionHandler:
-    """An extension handler that finishes its turn without a word."""
-
-    uri = TOOLKIT
-
-    def __init__(self) -> None:
-        self.streamed = 0
-
-    async def stream(self, context, admission=None, event_queue=None):
-        self.streamed += 1
-        return
-        yield
+def _silent_extension() -> ScriptedExecutor:
+    """An extension's executor that finishes its turn without a word."""
+    return ScriptedExecutor(script=Script(outputs=[]))
 
 
 class TestRequestMetadataStaysOnTheRequest:
@@ -315,10 +285,10 @@ class TestRequestMetadataStaysOnTheRequest:
 
     @pytest.mark.anyio
     async def test_an_extension_task_carries_only_the_route_the_server_wrote(self, daemon_enabled):
-        handler = _ExtensionHandler()
-        executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[handler])
+        extension = _silent_extension()
+        executor = request_executor(extensions={EXTENSION: extension})
         context = _request_context(_request_metadata())
-        context.call_context.state[EXTENSION_ROUTE_STATE_KEY] = ExtensionRoute(TOOLKIT)
+        context.call_context.state[EXTENSION_ROUTE_STATE_KEY] = EXTENSION
         queue = RecordingQueue()
         init_execution_scope()
 
@@ -326,24 +296,16 @@ class TestRequestMetadataStaysOnTheRequest:
 
         announced = queue.events[0]
         assert isinstance(announced, Task)
-        assert MessageToDict(announced.metadata) == {ROUTED: TOOLKIT}
+        assert MessageToDict(announced.metadata) == {ROUTED: EXTENSION}
         assert SECRET not in MessageToJson(announced)
-        assert handler.streamed == 1
+        assert len(extension.turns) == 1
 
     @pytest.mark.anyio
     async def test_a_route_named_in_the_request_routes_nothing(self, daemon_enabled):
-        """Only the server decides which handler a task belongs to."""
-        handler = _ExtensionHandler()
-        agent = _make_agent()
-        streamed = []
-
-        async def agent_stream(context):
-            streamed.append(context)
-            return
-            yield
-
-        agent.stream = agent_stream
-        executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[handler])
+        """Only the server decides which executor a task belongs to."""
+        extension = _silent_extension()
+        framework = FakeFrameworkExecutor()
+        executor = request_executor(framework, extensions={EXTENSION: extension})
         context = _request_context(_request_metadata())
         queue = RecordingQueue()
         init_execution_scope()
@@ -352,9 +314,8 @@ class TestRequestMetadataStaysOnTheRequest:
 
         announced = queue.events[0]
         assert MessageToDict(announced.metadata) == {}
-        assert executor._routed_handler(announced) is agent
-        assert streamed == [context]
-        assert handler.streamed == 0
+        assert [call[1] for call in framework.calls] == [context]
+        assert extension.turns == []
 
 
 class TestCancel:
@@ -380,145 +341,59 @@ class TestCancel:
             await executor.cancel(ctx, event_queue)
 
     @pytest.mark.anyio
-    async def test_cancel_active_task_calls_framework_hook_and_emits_canceled(
-        self, agent, event_queue
+    @pytest.mark.parametrize("state", [TaskState.TASK_STATE_WORKING, TaskState.TASK_STATE_INPUT_REQUIRED])
+    async def test_cancel_tells_the_framework_executor_and_emits_canceled(self, event_queue, state):
+        stopped = []
+
+        async def stop(config, within):
+            stopped.append((config.task_id, within))
+
+        executor = request_executor(FakeFrameworkExecutor(cancel=stop))
+        task = _make_real_task(state=state)
+
+        await executor.cancel(_make_context(task=task), event_queue)
+
+        assert stopped == [("task-123", None)]
+        [canceled] = [call.args[0] for call in event_queue.enqueue_event.await_args_list]
+        assert canceled.status.state == TaskState.TASK_STATE_CANCELED
+
+    @pytest.mark.anyio
+    async def test_a_framework_executor_that_cannot_stop_a_turn_still_gets_the_task_canceled(
+        self, executor, framework, event_queue
     ):
-        executor = AionAgentRequestExecutor(aion_agent=agent)
-        task = _make_task(state=TaskState.TASK_STATE_WORKING)
-        ctx = _make_context(task=task)
-
-        with patch(
-            "aion.server.agent.execution.request_executor.TaskUpdater"
-        ) as MockUpdater:
-            updater_instance = AsyncMock()
-            MockUpdater.return_value = updater_instance
-
-            await executor.cancel(ctx, event_queue)
-
-            agent.cancel.assert_awaited_once_with(context=ctx, event_queue=event_queue)
-            MockUpdater.assert_called_once_with(event_queue, task.id, task.context_id)
-            updater_instance.cancel.assert_awaited_once()
-
-    @pytest.mark.anyio
-    async def test_cancel_unsupported_framework_still_emits_canceled(self, event_queue):
-        agent = _make_agent(cancel_side_effect=UnsupportedOperationError())
-        executor = AionAgentRequestExecutor(aion_agent=agent)
-        task = _make_task(state=TaskState.TASK_STATE_WORKING)
-        ctx = _make_context(task=task)
-
-        with patch(
-            "aion.server.agent.execution.request_executor.TaskUpdater"
-        ) as MockUpdater:
-            updater_instance = AsyncMock()
-            MockUpdater.return_value = updater_instance
-
-            await executor.cancel(ctx, event_queue)
-
-            agent.cancel.assert_awaited_once_with(context=ctx, event_queue=event_queue)
-            updater_instance.cancel.assert_awaited_once()
-
-    @pytest.mark.anyio
-    async def test_cancel_input_required_task_is_cancelable(self, agent, event_queue):
-        executor = AionAgentRequestExecutor(aion_agent=agent)
-        task = _make_task(state=TaskState.TASK_STATE_INPUT_REQUIRED)
-        ctx = _make_context(task=task)
-
-        with patch(
-            "aion.server.agent.execution.request_executor.TaskUpdater"
-        ) as MockUpdater:
-            updater_instance = AsyncMock()
-            MockUpdater.return_value = updater_instance
-
-            await executor.cancel(ctx, event_queue)
-
-            agent.cancel.assert_awaited_once_with(context=ctx, event_queue=event_queue)
-            updater_instance.cancel.assert_awaited_once()
-
-    @pytest.mark.anyio
-    async def test_cancel_routed_task_calls_handler_not_framework(self, agent, event_queue):
-        handler = _make_handler(uri="https://example.invalid/toolkits/scripted/1.0.0")
-        executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[handler])
-        task = _make_real_task(
-            state=TaskState.TASK_STATE_WORKING,
-            metadata={ROUTED: handler.uri},
-        )
-        ctx = _make_context(task=task)
-
-        with patch(
-            "aion.server.agent.execution.request_executor.TaskUpdater"
-        ) as MockUpdater:
-            updater_instance = AsyncMock()
-            MockUpdater.return_value = updater_instance
-
-            await executor.cancel(ctx, event_queue)
-
-            handler.cancel.assert_awaited_once_with(context=ctx, event_queue=event_queue)
-            agent.cancel.assert_not_awaited()
-            updater_instance.cancel.assert_awaited_once()
-
-    @pytest.mark.anyio
-    async def test_cancel_routed_task_unsupported_still_emits_canceled(self, agent, event_queue):
-        handler = _make_handler(uri="https://example.invalid/toolkits/scripted/1.0.0")
-        handler.cancel = AsyncMock(side_effect=UnsupportedOperationError())
-        executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[handler])
-        task = _make_real_task(
-            state=TaskState.TASK_STATE_WORKING,
-            metadata={ROUTED: handler.uri},
-        )
-        ctx = _make_context(task=task)
-
-        with patch(
-            "aion.server.agent.execution.request_executor.TaskUpdater"
-        ) as MockUpdater:
-            updater_instance = AsyncMock()
-            MockUpdater.return_value = updater_instance
-
-            await executor.cancel(ctx, event_queue)
-
-            handler.cancel.assert_awaited_once_with(context=ctx, event_queue=event_queue)
-            agent.cancel.assert_not_awaited()
-            updater_instance.cancel.assert_awaited_once()
-
-
-class TestCancelWritesOneOutcome:
-    """A routed task's terminal state has one writer: its own turn, or the executor when the turn did not close it."""
-
-    @pytest.mark.anyio
-    async def test_a_turn_that_closed_the_task_leaves_nothing_to_write(self, agent, event_queue):
-        handler = _make_handler(uri="https://example.invalid/toolkits/scripted/1.0.0")
-        handler.cancel = AsyncMock(return_value=True)
-        executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[handler])
-        task = _make_real_task(state=TaskState.TASK_STATE_WORKING, metadata={ROUTED: handler.uri})
+        task = _make_real_task(state=TaskState.TASK_STATE_WORKING)
 
         await executor.cancel(_make_context(task=task), event_queue)
 
-        event_queue.enqueue_event.assert_not_awaited()
+        assert len(framework.cancels) == 1
+        [canceled] = [call.args[0] for call in event_queue.enqueue_event.await_args_list]
+        assert canceled.status.state == TaskState.TASK_STATE_CANCELED
 
     @pytest.mark.anyio
-    async def test_a_turn_that_did_not_close_the_task_is_closed_canceled_in_the_runs_queue(self, agent, event_queue):
-        handler = _make_handler(uri="https://example.invalid/toolkits/scripted/1.0.0")
-        executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[handler])
-        task = _make_real_task(state=TaskState.TASK_STATE_WORKING, metadata={ROUTED: handler.uri})
+    async def test_cancel_of_a_routed_task_goes_to_its_extension_not_the_framework(self, framework, event_queue):
+        extension = ScriptedExecutor()
+        executor = request_executor(framework, extensions={EXTENSION: extension})
+        task = _make_real_task(state=TaskState.TASK_STATE_WORKING, metadata={ROUTED: EXTENSION})
 
         await executor.cancel(_make_context(task=task), event_queue)
 
+        assert extension.cancels == [("task-123", None)]
+        assert framework.cancels == []
         [canceled] = [call.args[0] for call in event_queue.enqueue_event.await_args_list]
         assert canceled.status.state == TaskState.TASK_STATE_CANCELED
 
     @pytest.mark.anyio
     async def test_a_cancel_activates_none_of_the_declared_extensions(self, daemon_enabled, event_queue):
         """A daemon declared in ``A2A-Extensions`` has no payload on a cancel, and must not fail it."""
-        agent = _make_agent()
-        executor = AionAgentRequestExecutor(aion_agent=agent)
+        seen = []
+
+        async def stop(config, within):
+            seen.append(await AionRuntimeContextRegistry.aget_current_context())
+
+        executor = request_executor(FakeFrameworkExecutor(cancel=stop))
         task = _make_real_task(state=TaskState.TASK_STATE_WORKING)
         call_context = ServerCallContext(requested_extensions={DAEMON_EXTENSION_URI_V1})
         context = RequestContext(call_context, task_id=task.id, context_id=task.context_id, task=task)
-        seen = []
-
-        async def cancel(context, event_queue):
-            seen.append(await AionRuntimeContextRegistry.aget_current_context())
-
-        agent.cancel = cancel
 
         await executor.cancel(context, event_queue)
 
@@ -527,84 +402,6 @@ class TestCancelWritesOneOutcome:
         assert runtime.callback_attribution is not None
         [canceled] = [call.args[0] for call in event_queue.enqueue_event.await_args_list]
         assert canceled.status.state == TaskState.TASK_STATE_CANCELED
-
-
-class TestCancelFiles:
-    """What a cancel hook hands back reaches the client with its files stored.
-
-    The framework adapter's hook publishes straight to the request's queue - a
-    rescued bundle, for instance - and closes the CANCELED with a message of its
-    own; neither passes through the event pipeline, and neither may carry
-    inline bytes.
-    """
-
-    @staticmethod
-    def _handing_back_files():
-        bundle = TaskArtifactUpdateEvent(
-            task_id="task-123",
-            context_id="ctx-456",
-            artifact=Artifact(
-                artifact_id="bundle",
-                name="bundle",
-                parts=[Part(raw=b"git bundle", media_type="application/octet-stream",
-                            filename="rescue.bundle")],
-            ),
-        )
-        closing = Message(
-            message_id="m-cancel",
-            task_id="task-123",
-            context_id="ctx-456",
-            role=Role.ROLE_AGENT,
-            parts=[Part(text="canceled"),
-                   Part(raw=b"log", media_type="text/plain", filename="run.log")],
-        )
-
-        async def cancel(*, context, event_queue):
-            await event_queue.enqueue_event(bundle)
-            return closing
-
-        return AsyncMock(side_effect=cancel)
-
-    async def _cancel(self, agent, transformer) -> RecordingQueue:
-        agent.cancel = self._handing_back_files()
-        executor = AionAgentRequestExecutor(aion_agent=agent, file_transformer=transformer)
-        task = _make_real_task(state=TaskState.TASK_STATE_WORKING)
-        queue = RecordingQueue()
-        await executor.cancel(_make_context(task=task), queue)
-        return queue
-
-    @pytest.mark.anyio
-    async def test_files_a_cancel_hook_hands_back_leave_as_urls(self, agent):
-        queue = await self._cancel(agent, StoringTransformer())
-
-        bundle, canceled = queue.events
-        assert isinstance(bundle, TaskArtifactUpdateEvent)
-        assert bundle.artifact.parts[0].url.startswith(StubFileStorageBackend.BASE_URI)
-        assert not bundle.artifact.parts[0].raw
-        assert canceled.status.state == TaskState.TASK_STATE_CANCELED
-        text, log = canceled.status.message.parts
-        assert text.text == "canceled"
-        assert log.url.startswith(StubFileStorageBackend.BASE_URI) and not log.raw
-
-    @pytest.mark.anyio
-    async def test_a_file_that_could_not_be_stored_does_not_stop_the_cancel(self, agent):
-        """Cancellation is the outcome the caller asked for; the file is dropped."""
-        refused = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)])
-
-        queue = await self._cancel(agent, StoringTransformer(refused))
-
-        (canceled,) = queue.events
-        assert isinstance(canceled, TaskStatusUpdateEvent)
-        assert canceled.status.state == TaskState.TASK_STATE_CANCELED
-        assert [part.text for part in canceled.status.message.parts] == ["canceled"]
-
-    @pytest.mark.anyio
-    async def test_without_a_backend_the_hook_gets_the_request_queue_itself(self, agent):
-        queue = await self._cancel(agent, None)
-
-        bundle, canceled = queue.events
-        assert bundle.artifact.parts[0].raw == b"git bundle"
-        assert canceled.status.message.parts[1].raw == b"log"
 
 
 def _make_real_task(state: TaskState = TaskState.TASK_STATE_INPUT_REQUIRED, metadata: dict | None = None):
@@ -618,150 +415,30 @@ def _make_real_task(state: TaskState = TaskState.TASK_STATE_INPUT_REQUIRED, meta
     return task
 
 
-def _make_handler(uri="https://example.invalid/toolkits/fake/1.0.0"):
-    handler = MagicMock()
-    handler.uri = uri
-    handler.stream = MagicMock(name="stream")
-    handler.resume = MagicMock(name="resume")
-    handler.cancel = AsyncMock(name="cancel", return_value=False)
-    handler.admit = AsyncMock(name="admit")
-    return handler
-
-
-def _routed_context(route: ExtensionRoute | None) -> MagicMock:
+def _routed_context(uri: str | None) -> MagicMock:
     """A request context whose call context carries the route the request handler admitted."""
     context = MagicMock(spec=RequestContext)
-    context.call_context = MagicMock()
-    context.call_context.state = {EXTENSION_ROUTE_STATE_KEY: route} if route is not None else {}
+    context.call_context = ServerCallContext()
+    if uri is not None:
+        context.call_context.state[EXTENSION_ROUTE_STATE_KEY] = uri
     return context
 
 
-class TestResolve:
-    @pytest.mark.anyio
-    async def test_resolve_stream_takes_the_admitted_route_and_persists_it(self):
-        handler = _make_handler(uri="https://example.invalid/toolkits/scripted/1.0.0")
-        executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[handler])
-        task = _make_real_task()
-        admission = object()
+class TestRoute:
+    def test_a_new_task_goes_to_the_executor_of_an_extension_it_activates(self):
+        first, second = "https://example.invalid/extensions/a/1.0.0", "https://example.invalid/extensions/b/1.0.0"
+        executor = request_executor(extensions={second: ScriptedExecutor(), first: ScriptedExecutor()})
 
-        queue = object()
-
-        resolved = await executor._resolve(
-            task, "stream", _routed_context(ExtensionRoute(handler.uri, admission)), queue
-        )
-
-        assert resolved.func is handler.stream
-        assert resolved.keywords == {"admission": admission, "event_queue": queue}
-        assert task.metadata[ROUTED] == handler.uri
-
-    @pytest.mark.anyio
-    async def test_resolve_stream_falls_back_to_agent_without_a_route(self):
-        agent = _make_agent()
-        handler = _make_handler()
-        executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[handler])
-        task = _make_real_task()
-
-        resolved = await executor._resolve(task, "stream", _routed_context(None))
-
-        assert resolved is agent.stream
-        assert ROUTED not in task.metadata
-
-    @pytest.mark.anyio
-    async def test_resolve_stream_ignores_a_route_to_a_handler_it_does_not_have(self):
-        agent = _make_agent()
-        executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[])
-        task = _make_real_task()
-
-        resolved = await executor._resolve(task, "stream", _routed_context(ExtensionRoute("https://x.invalid/t")))
-
-        assert resolved is agent.stream
-
-    @pytest.mark.anyio
-    async def test_resolve_resume_recalls_routed_handler(self):
-        handler = _make_handler(uri="https://example.invalid/toolkits/scripted/1.0.0")
-        executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[handler])
-        task = _make_real_task(metadata={ROUTED: handler.uri})
-        queue = object()
-
-        resolved = await executor._resolve(task, "resume", event_queue=queue)
-
-        assert resolved.func is handler.resume
-        assert resolved.keywords == {"event_queue": queue}
-
-    @pytest.mark.anyio
-    async def test_resolve_cancel_falls_back_to_agent_without_routing(self):
-        agent = _make_agent()
-        executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[])
-        task = _make_real_task()
-
-        resolved = await executor._resolve(task, "cancel")
-
-        assert resolved is agent.cancel
-
-    @pytest.mark.anyio
-    async def test_resolve_cancel_recalls_routed_handler(self):
-        handler = _make_handler(uri="https://example.invalid/toolkits/scripted/1.0.0")
-        executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[handler])
-        task = _make_real_task(metadata={ROUTED: handler.uri})
-
-        resolved = await executor._resolve(task, "cancel")
-
-        assert resolved is handler.cancel
-
-
-class TestAdmitNewTask:
-    """The route of a new task is decided and admitted before the task exists."""
-
-    @staticmethod
-    def _call_context():
-        context = MagicMock()
-        context.state = {}
-        return context
-
-    def test_a_new_task_goes_to_the_handler_of_an_extension_it_activates(self):
-        handler = _make_handler(uri="https://example.invalid/toolkits/a/1.0.0")
-        other = _make_handler(uri="https://example.invalid/toolkits/b/1.0.0")
-        executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[other, handler])
-
-        assert executor.routed_extension(AionRuntimeExtensions({handler.uri: None})) == handler.uri
-        assert executor.routed_extension(AionRuntimeExtensions({})) is None
-
-    @pytest.mark.anyio
-    async def test_the_admitted_route_is_kept_for_execute(self):
-        handler = _make_handler(uri="https://example.invalid/toolkits/a/1.0.0")
-        handler.admit = AsyncMock(return_value="admitted")
-        executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[handler])
-        extensions = AionRuntimeExtensions({handler.uri: None})
-        message = MagicMock()
-        call_context = self._call_context()
-
-        await executor.admit_new_task(handler.uri, message, extensions, call_context)
-
-        handler.admit.assert_awaited_once_with(message, extensions, call_context)
-        assert call_context.state[EXTENSION_ROUTE_STATE_KEY] == ExtensionRoute(handler.uri, "admitted")
-
-    @pytest.mark.anyio
-    async def test_a_refusal_leaves_no_route(self):
-        handler = _make_handler()
-        handler.admit = AsyncMock(side_effect=InvalidParamsError(message="refused"))
-        executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[handler])
-        call_context = self._call_context()
-
-        with pytest.raises(InvalidParamsError):
-            await executor.admit_new_task(
-                handler.uri, MagicMock(), AionRuntimeExtensions({handler.uri: None}), call_context
-            )
-
-        assert EXTENSION_ROUTE_STATE_KEY not in call_context.state
+        assert executor.route(AionRuntimeExtensions({first: None})) == first
+        assert executor.route(AionRuntimeExtensions({})) is None
 
 
 class TestAdmitContinuation:
-    """A message into a routed task is served by the task's own handler, or refused."""
+    """A message into a routed task is served by the task's own executor, or refused."""
 
     def test_a_task_of_an_extension_not_served_here_is_refused_and_left_alone(self):
-        agent = _make_agent()
-        executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[])
-        task = _make_real_task(metadata={ROUTED: "https://example.invalid/toolkits/gone/1.0.0"})
+        executor = request_executor()
+        task = _make_real_task(metadata={ROUTED: "https://example.invalid/extensions/gone/1.0.0"})
         before = Task()
         before.CopyFrom(task)
 
@@ -771,50 +448,24 @@ class TestAdmitContinuation:
         assert error.value.data == {"code": "extension_unavailable", "retryable": "true"}
         assert task == before
 
-    def test_the_tasks_handler_checks_the_message(self):
-        handler = _make_handler(uri="https://example.invalid/toolkits/a/1.0.0")
-        handler.admit_continuation = MagicMock()
-        executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[handler])
-        task = _make_real_task(metadata={ROUTED: handler.uri})
+    def test_a_task_of_an_extension_waiting_for_input_is_admitted(self):
+        executor = request_executor(extensions={EXTENSION: ScriptedExecutor()})
 
-        executor.admit_continuation(task)
+        executor.admit_continuation(_make_real_task(metadata={ROUTED: EXTENSION}))
 
-        handler.admit_continuation.assert_called_once_with(task)
+    def test_a_task_of_the_framework_executor_is_always_admitted(self):
+        executor = request_executor(extensions={EXTENSION: ScriptedExecutor()})
 
-    def test_a_task_of_the_framework_adapter_is_always_admitted(self):
-        handler = _make_handler()
-        handler.admit_continuation = MagicMock()
-        executor = AionAgentRequestExecutor(aion_agent=_make_agent(), extension_handlers=[handler])
-
-        executor.admit_continuation(_make_real_task())
-
-        handler.admit_continuation.assert_not_called()
+        executor.admit_continuation(_make_real_task(state=TaskState.TASK_STATE_WORKING))
 
 
-class TestExecuteViaResolve:
+class TestExecuteViaThePool:
     @pytest.mark.anyio
-    async def test_execute_routes_new_task_to_the_admitted_handler_and_persists_metadata(self):
-        agent = _make_agent()
-
-        async def agent_stream(*args, **kwargs):
-            raise AssertionError("agent.stream must not be called when a handler is routed")
-            yield
-
-        agent.stream = agent_stream
-
-        handler = _make_handler(uri="https://example.invalid/toolkits/scripted/1.0.0")
-        streamed_with = {}
-
-        async def handler_stream(*args, **kwargs):
-            streamed_with.update(kwargs)
-            return
-            yield
-
-        handler.stream = handler_stream
-
-        executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[handler])
+    async def test_execute_routes_new_task_to_the_admitted_extension_and_persists_metadata(self, framework):
+        extension = _silent_extension()
+        executor = request_executor(framework, extensions={EXTENSION: extension})
         task = _make_real_task()
-        ctx = _routed_context(ExtensionRoute(handler.uri, "admitted"))
+        ctx = _routed_context(EXTENSION)
         ctx.current_task = None
         ctx.message = MagicMock()
         ctx.metadata = None
@@ -838,35 +489,19 @@ class TestExecuteViaResolve:
                     with patch("aion.server.agent.execution.request_executor.AionEventPipeline"):
                         await executor.execute(ctx, event_queue)
 
-        assert task.metadata[ROUTED] == handler.uri
-        assert streamed_with == {"context": ctx, "admission": "admitted", "event_queue": event_queue}
+        assert task.metadata[ROUTED] == EXTENSION
+        [(kind, context, config)] = extension.turns
+        assert (kind, context, config.task_id) == ("start", ctx, "task-123")
+        assert framework.calls == []
         event_queue.enqueue_event.assert_awaited_once_with(task)
 
     @pytest.mark.anyio
-    async def test_execute_resumes_via_previously_routed_handler(self):
-        agent = _make_agent()
-
-        async def agent_resume(*args, **kwargs):
-            raise AssertionError("agent.resume must not be called when a handler was previously routed")
-            yield
-
-        agent.resume = agent_resume
-
-        handler = _make_handler(uri="https://example.invalid/toolkits/scripted/1.0.0")
-
-        resume_called_with = {}
-
-        async def handler_resume(*args, **kwargs):
-            resume_called_with.update(kwargs)
-            return
-            yield
-
-        handler.resume = handler_resume
-
-        executor = AionAgentRequestExecutor(aion_agent=agent, extension_handlers=[handler])
+    async def test_execute_resumes_via_the_previously_routed_extension(self, framework):
+        extension = _silent_extension()
+        executor = request_executor(framework, extensions={EXTENSION: extension})
         task = _make_real_task(
             state=TaskState.TASK_STATE_INPUT_REQUIRED,
-            metadata={ROUTED: handler.uri},
+            metadata={ROUTED: EXTENSION},
         )
         ctx = _make_context(task=task)
         event_queue = AsyncMock(spec=EventQueue)
@@ -885,40 +520,10 @@ class TestExecuteViaResolve:
                 with patch("aion.server.agent.execution.request_executor.AionEventPipeline"):
                     await executor.execute(ctx, event_queue)
 
-        assert resume_called_with.get("context") is ctx
+        assert [(kind, context) for kind, context, _config in extension.turns] == [("resume", ctx)]
+        assert framework.calls == []
         enqueued = [call.args[0] for call in event_queue.enqueue_event.await_args_list]
         assert task not in enqueued
-
-
-class TestCreateFactory:
-    @pytest.mark.anyio
-    async def test_create_serves_every_toolkit_discovery_returns(self):
-        handler = _make_handler(uri="https://example.invalid/toolkits/a/1.0.0")
-        agent = _make_agent()
-        agent.config = MagicMock()
-
-        context_artifacts = MagicMock()
-        context_runs = MagicMock()
-        abandoned_tasks = MagicMock()
-        with patch(
-            "aion.server.agent.execution.request_executor.load_toolkit_handlers",
-            new=AsyncMock(return_value=[handler]),
-        ) as load:
-            executor = await AionAgentRequestExecutor.create(
-                aion_agent=agent,
-                context_artifacts=context_artifacts,
-                context_runs=context_runs,
-                abandoned_tasks=abandoned_tasks,
-            )
-
-        load.assert_awaited_once_with(
-            agent.config,
-            context_artifacts=context_artifacts,
-            context_runs=context_runs,
-            owner_resolver=agent.owner_resolver,
-            abandoned_tasks=abandoned_tasks,
-        )
-        assert executor._extension_handlers == {handler.uri: handler}
 
 
 class TestFailureClosesTheTask:
@@ -939,13 +544,11 @@ class TestFailureClosesTheTask:
 
     @pytest.mark.anyio
     async def test_producer_crash_marks_task_failed(self):
-        executor = AionAgentRequestExecutor(aion_agent=_make_agent())
+        executor = request_executor(FakeFrameworkExecutor(stream=self._boom))
         task = _make_task()
         ctx = _make_context(task=task)
         event_queue = AsyncMock(spec=EventQueue)
         init_execution_scope()
-
-        executor.agent.stream = self._boom
 
         with patch("aion.server.agent.execution.request_executor.TaskUpdater") as MockUpdater:
             updater = MockUpdater.return_value
@@ -963,13 +566,11 @@ class TestFailureClosesTheTask:
     async def test_producer_that_already_reported_its_outcome_is_not_overridden(self):
         """A producer that emitted a terminal state and then crashed has already
         said how the task ended; a second terminal event would contradict it."""
-        executor = AionAgentRequestExecutor(aion_agent=_make_agent())
+        executor = request_executor(FakeFrameworkExecutor(stream=self._boom))
         task = _make_task()
         ctx = _make_context(task=task)
         event_queue = AsyncMock(spec=EventQueue)
         init_execution_scope()
-
-        executor.agent.stream = self._boom
 
         with patch("aion.server.agent.execution.request_executor.TaskUpdater") as MockUpdater:
             updater = MockUpdater.return_value
@@ -985,13 +586,11 @@ class TestFailureClosesTheTask:
 
     @pytest.mark.anyio
     async def test_failure_to_mark_failed_does_not_escape(self):
-        executor = AionAgentRequestExecutor(aion_agent=_make_agent())
+        executor = request_executor(FakeFrameworkExecutor(stream=self._boom))
         task = _make_task()
         ctx = _make_context(task=task)
         event_queue = AsyncMock(spec=EventQueue)
         init_execution_scope()
-
-        executor.agent.stream = self._boom
 
         with patch("aion.server.agent.execution.request_executor.TaskUpdater") as MockUpdater:
             updater = MockUpdater.return_value
@@ -1008,14 +607,8 @@ class TestFailureClosesTheTask:
     async def test_updater_is_per_execution_not_shared_state(self):
         """One executor instance serves every concurrent request, so the updater
         must not live on the instance where a later execution would clobber it."""
-        executor = AionAgentRequestExecutor(aion_agent=_make_agent())
+        executor = request_executor()
         init_execution_scope()
-
-        async def empty_stream(*args, **kwargs):
-            return
-            yield
-
-        executor.agent.stream = empty_stream
         event_queue = AsyncMock(spec=EventQueue)
 
         with patch("aion.server.agent.execution.request_executor.TaskUpdater") as MockUpdater:
@@ -1070,8 +663,6 @@ class TestStatusTimesFollowTheTurn:
 
     @pytest.mark.anyio
     async def test_submitted_is_not_later_than_the_working_that_follows(self):
-        agent = _make_agent()
-
         async def agent_stream(context):
             task = context.current_task
             yield TaskArtifactUpdateEvent(
@@ -1085,8 +676,7 @@ class TestStatusTimesFollowTheTurn:
                 status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
             )
 
-        agent.stream = agent_stream
-        executor = AionAgentRequestExecutor(aion_agent=agent)
+        executor = request_executor(FakeFrameworkExecutor(stream=agent_stream))
         context = _request_context({})
         queue = RecordingQueue()
         init_execution_scope()
@@ -1105,8 +695,6 @@ class TestStatusTimesFollowTheTurn:
     @pytest.mark.anyio
     async def test_a_turn_that_opens_with_a_status_has_nothing_before_it(self):
         """The agent's own WORKING moves the task, stamped when the agent made it."""
-        agent = _make_agent()
-
         async def agent_stream(context):
             task = context.current_task
             reply = Message(
@@ -1129,8 +717,7 @@ class TestStatusTimesFollowTheTurn:
                 status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
             )
 
-        agent.stream = agent_stream
-        executor = AionAgentRequestExecutor(aion_agent=agent)
+        executor = request_executor(FakeFrameworkExecutor(stream=agent_stream))
         context = _request_context({})
         queue = RecordingQueue()
         init_execution_scope()

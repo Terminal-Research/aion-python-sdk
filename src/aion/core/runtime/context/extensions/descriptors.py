@@ -39,8 +39,8 @@ class ExtensionActivationError(AionError):
 
     ``code`` is set for a refusal the server gives a stable code to - an
     extension that is unavailable on this deployment is
-    ``extension_unavailable`` (``aion.core.toolkit.codes``), a toolkit's
-    payload its models refuse is ``invalid_payload`` - and travels in the
+    ``extension_unavailable`` (``aion.core.a2a.codes``), an executable
+    extension's payload its models refuse is ``invalid_payload`` - and travels in the
     JSON-RPC error's ``data`` with ``retryable``: the error's own when it
     sets one, otherwise the fixed answer for a code the server reserves.
     """
@@ -260,7 +260,7 @@ class MessagesCollector:
     A part tagged with a known schema whose data fails its model raises
     ExtensionActivationError. With ``invalid_payload_code`` the error carries
     that code and ``retryable`` false, so the caller gets a coded refusal;
-    a toolkit's extension is registered so, with ``invalid_payload``.
+    an executable extension's collector is built so, with ``invalid_payload``.
     """
 
     def __init__(
@@ -398,14 +398,13 @@ class ExtensionDescriptor:
         active: Whether this extension is enabled for the current agent.
             Defaults to True - most protocol-level extensions
             (traceability, distribution, ...) are active out of the box.
-            Agent-specific features (the daemon extension, toolkits)
+            Agent-specific features (the daemon extension, executable extensions)
             register with active=False and rely on
             AgentConfig.enabled_extensions to turn them on. Enablement only: it says nothing about whether
             the extension is published on the AgentCard.
         unavailable_reason: When set, the extension is enabled but cannot
-            actually function on this deployment (e.g. its toolkit cannot be
-            configured) - a request declaring it is rejected with
-            exactly this user-facing message. None means available. Marked
+            actually function on this deployment - a request declaring it is
+            rejected with exactly this user-facing message. None means available. Marked
             at startup via AionA2AExtensionRegistry.mark_unavailable() by
             whichever component owns the extension's runtime dependencies.
         advertised: Whether this extension may be published on the

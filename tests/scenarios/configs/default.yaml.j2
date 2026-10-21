@@ -14,4 +14,4 @@ aion:
           examples: ["help", "echo hello", "stream 5"]
       input_modes: ["text"]
       output_modes: ["text"]
-      enabled_extensions: [{% for uri in enabled_extensions %}"{{ uri }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+      enabled_extensions: {{ enabled_extensions | tojson }}

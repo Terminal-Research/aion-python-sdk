@@ -1,4 +1,12 @@
-"""Cross-package registry of ExtensionDescriptor entries and activation state."""
+"""Cross-package registry of ExtensionDescriptor entries and activation state.
+
+Nothing is registered at import. The server fills the registry while it
+builds the application: :func:`register_protocol_extensions` registers the
+protocol extensions defined here, the server adds its executable extensions
+and activates what the agent's ``aion.yaml`` enables. Code that reads the
+registry outside a server (a test, a tool) calls
+:func:`register_protocol_extensions` itself.
+"""
 
 from __future__ import annotations
 
@@ -41,17 +49,18 @@ from .descriptors import (
 __all__ = [
     "AionA2AExtensionRegistry",
     "aion_a2a_extension_registry",
+    "register_protocol_extensions",
 ]
 
 
 class AionA2AExtensionRegistry(metaclass=Singleton):
     """Process-wide registry of known A2A extensions and their activation state.
 
-    Extensions self-register a descriptor here at import time, from
-    whichever package owns them, each with its own default `active` value.
-    activate() is called once the running agent's config is available,
-    typically from AgentManager, to turn on the subset of
-    registered-inactive descriptors that agent's config lists - so
+    The server registers every descriptor while it builds the application,
+    each with its own default `active` value: the protocol extensions
+    (register_protocol_extensions) and its executable extensions. It then
+    calls activate() with the URIs the agent's config lists, to turn on the
+    subset of registered-inactive descriptors that agent enables - so
     get_all() can tell a request-time verifier which registered extensions
     this particular agent actually supports, without either side needing
     to know about the other.
@@ -85,6 +94,11 @@ class AionA2AExtensionRegistry(metaclass=Singleton):
         self._descriptors[descriptor.uri] = descriptor
         self._defaults[descriptor.uri] = (descriptor.active, descriptor.unavailable_reason)
 
+    def clear(self) -> None:
+        """Forget every registered descriptor, before a server registers its own afresh."""
+        self._descriptors.clear()
+        self._defaults.clear()
+
     def activate(self, uris: Iterable[str]) -> None:
         """Turn on exactly the registered descriptors named in `uris`.
 
@@ -103,8 +117,7 @@ class AionA2AExtensionRegistry(metaclass=Singleton):
         """Record that an enabled extension cannot function on this deployment.
 
         Called at startup by whichever component owns the extension's runtime
-        dependencies (e.g. the server marks a task-handler extension whose
-        optional toolkit is not installed). The request-time verifier rejects
+        dependencies. The request-time verifier rejects
         any request declaring the extension with exactly this reason. A URI
         with no registered descriptor is a no-op, mirroring activate().
         """
@@ -211,9 +224,9 @@ class AionA2AExtensionRegistry(metaclass=Singleton):
 
         That is a floor, not a guarantee: a published extension has what the
         deployment owes it, and a request declaring it can still be refused
-        by _verify() for a per-request co-activation this cannot see. A
-        toolkit that requires the daemon extension is the case that makes the
-        prerequisite check matter: enabling it without the daemon extension
+        by _verify() for a per-request co-activation this cannot see.
+        Behavior evolution, which requires the daemon extension, is the case
+        that makes the prerequisite check matter: enabling it without the daemon extension
         leaves every request declaring it refused, so the card must not offer
         it.
         """
@@ -233,94 +246,101 @@ class AionA2AExtensionRegistry(metaclass=Singleton):
 
 aion_a2a_extension_registry = AionA2AExtensionRegistry()
 
-# The Context extension: GetContexts, GetContext and DeleteContext, all under
-# one URI. Declarative - its methods are invoked directly and need no
-# activation - and advertised, because the standard server implements the
-# whole contract. Whatever component finds the contract unfulfillable on a
-# deployment marks it unavailable, which also takes it off the AgentCard.
-aion_a2a_extension_registry.register(
-    ExtensionDescriptor(
-        uri=CONTEXT_EXTENSION_URI_V1,
-        description="List, retrieve, and delete caller-visible conversation contexts.",
-    )
-)
 
-aion_a2a_extension_registry.register(
-    ExtensionDescriptor(
-        uri=CRON_EXTENSION_URI_V1,
-        collector=TaskMetadataCollector(CronExtensionV1),
-        description="Cron invocation timing: intended firing and producer dispatch time.",
-    )
-)
+def register_protocol_extensions(registry: AionA2AExtensionRegistry) -> None:
+    """Register the protocol extensions the SDK defines, each with its default activation.
 
-aion_a2a_extension_registry.register(
-    ExtensionDescriptor(
-        uri=USAGE_ATTRIBUTION_EXTENSION_URI_V1,
-        collector=HeaderCollector(AION_USAGE_ATTRIBUTION_HEADER),
-        description=(
-            "Opaque Aion-issued usage attribution propagated across managed "
-            "runtime calls."
-        ),
+    Args:
+        registry: The registry to register them in; the server passes
+            ``aion_a2a_extension_registry``.
+    """
+    # The Context extension: GetContexts, GetContext and DeleteContext, all under
+    # one URI. Declarative - its methods are invoked directly and need no
+    # activation - and advertised, because the standard server implements the
+    # whole contract. Whatever component finds the contract unfulfillable on a
+    # deployment marks it unavailable, which also takes it off the AgentCard.
+    registry.register(
+        ExtensionDescriptor(
+            uri=CONTEXT_EXTENSION_URI_V1,
+            description="List, retrieve, and delete caller-visible conversation contexts.",
+        )
     )
-)
 
-aion_a2a_extension_registry.register(
-    ExtensionDescriptor(
-        uri=DAEMON_EXTENSION_URI_V1,
-        collector=TaskMetadataCollector(DaemonExtensionPayload),
-        description="Daemon-scoped invocation context: daemon identity, behavior, and environment.",
-        active=False,
+    registry.register(
+        ExtensionDescriptor(
+            uri=CRON_EXTENSION_URI_V1,
+            collector=TaskMetadataCollector(CronExtensionV1),
+            description="Cron invocation timing: intended firing and producer dispatch time.",
+        )
     )
-)
-aion_a2a_extension_registry.register(
-    ExtensionDescriptor(
-        uri=TRACEABILITY_EXTENSION_URI_V1,
-        collector=TaskMetadataCollector(TraceabilityExtensionV1),
-        description="W3C trace context propagation for distributed tracing.",
-    )
-)
-aion_a2a_extension_registry.register(
-    ExtensionDescriptor(
-        uri=DISTRIBUTION_EXTENSION_URI_V1,
-        collector=TaskMetadataCollector(DistributionExtensionV1),
-        description="Distribution-scoped invocation context: channel identity, behavior, and environment.",
-    )
-)
-aion_a2a_extension_registry.register(
-    ExtensionDescriptor(
-        uri=MESSAGING_EXTENSION_URI_V1,
-        collector=MessagesCollector(
-            MessageEventPayload,
-            ReactionEventPayload,
-            CommandEventPayload,
-        ),
-        description="Messaging event types and payload schemas layered on the distribution "
-                    "extension; delivered per-message-part via the event extension as an "
-                    "event envelope, not as a single aggregate payload.",
-    )
-)
-aion_a2a_extension_registry.register(
-    ExtensionDescriptor(
-        uri=EVENT_EXTENSION_URI_V1,
-        description="Generic CloudEvents-style envelope for per-message-part events; "
-                    "concrete payload vocabularies (e.g. messaging) are layered on top.",
-    )
-)
-aion_a2a_extension_registry.register(
-    ExtensionDescriptor(
-        uri=CARDS_EXTENSION_URI_V1,
-        collector=MessagesCollector(CardActionEventPayload),
-        description="JSX-like card rendering for the distribution extension.",
-    )
-)
 
-
-# Enabling this declaration is the agent implementer's commitment to handle it.
-aion_a2a_extension_registry.register(
-    ExtensionDescriptor(
-        uri=WELCOME_MESSAGE_EXTENSION_URI_V1,
-        collector=WelcomeMessageCollector(),
-        description="Generate an opening message for a new conversation.",
-        active=False,
+    registry.register(
+        ExtensionDescriptor(
+            uri=USAGE_ATTRIBUTION_EXTENSION_URI_V1,
+            collector=HeaderCollector(AION_USAGE_ATTRIBUTION_HEADER),
+            description=(
+                "Opaque Aion-issued usage attribution propagated across managed "
+                "runtime calls."
+            ),
+        )
     )
-)
+
+    registry.register(
+        ExtensionDescriptor(
+            uri=DAEMON_EXTENSION_URI_V1,
+            collector=TaskMetadataCollector(DaemonExtensionPayload),
+            description="Daemon-scoped invocation context: daemon identity, behavior, and environment.",
+            active=False,
+        )
+    )
+    registry.register(
+        ExtensionDescriptor(
+            uri=TRACEABILITY_EXTENSION_URI_V1,
+            collector=TaskMetadataCollector(TraceabilityExtensionV1),
+            description="W3C trace context propagation for distributed tracing.",
+        )
+    )
+    registry.register(
+        ExtensionDescriptor(
+            uri=DISTRIBUTION_EXTENSION_URI_V1,
+            collector=TaskMetadataCollector(DistributionExtensionV1),
+            description="Distribution-scoped invocation context: channel identity, behavior, and environment.",
+        )
+    )
+    registry.register(
+        ExtensionDescriptor(
+            uri=MESSAGING_EXTENSION_URI_V1,
+            collector=MessagesCollector(
+                MessageEventPayload,
+                ReactionEventPayload,
+                CommandEventPayload,
+            ),
+            description="Messaging event types and payload schemas layered on the distribution "
+                        "extension; delivered per-message-part via the event extension as an "
+                        "event envelope, not as a single aggregate payload.",
+        )
+    )
+    registry.register(
+        ExtensionDescriptor(
+            uri=EVENT_EXTENSION_URI_V1,
+            description="Generic CloudEvents-style envelope for per-message-part events; "
+                        "concrete payload vocabularies (e.g. messaging) are layered on top.",
+        )
+    )
+    registry.register(
+        ExtensionDescriptor(
+            uri=CARDS_EXTENSION_URI_V1,
+            collector=MessagesCollector(CardActionEventPayload),
+            description="JSX-like card rendering for the distribution extension.",
+        )
+    )
+
+    # Enabling this declaration is the agent implementer's commitment to handle it.
+    registry.register(
+        ExtensionDescriptor(
+            uri=WELCOME_MESSAGE_EXTENSION_URI_V1,
+            collector=WelcomeMessageCollector(),
+            description="Generate an opening message for a new conversation.",
+            active=False,
+        )
+    )

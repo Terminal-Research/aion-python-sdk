@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-205 scenarios in 37 files, 463 runs across 2 frameworks: 430 run, 32 skipped, 1 independent of the framework.
+205 scenarios in 37 files, 461 runs across 2 frameworks: 428 run, 32 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -15,7 +15,7 @@ A status cell reads `✓` when it runs, `skip` when `frameworks.UNSUPPORTED`, `f
 |  | Covered | Not yet |
 |---|---|---|
 | Commands | 22 of 22: `help`, `echo`, `stream`, `typing`, `steps`, `slow`, `artifacts`, `send-file`, `card`, `outbox-task`, `outbox-message`, `ask`, `ask-twice`, `ask-fail`, `fail`, `ext`, `whoami`, `event`, `config`, `ids`, `big`, `parts` | — |
-| Suites | 18 of 18: `smoke`, `streaming`, `events`, `terminal_states`, `interrupts`, `errors`, `artifacts`, `files`, `extensions`, `daemon`, `authentication`, `config`, `lifecycle`, `contexts`, `toolkits`, `persistence`, `distributed`, `native` | — |
+| Suites | 18 of 18: `smoke`, `streaming`, `events`, `terminal_states`, `interrupts`, `errors`, `artifacts`, `files`, `extensions`, `daemon`, `authentication`, `config`, `lifecycle`, `contexts`, `evolution`, `persistence`, `distributed`, `native` | — |
 
 ## Frameworks
 
@@ -75,8 +75,8 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `config` | aion.yaml configuration and deployment variants | 8 | `make tests-scenarios TAGS=config` |
 | `lifecycle` | cancel, concurrency, push notifications, startup | 8 | `make tests-scenarios TAGS=lifecycle` |
 | `contexts` | Context extension: list, read and delete conversations | 5 | `make tests-scenarios TAGS=contexts` |
-| `toolkits` | toolkit plugins: a turn translated into A2A, a refusal before the task exists, a cancel | 14 | `make tests-scenarios TAGS=toolkits` |
-| `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 21 | `make tests-scenarios-persistence` |
+| `evolution` | the evolution extension through the SDK's wrapper and a stand-in toolkit: the standard path, refusals as REJECTED tasks, a cancel | 15 | `make tests-scenarios TAGS=evolution` |
+| `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 20 | `make tests-scenarios-persistence` |
 | `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 19 | `make tests-scenarios-distributed` |
 | `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 29 | `make tests-scenarios TAGS=native` |
 
@@ -206,6 +206,28 @@ The shape of a turn: which events arrive, in which order, under which ids.
 | [Reusing a context keeps it and starts a fresh task under it.](core/test_events.py#L93 "test_a_second_message_in_a_context_starts_a_new_task") | `events` | `ids` | `default` | ✓ | ✓ |
 | [Reading the task back gives the state and the text the stream ended on.](core/test_events.py#L103 "test_get_task_agrees_with_the_closing_event") | `events` | `echo` | `default` | ✓ | ✓ |
 | [Nothing follows the closing Task, and the stream ends there.](core/test_events.py#L120 "test_the_stream_carries_nothing_after_the_terminal_task") | `events` | `echo` | `default` | ✓ | ✓ |
+
+### `tests/scenarios/core/test_evolution.py`
+
+The evolution extension served by a real ``aion serve``: the standard path, artifact versions, refusals, cancel.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [Status updates and an artifact on the stream; the object the executor writes whole in the task.](core/test_evolution.py#L137 "test_a_turn_takes_the_standard_path_and_completes_with_its_object") | `evolution` | — | `evolution` | ✓ | ✓ |
+| [Details without a message change the object, not what the task last said.](core/test_evolution.py#L160 "test_a_status_update_keeps_the_status_line") | `evolution` | — | `evolution` | ✓ | ✓ |
+| [The executor's artifacts are numbered per context, and the next task reads the latest back.](core/test_evolution.py#L178 "test_the_tasks_of_a_context_write_numbered_versions_of_an_artifact_and_find_the_latest") | `evolution` | — | `evolution` | ✓ | ✓ |
+| [The toolkit's refusal is the task's outcome, with its code and message.](core/test_evolution.py#L202 "test_a_refused_request_closes_its_task_rejected_with_the_code") | `evolution` | — | `evolution` | ✓ | ✓ |
+| [A malformed directive never reaches the toolkit: its task is rejected with ``invalid_payload``.](core/test_evolution.py#L220 "test_a_directive_its_model_refuses_is_rejected_with_the_common_code") | `evolution` | — | `evolution` | ✓ | ✓ |
+| [The toolkit is asked once, with the task's id and the grace period; the task ends ``CANCELED``.](core/test_evolution.py#L272 "test_a_cancel_ends_the_turn_canceled_and_tells_the_toolkit") | `evolution` | — | `evolution` | ✓ | ✓ |
+| [The repeat is an error, the task stays as it was, and the toolkit is not asked again.](core/test_evolution.py#L288 "test_a_second_cancel_of_the_finished_task_is_refused_and_does_not_reach_the_toolkit") | `evolution` | — | `evolution` | ✓ | ✓ |
+| [The cancel waits out the grace period; the stream and a subscription made meanwhile both close ``CANCELED``.](core/test_evolution.py#L304 "test_a_turn_past_the_grace_period_is_cancelled_without_it_and_a_subscription_is_not_held") | `evolution` | — | `evolution` | ✓ | ✓ |
+| [The turn's own outcome stands: the cancel answers with it, and so does the stream.](core/test_evolution.py#L328 "test_a_turn_that_closes_its_task_on_the_cancel_keeps_its_outcome") | `evolution` | — | `evolution` | ✓ | ✓ |
+| [An enabled evolution whose toolkit is installed is an extension the card announces, without its options.](core/test_evolution.py#L341 "test_the_card_offers_the_enabled_evolution") | `evolution` | — | `evolution` | ✓ | ✓ |
+| [``aion serve`` exits, and its output says what the agent lacks.](core/test_evolution.py#L350 "test_without_the_toolkit_an_agent_that_enables_evolution_does_not_start") | `evolution` | — | `evolution-without-toolkit` | ✓ | ✓ |
+| [A second directive is rejected with ``context_busy``, and a message into the running task refused with ``task_busy``.](core/test_evolution.py#L367 "test_evolution_refuses_a_second_task_in_a_context_until_the_first_ends") | `evolution` | — | `evolution` | ✓ | ✓ |
+| [The limit is per context: two contexts each hold a running evolution.](core/test_evolution.py#L393 "test_evolution_runs_in_several_contexts_at_once") | `evolution` | — | `evolution` | ✓ | ✓ |
+| [The directive is not taken as the answer: an evolution task starts, and the question keeps waiting for it.](core/test_evolution.py#L409 "test_a_directive_beside_the_agents_waiting_question_starts_its_own_task") | `evolution` | `ask` | `evolution` | ✓ | [skip](#frameworks) |
+| [A directive without a task id reaches the extension's waiting task, which fails: an evolution never waits for input.](core/test_evolution.py#L433 "test_a_directive_into_an_evolution_task_left_waiting_fails_it") | `evolution` | — | `evolution` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_extensions.py`
 
@@ -342,36 +364,15 @@ Replies that arrive in pieces, and the indicator sent while one is built.
 | [What was shown once is gone; what was said is kept.](core/test_streaming.py#L112 "test_the_indicator_never_reaches_task_history") | `streaming` | `typing` | `default` | ✓ | ✓ |
 | [`SendMessage` without a stream answers once: the task, completed, the reply on its status.](core/test_streaming.py#L131 "test_a_unary_send_answers_with_the_completed_task") | `streaming` | `echo` | `default` | ✓ | ✓ |
 
-### `tests/scenarios/core/test_toolkits.py`
-
-A toolkit plugin served by a real ``aion serve``: a turn on the wire, artifact versions, and a refusal.
-
-| Scenario | Suite | Command | Deployment | langgraph | adk |
-|---|---|---|---|---|---|
-| [Messages, deltas, details and an artifact on the stream; the object whole in the task.](core/test_toolkits.py#L125 "test_a_toolkit_turn_streams_and_completes_with_its_object") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [Details without a message change the object, not what the task last said.](core/test_toolkits.py#L155 "test_a_status_update_keeps_the_status_line") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [The server numbers a toolkit's artifact per context, and ``find_artifact`` reads the latest back.](core/test_toolkits.py#L176 "test_the_tasks_of_a_context_write_numbered_versions_of_an_artifact_and_find_the_latest") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [The toolkit's refusal is the JSON-RPC error, with its code; no task was opened for it.](core/test_toolkits.py#L220 "test_a_refused_request_is_an_error_with_its_code_and_leaves_no_task") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [A malformed script never reaches the toolkit: every toolkit refuses it with ``invalid_payload``.](core/test_toolkits.py#L252 "test_a_payload_the_toolkits_model_refuses_is_an_error_with_the_common_code_and_leaves_no_task") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [The toolkit is asked once, with the task's id and the grace period; the task ends ``CANCELED``.](core/test_toolkits.py#L304 "test_a_cancel_ends_the_turn_canceled_and_tells_the_toolkit") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [The repeat is an error, the task stays as it was, and the toolkit is not asked again.](core/test_toolkits.py#L320 "test_a_second_cancel_of_the_finished_task_is_refused_and_does_not_reach_the_toolkit") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [The cancel waits out the grace period; the stream and a subscription made meanwhile both close ``CANCELED``.](core/test_toolkits.py#L336 "test_a_turn_past_the_grace_period_is_cancelled_without_it_and_a_subscription_is_not_held") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [The turn's own outcome stands: the cancel answers with it, and so does the stream.](core/test_toolkits.py#L360 "test_a_cancel_after_the_work_was_delivered_answers_completed") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [An installed toolkit the agent enables is an extension the card announces.](core/test_toolkits.py#L373 "test_the_card_offers_the_enabled_toolkit") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [A second directive, and a message into the running task, get ``context_busy`` naming the task.](core/test_toolkits.py#L389 "test_an_exclusive_toolkit_refuses_a_second_task_in_a_context_until_the_first_ends") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [The limit is per context: two contexts each hold a running task of the toolkit.](core/test_toolkits.py#L414 "test_an_exclusive_toolkit_runs_in_several_contexts_at_once") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-| [The directive is not taken as the answer: a toolkit task starts, and the question keeps waiting for it.](core/test_toolkits.py#L430 "test_a_directive_beside_the_agents_waiting_question_starts_its_own_task") | `toolkits` | `ask` | `toolkit` | ✓ | [skip](#frameworks) |
-| [A directive without a task id resumes the toolkit's waiting task in the context.](core/test_toolkits.py#L454 "test_a_toolkit_that_waits_for_input_continues_its_own_task") | `toolkits` | — | `toolkit` | ✓ | ✓ |
-
 ### `tests/scenarios/distributed/test_abandoned_tasks.py`
 
 Tasks their server abandoned - hung or dead - settled by the other server of the agent.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [No request is needed; the task waiting for input outlives the timeout untouched.](distributed/test_abandoned_tasks.py#L156 "test_a_hung_turn_is_settled_by_the_other_servers_sweep_and_a_waiting_task_is_left") | `distributed` | — | `default` | ✓ | ✓ |
-| [Past the timeout the context of an exclusive toolkit takes a new task; the old task refuses a message.](distributed/test_abandoned_tasks.py#L170 "test_an_abandoned_task_frees_its_context_and_takes_no_message") | `distributed` | — | `default` | ✓ | ✓ |
-| [A toolkit's turn and a framework turn die with their server; the survivor settles both and serves on.](distributed/test_abandoned_tasks.py#L189 "test_the_tasks_of_a_server_killed_mid_turn_are_settled_by_the_survivor") | `distributed` | `slow` | `default` | ✓ | ✓ |
+| [No request is needed; the task waiting for input outlives the timeout untouched.](distributed/test_abandoned_tasks.py#L154 "test_a_hung_turn_is_settled_by_the_other_servers_sweep_and_a_waiting_task_is_left") | `distributed` | — | `default` | ✓ | ✓ |
+| [Past the timeout the context of an evolution takes a new task; the old task refuses a message.](distributed/test_abandoned_tasks.py#L168 "test_an_abandoned_task_frees_its_context_and_takes_no_message") | `distributed` | — | `default` | ✓ | ✓ |
+| [An evolution turn and a framework turn die with their server; the survivor settles both and serves on.](distributed/test_abandoned_tasks.py#L187 "test_the_tasks_of_a_server_killed_mid_turn_are_settled_by_the_survivor") | `distributed` | `slow` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/distributed/test_cancel.py`
 
@@ -397,6 +398,16 @@ Two servers of one agent over one database: a2a-sdk's cluster mode.
 | [There is nothing left to stream, so a2a-sdk refuses the subscription.](distributed/test_cluster.py#L118 "test_resubscribing_to_a_finished_task_is_refused") | `distributed` | `echo` | `default` | ✓ | ✓ |
 | [One database, one answer: the outcome does not depend on who is asked.](distributed/test_cluster.py#L133 "test_both_servers_read_the_same_finished_task") | `distributed` | `echo` | `default` | ✓ | ✓ |
 
+### `tests/scenarios/distributed/test_evolution.py`
+
+Evolution tasks across the servers of one agent.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The second server rejects a second task with ``context_busy``, and a message into the running one with ``task_busy``.](distributed/test_evolution.py#L96 "test_a_busy_context_is_refused_on_the_other_server") | `distributed` | — | `default` | ✓ | ✓ |
+| [``extension_unavailable``, and the waiting task keeps its state and its history.](distributed/test_evolution.py#L121 "test_a_server_without_the_extension_refuses_a_message_into_its_task") | `distributed` | — | `default` | ✓ | ✓ |
+| [``CANCELED`` at once from the other server; the owner's stream closes with it and its executor is asked to stop.](distributed/test_evolution.py#L144 "test_a_cancel_on_the_other_server_reaches_the_executor_at_the_owners_next_write") | `distributed` | — | `default` | ✓ | ✓ |
+
 ### `tests/scenarios/distributed/test_recovery.py`
 
 One server dies; what becomes of the tasks it was running.
@@ -404,16 +415,6 @@ One server dies; what becomes of the tasks it was running.
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
 | [The whole sequence, in the order a deployment would live it.](distributed/test_recovery.py#L46 "test_a_dead_servers_task_stays_active_until_the_survivor_cancels_it") | `distributed` | `slow` | `default` | ✓ | ✓ |
-
-### `tests/scenarios/distributed/test_toolkits.py`
-
-A toolkit's tasks across the servers of one agent.
-
-| Scenario | Suite | Command | Deployment | langgraph | adk |
-|---|---|---|---|---|---|
-| [The second server refuses a second task, and a message into the running one, with ``context_busy``.](distributed/test_toolkits.py#L95 "test_a_busy_context_is_refused_on_the_other_server") | `distributed` | — | `default` | ✓ | ✓ |
-| [``extension_unavailable``, and the waiting task keeps its state and its history.](distributed/test_toolkits.py#L119 "test_a_server_without_the_toolkit_refuses_a_message_into_its_task") | `distributed` | — | `default` | ✓ | ✓ |
-| [``CANCELED`` at once from the other server; the owner's stream closes with it and its toolkit is asked to stop.](distributed/test_toolkits.py#L142 "test_a_cancel_on_the_other_server_reaches_the_toolkit_at_the_owners_next_write") | `distributed` | — | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/native/test_distributed.py`
 
@@ -512,6 +513,18 @@ Migrating the database: `aion db migrate`, `aion db check` and DB_MIGRATE_ON_STA
 | [What a rollback leaves behind: migrations only add, so the older code runs on it.](persistence/test_database_migrations.py#L106 "test_a_database_newer_than_the_code_is_reported_and_served") | `persistence` | `echo` | `default` | ✓ | ✓ |
 | [Aion db check finds an empty database behind until aion db migrate](persistence/test_database_migrations.py#L51 "test_aion_db_check_finds_an_empty_database_behind_until_aion_db_migrate") | `persistence` | — | `default` | any | any |
 
+### `tests/scenarios/persistence/test_evolution.py`
+
+What an evolution task keeps across a server restart, on a real database.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The first task of a context numbers its artifact 0, the first task after a restart 1, and finds the first.](persistence/test_evolution.py#L101 "test_artifact_versions_continue_across_a_restart") | `persistence` | — | `evolution` | ✓ | ✓ |
+| [The open stream receives the outcome; the turn stopped, so the task is closed rather than settled.](persistence/test_evolution.py#L120 "test_a_shutdown_stops_a_running_turn_and_closes_its_task_with_server_shutdown") | `persistence` | — | `evolution` | ✓ | ✓ |
+| [The window runs out; the drain settles the task as ``FAILED`` with ``server_shutdown``.](persistence/test_evolution.py#L141 "test_a_turn_that_does_not_stop_in_time_is_settled_by_the_shutdown") | `persistence` | — | `evolution` | ✓ | ✓ |
+| [A stream on a turn that would run for minutes ends within the shutdown's bounded wait.](persistence/test_evolution.py#L159 "test_an_open_stream_does_not_hold_the_shutdown") | `persistence` | `slow` | `evolution` | ✓ | ✓ |
+| [A turn that stops is told the window in ``cancel()``; one that does not is settled once the window is over.](persistence/test_evolution.py#L181 "test_a_small_shutdown_budget_gives_the_turns_a_shorter_window_and_says_so_in_cancel") | `persistence` | — | `evolution` | ✓ | ✓ |
+
 ### `tests/scenarios/persistence/test_restart.py`
 
 What a server restart does to the tasks the previous process held.
@@ -532,19 +545,6 @@ Resubscribing to a paused task in a2a-sdk's cluster mode.
 | [The stored pause first, then the turn that ends it, closed by a Task.](persistence/test_resubscribe.py#L49 "test_a_paused_task_is_followed_until_the_resume_finishes_it") | `persistence` | `ask` | `default` | ✓ | [skip](#frameworks) |
 | [No second task, and nothing the pause had recorded is lost.](persistence/test_resubscribe.py#L78 "test_following_the_pause_leaves_one_task_and_its_question") | `persistence` | `ask` | `default` | ✓ | [skip](#frameworks) |
 | [Once the turn is over there is nothing to follow; tasks/get has the outcome.](persistence/test_resubscribe.py#L104 "test_a_finished_task_refuses_a_subscriber") | `persistence` | `ask` | `default` | ✓ | [skip](#frameworks) |
-
-### `tests/scenarios/persistence/test_toolkits.py`
-
-What a toolkit's task keeps across a server restart, on a real database.
-
-| Scenario | Suite | Command | Deployment | langgraph | adk |
-|---|---|---|---|---|---|
-| [A turn that waits for input, a restart, and the answer: the new toolkit instance gets the object back.](persistence/test_toolkits.py#L100 "test_the_object_of_a_waiting_task_survives_a_restart_and_is_handed_back_on_resume") | `persistence` | — | `toolkit` | ✓ | ✓ |
-| [The first task of a context numbers its artifact 0, the first task after a restart 1, and finds the first.](persistence/test_toolkits.py#L136 "test_artifact_versions_continue_across_a_restart") | `persistence` | — | `toolkit` | ✓ | ✓ |
-| [The open stream receives the outcome, and the stored task is the toolkit's, not a settlement.](persistence/test_toolkits.py#L155 "test_a_shutdown_closes_a_running_turn_with_the_toolkits_server_shutdown_result") | `persistence` | — | `toolkit` | ✓ | ✓ |
-| [The grace period runs out; the server settles the task as ``FAILED`` with ``server_shutdown``.](persistence/test_toolkits.py#L176 "test_a_turn_that_does_not_stop_in_time_is_settled_by_the_shutdown") | `persistence` | — | `toolkit` | ✓ | ✓ |
-| [A stream on a turn that would run for minutes ends within the shutdown's bounded wait.](persistence/test_toolkits.py#L194 "test_an_open_stream_does_not_hold_the_shutdown") | `persistence` | `slow` | `toolkit` | ✓ | ✓ |
-| [A turn that stops is told the window in ``cancel()``; one that does not is settled once the window is over.](persistence/test_toolkits.py#L216 "test_a_small_shutdown_budget_gives_the_toolkits_a_shorter_window_and_says_so_in_cancel") | `persistence` | — | `toolkit` | ✓ | ✓ |
 
 ## Commands
 

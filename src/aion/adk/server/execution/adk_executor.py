@@ -1,4 +1,4 @@
-"""ADK ExecutorAdapter: wires session, artifact, and stream services for a single agent run."""
+"""The ADK framework executor: wires session, artifact, and stream services for a single agent run."""
 
 import logging
 import time
@@ -10,7 +10,7 @@ from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from aion.server.agent.adapters import (
     LegacyStateError,
     ExecutionConfig,
-    ExecutorAdapter,
+    AgentFrameworkExecutor,
 )
 from aion.server.agent.exceptions import ExecutionError
 from aion.core.config.models import AgentConfig
@@ -36,8 +36,10 @@ AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 logger = logging.getLogger(__name__)
 
 
-class ADKExecutor(ExecutorAdapter):
-    """ExecutorAdapter that drives an ADK agent through its run_async lifecycle."""
+class ADKExecutor(AgentFrameworkExecutor):
+    """The framework executor that drives an ADK agent through its run_async lifecycle."""
+
+    framework = "adk"
 
     def __init__(
             self,

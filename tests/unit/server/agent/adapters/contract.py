@@ -1,6 +1,6 @@
 """What every framework adapter owes the server, and where they may differ.
 
-`aion.server.agent.adapters.ExecutorAdapter` is a protocol, and two
+`aion.server.agent.adapters.AgentFrameworkExecutor` is a protocol, and two
 implementations of it ship today — `aion.langgraph.server` and
 `aion.adk.server`. A protocol says what methods exist; it cannot say what they
 must *do*, and that is where the two drifted: one delivered an agent's outbox

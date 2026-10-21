@@ -6,8 +6,8 @@ distribution payload in it. They are prepared once and kept in the ASGI
 scope, which the endpoint shares.
 
 That is all "once" covers. For ``SendMessage`` the request handler's
-extension pipeline validates the payload again for its preflight and the
-runtime context, and a2a-sdk parses the body as the protocol. Preparing a
+extension pipeline validates the payload again for the route and the runtime
+context, and a2a-sdk parses the body as the protocol. Preparing a
 request reads only what the middleware needs and leaves the body as it came.
 """
 

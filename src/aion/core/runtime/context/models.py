@@ -6,20 +6,16 @@ data, distribution metadata, identities, and typed event payloads to agents.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from enum import Enum
 from typing import Any, Dict, Optional, Union, cast
 
 from aion.core.constants.a2a import (
     CARD_ACTION_EVENT_TYPE_V1,
-    CARDS_EXTENSION_URI_V1,
     COMMAND_EVENT_TYPE_V1,
-    CRON_EXTENSION_URI_V1,
     DAEMON_EXTENSION_URI_V1,
     DISTRIBUTION_EXTENSION_URI_V1,
-    EVENT_EXTENSION_URI_V1,
     MESSAGE_EVENT_TYPE_V1,
-    MESSAGING_EXTENSION_URI_V1,
     REACTION_EVENT_TYPE_V1,
     TRACEABILITY_EXTENSION_URI_V1,
     USAGE_ATTRIBUTION_EXTENSION_URI_V1,
@@ -43,6 +39,7 @@ from aion.core.a2a.extensions import (
 from .extensions import AionRuntimeExtensions
 from .attribution import CallbackAttribution, ForwardedAttribution
 from aion.core.exceptions import AionAuthenticationError
+from .conversation import ConversationHistory
 
 
 class EventKind(str, Enum):
@@ -64,16 +61,6 @@ NormalizedPayload = Union[
     CommandEventPayload,
     CardActionEventPayload,
 ]
-
-
-class AionExtensions(str, Enum):
-    """Extension URIs declared in message.extensions[] by the A2A sender."""
-    DISTRIBUTION = DISTRIBUTION_EXTENSION_URI_V1
-    CRON = CRON_EXTENSION_URI_V1
-    MESSAGING = MESSAGING_EXTENSION_URI_V1
-    CARDS = CARDS_EXTENSION_URI_V1
-    EVENT = EVENT_EXTENSION_URI_V1
-    TRACEABILITY = TRACEABILITY_EXTENSION_URI_V1
 
 
 @dataclass(frozen=True)
@@ -108,9 +95,15 @@ class AionRuntimeContext:
     inbox: Optional[A2AInbox]
     """Raw A2A inbox - escape hatch for direct access to underlying A2A structures."""
     event: Optional[Event]
-    """Typed inbound event with kind and normalized payload. None for direct A2A requests."""
+    """Typed inbound event with kind and normalized payload. None for direct A2A requests.
+
+    Read off ``extensions`` unless given.
+    """
     distribution_extension_payload: Optional[DistributionExtensionV1]
-    """Parsed Aion distribution extension payload, if the invocation carries one."""
+    """Parsed Aion distribution extension payload, if the invocation carries one.
+
+    Read off ``extensions`` unless given.
+    """
     extensions: AionRuntimeExtensions
     """Verified, per-request set of active, registered A2A extensions.
 
@@ -121,12 +114,25 @@ class AionRuntimeContext:
     graph-facing, potentially checkpointed snapshot. Only extensions with a
     registered ExtensionDescriptor that satisfy their co-activation
     requirements appear here; there is nothing to verify or return for an
-    unregistered URI. Backs is_extension_active() and the get_*() extension accessors.
+    unregistered URI. ``extensions.is_active()`` checks activation by URI
+    (``aion.core.constants``); the get_*() accessors read typed payloads.
     """
     graph_kwargs: Dict[str, Any]
-    """Extra kwargs passed by the graph framework, such as LangGraph config."""
+    """Keyword arguments the context was built with that name no field.
+
+    Outside ``aion serve`` LangGraph builds the context of a graph with
+    ``context_schema=AionRuntimeContext`` itself, from the dict the run was
+    given (``context_schema(**context)``), and that dict can carry keys of the
+    run - ``langgraph dev`` adds ``thread_id``. They land here instead of
+    failing the run.
+    """
     callback_attribution: Optional[CallbackAttribution]
     """Transient callback mode populated from this request, never checkpoint state."""
+    conversation: Optional[ConversationHistory]
+    """Transient history of the turn's conversation, installed by the server for the turn, never checkpoint state.
+
+    Read it through ``aion.core.agent.conversation``.
+    """
 
     def __init__(
             self,
@@ -135,38 +141,52 @@ class AionRuntimeContext:
             distribution_extension_payload: Optional[DistributionExtensionV1] = None,
             extensions: Optional[AionRuntimeExtensions] = None,
             callback_attribution: Optional[CallbackAttribution] = None,
+            conversation: Optional[ConversationHistory] = None,
             **graph_kwargs: Any,
     ) -> None:
         """Create an Aion runtime context.
 
         Args:
             inbox: Raw A2A request envelope for the current invocation.
-            event: Typed Aion event extracted from the inbox, when present.
+            event: Typed Aion event extracted from the inbox, when present;
+                by default the first event among ``extensions``' payloads.
             distribution_extension_payload: Parsed Aion distribution extension
                 payload. This mirrors the extension payload shape sent by the
-                control plane.
+                control plane. By default the distribution payload of
+                ``extensions``.
             extensions: Verified, per-request set of active,
                 registered extensions, produced by the collect/verify
                 pipeline.
             callback_attribution: Transient forwarded or reported-direct callback
                 input. It conveys no independent authorization to the SDK.
-            **graph_kwargs: Extra framework-specific values passed by the graph
-                runtime.
+            conversation: The history of the turn's conversation, which the
+                server installs for every turn it runs.
+            **graph_kwargs: Keyword arguments that name no field; see
+                ``graph_kwargs``.
         """
-        if "distributionExtensionPayload" in graph_kwargs:
-            raise TypeError(
-                "Use distribution_extension_payload instead of "
-                "distributionExtensionPayload."
-            )
+        if extensions is None:
+            extensions = AionRuntimeExtensions({})
+        if event is None:
+            event = extensions.first_event()
+        if distribution_extension_payload is None:
+            distribution_extension_payload = extensions.get(DISTRIBUTION_EXTENSION_URI_V1)
 
         object.__setattr__(self, "inbox", inbox)
         object.__setattr__(self, "event", event)
         object.__setattr__(self, "distribution_extension_payload", distribution_extension_payload)
-        if extensions is None:
-            extensions = AionRuntimeExtensions({})
         object.__setattr__(self, "extensions", extensions)
         object.__setattr__(self, "graph_kwargs", graph_kwargs)
         object.__setattr__(self, "callback_attribution", callback_attribution)
+        object.__setattr__(self, "conversation", conversation)
+
+    def replace(self, **changes: Any) -> "AionRuntimeContext":
+        """Return a copy of this context with ``changes`` applied.
+
+        Every field not named in ``changes`` keeps its value, ``graph_kwargs``
+        included.
+        """
+        values = {field.name: getattr(self, field.name) for field in fields(self) if field.name != "graph_kwargs"}
+        return AionRuntimeContext(**{**self.graph_kwargs, **values, **changes})
 
     def get_callback_attribution(self) -> Optional[CallbackAttribution]:
         """Return explicit callback input without inferring direct mode from absence.
@@ -182,25 +202,6 @@ class AionRuntimeContext:
                 raise AionAuthenticationError("Conflicting callback attribution inputs.")
             return forwarded
         return self.callback_attribution
-
-    def is_extension_active(self, *extensions: Union[AionExtensions, str]) -> bool:
-        """Return whether all requested Aion extensions are active.
-
-        Args:
-            *extensions: Extension identifiers to check. Accepts
-                ``AionExtensions`` members for the closed set of core
-                extensions, or plain string URIs. Only extensions with a
-                registered ExtensionDescriptor can ever read as active here -
-                see ``extensions``.
-
-        Returns:
-            ``True`` when every requested extension is active and
-            registered for this request. When no extensions are requested,
-            returns ``True``.
-        """
-        return self.extensions.is_active(
-            *((ext.value if isinstance(ext, AionExtensions) else ext) for ext in extensions)
-        )
 
     def get_distribution(self) -> Optional[Distribution]:
         """Return the distribution model from the Aion distribution payload.
@@ -296,15 +297,7 @@ class AionRuntimeContext:
             The first principal identity in the distribution identities
             list, or ``None`` when the distribution has no principal identity.
         """
-        distribution = self.get_distribution()
-        if distribution is None:
-            return None
-
-        identity = next(
-            (identity for identity in distribution.identities if identity.kind == "principal"),
-            None,
-        )
-        return cast(Optional[PrincipalIdentity], identity)
+        return cast(Optional[PrincipalIdentity], self._identity("principal"))
 
     def get_service_identity(self) -> Optional[ServiceIdentity]:
         """Return the service identity from the distribution.
@@ -313,12 +306,11 @@ class AionRuntimeContext:
             The first service identity in the distribution identities
             list, or ``None`` when the distribution has no service identity.
         """
+        return cast(Optional[ServiceIdentity], self._identity("service"))
+
+    def _identity(self, kind: str) -> Optional[Any]:
+        """The first identity of ``kind`` in the distribution, or ``None``."""
         distribution = self.get_distribution()
         if distribution is None:
             return None
-
-        identity = next(
-            (identity for identity in distribution.identities if identity.kind == "service"),
-            None,
-        )
-        return cast(Optional[ServiceIdentity], identity)
+        return next((identity for identity in distribution.identities if identity.kind == kind), None)

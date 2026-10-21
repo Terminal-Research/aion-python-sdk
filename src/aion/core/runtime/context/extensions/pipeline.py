@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Optional
 
 from aion.core.a2a.extensions.welcome_message import has_user_text
 from aion.core.constants.a2a import WELCOME_MESSAGE_EXTENSION_URI_V1
-from aion.core.toolkit import codes
+from aion.core.a2a import codes
 
 from .descriptors import ExtensionActivationError, ExtensionDescriptor
 

@@ -73,10 +73,7 @@ class FilePartPreprocessor:
 
         message = request_obj.message
         runtime = AionRuntimeContext(extensions=context.extensions)
-        runtime = AionRuntimeContext(
-            extensions=context.extensions,
-            callback_attribution=callback_attribution(context.call_context, runtime),
-        )
+        runtime = runtime.replace(callback_attribution=callback_attribution(context.call_context, runtime))
         resolution = resolve_upload_context(
             runtime,
             context_id=message.context_id or None,

@@ -78,13 +78,13 @@ class AionRequestContextBuilder(RequestContextBuilder):
             context: ServerCallContext,
             routed_extension: str | None = None,
     ) -> Task | None:
-        """The caller-owned waiting task of one handler that a message to ``context_id`` without a task id continues.
+        """The caller-owned waiting task of one executor that a message to ``context_id`` without a task id continues.
 
-        It is the caller's newest task in the context of the handler the
-        message addresses - the toolkit whose extension ``routed_extension``
-        names, or the agent's framework adapter for None - when that task
+        It is the caller's newest task in the context of the executor the
+        message addresses - the executable extension ``routed_extension``
+        names, or the agent's framework executor for None - when that task
         waits for input (``INPUT_REQUIRED``, ``AUTH_REQUIRED``). A waiting
-        task of another handler is not continued by the message.
+        task of another executor is not continued by the message.
 
         None when auto-discovery is off or there is no such task. A caller
         without individual access owns none to return to: its shared

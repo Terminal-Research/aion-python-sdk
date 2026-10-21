@@ -19,7 +19,7 @@ from langgraph.graph import END, START, StateGraph
 from aion.adk.server.execution.adk_executor import ADKExecutor
 from aion.core.config.models import AgentConfig
 from aion.langgraph.server.execution.langgraph_executor import LangGraphExecutor
-from aion.server.agent.adapters import ExecutionConfig, ExecutorAdapter, StateScope
+from aion.server.agent.adapters import ExecutionConfig, AgentFrameworkExecutor, StateScope
 
 ALICE = StateScope(agent_id="agent", owner_scope="alice")
 BOB = StateScope(agent_id="agent", owner_scope="bob")
@@ -116,7 +116,7 @@ class TestADK:
 
 
 async def test_an_executor_that_does_not_implement_deletion_says_so():
-    class _Stateless(ExecutorAdapter):
+    class _Stateless(AgentFrameworkExecutor):
         async def stream(self, context, config=None):  # pragma: no cover - not exercised
             yield None
 

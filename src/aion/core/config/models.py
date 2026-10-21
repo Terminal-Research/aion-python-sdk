@@ -232,12 +232,53 @@ class AgentConfig(BaseModel):
         default_factory=dict,
         description="Additional configuration parameters")
 
-    enabled_extensions: List[str] = Field(
+    enabled_extensions: List[Union[str, Dict[str, Optional[Dict[str, Any]]]]] = Field(
         default_factory=list,
-        description="Optional A2A extension URIs this agent additionally activates "
-                    "(opt-in extensions, e.g. daemon and installed toolkits). "
-                    "Extensions that are active by default (e.g. distribution, "
-                    "messaging) are unaffected by this list.")
+        description="Optional A2A extensions this agent additionally activates "
+                    "(opt-in extensions, e.g. daemon and behavior evolution). "
+                    "Each entry is the extension's URI, or a mapping of the URI "
+                    "to the options of an executable extension; an empty block "
+                    "keeps the defaults. Extensions that are active by default "
+                    "(e.g. distribution, messaging) are unaffected by this list.")
+
+    @field_validator('enabled_extensions')
+    @classmethod
+    def validate_enabled_extensions(cls, value):
+        """Check that each entry names one extension, and none is listed twice."""
+        seen: set[str] = set()
+        for entry in value:
+            if isinstance(entry, dict):
+                if len(entry) != 1:
+                    raise ValueError(
+                        "an enabled_extensions entry with options maps exactly one "
+                        f"extension URI to its options, got {sorted(entry)}"
+                    )
+                uri = next(iter(entry))
+            else:
+                uri = entry
+            if not uri:
+                raise ValueError("an enabled_extensions entry names no extension URI")
+            if uri in seen:
+                raise ValueError(f"the extension {uri} is listed in enabled_extensions twice")
+            seen.add(uri)
+        return value
+
+    @property
+    def enabled_extension_uris(self) -> List[str]:
+        """The URIs ``enabled_extensions`` lists, in its order."""
+        return [next(iter(entry)) if isinstance(entry, dict) else entry for entry in self.enabled_extensions]
+
+    @property
+    def extension_options(self) -> Dict[str, Dict[str, Any]]:
+        """The options ``enabled_extensions`` gives each URI it lists; empty for a bare URI or an empty block."""
+        options: Dict[str, Dict[str, Any]] = {}
+        for entry in self.enabled_extensions:
+            if isinstance(entry, dict):
+                uri, block = next(iter(entry.items()))
+                options[uri] = dict(block or {})
+            else:
+                options[entry] = {}
+        return options
 
     @field_validator('configuration', mode='before')
     @classmethod
