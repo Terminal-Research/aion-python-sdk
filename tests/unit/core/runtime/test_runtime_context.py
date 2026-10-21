@@ -29,8 +29,8 @@ from aion.core.runtime.context.extensions import (
     aion_a2a_extension_registry,
 )
 from aion.core.runtime.context.models import (
-    AionExtensions,
     AionRuntimeContext,
+    Event,
     EventKind,
 )
 from aion.core.runtime.context.utils import extract_event
@@ -228,12 +228,17 @@ class TestAionRuntimeContextDistributionPayload:
         assert ctx.distribution_extension_payload is dist
         assert ctx.get_distribution().id == "dist-1"
 
-    def test_camel_case_distribution_payload_keyword_rejected(self):
-        """Verify that the old camelCase keyword is not silently captured."""
+    def test_the_payload_and_the_event_are_read_off_the_extensions(self):
+        """A context built from verified extensions alone exposes their distribution payload and event."""
         dist = _make_distribution_ext(agent_id="agent-abc", behavior_key="main", version_id="v-3")
+        event = Event(kind=MESSAGE_EVENT_TYPE_V1, id="evt-1", source="aion://test", payload=None, raw=None)
+        ctx = AionRuntimeContext(
+            extensions=AionRuntimeExtensions({DISTRIBUTION_EXTENSION_URI_V1: dist, MESSAGING_EXTENSION_URI_V1: event})
+        )
 
-        with pytest.raises(TypeError, match="distribution_extension_payload"):
-            AionRuntimeContext(distributionExtensionPayload=dist)
+        assert ctx.distribution_extension_payload is dist
+        assert ctx.get_distribution().id == "dist-1"
+        assert ctx.event is event
 
     def test_principal_identity_extracted(self):
         """Verify that principal identity is read from the distribution payload."""
@@ -311,64 +316,7 @@ class TestAionRuntimeContextDistributionPayload:
         assert ctx.get_environment().name == "prod"
 
 
-class TestAionRuntimeContextIsActive:
-    def _make_ctx(self, *extension_uris: str) -> AionRuntimeContext:
-        """is_extension_active() delegates to extensions.is_active().
-        Constructing AionRuntimeExtensions with these URIs directly simulates
-        "already registered and verified" - is_active()'s own job here is
-        just enum-vs-string normalization and delegation, not verification
-        (that's the verifier's job, covered separately in
-        test_extension_activation.py)."""
-        return AionRuntimeContext(
-            extensions=AionRuntimeExtensions({uri: None for uri in extension_uris})
-        )
-
-    def test_present_extension_returns_true(self):
-        """Verify that present extension returns true."""
-        ctx = self._make_ctx(DISTRIBUTION_EXTENSION_URI_V1)
-        assert ctx.is_extension_active(AionExtensions.DISTRIBUTION) is True
-
-    def test_absent_extension_returns_false(self):
-        """Verify that absent extension returns false."""
-        ctx = self._make_ctx(EVENT_EXTENSION_URI_V1)
-        assert ctx.is_extension_active(AionExtensions.DISTRIBUTION) is False
-
-    def test_all_extensions_must_be_present(self):
-        """Verify that all extensions must be present."""
-        ctx = self._make_ctx(DISTRIBUTION_EXTENSION_URI_V1)
-        # DISTRIBUTION present, CARDS absent — is_active requires both
-        assert ctx.is_extension_active(AionExtensions.DISTRIBUTION, AionExtensions.CARDS) is False
-
-    def test_empty_extensions_returns_true_for_no_args(self):
-        """Verify that empty extensions returns true for no args."""
-        ctx = self._make_ctx()
-        assert ctx.is_extension_active() is True
-
-    def test_plain_string_uri_present_returns_true(self):
-        """A raw string URI (e.g. an agent-specific extension) matches directly."""
-        ctx = self._make_ctx("aion://extensions/agent-specific/v1")
-        assert ctx.is_extension_active("aion://extensions/agent-specific/v1") is True
-
-    def test_plain_string_uri_absent_returns_false(self):
-        """A raw string URI not declared on the message is not active."""
-        ctx = self._make_ctx(DISTRIBUTION_EXTENSION_URI_V1)
-        assert ctx.is_extension_active("aion://extensions/agent-specific/v1") is False
-
-    def test_mixed_enum_and_string_uris_all_required(self):
-        """A mix of AionExtensions and plain string URIs are all checked."""
-        ctx = self._make_ctx(
-            DISTRIBUTION_EXTENSION_URI_V1,
-            "aion://extensions/agent-specific/v1",
-        )
-        assert ctx.is_extension_active(
-            AionExtensions.DISTRIBUTION,
-            "aion://extensions/agent-specific/v1",
-        ) is True
-        assert ctx.is_extension_active(
-            AionExtensions.DISTRIBUTION,
-            "aion://extensions/other/v1",
-        ) is False
-
+class TestAionRuntimeContextConstruction:
     def test_graph_kwargs_stored(self):
         """Verify that graph kwargs stored."""
         msg = Message(message_id="m1", role=Role.ROLE_USER)
@@ -376,6 +324,21 @@ class TestAionRuntimeContextIsActive:
         ctx = AionRuntimeContext(inbox=inbox, thread_id="t-1", config={"k": "v"})
         assert ctx.graph_kwargs["thread_id"] == "t-1"
         assert ctx.graph_kwargs["config"] == {"k": "v"}
+
+    def test_replace_keeps_every_field_it_is_not_given(self):
+        """A replaced context keeps the other fields and the graph kwargs; the original is untouched."""
+        inbox = A2AInbox(message=Message(message_id="m1", role=Role.ROLE_USER), metadata={})
+        dist = _make_distribution_ext(agent_id="agent-abc", behavior_key="main", version_id="v-3")
+        extensions = AionRuntimeExtensions({DISTRIBUTION_EXTENSION_URI_V1: dist})
+        ctx = AionRuntimeContext(inbox=inbox, extensions=extensions, thread_id="t-1")
+        history = object()
+
+        replaced = ctx.replace(conversation=history)
+
+        assert replaced.conversation is history
+        assert (replaced.inbox, replaced.extensions, replaced.distribution_extension_payload) == (inbox, extensions, dist)
+        assert replaced.graph_kwargs == {"thread_id": "t-1"}
+        assert ctx.conversation is None
 
 
 _DIST_STRUCT_DATA = {
@@ -547,7 +510,7 @@ class TestAionRuntimeContextBuilder:
         """Verify that key error in build returns none."""
         rc = _make_mock_rc()
         with patch(
-            "aion.core.runtime.context.builder.AionRuntimeContextBuilder._build",
+            "aion.core.runtime.context.builder.A2AInbox.from_request_context",
             side_effect=KeyError("missing"),
         ):
             result = AionRuntimeContextBuilder.from_request_context(rc)
@@ -557,7 +520,7 @@ class TestAionRuntimeContextBuilder:
         """Verify that attribute error in build returns none."""
         rc = _make_mock_rc()
         with patch(
-            "aion.core.runtime.context.builder.AionRuntimeContextBuilder._build",
+            "aion.core.runtime.context.builder.A2AInbox.from_request_context",
             side_effect=AttributeError("attr"),
         ):
             result = AionRuntimeContextBuilder.from_request_context(rc)
@@ -567,7 +530,7 @@ class TestAionRuntimeContextBuilder:
         """Verify that generic exception in build returns none."""
         rc = _make_mock_rc()
         with patch(
-            "aion.core.runtime.context.builder.AionRuntimeContextBuilder._build",
+            "aion.core.runtime.context.builder.A2AInbox.from_request_context",
             side_effect=RuntimeError("boom"),
         ):
             result = AionRuntimeContextBuilder.from_request_context(rc)
@@ -783,7 +746,7 @@ class TestUnknownExtensions:
         result = self._build()
 
         assert result is not None
-        assert result.is_extension_active(self.UNKNOWN_URI) is False
+        assert result.extensions.is_active(self.UNKNOWN_URI) is False
         carried = result.extensions.get(self.UNKNOWN_URI)
         assert isinstance(carried, UnknownExtension)
         assert carried.uri == self.UNKNOWN_URI

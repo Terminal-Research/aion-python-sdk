@@ -9,7 +9,6 @@ import logging
 
 from typing import TYPE_CHECKING, Optional
 
-from aion.core.constants import DISTRIBUTION_EXTENSION_URI_V1
 from aion.core.a2a import A2AInbox
 from .extensions import (
     ExtensionActivationError,
@@ -50,7 +49,7 @@ class AionRuntimeContextBuilder:
             if inbox is None:
                 return None
 
-            return cls._build(inbox, extensions)
+            return AionRuntimeContext(inbox=inbox, extensions=extensions)
         except ExtensionActivationError:
             raise
         except (KeyError, AttributeError) as e:
@@ -63,26 +62,3 @@ class AionRuntimeContextBuilder:
         except Exception as e:
             logger.exception("Failed to build AionRuntimeContext: %s", e)
             return None
-
-    @staticmethod
-    def _build(inbox: A2AInbox, extensions: AionRuntimeExtensions) -> AionRuntimeContext:
-        """Build context, reading payloads off extensions.
-
-        Both the distribution extension payload and the event are produced by the
-        collect/verify pipeline (TaskMetadataCollector and MessagesCollector
-        respectively) - no second parse here.
-
-        Args:
-            inbox: A2A inbox.
-            extensions: Verified, per-request set of active,
-                registered extensions from the collect/verify pipeline.
-
-        Returns:
-            Runtime context with the event and distribution extension payload, if any.
-        """
-        return AionRuntimeContext(
-            inbox=inbox,
-            event=extensions.first_event(),
-            distribution_extension_payload=extensions.get(DISTRIBUTION_EXTENSION_URI_V1),
-            extensions=extensions,
-        )

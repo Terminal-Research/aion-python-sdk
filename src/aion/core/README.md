@@ -60,7 +60,7 @@ from a raw provider ID or use a decoded caller as an authorization grant.
 
 The optional Cron extension exposes `CronExtensionV1` through
 `context.extensions.get(CRON_EXTENSION_URI_V1)`. Check
-`context.is_extension_active(AionExtensions.CRON)` before treating it as active.
+`context.extensions.is_active(CRON_EXTENSION_URI_V1)` before treating it as active.
 It includes only UTC `scheduled_at` / `sent_at` instants (wire keys
 `scheduledAt` / `sentAt`, with a `Z` suffix); the extension URI marks Cron
 origin. No schedule, identifiers, or timezone database lookup are needed.

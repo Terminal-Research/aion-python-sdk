@@ -598,16 +598,11 @@ class AionAgentRequestExecutor(AgentExecutor):
         runtime_context = AionRuntimeContextBuilder.from_request_context(context)
         if runtime_context is None:
             runtime_context = AionRuntimeContext()
-        runtime_context = AionRuntimeContext(
-            inbox=runtime_context.inbox,
-            event=runtime_context.event,
-            distribution_extension_payload=runtime_context.distribution_extension_payload,
-            extensions=runtime_context.extensions,
+        runtime_context = runtime_context.replace(
             callback_attribution=callback_attribution(context.call_context, runtime_context),
             conversation=(
                 self._conversations.for_turn(context.call_context, task) if self._conversations is not None else None
             ),
-            **runtime_context.graph_kwargs,
         )
         await AionRuntimeContextRegistry.aset_current_context(runtime_context)
         return ResponseServiceParameters(runtime_context.extensions.activated_uris)

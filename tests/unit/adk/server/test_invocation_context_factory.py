@@ -50,4 +50,3 @@ async def test_model_accepts_a_runtime_context():
     )
 
     assert context.aion_runtime_context is runtime_context
-    assert context.aion_runtime_context.is_extension_active() is True

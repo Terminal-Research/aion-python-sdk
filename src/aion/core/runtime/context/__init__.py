@@ -19,7 +19,6 @@ from .extensions import (
     register_protocol_extensions,
 )
 from .models import (
-    AionExtensions,
     AionRuntimeContext,
     Event,
     EventKind,
@@ -36,7 +35,6 @@ __all__ = [
     "CallbackAttribution",
     "DirectAttribution",
     "ForwardedAttribution",
-    "AionExtensions",
     "AionRuntimeContext",
     "AionRuntimeContextBuilder",
     "Event",
