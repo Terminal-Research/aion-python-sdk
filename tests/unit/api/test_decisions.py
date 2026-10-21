@@ -7,8 +7,11 @@ import httpx
 import pytest
 from openai import AsyncOpenAI, InternalServerError, OpenAI
 
-from aion.api import create_decision, create_decision_async
-from aion.api.decisions import DecisionRequest
+from aion.api.decisions import (
+    DecisionRequest,
+    create_decision,
+    create_decision_async,
+)
 from aion.core.exceptions import AionDaemonIdentityRequired
 from aion.core.runtime.context import AionRuntimeContext, ForwardedAttribution
 

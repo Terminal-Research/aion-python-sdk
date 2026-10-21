@@ -22,7 +22,6 @@ from .exceptions import (
     AionModelPrincipalError,
 )
 from .file_service_client import AionFileClient
-from .decisions import create_decision, create_decision_async
 from .gql import AionGqlClient, generated
 from .http import AionHttpClient
 from .model_service_client import aion_openai_config
@@ -51,7 +50,5 @@ __all__ = [
     "PrincipalSelectorKind",
     "RuntimeCapabilityReference",
     "aion_openai_config",
-    "create_decision",
-    "create_decision_async",
     "generated",
 ]

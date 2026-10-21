@@ -65,8 +65,19 @@ attach current request attribution, and disable additional SDK retries for the
 call. The client retains its credentials, timeout and lifecycle. The async helper
 accepts `AsyncOpenAI`; use `aion_jwt_api_key` as its asynchronous key provider.
 
-Request and discriminated answer types live in `aion.api.decisions`. The helpers
-preserve the named-question JSON contract; Aion performs runtime validation.
+Import the helpers and their request and answer types from `aion.api.decisions`:
+
+```python
+from aion.api.decisions import (
+    DecisionRequest,
+    DecisionResponse,
+    create_decision,
+    create_decision_async,
+)
+```
+
+The helpers preserve the named-question JSON contract. Aion performs runtime
+validation.
 They do not require a native OpenAI Decisions resource. Install `openai` when
 using these helpers; importing the base Aion SDK does not require it.
 
