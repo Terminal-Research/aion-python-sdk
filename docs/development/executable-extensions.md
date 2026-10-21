@@ -69,7 +69,6 @@ enabled_extensions:
   - "https://docs.aion.to/a2a/extensions/aion/daemon/1.0.0"
   - "https://docs.aion.to/a2a/extensions/aion/behavior/evolution/1.0.0":
       callers: [platform, anonymous_session]
-      provider: custom
 ```
 
 An empty block (`{}` or nothing) keeps the defaults, like a bare URI. The
@@ -79,6 +78,11 @@ configuration error naming the URI and the fields. Options given to a URI
 that is not an executable extension of this server (any protocol extension)
 are one too, and so is a URI listed twice. The options are the agent's own:
 the card's `AgentExtension.params` stays empty.
+
+An option is what the agent is - the same wherever it runs, reviewed with
+its code. What differs from one deployment to another - where a call goes,
+its credentials, paths - is the deployment's environment, which the executor
+reads itself.
 
 ## An extension's executor
 
@@ -213,12 +217,20 @@ installed". A missing module counts as the toolkit only when it is on the
 toolkit's own path; a toolkit whose own import fails (a dependency it lacks)
 is reported with that error.
 
-Its options (`EvolutionOptions`):
+Who may start an evolution is the agent's option (`EvolutionOptions`);
+where its model calls go is the deployment's variable, read once when the
+server starts:
 
-| Option | Values | Default |
-| --- | --- | --- |
-| `callers` | `platform` - a call the platform dispatched, with an invocation token; `anonymous_session` - a client with an anonymous session token Aion issued | `[platform]` |
-| `provider` | `aion` - the Aion model service on the caller's behalf; `custom` - an OpenAI-Responses-compatible endpoint; `local_session` - the operator's own Codex login on the host | `aion` |
+| Setting | Where | Values | Default |
+| --- | --- | --- | --- |
+| `callers` | `aion.yaml` | `platform` - a call the platform dispatched, with an invocation token; `anonymous_session` - a client with an anonymous session token Aion issued | `[platform]` |
+| `EVOLUTION_MODEL_PROVIDER` | environment | `aion` - the Aion model service on the caller's behalf; `custom` - an OpenAI-Responses-compatible endpoint; `local_session` - the operator's own Codex login on the host | `aion` |
+
+A server the platform hosts accepts invocation tokens only, so
+`anonymous_session` in `callers` admits nobody there and the same
+`aion.yaml` serves a developer's machine and the platform. A developer sets
+`EVOLUTION_MODEL_PROVIDER=local_session` (or `custom`) in their `.env`; a
+deployment leaves it unset. A value that names no provider stops the server.
 
 - **Created** when the toolkit is installed and the provider has what it
   needs - `aion`: `AION_CLIENT_ID` and `AION_CLIENT_SECRET`; `custom`:

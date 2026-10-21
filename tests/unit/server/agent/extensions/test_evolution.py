@@ -7,8 +7,10 @@ never install the real one.
 
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 from typing import Any, Optional
+from unittest.mock import patch
 
 import pytest
 from a2a.auth.user import User
@@ -31,6 +33,7 @@ from aion.server.agent.execution.extensions import evolution
 from aion.server.agent.execution.extensions import model_service as model_access
 from aion.server.agent.execution.extensions.evolution import (
     EVOLUTION_EXTENSION,
+    MODEL_PROVIDER_VARIABLE,
     Caller,
     EvolutionExecutor,
     EvolutionOptions,
@@ -58,22 +61,20 @@ def test_the_contract_uri_is_the_sdks_constant() -> None:
 # -- options ----------------------------------------------------------------------
 
 
-def test_the_defaults_let_the_platform_call_and_use_the_aion_model_service() -> None:
-    options = EvolutionOptions()
-
-    assert (options.callers, options.provider) == ((Caller.PLATFORM,), Provider.AION)
+def test_by_default_only_the_platform_may_call() -> None:
+    assert EvolutionOptions().callers == (Caller.PLATFORM,)
 
 
 def test_the_options_read_as_aion_yaml_writes_them() -> None:
-    options = EvolutionOptions.model_validate({"callers": ["platform", "anonymous_session"], "provider": "custom"})
+    options = EvolutionOptions.model_validate({"callers": ["platform", "anonymous_session"]})
 
-    assert (options.callers, options.provider) == ((Caller.PLATFORM, Caller.ANONYMOUS_SESSION), Provider.CUSTOM)
+    assert options.callers == (Caller.PLATFORM, Caller.ANONYMOUS_SESSION)
 
 
 @pytest.mark.parametrize(
     "given",
-    [{"callers": []}, {"callers": ["application_user"]}, {"provider": "openai"}, {"model": "x"}],
-    ids=["nobody", "unknown-caller", "unknown-provider", "unknown-option"],
+    [{"callers": []}, {"callers": ["application_user"]}, {"provider": "local_session"}, {"model": "x"}],
+    ids=["nobody", "unknown-caller", "provider-is-the-deployments", "unknown-option"],
 )
 def test_options_the_extension_does_not_allow_are_refused(given) -> None:
     with pytest.raises(ValidationError):
@@ -83,8 +84,38 @@ def test_options_the_extension_does_not_allow_are_refused(given) -> None:
 # -- creating the executor ------------------------------------------------------------------
 
 
-def executor(**options: Any) -> EvolutionExecutor:
-    return EvolutionExecutor(options)
+def executor(*, provider: Optional[str] = None, **options: Any) -> EvolutionExecutor:
+    """The executor of ``options``, created with ``EVOLUTION_MODEL_PROVIDER`` set to ``provider`` (None: unset)."""
+    with patch.dict(os.environ):
+        os.environ.pop(MODEL_PROVIDER_VARIABLE, None)
+        if provider is not None:
+            os.environ[MODEL_PROVIDER_VARIABLE] = provider
+        return EvolutionExecutor(options)
+
+
+@pytest.mark.parametrize(
+    ("variable", "provider"),
+    [(None, Provider.AION), ("  ", Provider.AION), ("aion", Provider.AION), ("custom", Provider.CUSTOM),
+     ("local_session", Provider.LOCAL_SESSION)],
+    ids=["unset", "blank", "aion", "custom", "local-session"],
+)
+def test_the_provider_is_the_deployments_variable_and_aion_by_default(
+    fake_toolkit, monkeypatch, variable, provider
+) -> None:
+    monkeypatch.setattr(evolution, "api_settings", SimpleNamespace(has_credentials=True))
+    monkeypatch.setenv("EVOLUTION_MODEL_BASE_URL", "http://localhost:11434/v1")
+
+    assert executor(provider=variable).provider is provider
+
+
+def test_a_provider_variable_that_names_no_provider_stops_the_startup(fake_toolkit) -> None:
+    with pytest.raises(ConfigurationError) as error:
+        executor(provider="openai")
+
+    assert str(error.value) == (
+        f"the extension {URI} cannot run on this server: EVOLUTION_MODEL_PROVIDER is 'openai', "
+        "which names no provider (aion, custom, local_session)"
+    )
 
 
 def test_without_the_toolkit_the_executor_cannot_be_created_and_says_how_to_install_it(no_toolkit) -> None:
@@ -174,20 +205,24 @@ def evolution_config(**options: Any) -> AgentConfig:
 
 
 def test_without_the_toolkit_an_enabled_evolution_stops_the_startup(no_toolkit, isolated_registry) -> None:
-    enabled = register_extensions(evolution_config(provider="local_session"), registry=isolated_registry)
+    enabled = register_extensions(evolution_config(), registry=isolated_registry)
 
-    with pytest.raises(ConfigurationError, match="not installed"):
+    with patch.dict(os.environ, {MODEL_PROVIDER_VARIABLE: "local_session"}), pytest.raises(
+        ConfigurationError, match="not installed"
+    ):
         create_extension_executors(enabled)
 
 
 def test_with_the_toolkit_an_enabled_evolution_serves_with_its_options(fake_toolkit, isolated_registry) -> None:
     enabled = register_extensions(
-        evolution_config(callers=["anonymous_session"], provider="local_session"), registry=isolated_registry
+        evolution_config(callers=["anonymous_session"]), registry=isolated_registry
     )
 
-    executors = create_extension_executors(enabled)
+    with patch.dict(os.environ, {MODEL_PROVIDER_VARIABLE: "local_session"}):
+        executors = create_extension_executors(enabled)
 
-    assert executors[URI].options == EvolutionOptions(callers=(Caller.ANONYMOUS_SESSION,), provider=Provider.LOCAL_SESSION)
+    assert executors[URI].options == EvolutionOptions(callers=(Caller.ANONYMOUS_SESSION,))
+    assert executors[URI].provider is Provider.LOCAL_SESSION
 
 
 # -- what a new task is refused with -----------------------------------------------------

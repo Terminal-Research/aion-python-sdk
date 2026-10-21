@@ -6,11 +6,12 @@ package ``aion.toolkits.behavior_evolution``) plans and implements a change
 with Codex and delivers it on an evolution branch. The SDK holds no evolution
 logic, only what connects the toolkit to the server:
 
-* the options ``aion.yaml`` gives the extension (``EvolutionOptions``):
-  ``callers`` - who may start an evolution - and ``provider`` - where the
-  executor's model calls go. The executor is created only when the toolkit
-  is installed, the provider has what it needs and the toolkit can run here
-  (its settings, ``codex``, ``git``); otherwise the server does not start;
+* who may start an evolution - ``callers``, the option ``aion.yaml`` gives
+  the extension (``EvolutionOptions``) - and where the executor's model
+  calls go - the deployment's ``EVOLUTION_MODEL_PROVIDER``. The executor is
+  created only when the toolkit is installed, the provider has what it needs
+  and the toolkit can run here (its settings, ``codex``, ``git``); otherwise
+  the server does not start;
 * what a new task is refused with, before the run starts - a final
   ``REJECTED`` status with the code: a caller kind the options do not list,
   or one the model service cannot serve (``caller_not_allowed``), a
@@ -35,7 +36,11 @@ never imports it. The toolkit yields the A2A events of a run itself; the
 server hands them on the standard way, and writes the final status of a run
 it cancels or stops.
 
-Provider variables:
+The provider is a property of the deployment, not of the agent: the same
+agent calls the Aion model service where the platform runs it and the
+operator's own Codex login on a developer's machine. ``EVOLUTION_MODEL_PROVIDER``
+names it - ``aion`` (the default), ``custom`` or ``local_session`` - and is
+read once, when the server starts. What each provider reads:
 
 - ``aion``: ``AION_CLIENT_ID`` and ``AION_CLIENT_SECRET``;
 - ``custom``: ``EVOLUTION_MODEL_BASE_URL``, an OpenAI-Responses-compatible
@@ -80,6 +85,7 @@ __all__ = [
     "EVOLUTION_EXTENSION",
     "MODEL_API_KEY_VARIABLE",
     "MODEL_BASE_URL_VARIABLE",
+    "MODEL_PROVIDER_VARIABLE",
     "TOOLKIT_MODULE",
     "Caller",
     "EvolutionExecutor",
@@ -96,6 +102,9 @@ TOOLKIT_MODULE = "aion.toolkits.behavior_evolution.plugin"
 
 TOOLKIT_PACKAGE = "aion-toolkit-behavior-evolution"
 """The distribution that installs the toolkit."""
+
+MODEL_PROVIDER_VARIABLE = "EVOLUTION_MODEL_PROVIDER"
+"""Where the executor's model calls go (``Provider``); unset is ``aion``."""
 
 MODEL_BASE_URL_VARIABLE = "EVOLUTION_MODEL_BASE_URL"
 """The endpoint of the ``custom`` provider."""
@@ -118,7 +127,7 @@ class Caller(StrEnum):
 
 
 class Provider(StrEnum):
-    """Where the executor's model calls go."""
+    """Where the executor's model calls go, as ``EVOLUTION_MODEL_PROVIDER`` names it."""
 
     AION = "aion"
     """The Aion model service, on the caller's behalf."""
@@ -139,31 +148,35 @@ _CREDENTIAL_CALLERS = {
 class EvolutionOptions(BaseModel):
     """The options ``aion.yaml`` gives the evolution extension.
 
+    Who may start an evolution is the agent's policy, the same wherever it
+    runs, so it is the agent's option; where the model calls go is the
+    deployment's (``EVOLUTION_MODEL_PROVIDER``).
+
     Attributes:
         callers: The kinds of caller that may start an evolution; any other
             caller is refused with ``caller_not_allowed``. An application's
             own user (``trust_application_users``) is never one of them.
-        provider: Where the executor's model calls go.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     callers: tuple[Caller, ...] = Field(default=(Caller.PLATFORM,), min_length=1)
-    provider: Provider = Provider.AION
 
 
 class EvolutionExecutor(ExtensionExecutor):
     """The executor of the evolution extension: the toolkit, prepared for this deployment and caller.
 
     Raises:
-        ConfigurationError: The options are not valid, the toolkit is not
-            installed, the provider lacks what it needs, or the toolkit
+        ConfigurationError: The options are not valid,
+            ``EVOLUTION_MODEL_PROVIDER`` names no provider, the toolkit is
+            not installed, the provider lacks what it needs, or the toolkit
             cannot run here.
     """
 
     def __init__(self, options: Mapping[str, Any]) -> None:
         super().__init__(options)
         self.options = parse_options(EvolutionOptions, URI, options)
+        self.provider = _configured_provider()
         try:
             toolkit = _toolkit_module()
         except ModuleNotFoundError as error:
@@ -172,8 +185,8 @@ class EvolutionExecutor(ExtensionExecutor):
             raise _cannot_run(
                 f"the behavior-evolution toolkit is not installed (pip install {TOOLKIT_PACKAGE})"
             ) from None
-        provider = self.options.provider.value
-        problem = _provider_problem(self.options.provider) or toolkit.availability(provider=provider)
+        provider = self.provider.value
+        problem = _provider_problem(self.provider) or toolkit.availability(provider=provider)
         if problem is not None:
             raise _cannot_run(problem)
         self._toolkit = toolkit.EvolutionToolkit(provider=provider)
@@ -303,7 +316,7 @@ class EvolutionExecutor(ExtensionExecutor):
                 provider cannot call the model service for this caller.
         """
         toolkit = _toolkit_module()
-        provider = self.options.provider
+        provider = self.provider
         if provider is Provider.LOCAL_SESSION:
             return None
         if provider is Provider.CUSTOM:
@@ -343,6 +356,22 @@ def _is_toolkit_module(name: Optional[str]) -> bool:
 def _cannot_run(reason: str) -> ConfigurationError:
     """The configuration error of an evolution extension that cannot run on this server."""
     return ConfigurationError(f"the extension {URI} cannot run on this server: {reason}")
+
+
+def _configured_provider() -> Provider:
+    """The provider ``EVOLUTION_MODEL_PROVIDER`` names; ``aion`` when it is unset or blank.
+
+    Raises:
+        ConfigurationError: A value that names no provider.
+    """
+    value = os.environ.get(MODEL_PROVIDER_VARIABLE, "").strip()
+    if not value:
+        return Provider.AION
+    try:
+        return Provider(value)
+    except ValueError:
+        allowed = ", ".join(provider.value for provider in Provider)
+        raise _cannot_run(f"{MODEL_PROVIDER_VARIABLE} is {value!r}, which names no provider ({allowed})") from None
 
 
 def _provider_problem(provider: Provider) -> Optional[str]:

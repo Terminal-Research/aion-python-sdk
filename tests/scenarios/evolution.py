@@ -54,11 +54,15 @@ URI = EVOLUTION_URI
 EXTENSIONS = [URI, DAEMON_EXTENSION_URI]
 """What every evolution request activates: the extension and the daemon extension it requires."""
 
-OPTIONS = {"callers": ["anonymous_session"], "provider": "local_session"}
-"""The extension's options: the scenarios call with anonymous session tokens, and no model is called."""
+OPTIONS = {"callers": ["anonymous_session"]}
+"""The extension's options: the scenarios call with anonymous session tokens."""
 
-EVOLUTION_ENV = {"PYTHONPATH": os.pathsep.join(filter(None, [str(FAKE_TOOLKIT), os.environ.get("PYTHONPATH")]))}
-"""The environment that installs the stand-in toolkit: its directory on the server's ``PYTHONPATH``."""
+EVOLUTION_ENV = {
+    "PYTHONPATH": os.pathsep.join(filter(None, [str(FAKE_TOOLKIT), os.environ.get("PYTHONPATH")])),
+    "EVOLUTION_MODEL_PROVIDER": "local_session",
+}
+"""The environment that installs the stand-in toolkit - its directory on the server's ``PYTHONPATH`` - and
+names a provider that needs nothing of the deployment: no model is called."""
 
 EVOLUTION = ServeVariant(
     name="evolution", enabled_extensions=(DAEMON_EXTENSION_URI, {URI: OPTIONS}), env=EVOLUTION_ENV

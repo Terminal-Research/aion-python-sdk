@@ -85,7 +85,11 @@ pytestmark = pytest.mark.evolution
 INVALID_PARAMS = -32602
 TASK_NOT_CANCELABLE = -32002
 
-WITHOUT_TOOLKIT = dataclasses.replace(EVOLUTION, name="evolution-without-toolkit", env={})
+WITHOUT_TOOLKIT = dataclasses.replace(
+    EVOLUTION,
+    name="evolution-without-toolkit",
+    env={name: value for name, value in EVOLUTION.env.items() if name != "PYTHONPATH"},
+)
 """The same deployment without the toolkit installed: its agent does not start."""
 
 
