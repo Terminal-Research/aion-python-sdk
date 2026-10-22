@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Optional
 
 from a2a.utils import DEFAULT_RPC_URL
 from a2a.utils.telemetry import trace_function
+from aion.server.constants import HEALTH_CHECK_URL
 from aion.server.agent.execution.scope import get_execution_scope
 from aion.server.opentelemetry import generate_request_span_context
 from fastapi import Request, Response
@@ -96,11 +97,18 @@ class TracingMiddleware(BaseHTTPMiddleware):
         Uses transaction name from execution scope if available,
         otherwise falls back to HTTP method and path.
 
+        A healthy answer to the health probe is not logged: the platform sends
+        one every 30 s, and a line per probe would be the bulk of an idle
+        agent's log while saying nothing about its work. A probe that fails
+        is logged like any other request.
+
         Args:
             request: The HTTP request object
             response: The HTTP response object
             scope: Execution scope containing transaction metadata
         """
+        if request.url.path == HEALTH_CHECK_URL and response.status_code == 200:
+            return
         if scope:
             text = f"{scope.inbound.transaction_name} | {response.status_code}"
         else:

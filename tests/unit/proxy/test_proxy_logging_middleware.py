@@ -2,7 +2,7 @@
 
 A request the agent answered, or a forwarding failure the handler logged, is
 already in the log, so the proxy's line stays at debug; only a failure the
-proxy produced on its own is reported.
+proxy produced on its own is reported. A healthy probe leaves no line.
 """
 
 import logging
@@ -45,11 +45,12 @@ def middleware():
     return ProxyLoggingMiddleware(app=object())
 
 
-def log_records(middleware, caplog, status: int, logged_elsewhere: bool = False):
+def log_records(middleware, caplog, status: int, logged_elsewhere: bool = False,
+                method: str = "POST", path: str = "/agents/command-agent/"):
     caplog.clear()
     with caplog.at_level(logging.DEBUG, logger="aion.proxy.middlewares.logging"):
         middleware._log_request_response(
-            FakeRequest("POST", "/agents/command-agent/", logged_elsewhere), FakeResponse(status))
+            FakeRequest(method, path, logged_elsewhere), FakeResponse(status))
     return caplog.records
 
 
@@ -82,6 +83,22 @@ def test_a_request_that_never_reached_an_agent_is_reported(middleware, caplog, s
 
     assert [r.levelno for r in records] == [logging.WARNING]
     assert str(status) in records[0].getMessage()
+
+
+@pytest.mark.parametrize("path", ["/health/", "/health/system/"])
+def test_a_healthy_probe_leaves_no_line(middleware, caplog, path):
+    """The platform probes every 30 s; a healthy answer is not an event."""
+    records = log_records(middleware, caplog, 200, method="GET", path=path)
+
+    assert records == []
+
+
+def test_a_failed_probe_is_reported(middleware, caplog):
+    """Only a healthy probe is silent; a failing one is the proxy's own failure."""
+    records = log_records(middleware, caplog, 503, method="GET", path="/health/system/")
+
+    assert [r.levelno for r in records] == [logging.WARNING]
+    assert "/health/system/" in records[0].getMessage()
 
 
 class _ProxyServer:

@@ -4,7 +4,14 @@ import logging
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from aion.proxy.constants import HEALTH_CHECK_URL, SYSTEM_HEALTH_CHECK_URL
+
 __all__ = ["ProxyLoggingMiddleware"]
+
+# A healthy answer to a probe is the one request that says nothing about the
+# proxy's work: the platform sends one every 30 s, and recording each would be
+# the bulk of the log. A probe that fails is logged like any other failure.
+_QUIET_PATHS = frozenset({HEALTH_CHECK_URL, SYSTEM_HEALTH_CHECK_URL})
 
 
 class ProxyLoggingMiddleware(BaseHTTPMiddleware):
@@ -49,11 +56,14 @@ class ProxyLoggingMiddleware(BaseHTTPMiddleware):
         handler; both set ``request.state.logged_elsewhere`` and stay at debug
         here, whatever the status. Any other failure is the proxy's own and
         never reached an agent, so this line is its only record, at warning.
+        A successful health probe is not logged at all.
 
         Args:
             request: The HTTP request object
             response: The HTTP response object
         """
+        if request.url.path in _QUIET_PATHS and response.status_code == 200:
+            return
         text = f"{request.method} {request.url.path} | {response.status_code}"
 
         logged_elsewhere = getattr(request.state, "logged_elsewhere", False)
