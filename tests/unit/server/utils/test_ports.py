@@ -8,6 +8,7 @@ Key behaviors under test:
   - PortReservationManager: lifecycle – reserve, release, release_for_binding, context manager
 """
 
+import os
 import socket
 import pytest
 
@@ -21,20 +22,48 @@ from aion.server.utils.ports.availability import (
 from aion.server.utils.ports.reservation import PortReservationManager
 
 
-def _bind_port(port: int = 0) -> tuple[int, socket.socket]:
-    """Occupy a port the way a real server does, and return (port, socket).
+def _worker_ports() -> range:
+    """The ports this module's tests use, disjoint across pytest-xdist workers.
+
+    The searches under test scan their range from the lowest port up, so tests
+    scanning one range from parallel workers compete for the same few ports: a
+    test that frees a port and checks it is free fails when a test in another
+    worker has just taken it. Each worker gets a thousand ports of its own
+    above 10000, below the ephemeral range of every OS, so no outgoing
+    connection takes one either; tests within a worker run one at a time.
+    """
+    worker = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
+    start = 10000 + int(worker.removeprefix("gw")) * 1000
+    return range(start, start + 1000)
+
+
+PORTS = _worker_ports()
+PORT_MIN, PORT_MAX = PORTS[0], PORTS[-1]
+
+
+def _bind_port() -> tuple[int, socket.socket]:
+    """Occupy a free port of this worker's range the way a real server does.
 
     The `listen` is what makes the port occupied, not the `bind`: on Linux two
     SO_REUSEADDR sockets may hold the same address as long as neither is
     listening, so a bound-but-idle socket leaves `is_port_available` answering
     True. (BSD/macOS refuses the second bind outright, which is why a test
     written without the `listen` passes there and fails here.)
+
+    Returns:
+        The port and the listening socket that holds it.
     """
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(("0.0.0.0", port))
-    sock.listen(1)
-    return sock.getsockname()[1], sock
+    for port in PORTS:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind(("0.0.0.0", port))
+            sock.listen(1)
+        except OSError:
+            sock.close()
+            continue
+        return port, sock
+    raise RuntimeError(f"no free port in {PORT_MIN}-{PORT_MAX}")
 
 
 class TestIsPortAvailable:
@@ -57,16 +86,16 @@ class TestIsPortAvailable:
 class TestFindFreePort:
     def test_returns_port_in_range(self):
         """Verify that returns port in range."""
-        port = find_free_port(port_min=10000, port_max=20000)
+        port = find_free_port(port_min=PORT_MIN, port_max=PORT_MAX)
         assert port is not None
-        assert 10000 <= port <= 20000
+        assert PORT_MIN <= port <= PORT_MAX
 
     def test_excluded_ports_are_skipped(self):
         """Verify that excluded ports are skipped."""
-        port = find_free_port(port_min=10000, port_max=10005)
+        port = find_free_port(port_min=PORT_MIN, port_max=PORT_MIN + 5)
         assert port is not None
-        excluded = set(range(10000, port + 1))
-        result = find_free_port(port_min=10000, port_max=10005, excluded_ports=excluded)
+        excluded = set(range(PORT_MIN, port + 1))
+        result = find_free_port(port_min=PORT_MIN, port_max=PORT_MIN + 5, excluded_ports=excluded)
         if result is not None:
             assert result not in excluded
 
@@ -74,8 +103,8 @@ class TestFindFreePort:
         """Verify that filter function applied."""
         # Only odd ports
         port = find_free_port(
-            port_min=10000,
-            port_max=10100,
+            port_min=PORT_MIN,
+            port_max=PORT_MIN + 100,
             port_filter=lambda p: p % 2 == 1,
         )
         assert port is None or port % 2 == 1
@@ -104,7 +133,7 @@ class TestFindFreePort:
 class TestFindFreePorts:
     def test_returns_unique_ports(self):
         """Verify that returns unique ports."""
-        ports = find_free_ports(count=3, port_min=10000, port_max=20000)
+        ports = find_free_ports(count=3, port_min=PORT_MIN, port_max=PORT_MAX)
         assert len(ports) == 3
         assert len(set(ports)) == 3  # all unique
 
@@ -138,18 +167,18 @@ class TestFindFreePorts:
 class TestFindFreePortReserved:
     def test_returns_port_and_socket(self):
         """Verify that returns port and socket."""
-        result = find_free_port_reserved(port_min=10000, port_max=20000)
+        result = find_free_port_reserved(port_min=PORT_MIN, port_max=PORT_MAX)
         assert result is not None
         port, sock = result
         try:
-            assert 10000 <= port <= 20000
+            assert PORT_MIN <= port <= PORT_MAX
             assert isinstance(sock, socket.socket)
         finally:
             sock.close()
 
     def test_reserved_port_is_not_available_while_held(self):
         """Verify that reserved port is not available while held."""
-        result = find_free_port_reserved(port_min=10000, port_max=20000)
+        result = find_free_port_reserved(port_min=PORT_MIN, port_max=PORT_MAX)
         assert result is not None
         port, sock = result
         try:
@@ -159,7 +188,7 @@ class TestFindFreePortReserved:
 
     def test_port_available_after_socket_closed(self):
         """Verify that port available after socket closed."""
-        result = find_free_port_reserved(port_min=10000, port_max=20000)
+        result = find_free_port_reserved(port_min=PORT_MIN, port_max=PORT_MAX)
         assert result is not None
         port, sock = result
         sock.close()
@@ -208,7 +237,7 @@ class TestPortReservationManager:
         """Verify that reserve from range finds and locks port."""
         mgr = PortReservationManager()
         try:
-            port = mgr.reserve_from_range("svc", port_min=10000, port_max=20000)
+            port = mgr.reserve_from_range("svc", port_min=PORT_MIN, port_max=PORT_MAX)
             assert port is not None
             assert mgr.has_reservation("svc") is True
             assert mgr.is_port_locked(port) is True
@@ -219,8 +248,8 @@ class TestPortReservationManager:
         """Ports already locked by the manager must be excluded from range search."""
         mgr = PortReservationManager()
         try:
-            port_a = mgr.reserve_from_range("svc-a", port_min=10000, port_max=20000)
-            port_b = mgr.reserve_from_range("svc-b", port_min=10000, port_max=20000)
+            port_a = mgr.reserve_from_range("svc-a", port_min=PORT_MIN, port_max=PORT_MAX)
+            port_b = mgr.reserve_from_range("svc-b", port_min=PORT_MIN, port_max=PORT_MAX)
             assert port_a is not None
             assert port_b is not None
             assert port_a != port_b
@@ -260,8 +289,8 @@ class TestPortReservationManager:
         """Verify that get all returns key port mapping."""
         mgr = PortReservationManager()
         try:
-            p1 = mgr.reserve_from_range("a", port_min=10000, port_max=20000)
-            p2 = mgr.reserve_from_range("b", port_min=10000, port_max=20000)
+            p1 = mgr.reserve_from_range("a", port_min=PORT_MIN, port_max=PORT_MAX)
+            p2 = mgr.reserve_from_range("b", port_min=PORT_MIN, port_max=PORT_MAX)
             all_ports = mgr.get_all()
             assert all_ports["a"] == p1
             assert all_ports["b"] == p2
@@ -273,9 +302,9 @@ class TestPortReservationManager:
         mgr = PortReservationManager()
         assert mgr.count() == 0
         try:
-            mgr.reserve_from_range("x", port_min=10000, port_max=20000)
+            mgr.reserve_from_range("x", port_min=PORT_MIN, port_max=PORT_MAX)
             assert mgr.count() == 1
-            mgr.reserve_from_range("y", port_min=10000, port_max=20000)
+            mgr.reserve_from_range("y", port_min=PORT_MIN, port_max=PORT_MAX)
             assert mgr.count() == 2
         finally:
             mgr.release_all()
@@ -284,7 +313,7 @@ class TestPortReservationManager:
     def test_context_manager_releases_all_on_exit(self):
         """Verify that context manager releases all on exit."""
         with PortReservationManager() as mgr:
-            port = mgr.reserve_from_range("svc", port_min=10000, port_max=20000)
+            port = mgr.reserve_from_range("svc", port_min=PORT_MIN, port_max=PORT_MAX)
             assert port is not None
         assert mgr.count() == 0
         assert is_port_available(port) is True
