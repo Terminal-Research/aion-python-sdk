@@ -476,7 +476,7 @@ that raised, a task settled at shutdown or as abandoned. Deliveries are made
 one at a time from the task's event loop, each after its change is stored, so
 a webhook that answers slowly holds back the delivery of the run's later
 events, on every channel, for up to `PUSH_NOTIFICATION_TIMEOUT_SECONDS`
-(default 30 s) per delivery.
+(default 5 s) per delivery.
 
 A stream that closes on a `Task` that is still `SUBMITTED` or `WORKING`, and
 a `SendMessage` answered with one, did not see the run end: a2a-sdk drops a

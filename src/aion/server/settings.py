@@ -30,16 +30,15 @@ class AppSettings(BaseEnvSettings):
     )
 
     push_notification_timeout_seconds: float = Field(
-        default=30.0,
+        default=5.0,
         alias="PUSH_NOTIFICATION_TIMEOUT_SECONDS",
         description=(
-            "Read/write timeout for webhook deliveries, in seconds. The httpx "
-            "default of 5s is too short for a receiver that does real work on the "
-            "callback before answering, which shows up as httpx.ReadTimeout even "
-            "though the request was accepted. Connect timeout stays at 5s: an "
-            "unreachable host should fail fast. Note that the first delivery of a "
-            "run is awaited in the request path, so this value bounds how long a "
-            "slow webhook can delay the message/send response."
+            "Read/write timeout for each webhook delivery, in seconds; the default "
+            "matches httpx's. A task's deliveries are made one at a time from its "
+            "event loop, and each holds back the task's later events on every "
+            "channel, so a webhook that does not answer costs up to this much per "
+            "event. Raise it only for a receiver that is known to answer slowly. "
+            "Connect timeout stays at 5s: an unreachable host should fail fast."
         )
     )
 

@@ -65,7 +65,7 @@ class TestSenderSelection:
 
 
 class TestDeliveryTimeout:
-    """httpx defaults every phase to 5s, too short for a webhook that works before answering."""
+    """Waiting on the webhook takes the configured budget; connecting stays short."""
 
     def test_read_timeout_comes_from_settings(self, monkeypatch):
         """The configured budget is what waiting on the webhook response gets."""
@@ -90,11 +90,12 @@ class TestDeliveryTimeout:
 
         assert sender._client.timeout.connect == 5.0
 
-    def test_default_exceeds_the_httpx_default(self):
-        """The whole point of the setting is to not ship httpx's 5 seconds."""
+    def test_default_is_five_seconds(self):
+        """A silent webhook holds back each later event of the task for the whole budget."""
         _, sender = PushNotificationFactory.create()
 
-        assert sender._client.timeout.read > 5.0
+        assert sender._client.timeout.read == 5.0
+        assert sender._client.timeout.write == 5.0
 
 
 class TestConfigEncryption:

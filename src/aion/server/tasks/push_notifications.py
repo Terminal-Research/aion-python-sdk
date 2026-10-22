@@ -88,15 +88,14 @@ class PushNotificationFactory:
     def _build_timeout() -> httpx.Timeout:
         """Builds the timeout policy for webhook deliveries.
 
-        httpx defaults every phase to 5 seconds, which is a poor fit for a
-        webhook: a receiver that authenticates the call and then does real work
-        before answering blows through it, and the delivery fails with
-        ``ReadTimeout`` even though the request was accepted. Waiting on the
-        response is therefore given its own, longer budget.
+        A task's deliveries are made one at a time from its event loop, and
+        each holds back the task's later events on every channel until the
+        webhook answers or the budget runs out. Waiting on the response is
+        therefore kept short by default and configurable for a receiver that
+        is known to answer slowly.
 
-        Connecting keeps the short budget. A host that cannot be reached should
-        fail immediately rather than hold the delivery open, since the first
-        delivery of a run is awaited in the request path.
+        Connecting has its own short budget: a host that cannot be reached
+        should fail immediately rather than hold the delivery open.
 
         Returns:
             The timeout policy, with the connect phase pinned to five seconds
