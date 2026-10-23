@@ -16,7 +16,7 @@ everything else - the same two channels the A2A configuration carries:
 
 from __future__ import annotations
 
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Callable
 
 import asyncio
 import json
@@ -25,7 +25,7 @@ import pytest
 import pytest_asyncio
 from google.protobuf.timestamp_pb2 import Timestamp
 
-from tests.scenarios.commands import TYPING_INDICATOR, typing_text
+from tests.scenarios.commands import TYPING_INDICATOR, ask_question, typing_text
 from tests.scenarios.harness import (
     AUTHORIZATION_HEADER,
     NOTIFICATION_TOKEN_HEADER,
@@ -98,15 +98,34 @@ def _find_terminal(notifications: list[Notification]) -> Notification | None:
     return None
 
 
-async def _wait_for_terminal(callback: CallbackServer, timeout: float = 15) -> list[Notification]:
-    """Every notification received until the terminal one arrived, or the timeout passed."""
+def _pushed_states(notifications: list[Notification]) -> list[str]:
+    """The state of each Task or status-update notification, in the order they arrived."""
+    states = []
+    for notification in notifications:
+        carrier = notification.body.get("task") or notification.body.get("statusUpdate")
+        if carrier:
+            states.append(carrier["status"]["state"])
+    return states
+
+
+async def _wait_until(
+    callback: CallbackServer, arrived: Callable[[list[Notification]], bool], timeout: float = 15
+) -> list[Notification]:
+    """Every notification received until ``arrived`` holds for them, or the timeout passed."""
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
     while True:
         notifications = await callback.wait(timeout=max(0.0, deadline - loop.time()))
-        if _find_terminal(notifications) is not None or loop.time() >= deadline:
+        if arrived(notifications) or loop.time() >= deadline:
             return notifications
         await asyncio.sleep(0.1)
+
+
+async def _wait_for_terminal(callback: CallbackServer, timeout: float = 15) -> list[Notification]:
+    """Every notification received until the terminal one arrived, or the timeout passed."""
+    return await _wait_until(
+        callback, lambda notifications: _find_terminal(notifications) is not None, timeout
+    )
 
 
 @pytest.fixture(scope="session")
@@ -221,6 +240,43 @@ async def test_a_crashed_agent_s_failure_is_pushed(
     terminal = _find_terminal(notifications)
     assert terminal is not None, f"no terminal notification among {len(notifications)} received"
     assert _task_from_notification(terminal)["status"]["state"] == "TASK_STATE_FAILED"
+
+
+@pytest.mark.variant("push")
+@pytest.mark.command("ask")
+async def test_an_interrupt_is_pushed_to_a_caller_that_returned_immediately(
+    push_client: ScenarioClient,
+    callback: CallbackServer,
+) -> None:
+    """A task that stops for input is pushed once, as the full Task, after the turn's earlier events.
+
+    This is how the hosted platform sends: a unary send that returns as soon
+    as the task exists, after which the callback is the only way the caller
+    learns that the agent asked something.
+    """
+    events = await push_client.send(
+        "ask",
+        push_notification_url=callback.url,
+        stream=False,
+        return_immediately=True,
+    )
+    task_id = final_task(events).task_id
+
+    notifications = await _wait_until(
+        callback, lambda received: "TASK_STATE_INPUT_REQUIRED" in _pushed_states(received)
+    )
+    # A second delivery of the interrupt would follow the first within moments.
+    notifications = await callback.wait(timeout=1, count=len(notifications) + 1)
+
+    states = _pushed_states(notifications)
+    assert states.count("TASK_STATE_INPUT_REQUIRED") == 1, f"pushed states: {states}"
+    assert states[0] == "TASK_STATE_SUBMITTED"
+    assert states[-1] == "TASK_STATE_INPUT_REQUIRED"
+    interrupt = notifications[-1]
+    pushed_task = _task_from_notification(interrupt)
+    assert pushed_task["id"] == task_id
+    assert ask_question() in json.dumps(pushed_task["status"]["message"])
+    assert all(_task_id_from_notification(n) == task_id for n in notifications)
 
 
 @pytest.mark.command("steps")

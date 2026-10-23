@@ -49,6 +49,33 @@ def _has_finished(active_task: ActiveTask) -> bool:
     return active_task._is_finished.is_set()
 
 
+async def _wait_until_finished(active_task: ActiveTask) -> None:
+    """Wait for the SDK to close this ActiveTask; see ``_has_finished``."""
+    await active_task._is_finished.wait()
+
+
+async def _wait_until_consumer_is_idle(active_task: ActiveTask) -> None:
+    """Wait until the consumer has handled every event queued for it, or has ended.
+
+    The consumer marks an event done (``task_done``) as the last step of
+    handling it - after the write, the push and the hand-off to subscribers -
+    so ``join`` on its queue returns once nothing it was given is still in
+    hand. A consumer that ends first, or an object someone else closes, never
+    marks the event it was holding done; ``_is_finished`` covers that case.
+    ``_event_queue_agent`` is private to the SDK and the consumer's only
+    queue.
+    """
+    waiters = (
+        asyncio.ensure_future(active_task._event_queue_agent.queue.join()),
+        asyncio.ensure_future(_wait_until_finished(active_task)),
+    )
+    try:
+        await asyncio.wait(waiters, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for waiter in waiters:
+            waiter.cancel()
+
+
 class AionActiveTaskRegistry(ActiveTaskRegistry):
     """Extends the base registry to inject AionTaskManager and populate the execution scope.
 
@@ -61,10 +88,11 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
       per task in ``TerminalTaskPushSender``, so the push channel carries what
       the task stores; an outcome the execution stored past its consumer is
       pushed once the execution is over;
-    * an ``ActiveTask`` is closed once its task reaches ``INPUT_REQUIRED`` or
-      ``AUTH_REQUIRED``, and a finished one is never handed out again, so the
-      next turn starts a fresh ``ActiveTask`` - on whichever instance it
-      arrives at;
+    * an ``ActiveTask`` is retired once its task reaches ``INPUT_REQUIRED`` or
+      ``AUTH_REQUIRED``: it is no longer handed out, and it is closed as soon
+      as its consumer has handled the interrupt - pushed it among the rest.
+      A finished one is never handed out again either, so the next turn
+      starts a fresh ``ActiveTask`` - on whichever instance it arrives at;
     * tasks left running by a shutdown are settled as ``FAILED`` and pushed.
       The registry is the only layer that may: an outcome is otherwise always
       written by the execution itself, and the registry is where the
@@ -94,13 +122,19 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
 
         A finished object can linger until the SDK's deferred cleanup runs;
         it executes nothing and refuses new subscribers, so it is reported as
-        absent. The handler then treats the task as running elsewhere, or
+        absent. So is an interrupted one waiting to be closed
+        (``_is_retiring``): its task waits for input, and the object is about
+        to go. The handler then treats the task as running elsewhere, or
         nowhere - which is what it is.
         """
         with self._lock:
             active_task = self._active_tasks.get(task_id)
-        if active_task is None or _has_finished(active_task):
-            return None
+            if (
+                active_task is None
+                or _has_finished(active_task)
+                or self._is_retiring(active_task)
+            ):
+                return None
         return active_task
 
     @override
@@ -121,7 +155,10 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         base signature and preconditions exactly.
 
         A registered object that has finished is closed and replaced rather
-        than returned: ``start`` and ``subscribe`` refuse to run on it.
+        than returned: ``start`` and ``subscribe`` refuse to run on it. An
+        interrupted one waiting to be closed is waited for first, then
+        replaced the same way: its consumer is still handling the interrupt,
+        and the next turn must not run on an object about to be closed.
 
         Args:
             task_id: Identifier of the task to retrieve or create.
@@ -146,6 +183,7 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         _require_call_context(call_context)
         while True:
             stale: ActiveTask | None = None
+            retiring: ActiveTask | None = None
             created: ActiveTask | None = None
             with self._lock:
                 if self._closed:
@@ -157,11 +195,20 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
                     self._active_tasks.pop(task_id, None)
                     self._task_managers.pop(task_id, None)
                     existing = None
+                elif existing is not None and self._is_retiring(existing):
+                    retiring = existing
+                    existing = None
 
-                if existing is None and stale is None:
+                if existing is None and stale is None and retiring is None:
                     created = self._create(
                         task_id, call_context, context_id, initial_message
                     )
+
+            if retiring is not None:
+                # Its close is already scheduled; once it has finished, the
+                # next pass replaces it as stale.
+                await _wait_until_finished(retiring)
+                continue
 
             if stale is not None:
                 # Closed outside the critical section: aclose drives the SDK
@@ -276,30 +323,55 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
                 "Could not push the outcome of task %s", active_task.task_id, exc_info=True
             )
 
+    def _is_retiring(self, active_task: ActiveTask) -> bool:
+        """Whether this object is interrupted and waiting for its close."""
+        return self._interruption_tasks_by_id.get(active_task.task_id) is active_task
+
     def _on_task_interrupted(self, task_id: str) -> None:
-        """Schedule ActiveTask teardown after INPUT/AUTH_REQUIRED is persisted."""
-        task = self._active_tasks.get(task_id)
-        if task is None:
-            return
-        if self._interruption_tasks_by_id.get(task_id) is task:
-            return
-        pending = asyncio.create_task(
-            self._close_interrupted_task(task_id, task),
-            name=f"close-interrupted:{task_id}",
-        )
-        self._interruption_tasks.add(pending)
-        self._interruption_tasks_by_id[task_id] = task
+        """Retire the ActiveTask once INPUT/AUTH_REQUIRED is persisted, and schedule its close.
+
+        Called from inside the write, so the close only starts here; see
+        ``_close_interrupted_task``. From now on the object is not handed out
+        (``get``, ``get_or_create``).
+        """
+        with self._lock:
+            task = self._active_tasks.get(task_id)
+            if task is None or self._is_retiring(task):
+                return
+            pending = asyncio.create_task(
+                self._close_interrupted_task(task_id, task),
+                name=f"close-interrupted:{task_id}",
+            )
+            self._interruption_tasks.add(pending)
+            self._interruption_tasks_by_id[task_id] = task
 
         def forget_pending(done: asyncio.Task[None]) -> None:
             """Forget the close task and allow a later incarnation to close."""
             self._interruption_tasks.discard(done)
-            if self._interruption_tasks_by_id.get(task_id) is task:
-                self._interruption_tasks_by_id.pop(task_id, None)
+            with self._lock:
+                if self._interruption_tasks_by_id.get(task_id) is task:
+                    self._interruption_tasks_by_id.pop(task_id, None)
 
         pending.add_done_callback(forget_pending)
 
     async def _close_interrupted_task(self, task_id: str, active_task: ActiveTask) -> None:
-        """Close one interrupted ActiveTask without settling its task row."""
+        """Close one interrupted ActiveTask once its consumer has handled the interrupt.
+
+        The interrupt is written by the consumer in the middle of handling
+        its event: the push to the task's webhooks, the cluster event stream
+        and the subscribers come after the write. Closing the object cancels
+        the consumer, so the close waits for the consumer to have handled
+        everything queued for it; a close at its first await would cut off
+        the push of the interrupt, and a caller that learns of the task only
+        by push would never hear that it stopped. The task row is not
+        settled: the task waits for its next turn.
+        """
+        try:
+            await _wait_until_consumer_is_idle(active_task)
+        except Exception:
+            logger.error(
+                "Could not wait for interrupted task %s to finish its turn", task_id, exc_info=True
+            )
         try:
             await active_task.aclose()
         except Exception:

@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from unittest.mock import AsyncMock, MagicMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from a2a.types import (
@@ -51,6 +51,8 @@ def _registered(registry: AionActiveTaskRegistry) -> MagicMock:
     """Register a stand-in ActiveTask under both of the registry's keys."""
     active_task = MagicMock(task_id=TASK_ID, aclose=AsyncMock())
     active_task._is_finished = asyncio.Event()
+    # A consumer with nothing left to handle.
+    active_task._event_queue_agent.queue.join = AsyncMock()
     registry._active_tasks[TASK_ID] = active_task
     registry._task_managers[TASK_ID] = active_task._task_manager
     return active_task
@@ -84,6 +86,41 @@ async def test_one_interrupt_schedules_one_teardown() -> None:
     await asyncio.gather(*registry._interruption_tasks)
 
     active_task.aclose.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_the_next_turn_waits_for_the_interrupted_object_to_close() -> None:
+    """A turn arriving while the interrupt is still being pushed gets a fresh object.
+
+    Until its consumer has handled the interrupt, the interrupted object is
+    neither closed nor handed out: a turn run on it would be cut off by the
+    close that follows.
+    """
+    registry = _registry()
+    interrupted = _registered(registry)
+    pushed = asyncio.Event()
+    interrupted._event_queue_agent.queue.join = AsyncMock(side_effect=pushed.wait)
+    interrupted.aclose = AsyncMock(side_effect=interrupted._is_finished.set)
+    init_execution_scope()
+
+    registry._on_task_interrupted(TASK_ID)
+    with patch("aion.server.agent.execution.active_task_registry.ActiveTask") as active_task_cls:
+        active_task_cls.return_value.start = AsyncMock()
+        next_turn = asyncio.create_task(
+            registry.get_or_create(TASK_ID, call_context=Mock(), context_id=CONTEXT_ID)
+        )
+        await _drain_pending()
+
+        assert await registry.get(TASK_ID) is None
+        assert not next_turn.done()
+        interrupted.aclose.assert_not_awaited()
+
+        pushed.set()
+        fresh = await next_turn
+
+    assert fresh is active_task_cls.return_value
+    interrupted.aclose.assert_awaited()
+    assert registry._active_tasks == {TASK_ID: fresh}
 
 
 @pytest.mark.anyio

@@ -29,7 +29,9 @@ class TerminalTaskPushSender(PushNotificationSender):
 
     An outcome can also be written without an event the consumer pushes: when
     the agent raises, a2a-sdk's producer writes ``FAILED`` into the store
-    directly. ``push_unsent_outcome`` sends that one once the execution is over.
+    directly. ``push_unsent_outcome`` sends that one once the execution is
+    over, and an outcome whose delivery was cut off by a cancelled consumer
+    as well.
 
     The snapshot is read through the task's own manager rather than the task
     store: push dispatch runs in the background consumer, which has no request
@@ -41,29 +43,39 @@ class TerminalTaskPushSender(PushNotificationSender):
     def __init__(self, inner: PushNotificationSender, task_manager: AionTaskManagerProtocol) -> None:
         self._inner = inner
         self._task_manager = task_manager
-        # The non-active state of the last outcome delivered through this
-        # wrapper, compared with the manager's ``written_outcome``.
+        # The non-active state of the last outcome whose delivery through
+        # this wrapper returned, compared with the manager's
+        # ``written_outcome``.
         self._pushed_outcome: TaskState | None = None
 
     async def send_notification(self, task_id: str, event: PushNotificationEvent) -> None:
         if is_ephemeral_event(event):
             return
 
-        if not self._is_non_active_status(event):
-            if isinstance(event, Task) and event.status.state in NON_ACTIVE_TASK_STATES:
-                self._pushed_outcome = event.status.state
-            await self._inner.send_notification(task_id, event)
-            return
+        if self._is_non_active_status(event):
+            event = await self._outcome_snapshot(task_id, event)
 
-        self._pushed_outcome = event.status.state
+        await self._inner.send_notification(task_id, event)
+        # Recorded once the delivery has returned. A delivery cut off halfway -
+        # its consumer cancelled during the request - did not deliver the
+        # outcome, and ``push_unsent_outcome`` sends it again.
+        if (
+            isinstance(event, Task | TaskStatusUpdateEvent)
+            and event.status.state in NON_ACTIVE_TASK_STATES
+        ):
+            self._pushed_outcome = event.status.state
+
+    async def _outcome_snapshot(
+        self, task_id: str, event: TaskStatusUpdateEvent
+    ) -> Task | TaskStatusUpdateEvent:
+        """The Task to push in place of a non-active status update."""
         task = await self._task_manager.get_task()
         if task is None:
             # A non-active transition is persisted before dispatch, so a miss
             # means the store is inconsistent. Deliver the raw event rather
             # than leave the client without an outcome.
             logger.error("Push for task %s: final Task missing from the store", task_id)
-            await self._inner.send_notification(task_id, event)
-            return
+            return event
 
         if task.status.state not in NON_ACTIVE_TASK_STATES:
             # Defensive: the snapshot lags the event. Settle a copy with the
@@ -73,7 +85,7 @@ class TerminalTaskPushSender(PushNotificationSender):
             settled.status.CopyFrom(event.status)
             task = settled
 
-        await self._inner.send_notification(task_id, task)
+        return task
 
     async def push_unsent_outcome(self, task_id: str) -> None:
         """Push the outcome the task's manager wrote, if no event delivered it.
@@ -81,7 +93,8 @@ class TerminalTaskPushSender(PushNotificationSender):
         Called once the execution is over. The consumer pushes every outcome
         it writes itself; what is left is an outcome written past it - the
         ``FAILED`` a2a-sdk's producer stores when the agent raises before it
-        queued a final status. The stored Task is sent, as for any outcome.
+        queued a final status - or one whose delivery the consumer's
+        cancellation cut off. The stored Task is sent, as for any outcome.
         An outcome another writer stored (a cancel from another server, the
         abandoned-task settlement) is not this manager's write, and its
         writer has pushed it.
