@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import random
 import shutil
 import signal
 import socket
@@ -22,7 +23,15 @@ from tests.scenarios.frameworks import Framework
 
 from .control_plane import control_plane
 
-__all__ = ["AGENT_PORTS", "ServeProcess", "ServeVariant", "configs_root", "render_config"]
+__all__ = [
+    "AGENT_PORTS",
+    "PROXY_PORTS",
+    "ServeProcess",
+    "ServeVariant",
+    "configs_root",
+    "proxy_port",
+    "render_config",
+]
 
 DEFAULT_AGENT_ID = "scenario-agent"
 KEEP_SERVE = "KEEP_SERVE"
@@ -42,15 +51,28 @@ this repository on its ``sys.path``, so the harness does.
 AGENT_PORTS = (20000, 29999)
 """The ports every server's agents take, given to `aion serve` as its port range.
 
-The range lies below the ports the kernel picks for a socket bound to port 0
-(32768 and up on Linux, 49152 and up on macOS). A proxy's port comes from
-there (``_free_port``), as do the ports of the stand-in control plane and the
-push callbacks. A proxy port is free again before `aion serve` binds it, so no
-agent may take a port from that range: `aion serve --port P` without a range
-of its own puts its agents on P + 1 and up, and macOS picks ports in
-sequence, so P + 1 is the proxy port of the next server the harness creates.
-Servers share this range safely: `aion serve` holds each agent port from the
-moment it finds it free, so two servers starting at once take different ones.
+`aion serve --port P` without a range of its own puts its agents on P + 1 and
+up, and the harness hands out proxy ports in sequence (``proxy_port``), so
+P + 1 is the proxy port of the next server it creates. This range lies apart
+from ``PROXY_PORTS`` and below the ports the kernel picks for a socket bound
+to port 0 (32768 and up on Linux, 49152 and up on macOS), where the stand-in
+control plane and the push callbacks listen. Servers share it safely: `aion
+serve` holds each agent port from the moment it finds it free, so two servers
+starting at once take different ones.
+"""
+
+PROXY_PORTS = (30000, 32767)
+"""The ports the proxies listen on, split between the pytest-xdist workers.
+
+`aion serve --port P` reserves P with a socket of its own a second or two
+after it starts, so the harness can hold nothing on P in the meantime. A
+port the kernel picked for a socket bound to port 0 is free for the kernel
+to give to the next socket that asks in that window, and `aion serve` then
+fails to reserve it. This range lies above ``AGENT_PORTS`` and below the
+ports the kernel picks (32768 and up on Linux, 49152 and up on macOS), so on
+a machine with the default port settings only the harness takes ports from
+it. Each worker hands out ports from a slice of its own, so two workers
+never give out the same one.
 """
 
 STARTUP_TIMEOUT_SECONDS = 30
@@ -136,11 +158,71 @@ class ServeVariant:
         return self.agent_ids[0]
 
 
-def _free_port() -> int:
-    """A port nothing is listening on right now."""
+def _worker_proxy_ports() -> range:
+    """This worker's slice of ``PROXY_PORTS``, disjoint from every other worker's.
+
+    pytest-xdist names its workers ``gw0``, ``gw1``, ... and tells each how
+    many there are; without xdist the one process has the whole range. A
+    worker xdist starts in place of a crashed one has a number past the
+    count and shares a slice, where the bind check in ``proxy_port`` keeps
+    it off the ports in use.
+    """
+    count = int(os.environ.get("PYTEST_XDIST_WORKER_COUNT", "1"))
+    index = int(os.environ.get("PYTEST_XDIST_WORKER", "gw0").removeprefix("gw")) % count
+    size = (PROXY_PORTS[1] - PROXY_PORTS[0] + 1) // count
+    start = PROXY_PORTS[0] + index * size
+    return range(start, start + size)
+
+
+_PROXY_PORTS = _worker_proxy_ports()
+# Where the next search starts. A random place in the slice, so two runs on
+# one machine - two checkouts at once, whose workers share slice numbers -
+# seldom try the same port at the same moment.
+_proxy_cursor = random.SystemRandom().randrange(len(_PROXY_PORTS))
+
+
+def _bindable(port: int) -> bool:
+    """Whether nothing holds ``port``: a bind to it on every address succeeds.
+
+    No ``SO_REUSEADDR``: with it, macOS lets the wildcard bind through while
+    another program listens on the port on loopback, the address the
+    scenarios connect to.
+    """
     with contextlib.closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
+        try:
+            sock.bind(("0.0.0.0", port))
+        except OSError:
+            return False
+        return True
+
+
+def proxy_port(neighbours: int = 1) -> int:
+    """A port of this worker's slice of ``PROXY_PORTS`` for a proxy to listen on.
+
+    The search walks the slice in order from where the last one stopped,
+    wrapping at its end, and returns the first port that binds. A port given
+    out is not tried again until the walk has gone round the whole slice, so
+    two servers created before either starts get different ports.
+
+    Args:
+        neighbours: How many consecutive ports, all free, the returned one
+            starts; the walk moves past all of them.
+
+    Returns:
+        The lowest of those ports.
+    """
+    global _proxy_cursor
+    for _ in range(len(_PROXY_PORTS)):
+        first = _proxy_cursor
+        _proxy_cursor = (first + 1) % len(_PROXY_PORTS)
+        ports = _PROXY_PORTS[first:first + neighbours]
+        if len(ports) == neighbours and all(_bindable(port) for port in ports):
+            _proxy_cursor = (first + neighbours) % len(_PROXY_PORTS)
+            return ports[0]
+    raise RuntimeError(
+        f"no {neighbours} consecutive free ports in {_PROXY_PORTS[0]}-{_PROXY_PORTS[-1]}, "
+        "this worker's part of PROXY_PORTS"
+    )
 
 
 def _descendants(pid: int) -> list[int]:
@@ -234,14 +316,14 @@ class ServeProcess:
     One process serves one (framework, variant) pair for the whole session.
     The scenarios reach the agents through the proxy, which is what a
     deployment exposes. The proxy listens on ``port`` when one is given, and
-    on a port the kernel picks otherwise; the agents on ports in
+    on one from ``proxy_port`` otherwise; the agents on ports in
     ``AGENT_PORTS``.
     """
 
     def __init__(self, framework: Framework, variant: ServeVariant, port: Optional[int] = None) -> None:
         self.framework = framework
         self.variant = variant
-        self.port = port if port is not None else _free_port()
+        self.port = port if port is not None else proxy_port()
         self._directory = Path(tempfile.mkdtemp(prefix=f"aion-scenarios-{framework.name}-{variant.name}-"))
         self._process: Optional[subprocess.Popen] = None
         self._log_handle = None

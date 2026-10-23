@@ -301,7 +301,7 @@ Servers side by side on one machine, each on the ports it was given.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [Two servers whose proxy ports are neighbours both start, each with its agents in the range it was given.](core/test_ports.py#L60 "test_servers_on_neighbouring_ports_both_start") | `lifecycle` | — | `default` | ✓ | ✓ |
+| [Two servers whose proxy ports are neighbours both start, each with its agents in the range it was given.](core/test_ports.py#L25 "test_servers_on_neighbouring_ports_both_start") | `lifecycle` | — | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_push_notifications.py`
 
