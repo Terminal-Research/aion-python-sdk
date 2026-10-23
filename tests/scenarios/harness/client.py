@@ -259,8 +259,14 @@ class ScenarioClient:
         push_notification_url: Optional[str] = None,
         push_auth: Optional[PushAuth] = None,
         stream: bool = True,
+        return_immediately: bool = False,
     ) -> list[Ev]:
-        """Send one message and record everything that came back."""
+        """Send one message and record everything that came back.
+
+        ``return_immediately`` asks the server to answer with the task as
+        soon as it exists rather than once the turn has ended - how the hosted
+        platform sends, learning the rest through the push callback.
+        """
         request = SendMessageRequest(
             message=self.build_message(
                 text,
@@ -274,10 +280,15 @@ class ScenarioClient:
         )
         if metadata:
             request.metadata.CopyFrom(_struct(metadata))
-        if push_notification_url:
+        if push_notification_url or return_immediately:
             request.configuration.CopyFrom(
                 SendMessageConfiguration(
-                    task_push_notification_config=_push_config(push_notification_url, push_auth),
+                    task_push_notification_config=(
+                        _push_config(push_notification_url, push_auth)
+                        if push_notification_url
+                        else None
+                    ),
+                    return_immediately=return_immediately,
                 )
             )
 

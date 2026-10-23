@@ -7,6 +7,8 @@ status update. It mirrors TerminalTaskProjection, which does the same for the
 streaming/unary channels.
 """
 
+import asyncio
+
 import pytest
 from a2a.types import (
     Artifact,
@@ -268,6 +270,24 @@ class TestUnsentOutcome:
         await sender.push_unsent_outcome(TASK_ID)
 
         inner.send_notification.assert_awaited_once()
+
+    @pytest.mark.anyio
+    async def test_an_outcome_whose_delivery_was_cut_off_is_pushed_again(self):
+        """A consumer cancelled during the request has not delivered the outcome."""
+        stored = _task(TaskState.TASK_STATE_INPUT_REQUIRED)
+        inner = _inner()
+        inner.send_notification.side_effect = [asyncio.CancelledError(), None]
+        sender = TerminalTaskPushSender(
+            inner=inner,
+            task_manager=_manager(stored, written_outcome=TaskState.TASK_STATE_INPUT_REQUIRED),
+        )
+        with pytest.raises(asyncio.CancelledError):
+            await sender.send_notification(TASK_ID, _status(TaskState.TASK_STATE_INPUT_REQUIRED))
+
+        await sender.push_unsent_outcome(TASK_ID)
+
+        assert inner.send_notification.await_count == 2
+        assert inner.send_notification.await_args.args == (TASK_ID, stored)
 
     @pytest.mark.anyio
     async def test_an_outcome_another_writer_stored_is_left_to_that_writer(self):
