@@ -54,7 +54,7 @@ from aion.core.a2a.errors import error_parts
 from aion.db.postgres import DbManager
 from aion.db.postgres.repositories import TasksRepository
 from aion.server.a2a.constants import ACTIVE_TASK_STATES
-from aion.server.a2a.utils import routed_extension_of
+from aion.server.a2a.utils import record_closing_message, routed_extension_of
 
 from .settlement import settled_task
 from .stores.in_memory_task_store import InMemoryTaskStore
@@ -243,6 +243,7 @@ def abandoned_task(task: Task) -> Optional[tuple[Task, TaskStatusUpdateEvent]]:
                 ),
             )
         )
+        record_closing_message(settled)
     event = TaskStatusUpdateEvent(task_id=task.id, context_id=task.context_id, status=settled.status)
     event.metadata[A2AMetadataKey.SETTLED_REASON.value] = TaskSettlementReason.TASK_ABANDONED.value
     return settled, event

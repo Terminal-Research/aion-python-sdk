@@ -61,6 +61,7 @@ OVERRIDES = [
     (AionTaskManager, TaskManager, "ensure_task_id"),
     (AionTaskManager, TaskManager, "_save_task"),
     (AionTaskManager, TaskManager, "process"),
+    (AionTaskManager, TaskManager, "update_with_message"),
     (AionRequestHandler, DefaultRequestHandlerV2, "_setup_active_task"),
     (AionRequestHandler, DefaultRequestHandlerV2, "on_get_task"),
     (AionRequestHandler, DefaultRequestHandlerV2, "on_list_tasks"),

@@ -17,7 +17,12 @@ from aion.server.a2a.constants import (
     NON_ACTIVE_TASK_STATES,
     TERMINAL_TASK_STATES,
 )
-from aion.server.a2a.utils import is_ephemeral_event, is_task_interrupted
+from aion.server.a2a.utils import (
+    is_ephemeral_event,
+    is_message_recorded,
+    is_task_interrupted,
+    record_closing_message,
+)
 from aion.server.agent.execution.scope import set_task_status
 from typing import override
 
@@ -34,7 +39,14 @@ class AionTaskManager(TaskManager):
 
     Message placement follows the A2A convention implemented by the base class:
     `status.message` holds the most recent message and `history` holds everything
-    before it, so the two together are the conversation with no duplicates.
+    before it. A task that stops - with an outcome, or interrupted to wait for
+    input or authorization - also ends its history with the message it stops on
+    (`record_closing_message`), so a client reading `history` alone finds the
+    answer or the question while `status.message` keeps naming it. The base
+    class moves the status message into history when the next status or
+    message arrives; a message already recorded there is only cleared from the
+    status instead (`_forget_recorded_status_message`, `update_with_message`),
+    so it stays in history once.
     """
 
     def __init__(
@@ -141,6 +153,11 @@ class AionTaskManager(TaskManager):
         Initial Task snapshots bypass ``process`` in the event consumer, so
         their missing timestamp is assigned here before storage and delivery.
 
+        Every write passes through here, whichever path built the task, so
+        this is also where a task that stops - with an outcome or on an
+        interrupt - gets the message it stops on added to its history
+        (``record_closing_message``).
+
         A task the store holds as terminal is final. The version check alone
         does not ensure that: the SDK consumer rereads the task when another
         writer overtakes it - another server cancelling it, say - and a Task
@@ -178,6 +195,7 @@ class AionTaskManager(TaskManager):
                 return
             if not task.status.HasField("timestamp"):
                 task.status.timestamp.GetCurrentTime()
+            record_closing_message(task)
             await super()._save_task(task)
 
             state = task.status.state
@@ -220,10 +238,40 @@ class AionTaskManager(TaskManager):
             return event
 
         event = await self._carry_pending_message(event)
+        await self._forget_recorded_status_message(event)
 
         result = await super().process(event)
         self._track_task_status(event)
         return result
+
+    @override
+    def update_with_message(self, message: Message, task: Task) -> Task:
+        """Add a message to the task's history, after the status message it supersedes.
+
+        The base class moves the current ``status.message`` into history first.
+        A status message already recorded there - the question an interrupted
+        task stopped on, when the reply arrives - is only cleared from the
+        status, so it stays in history once.
+        """
+        if task.status.HasField('message') and is_message_recorded(task, task.status.message):
+            task.status.ClearField('message')
+        return super().update_with_message(message, task)
+
+    async def _forget_recorded_status_message(self, event: Event) -> None:
+        """Clear a status message already in history before a status update replaces it.
+
+        The base class moves the current ``status.message`` into history when
+        a status update arrives. A task that stopped has its message in
+        history already (``record_closing_message``), so moving it again would
+        list it twice; clearing it from the status leaves it in history once.
+        """
+        if not isinstance(event, TaskStatusUpdateEvent):
+            return
+        task = await self.get_task()
+        if task is not None and task.status.HasField('message') and is_message_recorded(
+            task, task.status.message
+        ):
+            task.status.ClearField('message')
 
     async def _carry_pending_message(self, event: Event) -> Event:
         """Keep the current message in status when an update brings none.
@@ -235,15 +283,17 @@ class AionTaskManager(TaskManager):
         updates that carry none:
 
         * the event that ends the turn: agents usually announce completion
-          with a bare status, which would bury the answer in history and lose
-          it entirely for a `historyLength=0` request;
+          with a bare status, which would leave the outcome without its answer
+          and lose it entirely for a `historyLength=0` request;
         * a `WORKING` update that only changes details in its metadata - the
           object an executable extension keeps in the task metadata, say - which would leave
           the running task with an empty status line.
 
-        So when such an update arrives, the pending message is moved onto it:
-        it stays the current message, exactly once, and migrates to history
-        when the next message arrives. The event delivered to subscribers is
+        So when such an update arrives, the pending message is moved onto it
+        and stays the current message. When the update stops the task, the
+        write also adds it to the end of history (``_save_task``); a running
+        task's message migrates to history when the next message arrives. The
+        event delivered to subscribers is
         the original one; only the copy written to the task carries the
         message.
         """

@@ -12,7 +12,7 @@ Two properties carry the design, and both are here rather than in the callers:
 """
 
 import pytest
-from a2a.types import Task, TaskState, TaskStatus
+from a2a.types import Message, Role, Task, TaskState, TaskStatus
 
 from aion.core.a2a.enums import A2AMetadataKey, TaskSettlementReason
 from aion.server.a2a.constants import ACTIVE_TASK_STATES, NON_ACTIVE_TASK_STATES
@@ -60,6 +60,18 @@ class TestSettledTask:
         settled_task(task, TaskSettlementReason.SERVER_SHUTDOWN)
 
         assert task.status.state == TaskState.TASK_STATE_WORKING
+
+    def test_the_last_message_shown_becomes_the_outcomes_message(self):
+        """The message the task last showed stays in status and ends its history."""
+        task = _task("task-1", TaskState.TASK_STATE_WORKING)
+        task.history.append(Message(message_id="msg-user", role=Role.ROLE_USER))
+        task.status.message.CopyFrom(Message(message_id="msg-agent", role=Role.ROLE_AGENT))
+
+        settled = settled_task(task, TaskSettlementReason.SERVER_SHUTDOWN)
+
+        assert settled.status.message.message_id == "msg-agent"
+        assert [m.message_id for m in settled.history] == ["msg-user", "msg-agent"]
+        assert [m.message_id for m in task.history] == ["msg-user"]
 
     @pytest.mark.parametrize("state", sorted(NON_ACTIVE_TASK_STATES))
     def test_declines_a_task_that_has_its_own_state(self, state):

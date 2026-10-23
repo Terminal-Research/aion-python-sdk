@@ -19,6 +19,7 @@ from aion.core.a2a.metadata import mark_status_event_ephemeral
 from aion.server.a2a.constants import (
     EPHEMERAL_STATUS_METADATA_KEY,
     INTERRUPT_TASK_STATES,
+    NON_ACTIVE_TASK_STATES,
     TRANSIENT_ARTIFACT_IDS,
 )
 
@@ -27,6 +28,9 @@ __all__ = [
     "routed_extension_of",
     "task_history_message_ids",
     "is_message_in_task_history",
+    "is_same_message",
+    "is_message_recorded",
+    "record_closing_message",
     "extract_input_preview",
     "extract_event_preview",
     "empty_input_warning",
@@ -343,3 +347,54 @@ def is_message_in_task_history(
 
     m_id = message.message_id if message is not None else message_id
     return bool(m_id) and m_id in task_history_message_ids(task)
+
+
+def is_same_message(first: Message, second: Message) -> bool:
+    """Return True if two messages are the same message.
+
+    Messages are matched by ``message_id`` when either has one: a stored copy
+    can differ from the original in ways that do not make it another message,
+    such as a store round-trip. Two messages without ids are compared field by
+    field.
+    """
+    if first.message_id or second.message_id:
+        return first.message_id == second.message_id
+    return first == second
+
+
+def is_message_recorded(task: Task, message: Message) -> bool:
+    """Return True if ``message`` is already in the task's history.
+
+    By ``message_id``; a message without an id counts as recorded when it is
+    the last history entry.
+
+    Raises:
+        TypeError: If task is not a Task instance.
+    """
+    if is_message_in_task_history(task, message=message):
+        return True
+    return bool(task.history) and is_same_message(task.history[-1], message)
+
+
+def record_closing_message(task: Task) -> None:
+    """Add the message a task stops on to the end of its history, once.
+
+    A task that stops - with an outcome, or interrupted to wait for input or
+    authorization - keeps the message it stops on in ``status.message`` and
+    also as the last entry of ``history``, so a client that reads either finds
+    it. Nothing is added when the history already holds the message; the task
+    manager does not add it again when the next message or status arrives
+    (``AionTaskManager``).
+
+    A running task is left alone: its current message moves into history when
+    the next one arrives.
+
+    Raises:
+        TypeError: If task is not a Task instance.
+    """
+    _require_task(task)
+    if task.status.state not in NON_ACTIVE_TASK_STATES or not task.status.HasField("message"):
+        return
+    if is_message_recorded(task, task.status.message):
+        return
+    task.history.append(task.status.message)

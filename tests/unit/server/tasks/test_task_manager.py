@@ -30,14 +30,17 @@ TASK_ID = "task-1"
 CONTEXT_ID = "ctx-1"
 EXTENSION_URI = "https://example.invalid/extension"
 
-NON_ACTIVE_STATES = [
+TERMINAL_STATES = [
     TaskState.TASK_STATE_COMPLETED,
     TaskState.TASK_STATE_FAILED,
     TaskState.TASK_STATE_CANCELED,
     TaskState.TASK_STATE_REJECTED,
+]
+INTERRUPT_STATES = [
     TaskState.TASK_STATE_INPUT_REQUIRED,
     TaskState.TASK_STATE_AUTH_REQUIRED,
 ]
+NON_ACTIVE_STATES = TERMINAL_STATES + INTERRUPT_STATES
 
 
 @pytest.fixture
@@ -190,16 +193,20 @@ class TestStatusTimestamps:
 
 
 class TestMessagePlacement:
-    """The last message stays in status; earlier ones live in history."""
+    """The last message stays in status and earlier ones live in history; the
+    message a task stops on - its outcome or an interrupt's question - also
+    ends its history, and stays there once."""
 
     @pytest.mark.parametrize("state", NON_ACTIVE_STATES)
     @pytest.mark.anyio
-    async def test_last_message_stays_in_status(self, task_manager, state):
-        """A message on a non-active status event is not copied into history."""
+    async def test_the_message_a_task_stops_on_is_in_status_and_ends_history(
+        self, task_manager, state
+    ):
+        """A message on a terminal or interrupt status event is kept in status and recorded in history."""
         await task_manager.process(_status(state, _message("msg-agent")))
 
         task = await task_manager.get_task()
-        assert [m.message_id for m in task.history] == ["msg-user"]
+        assert [m.message_id for m in task.history] == ["msg-user", "msg-agent"]
         assert task.status.message.message_id == "msg-agent"
         assert task.status.state == state
 
@@ -218,35 +225,84 @@ class TestMessagePlacement:
         await task_manager.process(_status(TaskState.TASK_STATE_COMPLETED, _message("msg-b")))
 
         task = await task_manager.get_task()
-        assert [m.message_id for m in task.history] == ["msg-user", "msg-a"]
+        assert [m.message_id for m in task.history] == ["msg-user", "msg-a", "msg-b"]
         assert task.status.message.message_id == "msg-b"
         assert _conversation(task) == ["msg-user", "msg-a", "msg-b"]
 
+    @pytest.mark.parametrize("state", INTERRUPT_STATES)
     @pytest.mark.anyio
-    async def test_interrupt_message_migrates_on_resume(self, task_manager):
-        """On resume the interrupt question lands in history, not duplicated."""
+    async def test_the_reply_to_an_interrupt_does_not_repeat_the_question(self, task_manager, state):
+        """The consumer records the reply with update_with_message; the question stays in history once."""
+        await task_manager.process(_status(state, _message("msg-question")))
+        task = await task_manager.get_task()
+
+        task_manager.update_with_message(_message("msg-answer", role=Role.ROLE_USER, text="yes"), task)
+
+        assert [m.message_id for m in task.history] == ["msg-user", "msg-question", "msg-answer"]
+        assert not task.status.HasField("message")
+
+    @pytest.mark.parametrize("state", INTERRUPT_STATES)
+    @pytest.mark.anyio
+    async def test_the_resumed_turn_does_not_repeat_the_question(self, task_manager, state):
+        """The resumed turn's first status replaces the question in status without moving it again."""
+        await task_manager.process(_status(state, _message("msg-question")))
+        await task_manager.process(_status(TaskState.TASK_STATE_WORKING, _message("msg-progress")))
+        await task_manager.process(_status(TaskState.TASK_STATE_COMPLETED, _message("msg-final")))
+
+        task = await task_manager.get_task()
+        assert [m.message_id for m in task.history] == [
+            "msg-user",
+            "msg-question",
+            "msg-progress",
+            "msg-final",
+        ]
+        assert task.status.message.message_id == "msg-final"
+
+    @pytest.mark.anyio
+    async def test_a_message_into_an_interrupted_task_does_not_repeat_the_question(self, task_manager):
+        """A standalone message saved while the task waits supersedes the question once."""
         await task_manager.process(
             _status(TaskState.TASK_STATE_INPUT_REQUIRED, _message("msg-question"))
         )
         await task_manager.process(_message("msg-answer", role=Role.ROLE_USER, text="yes"))
 
         task = await task_manager.get_task()
-        assert [m.message_id for m in task.history] == ["msg-user", "msg-question"]
+        assert [m.message_id for m in task.history] == ["msg-user", "msg-question", "msg-answer"]
         assert task.status.message.message_id == "msg-answer"
         assert _conversation(task) == ["msg-user", "msg-question", "msg-answer"]
 
     @pytest.mark.parametrize("state", NON_ACTIVE_STATES)
     @pytest.mark.anyio
-    async def test_bare_terminal_event_carries_the_pending_message(self, task_manager, state):
-        """The turn's closing message stays in status instead of sinking into history."""
+    async def test_bare_stopping_event_carries_the_pending_message(self, task_manager, state):
+        """The message a turn stops on stays in status and ends the history, once."""
         await task_manager.process(_status(TaskState.TASK_STATE_WORKING, _message("msg-agent")))
         await task_manager.process(_status(state))
 
         task = await task_manager.get_task()
-        assert [m.message_id for m in task.history] == ["msg-user"]
+        assert [m.message_id for m in task.history] == ["msg-user", "msg-agent"]
         assert task.status.message.message_id == "msg-agent"
         assert task.status.state == state
         assert _conversation(task) == ["msg-user", "msg-agent"]
+
+    @pytest.mark.anyio
+    async def test_terminal_task_whose_history_holds_the_final_message_is_not_doubled(
+        self, task_manager
+    ):
+        """A Task saved whole that already ends its history with the final message keeps one copy."""
+        await task_manager.process(
+            Task(
+                id=TASK_ID,
+                context_id=CONTEXT_ID,
+                status=TaskStatus(
+                    state=TaskState.TASK_STATE_COMPLETED, message=_message("msg-agent")
+                ),
+                history=[_message("msg-user", role=Role.ROLE_USER), _message("msg-agent")],
+            )
+        )
+
+        task = await task_manager.get_task()
+        assert [m.message_id for m in task.history] == ["msg-user", "msg-agent"]
+        assert task.status.message.message_id == "msg-agent"
 
     @pytest.mark.anyio
     async def test_carried_message_survives_history_truncation(self, task_manager):
