@@ -280,6 +280,19 @@ class AionEventPipeline:
         return transform.event, transform.report.failures
 
     async def _deduplicate_event(self, event):
+        """Drop an event the task already holds, and normalize the rest against the task.
+
+        The deduplicator starts from the task as stored when the turn's first
+        event reaches it, and then learns every event it lets through. A new
+        task may not be stored yet at that point: the SDK consumer stores the
+        task the executor announced on the far side of the queue, and the
+        agent can be quicker. The deduplicator then starts from the task's
+        identity alone - nothing the turn produces is in the task yet - so a
+        message the agent emits twice, as a reply and again from its
+        framework's state, still reaches the client once. A whole ``Task``
+        the agent sends by then is the task as the agent has it: it goes on
+        as sent, and the deduplicator starts from it.
+        """
         # Skip deduplication for artifact updates - each update should be streamed
         # as a new part of the artifact (e.g., new chunks during streaming)
         if isinstance(event, TaskArtifactUpdateEvent):
@@ -293,16 +306,20 @@ class AionEventPipeline:
         if task_manager is None:
             return event
 
-        original_task = await task_manager.get_task()
-        if original_task is None:
-            return event
-
         if self._deduplicator is None:
+            original_task = await task_manager.get_task()
+            goes_as_sent = original_task is None and isinstance(event, Task)
+            if goes_as_sent:
+                original_task = event
+            elif original_task is None:
+                original_task = Task(id=self._task_updater.task_id, context_id=self._task_updater.context_id)
             # Events here are produced by the server's executors,
             # not the public API, so they are allowed to carry platform-owned
             # (`https://docs.aion.to`) metadata — progress structs and the
             # plan-gate stash reach Task.metadata through this path.
             self._deduplicator = A2ATaskDeduplicator(original_task, trusted_source=True)
+            if goes_as_sent:
+                return event
 
         try:
             result = self._deduplicator.deduplicate(event)

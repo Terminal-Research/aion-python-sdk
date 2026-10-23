@@ -366,6 +366,28 @@ async def test_a_message_the_task_already_holds_is_dropped(manager, queue, store
     assert not stored.status.HasField("message"), "the repeat was stored as a pending message"
 
 
+async def test_a_reply_emitted_twice_before_the_task_is_stored_reaches_the_client_once(
+    manager, queue, store, call_context
+) -> None:
+    """The agent can be quicker than the consumer that stores its new task.
+
+    A LangGraph node that sends a reply and returns it in its state emits the
+    same message twice. Nothing consumes the queue here, so the task is never
+    stored: the repeat is still dropped, and the reply is normalized against
+    the task like any other.
+    """
+    pipeline = _pipeline(queue)
+    reply = _message("which environment?", message_id="m-1")
+
+    await pipeline.process(_status(message=reply))
+    await pipeline.process(_status(message=reply))
+
+    assert await store.get(TASK_ID, call_context) is None
+    carried = [e.status.message for e in _status_events(queue) if e.status.HasField("message")]
+    assert [m.message_id for m in carried] == ["m-1"]
+    assert list(carried[0].reference_task_ids) == [TASK_ID]
+
+
 async def test_every_artifact_chunk_is_streamed(manager, queue) -> None:
     """Artifact updates are never deduplicated: each one is a further chunk.
 
@@ -776,7 +798,7 @@ async def test_annotates_new_agent_messages_before_storage_or_delivery(kind):
     queue, manager = AsyncMock(), AsyncMock()
     manager.get_task.return_value = None
     pipeline = AionEventPipeline(
-        queue, AsyncMock(), task_started=True,
+        queue, TaskUpdater(queue, 'task', 'context'), task_started=True,
         response_parameters=ResponseServiceParameters(('urn:cron', 'urn:verified')),
         prior_message_ids=frozenset({'old', 'user'}),
     )
