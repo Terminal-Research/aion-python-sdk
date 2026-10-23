@@ -137,7 +137,14 @@ class A2ATaskDeduplicator:
 
         The original task identity is preserved. Incoming history and artifacts
         are merged into the original task while duplicate messages and artifacts
-        are removed.
+        are removed; a message the patch lists twice is added once.
+
+        The patch's status replaces the original one, message included. A
+        task's status message is its current state rather than a new entry,
+        so it stays even when the task already knows it, and the merge does
+        not add it to the history: once the task stops, the task manager puts
+        it at the end of the history (``record_closing_message``), and a
+        running task's status message moves there with the next status update.
 
         Args:
             task: The task payload that should be merged into the original task.
@@ -153,27 +160,14 @@ class A2ATaskDeduplicator:
 
         self._merge_task_metadata(merged, task.metadata)
 
-        normalized_status_message: Message | None = None
         if self._has_field(task, "status"):
             normalized_status = copy.deepcopy(task.status)
             self._sanitize_struct_field(normalized_status, "metadata")
             if self._has_field(normalized_status, "message"):
-                normalized_status_message = self.deduplicate_message(
-                    normalized_status.message,
-                )
-                if normalized_status_message is None:
-                    normalized_status.ClearField("message")
-                else:
-                    normalized_status.message.CopyFrom(normalized_status_message)
+                normalized_status.message.CopyFrom(self._normalize_message(normalized_status.message))
             merged.status.CopyFrom(normalized_status)
-        else:
-            normalized_status_message = None
 
-        self._merge_messages(
-            merged,
-            task.history,
-            extra_messages=[normalized_status_message] if normalized_status_message else None,
-        )
+        self._merge_messages(merged, task.history)
         self._merge_artifacts(merged, task.artifacts)
         return merged
 
@@ -190,15 +184,20 @@ class A2ATaskDeduplicator:
         Returns:
             A normalized message, or `None` if the message is a duplicate.
         """
+        normalized = self._normalize_message(message)
+
+        if self._message_is_duplicate(normalized):
+            return None
+
+        return normalized
+
+    def _normalize_message(self, message: Message) -> Message:
+        """Return a copy of the message rewritten to reference the original task."""
         normalized = copy.deepcopy(message)
         normalized.task_id = self._original_task.id
         normalized.context_id = self._original_task.context_id
         self._normalize_reference_task_ids(normalized, self._original_task.id)
         self._sanitize_struct_field(normalized, "metadata")
-
-        if self._message_is_duplicate(normalized):
-            return None
-
         return normalized
 
     def deduplicate_status_event(
@@ -256,21 +255,16 @@ class A2ATaskDeduplicator:
 
         return normalized
 
-    def _merge_messages(
-        self,
-        target: Task,
-        incoming_messages: list[Message],
-        extra_messages: list[Message] | None = None,
-    ) -> None:
-        """Merge unique messages into a task history."""
-        if extra_messages:
-            for message in extra_messages:
-                target.history.append(message)
-
+    def _merge_messages(self, target: Task, incoming_messages: list[Message]) -> None:
+        """Append the incoming messages the task does not hold yet, each once."""
+        added: set[str] = set()
         for message in incoming_messages:
             normalized = self.deduplicate_message(message)
-            if normalized is not None:
-                target.history.append(normalized)
+            if normalized is None or normalized.message_id in added:
+                continue
+            if normalized.message_id:
+                added.add(normalized.message_id)
+            target.history.append(normalized)
 
     @classmethod
     def _has_status_message(cls, message_container: Any) -> bool:

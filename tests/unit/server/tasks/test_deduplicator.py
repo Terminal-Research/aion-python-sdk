@@ -428,8 +428,8 @@ class TestDeduplicateTask:
         assert result.status.HasField("message")
         assert result.status.message.message_id == "new-status-msg"
 
-    def test_duplicate_status_message_is_removed_in_task_merge(self):
-        """Verify that duplicate status messages are stripped from task patches."""
+    def test_known_status_message_stays_in_the_status_of_a_task_merge(self):
+        """A task's status message is its state: kept even when the task already knows it."""
         original = _make_task(history=[_make_message("known-status-msg")])
         ded = A2ATaskDeduplicator(original)
         patch = _make_task(state=TaskState.TASK_STATE_COMPLETED)
@@ -437,7 +437,29 @@ class TestDeduplicateTask:
 
         result = ded.deduplicate_task(patch)
 
-        assert not result.status.HasField("message")
+        assert result.status.message.message_id == "known-status-msg"
+        assert list(result.status.message.reference_task_ids) == ["task-1"]
+        assert [m.message_id for m in result.history] == ["known-status-msg"]
+
+    def test_status_message_is_not_added_to_history_in_task_merge(self):
+        """Where a status message goes in the history is the task manager's call, not the merge's."""
+        ded = A2ATaskDeduplicator(_make_task(history=[_make_message("msg-1")]))
+        patch = _make_task(state=TaskState.TASK_STATE_COMPLETED, history=[_make_message("msg-2")])
+        patch.status.message.CopyFrom(_make_message("final"))
+
+        result = ded.deduplicate_task(patch)
+
+        assert [m.message_id for m in result.history] == ["msg-1", "msg-2"]
+        assert result.status.message.message_id == "final"
+
+    def test_message_listed_twice_in_a_patch_is_added_once(self):
+        """Verify that a patch repeating a message adds it to the history once."""
+        ded = A2ATaskDeduplicator(_make_task())
+        patch = _make_task(history=[_make_message("msg-1"), _make_message("msg-2"), _make_message("msg-1")])
+
+        result = ded.deduplicate_task(patch)
+
+        assert [m.message_id for m in result.history] == ["msg-1", "msg-2"]
 
     def test_original_task_not_mutated(self):
         """Verify that original task not mutated."""

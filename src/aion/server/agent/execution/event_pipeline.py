@@ -16,6 +16,7 @@ from aion.server.a2a.response_extensions import ResponseServiceParameters
 from aion.server.a2a.utils import (
     is_ephemeral_status_event,
     is_message_in_task_history,
+    is_same_message,
     task_history_message_ids,
 )
 from typing import Optional
@@ -191,7 +192,9 @@ class AionEventPipeline:
         When a Task object is saved directly (bypassing the status-update chain),
         any message accumulated in the current task's status.message would be lost.
         Inserts the pending message after messages already known to the current task
-        and before new messages introduced by the incoming task.
+        and before new messages introduced by the incoming task. A pending message
+        the incoming task still carries as its own status message is not lost, and
+        stays in the status.
         """
         task_manager = self._task_manager
         if task_manager is None:
@@ -203,6 +206,8 @@ class AionEventPipeline:
 
         pending = current_task.status.message
         if is_message_in_task_history(incoming_task, message=pending):
+            return
+        if incoming_task.status.HasField('message') and is_same_message(incoming_task.status.message, pending):
             return
 
         # Insert after messages already in current task's history, before new ones
