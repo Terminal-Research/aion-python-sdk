@@ -8,6 +8,10 @@ two servers:
   land - neither is refused as stale because of the other;
 * a task with an outcome is final: a late reply or artifact in the same state
   writes nothing, and a write in another state is refused;
+* the message a task stops on - its outcome, or an interrupt's question - is
+  stored once and reads back both as its status message and as the last
+  entry of its history, and the turn that answers an interrupt does not
+  store the question again;
 * a delete and a versioned write of one task take their row locks in one
   order, so neither aborts on a deadlock;
 * a manager over the versioned store still finds a context's last task.
@@ -34,7 +38,8 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
-from aion.db.postgres.repositories import TasksRepository
+from aion.db.postgres.manager import db_manager
+from aion.db.postgres.repositories import TaskMessagesRepository, TasksRepository
 from aion.server.agent.execution.scope import clear_execution_scope, init_execution_scope
 from aion.server.tasks.task_manager import AionTaskManager
 
@@ -118,6 +123,47 @@ async def test_the_producer_and_the_consumer_of_one_server_both_land(world, monk
     texts = [part.text for message in [*stored.history, stored.status.message] for part in message.parts]
     assert texts == ["answer", "progress"]
     assert await task_version(task.id) == 3
+
+
+async def test_the_final_message_is_stored_once_and_ends_the_history(world) -> None:
+    """A running task's message is only its status; once the task completes it also ends its history, in one row."""
+    _, versioned, manager, task = world
+
+    await manager.process(_status(task, TaskState.TASK_STATE_WORKING, _reply("final", "the answer")))
+    running = (await versioned.get(task.id, CONTEXT)).task
+    assert [m.message_id for m in running.history] == []
+    assert running.status.message.message_id == "final"
+
+    await manager.process(_status(task, TaskState.TASK_STATE_COMPLETED))
+    completed = (await versioned.get(task.id, CONTEXT)).task
+    assert [m.message_id for m in completed.history] == ["final"]
+    assert completed.status.message.message_id == "final"
+    async with db_manager.get_session() as session:
+        rows = await TaskMessagesRepository(session).find_by_task_id(uuid.UUID(task.id))
+    assert [m.message_id for m in rows] == ["final"]
+
+
+async def test_the_question_of_a_paused_task_stays_in_history_once_after_the_reply(world) -> None:
+    """A paused task's question reads back in status and history; the resumed turn does not store it twice."""
+    _, versioned, manager, task = world
+
+    await manager.process(_status(task, TaskState.TASK_STATE_INPUT_REQUIRED, _reply("question", "which one?")))
+    paused = (await versioned.get(task.id, CONTEXT)).task
+    assert [m.message_id for m in paused.history] == ["question"]
+    assert paused.status.message.message_id == "question"
+
+    current = await manager.get_task()
+    manager.update_with_message(
+        Message(message_id="reply", role=Role.ROLE_USER, parts=[Part(text="this one")]), current
+    )
+    await manager.save_task_event(current)
+    await manager.process(_status(task, TaskState.TASK_STATE_COMPLETED, _reply("final", "done")))
+
+    completed = (await versioned.get(task.id, CONTEXT)).task
+    assert [m.message_id for m in completed.history] == ["question", "reply", "final"]
+    async with db_manager.get_session() as session:
+        rows = await TaskMessagesRepository(session).find_by_task_id(uuid.UUID(task.id))
+    assert [m.message_id for m in rows] == ["question", "reply", "final"]
 
 
 async def _finish(versioned, manager, task: Task, state: TaskState) -> Task:

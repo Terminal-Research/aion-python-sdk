@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-207 scenarios in 38 files, 465 runs across 2 frameworks: 431 run, 33 skipped, 1 independent of the framework.
+208 scenarios in 38 files, 467 runs across 2 frameworks: 432 run, 34 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -65,7 +65,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `streaming` | chunked replies, ephemeral typing, unary send | 14 | `make tests-scenarios TAGS=streaming` |
 | `events` | event order, ids, outbox, get_task agreement | 21 | `make tests-scenarios TAGS=events` |
 | `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 11 | `make tests-scenarios TAGS=terminal_states` |
-| `interrupts` | INPUT_REQUIRED and resume | 9 | `make tests-scenarios TAGS=interrupts` |
+| `interrupts` | INPUT_REQUIRED and resume | 10 | `make tests-scenarios TAGS=interrupts` |
 | `errors` | failures that must stay reported, not crash the server | 10 | `make tests-scenarios TAGS=errors` |
 | `artifacts` | artifact and card emission | 4 | `make tests-scenarios TAGS=artifacts` |
 | `files` | inline file parts: stored, rejected, or passed through | 12 | `make tests-scenarios TAGS=files` |
@@ -271,12 +271,13 @@ Interrupt pauses a task for user input; resume delivers the answer.
 | [The stream ends with INPUT_REQUIRED carrying the interrupt question.](core/test_interrupts.py#L51 "test_ask_pauses_the_task_as_input_required") | `interrupts` | `ask` | `default` | ✓ | [skip](#frameworks) |
 | [Sending a message to the paused task resumes it with the user's answer.](core/test_interrupts.py#L60 "test_resume_delivers_the_answer_and_completes") | `interrupts` | `ask` | `default` | ✓ | [skip](#frameworks) |
 | [tasks/get after resume reports COMPLETED, not INPUT_REQUIRED.](core/test_interrupts.py#L77 "test_resumed_task_is_stored_as_completed") | `interrupts` | `ask` | `default` | ✓ | [skip](#frameworks) |
-| [Each interrupt pauses the one task again, with its own question.](core/test_interrupts.py#L91 "test_two_interrupts_pause_the_same_task_in_turn") | `interrupts` | `ask-twice` | `default` | ✓ | [skip](#frameworks) |
-| [The second resume completes the task, carrying both answers as given.](core/test_interrupts.py#L110 "test_both_answers_reach_the_agent_in_order") | `interrupts` | `ask-twice` | `default` | ✓ | [skip](#frameworks) |
-| [The task the server kept agrees: two pauses, one outcome.](core/test_interrupts.py#L126 "test_a_twice_resumed_task_is_stored_as_completed") | `interrupts` | `ask-twice` | `default` | ✓ | [skip](#frameworks) |
-| [The resumed turn ends in one terminal FAILED task, and nothing after it.](core/test_interrupts.py#L143 "test_a_crash_on_resume_closes_the_task_as_failed") | `interrupts` | `ask-fail` | `default` | ✓ | [skip](#frameworks) |
-| [The stored task is FAILED and still says what led up to the crash.](core/test_interrupts.py#L168 "test_a_task_that_failed_on_resume_keeps_its_history") | `interrupts` | `ask-fail` | `default` | ✓ | [skip](#frameworks) |
-| [The next request is answered normally.](core/test_interrupts.py#L189 "test_a_crash_on_resume_does_not_take_the_agent_with_it") | `interrupts` | `ask-fail` | `default` | ✓ | [skip](#frameworks) |
+| [The paused task holds its question in status and as the last history entry; the](core/test_interrupts.py#L91 "test_the_question_and_the_final_reply_each_end_the_history_once") | `interrupts` | `ask` | `default` | ✓ | [skip](#frameworks) |
+| [Each interrupt pauses the one task again, with its own question.](core/test_interrupts.py#L116 "test_two_interrupts_pause_the_same_task_in_turn") | `interrupts` | `ask-twice` | `default` | ✓ | [skip](#frameworks) |
+| [The second resume completes the task, carrying both answers as given.](core/test_interrupts.py#L135 "test_both_answers_reach_the_agent_in_order") | `interrupts` | `ask-twice` | `default` | ✓ | [skip](#frameworks) |
+| [The task the server kept agrees: two pauses, one outcome.](core/test_interrupts.py#L151 "test_a_twice_resumed_task_is_stored_as_completed") | `interrupts` | `ask-twice` | `default` | ✓ | [skip](#frameworks) |
+| [The resumed turn ends in one terminal FAILED task, and nothing after it.](core/test_interrupts.py#L168 "test_a_crash_on_resume_closes_the_task_as_failed") | `interrupts` | `ask-fail` | `default` | ✓ | [skip](#frameworks) |
+| [The stored task is FAILED and still says what led up to the crash.](core/test_interrupts.py#L193 "test_a_task_that_failed_on_resume_keeps_its_history") | `interrupts` | `ask-fail` | `default` | ✓ | [skip](#frameworks) |
+| [The next request is answered normally.](core/test_interrupts.py#L214 "test_a_crash_on_resume_does_not_take_the_agent_with_it") | `interrupts` | `ask-fail` | `default` | ✓ | [skip](#frameworks) |
 
 ### `tests/scenarios/core/test_outbox.py`
 
@@ -572,7 +573,7 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | `card` | Emit one card | `artifacts` | 4 | ✓ | ✓ |
 | `outbox-task` | Return an A2A Task through the outbox | `events` | 6 | ✓ | ✓ |
 | `outbox-message` | Return an A2A Message through the outbox | `events` | 3 | ✓ | ✓ |
-| `ask` | Ask a question, then quote the answer | `interrupts` | 11 | ✓ | [skip](#frameworks) |
+| `ask` | Ask a question, then quote the answer | `interrupts` | 12 | ✓ | [skip](#frameworks) |
 | `ask-twice` | Ask two questions in a row | `interrupts` | 3 | ✓ | [skip](#frameworks) |
 | `ask-fail` | Ask a question, then fail on the answer | `interrupts`, `errors` | 3 | ✓ | [skip](#frameworks) |
 | `fail <mode>` | Fail on purpose: exception \| after-reply \| reason | `errors`, `terminal_states` | 8 | ✓ | ✓ |

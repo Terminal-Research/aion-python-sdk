@@ -230,9 +230,8 @@ class TestSaveNormalization:
         self, store, messages_repository
     ):
         """``TaskManager`` only moves ``status.message`` into ``history`` when
-        the *next* status event arrives - a task that ends on that message
-        (a terminal state has no next event) must still get it persisted,
-        not lose it because nothing ever promoted it."""
+        the *next* status event arrives - the message a running or waiting
+        task currently shows must still be persisted before that happens."""
         history = [Message(message_id="m1")]
         status_message = Message(message_id="m2")
         task = _make_task(history=history)
@@ -264,20 +263,59 @@ class TestSaveNormalization:
         for call in messages_repository.append_new.await_args_list:
             assert call.args[1] == [status_message]
 
+    async def test_a_final_message_already_ending_the_history_is_written_once(
+        self, store, messages_repository
+    ):
+        """A stopped task carries the message it stopped on in ``status`` and as
+        the last entry of ``history``; it is one message and gets one row."""
+        final = Message(message_id="m2")
+        task = _make_task(history=[Message(message_id="m1"), final])
+        task.status.state = TaskState.TASK_STATE_COMPLETED
+        task.status.message.CopyFrom(final)
+
+        await store.save(task, ServerCallContext())
+
+        messages_repository.append_new.assert_awaited_once_with(
+            uuid.UUID(TASK_UUID), list(task.history)
+        )
+
 
 class TestStatusMessageHydration:
     """The read-side counterpart of ``_effective_history``: a message stored
-    only because it was still attached to ``status`` must not come back
-    twice - once as ``status.message``, once as ``history[-1]``."""
+    only because it was still attached to the status of a running task must
+    not come back twice - once as ``status.message``, once as ``history[-1]``.
+    A task that stopped keeps the message it stopped on in both."""
 
     def test_strips_a_history_tail_that_still_matches_status_message(self):
-        status = TaskStatus(state=TaskState.TASK_STATE_COMPLETED)
+        status = TaskStatus(state=TaskState.TASK_STATE_WORKING)
         status.message.CopyFrom(Message(message_id="m2"))
         history = [Message(message_id="m1"), Message(message_id="m2")]
 
         result = PostgresTaskStore._without_unpromoted_status_message(status, history)
 
         assert [m.message_id for m in result] == ["m1"]
+
+    @pytest.mark.parametrize(
+        "state",
+        [
+            TaskState.TASK_STATE_COMPLETED,
+            TaskState.TASK_STATE_FAILED,
+            TaskState.TASK_STATE_CANCELED,
+            TaskState.TASK_STATE_REJECTED,
+            TaskState.TASK_STATE_INPUT_REQUIRED,
+            TaskState.TASK_STATE_AUTH_REQUIRED,
+        ],
+    )
+    def test_keeps_the_message_a_stopped_task_stopped_on_in_history(self, state):
+        """The stored tail of a task with an outcome or on an interrupt is the
+        message it stopped on, which belongs to its history as well."""
+        status = TaskStatus(state=state)
+        status.message.CopyFrom(Message(message_id="m2"))
+        history = [Message(message_id="m1"), Message(message_id="m2")]
+
+        result = PostgresTaskStore._without_unpromoted_status_message(status, history)
+
+        assert [m.message_id for m in result] == ["m1", "m2"]
 
     def test_keeps_history_once_status_has_moved_on(self):
         """A later save promoted the old tail and attached a new message to
@@ -299,7 +337,7 @@ class TestStatusMessageHydration:
         assert [m.message_id for m in result] == ["m1"]
 
     def test_compares_by_content_when_neither_message_has_an_id(self):
-        status = TaskStatus(state=TaskState.TASK_STATE_COMPLETED)
+        status = TaskStatus(state=TaskState.TASK_STATE_WORKING)
         status.message.CopyFrom(Message())
         history = [Message()]
 

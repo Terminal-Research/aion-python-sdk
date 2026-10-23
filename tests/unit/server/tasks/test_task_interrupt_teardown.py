@@ -377,6 +377,7 @@ async def test_resuming_an_interrupted_task_delivers_the_answer(caplog) -> None:
         "ask",
         "Which environment?",
         "staging please",
+        "Got it - staging.",
     ]
     assert agent.turns == 2
 

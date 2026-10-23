@@ -71,6 +71,7 @@ async def test_a_running_task_silent_past_the_timeout_is_settled_failed_with_the
     assert kept.status.state == TaskState.TASK_STATE_FAILED
     assert kept.metadata[SETTLED_REASON] == "task_abandoned"
     assert kept.status.message.parts[0].text == "thinking", "a framework task keeps what it last said"
+    assert [m.message_id for m in kept.history] == ["t-1-said"], "and records it as its final message"
 
 
 async def test_an_extension_task_says_why_in_the_shape_of_an_extension_failure() -> None:
@@ -84,6 +85,10 @@ async def test_an_extension_task_says_why_in_the_shape_of_an_extension_failure()
     assert MessageToDict(data.data) == {"code": "task_abandoned", "message": ABANDONED_MESSAGE, "retryable": True}
     assert MessageToDict(data.metadata)[EVENT_EXTENSION_URI_V1] == {"schema": f"{URI}#ExtensionError"}
     assert settled.metadata[SETTLED_REASON] == "task_abandoned"
+    assert [m.message_id for m in settled.history] == [
+        "t-1-said",
+        settled.status.message.message_id,
+    ], "what the task last said stays in history, and the error ends it"
 
 
 async def test_a_task_written_within_the_timeout_is_left() -> None:

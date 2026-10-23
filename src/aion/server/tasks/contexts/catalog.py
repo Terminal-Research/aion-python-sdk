@@ -27,6 +27,7 @@ from typing import Optional, Protocol
 from a2a.types import Artifact, Message, Task, TaskStatus
 
 from aion.core.a2a import A2AMetadataKey, ArtifactId, MessageType
+from aion.server.a2a.utils import is_same_message
 from aion.server.tasks.admission import ContextHolder
 
 __all__ = [
@@ -68,14 +69,15 @@ def is_conversation_message(message: Message) -> bool:
 def conversation_of(task: Task) -> list[Message]:
     """The conversation messages one task contributes to its context, in order.
 
-    Its history plus the message still attached to its status - a task that
-    ends on a status message has no later event to move it into history -
-    filtered by :func:`is_conversation_message`.
+    Its history plus the message attached to its status when the history
+    does not end with it already - a running task's current message is only
+    in its status, the message a task stopped on is in both - filtered by
+    :func:`is_conversation_message`.
     """
     messages = list(task.history)
     if task.status.HasField("message"):
         current = task.status.message
-        if not messages or messages[-1] != current:
+        if not messages or not is_same_message(messages[-1], current):
             messages.append(current)
     return [message for message in messages if is_conversation_message(message)]
 

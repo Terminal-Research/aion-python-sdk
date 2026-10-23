@@ -28,6 +28,8 @@ from aion.db.postgres.repositories import (
     TasksRepository,
 )
 from aion.db.postgres.records import TaskRecord
+from aion.server.a2a.constants import NON_ACTIVE_TASK_STATES
+from aion.server.a2a.utils import is_same_message
 from .base_task_store import BaseTaskStore
 from .page_token import PageCursor, decode_page_token, encode_page_token
 
@@ -108,26 +110,27 @@ class PostgresTaskStore(BaseTaskStore):
         """Drop ``history``'s last entry when it is still only ``status.message``.
 
         ``save`` writes the current ``status.message`` into ``task_messages``
-        as a provisional tail entry (see :meth:`_effective_history`), so a
-        task that ends on it - a terminal state has no next event to promote
-        it - does not lose it. Reassembling a ``Task`` from ``status`` plus
-        that same stored entry would otherwise present the message twice:
-        once as ``status.message``, once as ``history[-1]``.
+        as a provisional tail entry (see :meth:`_effective_history`), so the
+        stored messages always hold every message the task has carried.
+        While the task is running, that entry is not history yet:
+        reassembling a ``Task`` from ``status`` plus the same stored entry
+        would present the message twice, once as ``status.message`` and once
+        as ``history[-1]``.
 
         Comparing against the *current* status is what tells "still
         provisional" apart from "genuinely promoted": once a later save moves
         the message on and ``status`` holds something else, the stored entry
         no longer matches and is real history that stays.
+
+        A task that stopped - with an outcome or on an interrupt - keeps the
+        entry: the message it stopped on belongs at the end of its history as
+        well as in ``status`` (``record_closing_message``).
         """
         if not history or not status.HasField('message'):
             return history
-        last, current = history[-1], status.message
-        is_same = (
-            last.message_id == current.message_id
-            if last.message_id or current.message_id
-            else last == current
-        )
-        return history[:-1] if is_same else history
+        if status.state in NON_ACTIVE_TASK_STATES:
+            return history
+        return history[:-1] if is_same_message(history[-1], status.message) else history
 
     @staticmethod
     async def _hydrate(
@@ -197,10 +200,16 @@ class PostgresTaskStore(BaseTaskStore):
         recognizes it as already stored rather than inserting it twice. The
         read side undoes this the same way it was done - see
         :meth:`_without_unpromoted_status_message`.
+
+        A history that already ends with ``status.message`` - that of a task
+        that stopped, see ``record_closing_message`` - is written as it is.
         """
-        if task.status.HasField('message'):
-            return list(task.history) + [task.status.message]
-        return list(task.history)
+        history = list(task.history)
+        if task.status.HasField('message') and not (
+            history and is_same_message(history[-1], task.status.message)
+        ):
+            history.append(task.status.message)
+        return history
 
     async def save(
             self, task: Task, context: ServerCallContext | None = None

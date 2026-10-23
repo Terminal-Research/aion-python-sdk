@@ -88,6 +88,31 @@ async def test_resumed_task_is_stored_as_completed(client: ScenarioClient) -> No
     assert stored.status.state == TaskState.TASK_STATE_COMPLETED
 
 
+@pytest.mark.command("ask")
+async def test_the_question_and_the_final_reply_each_end_the_history_once(
+    client: ScenarioClient,
+) -> None:
+    """The paused task holds its question in status and as the last history entry; the
+    completed task does the same with its final reply, and no message is listed twice."""
+    closing = final_task(await client.send("ask"))
+    paused = await client.get_task(closing.task_id)
+    question = paused.status.message
+    assert ask_question() in "".join(part.text for part in question.parts)
+    assert [message.message_id for message in paused.history][-1] == question.message_id
+
+    await client.send(RESUME_ANSWER, task_id=closing.task_id, context_id=closing.context_id)
+    stored = await client.get_task(closing.task_id)
+
+    ids = [message.message_id for message in stored.history]
+    assert len(ids) == len(set(ids)), f"a message is in the history twice: {ids}"
+    assert question.message_id in ids
+    assert ids[-1] == stored.status.message.message_id
+    assert ask_answer_text(RESUME_ANSWER) in stored_texts(stored)
+    without_history = await client.get_task(closing.task_id, history_length=0)
+    assert list(without_history.history) == []
+    assert without_history.status.message.message_id == ids[-1]
+
+
 @pytest.mark.command("ask-twice")
 async def test_two_interrupts_pause_the_same_task_in_turn(client: ScenarioClient) -> None:
     """Each interrupt pauses the one task again, with its own question."""

@@ -19,7 +19,9 @@ from aion.server.a2a.utils import (
     extract_event_preview,
     is_ephemeral_event,
     is_message_in_task_history,
+    is_same_message,
     is_task_interrupted,
+    record_closing_message,
     task_history_message_ids,
     mark_status_event_ephemeral,
 )
@@ -122,6 +124,76 @@ class TestIsMessageInTaskHistory:
         """is_message_in_task_history raises TypeError when given a non-Task first argument."""
         with pytest.raises(TypeError):
             is_message_in_task_history("bad", message_id="x")  # type: ignore[arg-type]
+
+
+class TestIsSameMessage:
+    def test_messages_with_ids_match_by_id(self):
+        """A stored copy with other content is still the same message."""
+        assert is_same_message(_make_message("msg-1", text="a"), _make_message("msg-1", text="b"))
+
+    def test_different_ids_do_not_match(self):
+        assert not is_same_message(_make_message("msg-1", text="a"), _make_message("msg-2", text="a"))
+
+    def test_messages_without_ids_match_by_content(self):
+        assert is_same_message(_make_message(text="a"), _make_message(text="a"))
+        assert not is_same_message(_make_message(text="a"), _make_message(text="b"))
+
+
+class TestRecordClosingMessage:
+    @pytest.mark.parametrize(
+        "state",
+        [
+            TaskState.TASK_STATE_COMPLETED,
+            TaskState.TASK_STATE_FAILED,
+            TaskState.TASK_STATE_CANCELED,
+            TaskState.TASK_STATE_REJECTED,
+            TaskState.TASK_STATE_INPUT_REQUIRED,
+            TaskState.TASK_STATE_AUTH_REQUIRED,
+        ],
+    )
+    def test_stopped_task_ends_its_history_with_the_message_it_stops_on(self, state):
+        task = _make_task(state, history=[_make_message("msg-user")])
+        task.status.message.CopyFrom(_make_message("msg-agent", text="done"))
+
+        record_closing_message(task)
+
+        assert [m.message_id for m in task.history] == ["msg-user", "msg-agent"]
+        assert task.status.message.message_id == "msg-agent"
+
+    @pytest.mark.parametrize(
+        "state", [TaskState.TASK_STATE_SUBMITTED, TaskState.TASK_STATE_WORKING]
+    )
+    def test_running_task_is_left_alone(self, state):
+        task = _make_task(state, history=[_make_message("msg-user")])
+        task.status.message.CopyFrom(_make_message("msg-agent"))
+
+        record_closing_message(task)
+
+        assert [m.message_id for m in task.history] == ["msg-user"]
+
+    def test_repeated_calls_add_the_message_once(self):
+        task = _make_task(TaskState.TASK_STATE_COMPLETED, history=[_make_message("msg-user")])
+        task.status.message.CopyFrom(_make_message("msg-agent"))
+
+        record_closing_message(task)
+        record_closing_message(task)
+
+        assert [m.message_id for m in task.history] == ["msg-user", "msg-agent"]
+
+    def test_message_without_id_already_ending_the_history_is_not_added(self):
+        task = _make_task(TaskState.TASK_STATE_COMPLETED, history=[_make_message(text="done")])
+        task.status.message.CopyFrom(_make_message(text="done"))
+
+        record_closing_message(task)
+
+        assert len(task.history) == 1
+
+    def test_terminal_task_without_a_message_is_left_alone(self):
+        task = _make_task(TaskState.TASK_STATE_COMPLETED, history=[_make_message("msg-user")])
+
+        record_closing_message(task)
+
+        assert [m.message_id for m in task.history] == ["msg-user"]
 
 
 def _status_event(

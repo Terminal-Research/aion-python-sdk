@@ -23,7 +23,7 @@ from google.protobuf.json_format import MessageToDict
 
 from tests.scenarios.harness import ScenarioClient, ServeVariant, event_envelope, final_task
 from tests.scenarios.harness.daemon import DAEMON_EXTENSION_URI, daemon_metadata
-from tests.scenarios.harness.recorder import Ev, _payload_of, to_event
+from tests.scenarios.harness.recorder import Ev, _payload_of, stored_messages, to_event
 from tests.support.scripted_executor.contract import (
     EVOLUTION_DIRECTIVE_EVENT_TYPE,
     EVOLUTION_DIRECTIVE_SCHEMA,
@@ -176,13 +176,10 @@ def rejection(response: dict) -> dict:
 
 
 def data_parts(stored) -> list[dict]:
-    """The data parts of a stored task's messages, in order: its history, then its status line."""
-    messages = list(stored.history)
-    if stored.status.HasField("message"):
-        messages.append(stored.status.message)
+    """The data parts of a stored task's messages, in order, each message once (``stored_messages``)."""
     return [
         MessageToDict(part.data)
-        for message in messages
+        for message in stored_messages(stored)
         for part in message.parts
         if part.WhichOneof("content") == "data"
     ]

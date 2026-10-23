@@ -29,6 +29,7 @@ __all__ = [
     "record_stream",
     "replies",
     "reply_texts",
+    "stored_messages",
     "stored_texts",
     "text_of_parts",
     "to_event",
@@ -215,14 +216,31 @@ def reply_texts(events: Sequence[Ev]) -> list[str]:
     return [event.text for event in replies(events)]
 
 
-def stored_texts(task: Task) -> list[str]:
-    """Everything a stored task says, in order: its history, then its status.
+def stored_messages(task: Task) -> list[Message]:
+    """Every message of a stored task, in order, each once.
 
-    A turn's last reply stays on ``status.message`` until the next turn moves
-    it into history, so reading history alone reads the task one message
-    short - and it is the last message that most scenarios are about.
+    A terminal task ends its history with its final message and keeps it on
+    ``status.message`` as well. A running or interrupted task has its current
+    message only on ``status.message``, until the next message moves it into
+    history - reading history alone would read that task one message short.
+    So the status message is added unless the history already ends with it.
     """
-    texts = [part.text for message in task.history for part in message.parts if part.text]
-    if task.status.HasField("message"):
-        texts.extend(part.text for part in task.status.message.parts if part.text)
-    return texts
+    messages = list(task.history)
+    if not task.status.HasField("message"):
+        return messages
+    current = task.status.message
+    if messages:
+        last = messages[-1]
+        if last.message_id or current.message_id:
+            same = last.message_id == current.message_id
+        else:
+            same = last == current
+        if same:
+            return messages
+    messages.append(current)
+    return messages
+
+
+def stored_texts(task: Task) -> list[str]:
+    """Everything a stored task says, in order, each message once (``stored_messages``)."""
+    return [part.text for message in stored_messages(task) for part in message.parts if part.text]

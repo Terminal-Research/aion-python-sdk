@@ -33,6 +33,7 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
+from aion.server.a2a.outbox import outbox_task
 from aion.server.a2a.response_extensions import ResponseServiceParameters
 from aion.server.a2a.utils import mark_status_event_ephemeral
 from aion.server.agent.execution.event_pipeline import (
@@ -668,6 +669,90 @@ async def test_a_pending_status_message_survives_a_task_saved_over_it(
         "carried in status",
         "from the incoming task",
     ]
+
+
+# --------------------------------------------------------------------------
+# A task the agent hands over through the outbox
+# --------------------------------------------------------------------------
+
+@pytest.fixture
+async def in_hand(manager) -> Task:
+    """The task the request was built on, stored: the caller's message and nothing of the turn yet."""
+    task = _task(
+        state=TaskState.TASK_STATE_SUBMITTED,
+        history=[
+            Message(
+                context_id=CONTEXT_ID,
+                task_id=TASK_ID,
+                message_id="U1",
+                role=Role.ROLE_USER,
+                parts=[Part(text="find the report")],
+            )
+        ],
+    )
+    stored = Task()
+    stored.CopyFrom(task)
+    await manager.save_task_event(stored)
+    return task
+
+
+def _completed(final: Message, *history: Message) -> Task:
+    """An outbox patch that completes the task with ``final``."""
+    return Task(status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED, message=final), history=list(history))
+
+
+async def _hand_over(queue: RecordingQueue, in_hand: Task, patch: Task) -> None:
+    """Apply the patch to the task in hand, as both framework adapters do, and deliver it."""
+    pipeline = _pipeline(queue, task_started=True)
+    await pipeline.process(outbox_task(patch, current=in_hand, task_id=TASK_ID, context_id=CONTEXT_ID))
+
+
+async def test_an_outbox_task_ends_its_history_with_its_final_message(
+    manager, in_hand, queue, store, call_context
+) -> None:
+    """The reply sent during the turn keeps its place; the final message comes last.
+
+    The final message is also the task's status message, the way every
+    stopped task carries the message it stopped on.
+    """
+    await manager.process(_status(message=_message("searching", message_id="A1")))
+
+    await _hand_over(queue, in_hand, _completed(_message("the report", message_id="R"), _message("a note", message_id="H1")))
+
+    stored = await store.get(TASK_ID, call_context)
+    assert [m.message_id for m in stored.history] == ["U1", "A1", "H1", "R"]
+    assert stored.status.message.message_id == "R"
+
+
+async def test_a_final_message_the_outbox_task_also_lists_in_its_history_is_stored_once(
+    manager, in_hand, queue, store, call_context
+) -> None:
+    await manager.process(_status(message=_message("searching", message_id="A1")))
+    final = _message("the report", message_id="R")
+
+    await _hand_over(queue, in_hand, _completed(final, _message("a note", message_id="H1"), final))
+
+    stored = await store.get(TASK_ID, call_context)
+    assert [m.message_id for m in stored.history] == ["U1", "A1", "H1", "R"]
+    assert stored.status.message.message_id == "R"
+
+
+async def test_an_outbox_task_completing_with_the_reply_already_sent_keeps_it_as_its_final_message(
+    manager, in_hand, queue, store, call_context
+) -> None:
+    """The agent replied through the thread, then handed over a task whose status repeats that reply.
+
+    The reply is the task's status message and the end of its history, not a
+    message the task loses because it has heard it before.
+    """
+    final = _message("the report", message_id="R")
+    await manager.process(_status(message=final))
+
+    await _hand_over(queue, in_hand, _completed(final, _message("a note", message_id="H1")))
+
+    stored = await store.get(TASK_ID, call_context)
+    assert [m.message_id for m in stored.history] == ["U1", "H1", "R"]
+    assert stored.status.message.message_id == "R"
 
 
 def message(id, role=Role.ROLE_AGENT, extensions=()):
