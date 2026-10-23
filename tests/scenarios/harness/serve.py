@@ -22,7 +22,7 @@ from tests.scenarios.frameworks import Framework
 
 from .control_plane import control_plane
 
-__all__ = ["ServeProcess", "ServeVariant", "configs_root", "render_config"]
+__all__ = ["AGENT_PORTS", "ServeProcess", "ServeVariant", "configs_root", "render_config"]
 
 DEFAULT_AGENT_ID = "scenario-agent"
 KEEP_SERVE = "KEEP_SERVE"
@@ -37,6 +37,20 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 The agents are modules of ``tests.scenarios`` and the server imports them by
 the path ``aion.yaml`` names. Nothing about a child `aion serve` would put
 this repository on its ``sys.path``, so the harness does.
+"""
+
+AGENT_PORTS = (20000, 29999)
+"""The ports every server's agents take, given to `aion serve` as its port range.
+
+The range lies below the ports the kernel picks for a socket bound to port 0
+(32768 and up on Linux, 49152 and up on macOS). A proxy's port comes from
+there (``_free_port``), as do the ports of the stand-in control plane and the
+push callbacks. A proxy port is free again before `aion serve` binds it, so no
+agent may take a port from that range: `aion serve --port P` without a range
+of its own puts its agents on P + 1 and up, and macOS picks ports in
+sequence, so P + 1 is the proxy port of the next server the harness creates.
+Servers share this range safely: `aion serve` holds each agent port from the
+moment it finds it free, so two servers starting at once take different ones.
 """
 
 STARTUP_TIMEOUT_SECONDS = 30
@@ -219,16 +233,15 @@ class ServeProcess:
 
     One process serves one (framework, variant) pair for the whole session.
     The scenarios reach the agents through the proxy, which is what a
-    deployment exposes.
+    deployment exposes. The proxy listens on ``port`` when one is given, and
+    on a port the kernel picks otherwise; the agents on ports in
+    ``AGENT_PORTS``.
     """
 
-    def __init__(self, framework: Framework, variant: ServeVariant) -> None:
+    def __init__(self, framework: Framework, variant: ServeVariant, port: Optional[int] = None) -> None:
         self.framework = framework
         self.variant = variant
-        # Bind the shared service first so its ephemeral port does not consume
-        # the adjacent agent port after we choose the proxy's base port.
-        control_plane()
-        self.port = _free_port()
+        self.port = port if port is not None else _free_port()
         self._directory = Path(tempfile.mkdtemp(prefix=f"aion-scenarios-{framework.name}-{variant.name}-"))
         self._process: Optional[subprocess.Popen] = None
         self._log_handle = None
@@ -286,7 +299,8 @@ class ServeProcess:
                 str(_aion_executable()),
                 "serve",
                 "--port", str(self.port),
-                "--port-range-start", str(self.port + 1),
+                "--port-range-start", str(AGENT_PORTS[0]),
+                "--port-range-end", str(AGENT_PORTS[1]),
                 "--startup-timeout", str(STARTUP_TIMEOUT_SECONDS),
             ],
             cwd=self._directory,
