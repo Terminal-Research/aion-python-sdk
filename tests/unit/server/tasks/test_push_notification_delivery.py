@@ -403,6 +403,80 @@ class TestPushCarriesWhatTheTaskStores:
         assert failed[0].status.message.parts[0].text == "crash reason"
 
 
+class _Webhook:
+    """A push transport stand-in that takes a round trip per delivery, like an HTTP POST.
+
+    The real sender awaits the receiver's answer, and that await is where
+    everything else scheduled on the loop gets to run - the teardown of an
+    interrupted task among it. A delivery counts as made once the answer is
+    back; ``started`` counts the ones that were begun, so a delivery cut off
+    halfway shows as a difference between the two.
+    """
+
+    def __init__(self) -> None:
+        self.started = 0
+        self.delivered: list = []
+
+    async def send_notification(self, task_id: str, event) -> None:
+        self.started += 1
+        copy = type(event)()
+        copy.CopyFrom(event)
+        await asyncio.sleep(0.01)
+        self.delivered.append(copy)
+
+
+class TestInterruptIsPushed:
+    """A task that stops for input reaches the webhook like a finished one.
+
+    The hosted platform sends with ``returnImmediately`` and learns what
+    happened next only by push, so an interrupt that is not pushed leaves its
+    caller waiting until it times out.
+    """
+
+    @pytest.mark.anyio
+    async def test_an_interrupt_is_pushed_once_after_the_earlier_events(self, execution_scope):
+        """The whole turn is pushed in order, and the ActiveTask is still closed."""
+        webhook = _Webhook()
+        call_context = ServerCallContext(user=_NamedUser("alice"))
+        registry = AionActiveTaskRegistry(
+            agent_executor=_ScriptedExecutor([
+                _submitted(),
+                _working(),
+                _terminal_status(TaskState.TASK_STATE_INPUT_REQUIRED, text="Which environment?"),
+            ]),
+            task_store=InMemoryTaskStore(),
+            push_sender=webhook,
+        )
+        active_task = await registry.get_or_create(
+            TASK_ID, call_context=call_context, context_id=CONTEXT_ID, create_task_if_missing=True,
+        )
+
+        # A returnImmediately send: the caller leaves with the first event.
+        events = active_task.subscribe(
+            request=RequestContext(call_context=call_context, task_id=TASK_ID, context_id=CONTEXT_ID),
+        )
+        await anext(events)
+        await events.aclose()
+        await _until_settled(
+            lambda: active_task._is_finished.is_set()
+            and not registry._active_tasks
+            and not registry._interruption_tasks
+            and not registry._cleanup_tasks
+        )
+
+        states = [(type(event).__name__, TaskState.Name(event.status.state)) for event in webhook.delivered]
+        assert states == [
+            ("Task", "TASK_STATE_SUBMITTED"),
+            ("TaskStatusUpdateEvent", "TASK_STATE_WORKING"),
+            ("Task", "TASK_STATE_INPUT_REQUIRED"),
+        ]
+        assert webhook.started == len(webhook.delivered), "a delivery was cut off"
+        assert webhook.delivered[-1].status.message.parts[0].text == "Which environment?"
+        assert active_task._is_finished.is_set()
+        assert not registry._active_tasks
+        await registry.aclose()
+
+
 class TestPushSenderWiring:
     """Wiring specific to the push channel: the registry, not the handler,
     installs the projection here, since push dispatch has no per-request

@@ -46,9 +46,9 @@ class AionTaskManager(TaskManager):
         """Initialize the manager and bind the registry's interrupt callback.
 
         The callback is deliberately synchronous and only schedules cleanup.
-        ``save_task_event`` runs inside the SDK consumer; awaiting ``aclose``
-        from that stack would cancel the consumer while it is handling the very
-        event that requested cleanup.
+        ``save_task_event`` runs inside the SDK consumer, which pushes the
+        event and hands it to subscribers after the write; the registry closes
+        the ActiveTask only once the consumer has done so.
         """
         super().__init__(*args, **kwargs)
         # Every read and write this manager makes carries the request's
