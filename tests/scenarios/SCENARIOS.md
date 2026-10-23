@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-207 scenarios in 37 files, 465 runs across 2 frameworks: 430 run, 34 skipped, 1 independent of the framework.
+208 scenarios in 38 files, 467 runs across 2 frameworks: 432 run, 34 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -73,7 +73,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `daemon` | daemon extension identity and environment | 7 | `make tests-scenarios TAGS=daemon` |
 | `authentication` | bearer tokens: required, verified, and naming the caller | 6 | `make tests-scenarios TAGS=authentication` |
 | `config` | aion.yaml configuration and deployment variants | 8 | `make tests-scenarios TAGS=config` |
-| `lifecycle` | cancel, concurrency, push notifications, startup | 9 | `make tests-scenarios TAGS=lifecycle` |
+| `lifecycle` | cancel, concurrency, push notifications, startup | 10 | `make tests-scenarios TAGS=lifecycle` |
 | `contexts` | Context extension: list, read and delete conversations | 5 | `make tests-scenarios TAGS=contexts` |
 | `evolution` | the evolution extension through the SDK's wrapper and a stand-in toolkit: the standard path, refusals as REJECTED tasks, a cancel | 15 | `make tests-scenarios TAGS=evolution` |
 | `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 20 | `make tests-scenarios-persistence` |
@@ -294,6 +294,14 @@ The other door: an agent that hands the server a finished A2A payload.
 | [Identity is the server's, whatever the payload says or omits.](core/test_outbox.py#L136 "test_the_server_keeps_the_ids_the_patch_left_unset") | `events` | `outbox-task` | `default` | ✓ | ✓ |
 | [An outbox answers the turn that wrote it, and only that one.](core/test_outbox.py#L154 "test_the_next_turn_in_the_context_does_not_repeat_the_outbox") | `events` | `outbox-message` | `default` | ✓ | ✓ |
 | [A task patch is not merged again into the next task of the context.](core/test_outbox.py#L175 "test_the_next_turn_in_the_context_does_not_repeat_the_task_patch") | `events` | `outbox-task` | `default` | ✓ | ✓ |
+
+### `tests/scenarios/core/test_ports.py`
+
+Servers side by side on one machine, each on the ports it was given.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [Two servers whose proxy ports are neighbours both start, each with its agents in the range it was given.](core/test_ports.py#L60 "test_servers_on_neighbouring_ports_both_start") | `lifecycle` | — | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_push_notifications.py`
 
