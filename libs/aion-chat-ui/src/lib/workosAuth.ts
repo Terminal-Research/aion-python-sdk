@@ -3,7 +3,7 @@ import {
 	defaultCredentialStore,
 	type CredentialStore
 } from "./credentialStore.js";
-import type { AionEnvironmentId } from "./environment.js";
+import { getControlPlaneApiBaseUrl, normalizeControlPlaneOrigin, type AionEnvironmentId } from "./environment.js";
 
 const DEVICE_CODE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
 const REFRESH_TOKEN_GRANT_TYPE = "refresh_token";
@@ -56,12 +56,23 @@ export interface AuthSession {
 }
 
 interface AuthOptions {
+	controlPlaneOrigin?: string;
 	fetchImpl?: typeof fetch;
 	credentialStore?: CredentialStore;
 	forceRefresh?: boolean;
 }
 
-const accessTokenCache = new Map<AionEnvironmentId, AuthSession>();
+const accessTokenCache = new Map<string, AuthSession>();
+
+function cacheKey(id: AionEnvironmentId, origin?: string): string {
+	return JSON.stringify([id, getControlPlaneApiBaseUrl(id, origin)]);
+}
+
+// Keep the original keychain protocol for built-in environments.
+function originArgs(id: AionEnvironmentId, origin?: string): [] | [string] {
+	const normalized = normalizeControlPlaneOrigin(id, origin);
+	return normalized ? [normalized] : [];
+}
 
 function wait(ms: number): Promise<void> {
 	return new Promise((resolve) => {
@@ -250,7 +261,8 @@ async function refreshSession(
 	config: CliAuthConfig,
 	refreshToken: string,
 	fetchImpl: typeof fetch,
-	credentialStore: CredentialStore
+	credentialStore: CredentialStore,
+	controlPlaneOrigin?: string
 ): Promise<AuthSession> {
 	if (!config.workos.supportsDirectRefresh) {
 		throw new Error("This Aion API environment does not support direct CLI refresh.");
@@ -275,8 +287,8 @@ async function refreshSession(
 	}
 
 	const session = normalizeTokenResponse((await response.json()) as WorkOSTokenResponse);
-	await credentialStore.setRefreshToken(environmentId, session.refreshToken);
-	accessTokenCache.set(environmentId, session);
+	await credentialStore.setRefreshToken(environmentId, session.refreshToken, ...originArgs(environmentId, controlPlaneOrigin));
+	accessTokenCache.set(cacheKey(environmentId, controlPlaneOrigin), session);
 	return session;
 }
 
@@ -285,9 +297,10 @@ export async function loginWithWorkOS(
 	callbacks: LoginCallbacks = {},
 	options: AuthOptions = {}
 ): Promise<AuthSession> {
+	const controlPlaneOrigin = normalizeControlPlaneOrigin(environmentId, options.controlPlaneOrigin);
 	const fetchImpl = options.fetchImpl ?? fetch;
 	const credentialStore = options.credentialStore ?? defaultCredentialStore;
-	const config = await fetchCliAuthConfig(environmentId, fetchImpl);
+	const config = await fetchCliAuthConfig(environmentId, fetchImpl, controlPlaneOrigin);
 	const deviceAuthorization = await requestDeviceAuthorization(config, fetchImpl);
 	await callbacks.onDeviceAuthorization?.({
 		userCode: deviceAuthorization.user_code,
@@ -306,8 +319,8 @@ export async function loginWithWorkOS(
 		callbacks,
 		fetchImpl
 	);
-	await credentialStore.setRefreshToken(environmentId, session.refreshToken);
-	accessTokenCache.set(environmentId, session);
+	await credentialStore.setRefreshToken(environmentId, session.refreshToken, ...originArgs(environmentId, controlPlaneOrigin));
+	accessTokenCache.set(cacheKey(environmentId, controlPlaneOrigin), session);
 	return session;
 }
 
@@ -315,25 +328,27 @@ export async function getStoredAccessToken(
 	environmentId: AionEnvironmentId,
 	options: AuthOptions = {}
 ): Promise<string | undefined> {
-	const cached = accessTokenCache.get(environmentId);
+	const cached = accessTokenCache.get(cacheKey(environmentId, options.controlPlaneOrigin));
 	if (!options.forceRefresh && cached && !tokenNeedsRefresh(cached)) {
 		return cached.accessToken;
 	}
 
+	const controlPlaneOrigin = normalizeControlPlaneOrigin(environmentId, options.controlPlaneOrigin);
 	const fetchImpl = options.fetchImpl ?? fetch;
 	const credentialStore = options.credentialStore ?? defaultCredentialStore;
-	const refreshToken = await credentialStore.getRefreshToken(environmentId);
+	const refreshToken = await credentialStore.getRefreshToken(environmentId, ...originArgs(environmentId, controlPlaneOrigin));
 	if (!refreshToken) {
 		return undefined;
 	}
 
-	const config = await fetchCliAuthConfig(environmentId, fetchImpl);
+	const config = await fetchCliAuthConfig(environmentId, fetchImpl, controlPlaneOrigin);
 	const session = await refreshSession(
 		environmentId,
 		config,
 		refreshToken,
 		fetchImpl,
-		credentialStore
+		credentialStore,
+		controlPlaneOrigin
 	);
 	return session.accessToken;
 }

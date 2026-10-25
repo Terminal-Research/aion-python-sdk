@@ -104,12 +104,13 @@ export function createDefaultLocalAgentSource(): AgentSourceRecord {
 }
 
 export function createDefaultRegistryAgentSource(
-	environmentId: AionEnvironmentId
+	environmentId: AionEnvironmentId,
+	controlPlaneOrigin?: string
 ): AgentSourceRecord {
 	return {
 		sourceKey: `${DEFAULT_REGISTRY_AGENT_SOURCE_KEY_PREFIX}-${environmentId}`,
 		type: "registry",
-		url: getControlPlaneApiBaseUrl(environmentId),
+		url: getControlPlaneApiBaseUrl(environmentId, controlPlaneOrigin),
 		description: `Aion ${environmentId} registry`,
 		enabled: true,
 		isDefault: true,
@@ -144,17 +145,19 @@ export function createAgentKey(sourceKey: string, identifier: string): string {
 export function mergeAgentSources(
 	persistedSources: Record<string, AgentSourceRecord>,
 	environmentId: AionEnvironmentId,
-	explicitUrl?: string
+	explicitUrl?: string,
+	controlPlaneOrigin?: string
 ): RuntimeAgentSource[] {
 	const sources = new Map<string, RuntimeAgentSource>();
 	const defaultSource = createDefaultLocalAgentSource();
 	sources.set(defaultSource.sourceKey, defaultSource);
-	const defaultRegistrySource = createDefaultRegistryAgentSource(environmentId);
+	const defaultRegistrySource = createDefaultRegistryAgentSource(environmentId, controlPlaneOrigin);
 	sources.set(defaultRegistrySource.sourceKey, defaultRegistrySource);
 
 	for (const source of Object.values(persistedSources)) {
 		if (source.enabled) {
-			sources.set(source.sourceKey, source);
+			sources.set(source.sourceKey, source.sourceKey === defaultRegistrySource.sourceKey
+				? { ...source, url: defaultRegistrySource.url } : source);
 		}
 	}
 

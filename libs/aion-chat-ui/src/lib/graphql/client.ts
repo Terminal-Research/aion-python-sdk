@@ -175,9 +175,10 @@ export async function executeGraphQL<TData, TVariables = Record<string, never>>(
 
 export function buildAuthenticatedGraphQLWebSocketUrl(
 	environmentId: AionEnvironmentId,
-	accessToken?: string
+	accessToken?: string,
+	controlPlaneOrigin?: string
 ): string {
-	const url = new URL(getGraphQLWebSocketUrl(environmentId));
+	const url = new URL(getGraphQLWebSocketUrl(environmentId, controlPlaneOrigin));
 	if (accessToken) {
 		url.searchParams.set("token", accessToken);
 	}

@@ -6,6 +6,7 @@ import {
 	getGraphQLHttpUrlForBaseUrl
 } from "../environment.js";
 import { fetchRegistryAgentIdentities } from "../graphql/registry.js";
+import { CredentialDestinationError } from "../credentialErrors.js";
 import type { ChatSessionLogger } from "../sessionLogger.js";
 import {
 	createAgentKey,
@@ -57,6 +58,7 @@ export interface ControlPlaneAccessTokenRequest {
 
 export interface AgentDiscoveryOptions {
 	environmentId: AionEnvironmentId;
+	controlPlaneOrigin?: string;
 	controlPlaneAccessTokenProvider?: (
 		request?: ControlPlaneAccessTokenRequest
 	) => Promise<string | undefined>;
@@ -380,6 +382,7 @@ function registryUnavailableResult(
 }
 
 function registryDiscoveryErrorMessage(error: unknown): string {
+	if (error instanceof CredentialDestinationError) return error.message;
 	const message = error instanceof Error ? error.message : String(error);
 	if (/workos|token|auth|login|credential|jwt|expired|unauthorized|forbidden/iu.test(message)) {
 		return REGISTRY_AUTH_FAILED_MESSAGE;
@@ -397,6 +400,7 @@ function registryDiscoveryErrorMessage(error: unknown): string {
 }
 
 function isRegistryAuthenticationError(error: unknown): boolean {
+	if (error instanceof CredentialDestinationError) return false;
 	const message = error instanceof Error ? error.message : String(error);
 	return /workos|token|auth|login|credential|jwt|expired|unauthorized|forbidden|401|403/iu.test(
 		message
@@ -425,7 +429,7 @@ async function discoverRegistrySource(
 ): Promise<SourceDiscoveryResult> {
 	let accessToken: string | undefined;
 	if (options && normalizeSourceUrl(source.url) !==
-		normalizeSourceUrl(getControlPlaneApiBaseUrl(options.environmentId))) {
+		normalizeSourceUrl(getControlPlaneApiBaseUrl(options.environmentId, options.controlPlaneOrigin))) {
 		return registryUnavailableResult(source, now, "Account credentials are restricted to the selected control-plane registry.");
 	}
 	try {

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 
-import type { AionEnvironmentId } from "./environment.js";
+import { normalizeControlPlaneOrigin, type AionEnvironmentId } from "./environment.js";
 import type { AnonymousSessionStore } from "./anonymousSession.js";
 
 const SERVICE_NAME = "aion-chat";
@@ -18,18 +18,20 @@ const SERVICE_NAME = "aion-chat";
 export const AION_CHAT_CREDENTIAL_HELPER_ENV = "AION_CHAT_CREDENTIAL_HELPER";
 
 export interface CredentialStore {
-	getRefreshToken(environmentId: AionEnvironmentId): Promise<string | undefined>;
+	getRefreshToken(environmentId: AionEnvironmentId, controlPlaneOrigin?: string): Promise<string | undefined>;
 	setRefreshToken(
 		environmentId: AionEnvironmentId,
-		refreshToken: string
+		refreshToken: string,
+		controlPlaneOrigin?: string
 	): Promise<void>;
-	deleteRefreshToken(environmentId: AionEnvironmentId): Promise<void>;
+	deleteRefreshToken(environmentId: AionEnvironmentId, controlPlaneOrigin?: string): Promise<void>;
 }
 
 type CredentialHelperRequest = {
 	action: "get" | "set" | "delete";
 	environmentId: AionEnvironmentId;
 	refreshToken?: string;
+	controlPlaneOrigin?: string;
 } | {
 	action: "get-session" | "set-session";
 	sessionKey: string;
@@ -41,8 +43,14 @@ interface CredentialHelperResponse {
 	session?: string | null;
 }
 
-function accountName(environmentId: AionEnvironmentId): string {
-	return `${environmentId}:user`;
+export function accountName(environmentId: AionEnvironmentId, controlPlaneOrigin?: string): string {
+	const origin = normalizeControlPlaneOrigin(environmentId, controlPlaneOrigin);
+	return `${environmentId}:user${origin ? `:${encodeURIComponent(origin)}` : ""}`;
+}
+
+function originField(environmentId: AionEnvironmentId, origin?: string): { controlPlaneOrigin?: string } {
+	const normalized = normalizeControlPlaneOrigin(environmentId, origin);
+	return normalized ? { controlPlaneOrigin: normalized } : {};
 }
 
 function credentialError(action: string, error: unknown): Error {
@@ -106,20 +114,21 @@ export class HelperCredentialStore implements CredentialStore, AnonymousSessionS
 		this.command = parseCredentialHelperCommand(commandValue);
 	}
 
-	async getRefreshToken(environmentId: AionEnvironmentId): Promise<string | undefined> {
-		const response = await this.request({ action: "get", environmentId });
+	async getRefreshToken(environmentId: AionEnvironmentId, controlPlaneOrigin?: string): Promise<string | undefined> {
+		const response = await this.request({ action: "get", environmentId, ...originField(environmentId, controlPlaneOrigin) });
 		return response.refreshToken?.trim() || undefined;
 	}
 
 	async setRefreshToken(
 		environmentId: AionEnvironmentId,
-		refreshToken: string
+		refreshToken: string,
+		controlPlaneOrigin?: string
 	): Promise<void> {
-		await this.request({ action: "set", environmentId, refreshToken });
+		await this.request({ action: "set", environmentId, refreshToken, ...originField(environmentId, controlPlaneOrigin) });
 	}
 
-	async deleteRefreshToken(environmentId: AionEnvironmentId): Promise<void> {
-		await this.request({ action: "delete", environmentId });
+	async deleteRefreshToken(environmentId: AionEnvironmentId, controlPlaneOrigin?: string): Promise<void> {
+		await this.request({ action: "delete", environmentId, ...originField(environmentId, controlPlaneOrigin) });
 	}
 
 	async getAnonymousSession(sessionKey: string): Promise<string | undefined> {
@@ -189,12 +198,12 @@ export class KeyringCredentialStore implements CredentialStore, AnonymousSession
 		const { AsyncEntry } = await loadKeyring();
 		await new AsyncEntry(SERVICE_NAME, key).setPassword(value);
 	}
-	async getRefreshToken(environmentId: AionEnvironmentId): Promise<string | undefined> {
+	async getRefreshToken(environmentId: AionEnvironmentId, controlPlaneOrigin?: string): Promise<string | undefined> {
 		try {
 			const { AsyncEntry } = await loadKeyring();
 			const token = await new AsyncEntry(
 				SERVICE_NAME,
-				accountName(environmentId)
+				accountName(environmentId, controlPlaneOrigin)
 			).getPassword();
 			return token ?? undefined;
 		} catch (error) {
@@ -204,11 +213,12 @@ export class KeyringCredentialStore implements CredentialStore, AnonymousSession
 
 	async setRefreshToken(
 		environmentId: AionEnvironmentId,
-		refreshToken: string
+		refreshToken: string,
+		controlPlaneOrigin?: string
 	): Promise<void> {
 		try {
 			const { AsyncEntry } = await loadKeyring();
-			await new AsyncEntry(SERVICE_NAME, accountName(environmentId)).setPassword(
+			await new AsyncEntry(SERVICE_NAME, accountName(environmentId, controlPlaneOrigin)).setPassword(
 				refreshToken
 			);
 		} catch (error) {
@@ -216,12 +226,12 @@ export class KeyringCredentialStore implements CredentialStore, AnonymousSession
 		}
 	}
 
-	async deleteRefreshToken(environmentId: AionEnvironmentId): Promise<void> {
+	async deleteRefreshToken(environmentId: AionEnvironmentId, controlPlaneOrigin?: string): Promise<void> {
 		try {
 			const { AsyncEntry } = await loadKeyring();
 			await new AsyncEntry(
 				SERVICE_NAME,
-				accountName(environmentId)
+				accountName(environmentId, controlPlaneOrigin)
 			).deletePassword();
 		} catch (error) {
 			throw credentialError("delete", error);

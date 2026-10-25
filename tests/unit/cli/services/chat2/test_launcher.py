@@ -83,6 +83,7 @@ def test_chat_run_launch_options_to_args() -> None:
         "streaming-message",
         "--response-mode",
         "a2a",
+        "--",
         "hello there",
     ]
 
@@ -219,6 +220,7 @@ def test_launch_chat_run_returns_process_exit_code(monkeypatch) -> None:
         "send-message",
         "--response-mode",
         "message",
+        "--",
         "hello",
     ]
     assert recorded["check"] is False
@@ -227,3 +229,15 @@ def test_launch_chat_run_returns_process_exit_code(monkeypatch) -> None:
     helper = json.loads(recorded["env"]["AION_CHAT_CREDENTIAL_HELPER"])
     assert helper[:2] == [launcher.sys.executable, "-m"]
     assert helper[2] == "aion.cli.services.chat.credentials"
+
+
+def test_headless_stdin_marker_is_not_escaped():
+    """The message separator must not turn the stdin marker into literal text."""
+    options = launcher.ChatRunLaunchOptions(
+        endpoint=None, agent_id=None, agent=None, token=None, headers={},
+        push_notifications=False, push_receiver="http://localhost:5000",
+        request_mode="send-message", response_mode="message", message="-",
+        environment_id="development",
+    )
+    assert options.to_args()[-1] == "-"
+    assert "--" not in options.to_args()

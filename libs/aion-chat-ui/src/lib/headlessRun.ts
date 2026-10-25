@@ -559,17 +559,22 @@ export async function runHeadless(
 		stderr
 	);
 	const environmentSettings = settings.environments[selectedEnvironment];
+	const controlPlaneOrigin = environmentSettings.controlPlaneOrigin;
+	const accountToken = () => controlPlaneOrigin
+		? getStoredAccessTokenImpl(selectedEnvironment, { controlPlaneOrigin })
+		: getStoredAccessTokenImpl(selectedEnvironment);
 	const explicitSourceKey = options.url
 		? createExplicitAgentSource(options.url).sourceKey
 		: undefined;
 	const runtimeSources = mergeAgentSources(
 		environmentSettings.agentSources,
 		selectedEnvironment,
-		options.url
+		options.url,
+		controlPlaneOrigin
 	);
 	const credentials = new SourceCredentials({
-		environmentId: selectedEnvironment, cli: options,
-		accountToken: () => getStoredAccessTokenImpl(selectedEnvironment),
+		environmentId: selectedEnvironment, controlPlaneOrigin, cli: options,
+		accountToken,
 		store: dependencies.sessionStore, fetch: fetchImpl
 	});
 
@@ -593,9 +598,9 @@ export async function runHeadless(
 		}
 		const discovery = await discoverAgentSourcesImpl(runtimeSources, fetchImpl, {
 			environmentId: selectedEnvironment,
-			controlPlaneAccessTokenProvider: () =>
-				getStoredAccessTokenImpl(selectedEnvironment),
-			graphQLFetchImpl: credentials.fetch(createDefaultRegistryAgentSource(selectedEnvironment)),
+			controlPlaneOrigin,
+			controlPlaneAccessTokenProvider: accountToken,
+			graphQLFetchImpl: credentials.fetch(createDefaultRegistryAgentSource(selectedEnvironment, controlPlaneOrigin)),
 			sourceFetchImpl: (source) => credentials.fetch(source),
 			logger
 		});

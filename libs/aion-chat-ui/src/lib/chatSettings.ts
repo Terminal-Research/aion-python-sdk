@@ -6,7 +6,9 @@ import {
 	type AionEnvironmentId,
 	AION_ENVIRONMENT_IDS,
 	DEFAULT_AION_ENVIRONMENT_ID,
-	isAionEnvironmentId
+	isAionEnvironmentId,
+	getControlPlaneApiBaseUrl,
+	normalizeControlPlaneOrigin
 } from "./environment.js";
 import {
 	type ChatModeSettings,
@@ -20,6 +22,7 @@ import {
 } from "./agents/model.js";
 
 interface ChatEnvironmentSettingsFile {
+	controlPlaneOrigin?: string;
 	requestMode?: string;
 	responseMode?: string;
 	selectedAgentId?: string | null;
@@ -41,6 +44,7 @@ interface ChatSettingsFile {
 }
 
 export interface ChatEnvironmentSettings extends ChatModeSettings {
+	controlPlaneOrigin?: string;
 	selectedAgentId?: string;
 	selectedAgentKey?: string;
 	agentSources: Record<string, AgentSourceRecord>;
@@ -207,8 +211,10 @@ function defaultSettings(): ChatSettings {
 
 function normalizeEnvironmentSettings(
 	value: ChatEnvironmentSettingsFile | undefined,
-	fallback: ChatEnvironmentSettings
+	fallback: ChatEnvironmentSettings,
+	environmentId: AionEnvironmentId
 ): ChatEnvironmentSettings {
+	const controlPlaneOrigin = normalizeControlPlaneOrigin(environmentId, value?.controlPlaneOrigin);
 	const requestMode = isRequestMode(value?.requestMode)
 		? value.requestMode
 		: fallback.requestMode;
@@ -240,6 +246,8 @@ function normalizeEnvironmentSettings(
 			agentSources[normalized.sourceKey] = normalized;
 		}
 	}
+	const registry = createDefaultRegistryAgentSource(environmentId, controlPlaneOrigin);
+	agentSources[registry.sourceKey] = { ...registry, ...agentSources[registry.sourceKey], url: registry.url };
 	const agents: Record<string, AgentRecord> = {};
 	for (const [key, agent] of Object.entries(value?.agents ?? {})) {
 		const normalized = normalizeAgentRecord(key, agent);
@@ -251,6 +259,7 @@ function normalizeEnvironmentSettings(
 	return {
 		requestMode,
 		responseMode,
+		...(controlPlaneOrigin ? { controlPlaneOrigin } : {}),
 		...(selectedAgentId ? { selectedAgentId } : {}),
 		...(selectedAgentKey ? { selectedAgentKey } : {}),
 		agentSources,
@@ -271,14 +280,16 @@ function normalizeSettings(parsed: ChatSettingsFile): {
 			requestMode: parsed.requestMode,
 			responseMode: parsed.responseMode
 		},
-		defaults.environments[selectedEnvironment]
+		defaults.environments[selectedEnvironment],
+		selectedEnvironment
 	);
 	const environments = Object.fromEntries(
 		AION_ENVIRONMENT_IDS.map((id) => [
 			id,
 			normalizeEnvironmentSettings(
 				parsed.environments?.[id],
-				id === selectedEnvironment ? legacyFallback : defaults.environments[id]
+				id === selectedEnvironment ? legacyFallback : defaults.environments[id],
+				id
 			)
 		])
 	) as Record<AionEnvironmentId, ChatEnvironmentSettings>;
@@ -494,14 +505,51 @@ export function saveChatModeSettings(
 	}, settingsPath);
 }
 
+/** Select an environment and optionally replace its saved development origin. */
+export function selectChatEnvironment(
+	settings: ChatSettings,
+	environmentId: AionEnvironmentId,
+	origin?: string
+): ChatSettings {
+	const current = settings.environments[environmentId];
+	const controlPlaneOrigin = origin === undefined
+		? current.controlPlaneOrigin
+		: normalizeControlPlaneOrigin(environmentId, origin);
+	const registry = createDefaultRegistryAgentSource(environmentId, controlPlaneOrigin);
+	const changed = getControlPlaneApiBaseUrl(environmentId, current.controlPlaneOrigin) !== registry.url;
+	const next: ChatEnvironmentSettings = {
+		...current,
+		controlPlaneOrigin,
+		agentSources: {
+			...current.agentSources,
+			[registry.sourceKey]: {
+				...registry,
+				...current.agentSources[registry.sourceKey],
+				url: registry.url
+			}
+		},
+		// Registry identities and context IDs are not portable between control planes.
+		agents: changed
+			? Object.fromEntries(Object.entries(current.agents).filter(([, agent]) => agent.sourceKey !== registry.sourceKey))
+			: current.agents
+	};
+	if (changed) {
+		delete next.selectedAgentId;
+		delete next.selectedAgentKey;
+	}
+	return {
+		...settings,
+		selectedEnvironment: environmentId,
+		environments: { ...settings.environments, [environmentId]: next }
+	};
+}
+
 export function saveSelectedEnvironment(
 	environmentId: AionEnvironmentId,
-	settingsPath = resolveChatSettingsPath()
+	settingsPath = resolveChatSettingsPath(),
+	controlPlaneOrigin?: string
 ): string | undefined {
-	return updateChatSettings((settings) => ({
-		...settings,
-		selectedEnvironment: environmentId
-	}), settingsPath);
+	return updateChatSettings((settings) => selectChatEnvironment(settings, environmentId, controlPlaneOrigin), settingsPath);
 }
 
 export function saveSelectedAgent(

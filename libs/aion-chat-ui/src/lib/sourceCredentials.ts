@@ -1,6 +1,7 @@
 import type { ChatCliOptions } from "../args.js";
 import { AnonymousSession, trustedUrl, type AnonymousSessionStore } from "./anonymousSession.js";
 import { defaultCredentialStore } from "./credentialStore.js";
+import { CredentialDestinationError } from "./credentialErrors.js";
 import { mergeRequestHeaders } from "./requestHeaders.js";
 import { getControlPlaneApiBaseUrl, type AionEnvironmentId } from "./environment.js";
 import { hashValue, isTransientAgentSource, normalizeSourceUrl, type RuntimeAgentSource } from "./agents/model.js";
@@ -14,6 +15,7 @@ export class SourceCredentials {
 
 	constructor(private readonly options: {
 		environmentId: AionEnvironmentId;
+		controlPlaneOrigin?: string;
 		cli: Pick<ChatCliOptions, "token" | "headers">;
 		accountToken: () => Promise<string | undefined>;
 		store?: AnonymousSessionStore;
@@ -24,7 +26,7 @@ export class SourceCredentials {
 
 	isRegistry(source: RuntimeAgentSource): boolean {
 		return source.type === "registry" && normalizeSourceUrl(source.url) ===
-			normalizeSourceUrl(getControlPlaneApiBaseUrl(this.options.environmentId));
+			normalizeSourceUrl(getControlPlaneApiBaseUrl(this.options.environmentId, this.options.controlPlaneOrigin));
 	}
 
 	private explicitHeaders(source: RuntimeAgentSource): Headers {
@@ -43,7 +45,7 @@ export class SourceCredentials {
 		let guest = this.guests.get(key);
 		if (!guest) {
 			guest = new AnonymousSession({
-				controlPlaneUrl: getControlPlaneApiBaseUrl(this.options.environmentId),
+				controlPlaneUrl: getControlPlaneApiBaseUrl(this.options.environmentId, this.options.controlPlaneOrigin),
 				environmentId: this.options.environmentId, sourceId: source.sourceKey,
 				destinationOrigin: trustedUrl(source.url).origin,
 				store: this.options.store ?? defaultCredentialStore, fetch: this.fetcher
@@ -76,7 +78,9 @@ export class SourceCredentials {
 			const request = input instanceof Request ? input : undefined;
 			const url = new URL(request?.url ?? String(input));
 			if (url.origin !== destination || url.username || url.password) {
-				throw new Error("Untrusted credential destination.");
+				throw new CredentialDestinationError(
+					source, destination, url.origin, Boolean(url.username || url.password)
+				);
 			}
 			const signals = [epoch, signal, init?.signal, request?.signal].filter(
 				(value): value is AbortSignal => !!value
@@ -97,6 +101,7 @@ export class SourceCredentials {
 					const claims = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString());
 					if (typeof claims.sub === "string") owner = `${claims.iss}:${claims.sub}`;
 				} catch { /* Opaque account credentials get conservative token-scoped caching. */ }
+				if (this.options.controlPlaneOrigin) owner = `${getControlPlaneApiBaseUrl(this.options.environmentId, this.options.controlPlaneOrigin)}:${owner}`;
 				this.owners.set(source.sourceKey, `account:${hashValue(owner)}`);
 			} else if (source.type === "registry") {
 				throw new Error("Account credentials are restricted to the selected control-plane registry.");

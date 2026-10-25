@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { SourceCredentials } from "../src/lib/sourceCredentials.js";
+import { CredentialDestinationError } from "../src/lib/credentialErrors.js";
+
 import {
 	discoverAgentSources,
 	selectDiscoveredAgent
@@ -372,6 +375,66 @@ describe("discoverAgentSources", () => {
 			sourceKey: "aion-registry-development",
 			agentCount: 1
 		});
+	});
+
+	it("explains a blocked registry agent card without asking for login or forwarding credentials", async () => {
+		const source = createDefaultRegistryAgentSource("development");
+		const account = vi.fn(async (_request?: { forceRefresh?: boolean }) => "account-secret");
+		const network = vi.fn<typeof fetch>(async (_input, init) => {
+			const { query } = JSON.parse(String(init?.body)) as { query: string };
+			if (query.includes("query LoginBootstrap")) {
+				return Response.json({ data: { login: { nextRoute: null } } });
+			}
+			if (query.includes("query CurrentUser")) {
+				return Response.json({ data: { user: {
+					id: "user-1", homeOrganization: { id: "org-1" },
+					agentIdentity: { id: "personal", organizationId: "org-1", a2aUrl: null }
+				} } });
+			}
+			return Response.json({ data: { agentIdentityDetails: [{ identity: {
+				id: "nfl", name: "NFL Stats", atName: "NFL_Stats",
+				a2aUrl: "https://agents.example/distributions/nfl/a2a",
+				updatedAt: "2026-01-01T00:00:00Z"
+			}, distributionUsages: [] }] } });
+		});
+		const credentials = new SourceCredentials({
+			environmentId: "development", cli: { headers: {} }, accountToken: account,
+			fetch: network
+		});
+		const guarded = credentials.fetch(source);
+		try {
+			const result = await discoverAgentSources([source], network, {
+				environmentId: "development", controlPlaneAccessTokenProvider: account,
+				graphQLFetchImpl: guarded, sourceFetchImpl: () => guarded
+			});
+			const message = result.errors[0]?.error;
+			expect(message).toContain("https://agents.example");
+			expect(message).toContain('Trusted credential destination for "Aion development registry": http://localhost:8080');
+			expect(message).not.toContain("Authentication failed");
+			expect(message).not.toContain("/login");
+			expect(result.sources[0]?.lastError).toBe(message);
+			expect(account).not.toHaveBeenCalledWith({ forceRefresh: true });
+			expect(network).toHaveBeenCalledTimes(3);
+			for (const [input] of network.mock.calls) {
+				expect(new URL(String(input)).origin).toBe("http://localhost:8080");
+			}
+		} finally {
+			credentials.dispose();
+		}
+	});
+
+	it("does not refresh tokens when a registry request is blocked by its credential destination", async () => {
+		const source = createDefaultRegistryAgentSource("development");
+		const account = vi.fn(async (_request?: { forceRefresh?: boolean }) => "account-secret");
+		const error = new CredentialDestinationError(source, "http://localhost:8080", "https://other.test");
+		const graphQLFetchImpl = vi.fn<typeof fetch>(async () => { throw error; });
+		const result = await discoverAgentSources([source], vi.fn(), {
+			environmentId: "development", controlPlaneAccessTokenProvider: account,
+			graphQLFetchImpl
+		});
+		expect(result.errors[0]?.error).toBe(error.message);
+		expect(account).toHaveBeenCalledTimes(1);
+		expect(graphQLFetchImpl).toHaveBeenCalledTimes(1);
 	});
 
 	it("marks registry sources as login-required when no token is available", async () => {

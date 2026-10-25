@@ -128,3 +128,32 @@ def test_helper_never_prints_secrets_in_backend_errors(monkeypatch, capsys) -> N
     output = capsys.readouterr()
     assert "secret-value" not in output.err
     assert output.out == ""
+
+
+@pytest.mark.parametrize("origin, expected", [
+    (None, "development:user"),
+    ("https://dev.test:0", "development:user:https%3A%2F%2Fdev.test%3A0"),
+    ("http://localhost:8080/", "development:user"),
+    ("https://DEV.example.test:443/", "development:user:https%3A%2F%2Fdev.example.test"),
+])
+def test_custom_origin_account_key(origin, expected):
+    assert credentials._account_name("development", origin) == expected
+
+
+def test_custom_origin_does_not_read_default_account(monkeypatch):
+    calls = []
+    monkeypatch.setattr(credentials, "_get_password", lambda key: calls.append(key))
+    credentials._handle_request({"action": "get", "environmentId": "development", "controlPlaneOrigin": "https://dev.test"})
+    assert calls == ["development:user:https%3A%2F%2Fdev.test"]
+
+
+@pytest.mark.parametrize("environment, origin", [
+    ("production", "https://dev.test"), ("development", "https://user:secret@dev.test"),
+    ("development", "https://dev.test/path"), ("development", "ftp://dev.test"),
+])
+def test_invalid_origin_never_accesses_keychain(monkeypatch, environment, origin):
+    calls = []
+    monkeypatch.setattr(credentials, "_get_password", lambda key: calls.append(key))
+    with pytest.raises(credentials.CredentialHelperError):
+        credentials._handle_request({"action": "get", "environmentId": environment, "controlPlaneOrigin": origin})
+    assert calls == []

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { act } from "react";
 import { render } from "ink-testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentCard } from "@a2a-js/sdk";
@@ -64,7 +64,7 @@ beforeEach(() => {
 		const request = new Request(input, init);
 		const body = request.method === "POST" && request.headers.has("Content-Type") ? await request.json() : undefined;
 		calls.push({ url: request.url, authorization: request.headers.get("Authorization"), signal: request.signal, body });
-		if (request.url === "http://localhost:8080/auth/anonymous-sessions") {
+		if (["http://localhost:8080/auth/anonymous-sessions", "https://dev.example.test/auth/anonymous-sessions"].includes(request.url)) {
 			sequence++;
 			return Response.json({ sessionId: `00000000-0000-4000-8000-${String(sequence).padStart(12, "0")}`, token: `secret-guest-${sequence}`, expiresAt: new Date(Date.now() + 30 * 86400000).toISOString() });
 		}
@@ -89,7 +89,7 @@ beforeEach(() => {
 afterEach(() => { app?.unmount(); app = undefined; vi.unstubAllGlobals(); });
 
 async function enter(text: string): Promise<void> {
-	app!.stdin.write(text);
+	await act(async () => { app!.stdin.write(text); });
 	await vi.waitFor(() => expect(app!.lastFrame()).toContain(`› ${text}`));
 	app!.stdin.write("\r");
 }
@@ -111,6 +111,42 @@ function delayReply() {
 }
 
 describe("client credential delivery (controlled receiver, not SDK authentication)", () => {
+	it("switches development API origin without leaking a pending reply or reusing its guest context", async () => {
+		const finish = delayReply();
+		app = render(<ChatApp options={options} />);
+		await vi.waitFor(() => expect(app!.frames.join("\n")).toContain("Connected to"));
+		await enter("hello");
+		await vi.waitFor(() => expect(calls.some((call) => call.body?.method)).toBe(true));
+		const oldPrompt = calls.find((call) => call.body?.method)!;
+		rpcReply = undefined;
+		await enter("/env development https://dev.example.test");
+		await vi.waitFor(() => expect(state.settings.environments.development.controlPlaneOrigin).toBe("https://dev.example.test"));
+		await vi.waitFor(() => expect(calls.some((call) => call.url === "https://dev.example.test/auth/anonymous-sessions")).toBe(true));
+		await vi.waitFor(() => expect(state.settings.environments.development.agents[agentKey]?.credentialScope).toBe("guest:00000000-0000-4000-8000-000000000002"));
+		expect(oldPrompt.signal.aborted).toBe(true);
+		finish(oldPrompt, "Retired origin reply");
+		await enter("new origin prompt");
+		await vi.waitFor(() => expect(calls.some((call) => call.body?.params.message.parts?.[0]?.text === "new origin prompt")).toBe(true));
+		const newPrompt = calls.find((call) => call.body?.params.message.parts?.[0]?.text === "new origin prompt")!;
+		expect(newPrompt.authorization).toBe("Bearer secret-guest-2");
+		expect(newPrompt.body!.params.message.contextId).not.toBe("existing-context");
+		expect(app.frames.join("\n")).not.toContain("Retired origin reply");
+		await enter("/env development");
+		await vi.waitFor(() => expect(app!.frames.join("\n")).toContain("Current environment: development (https://dev.example.test)"));
+		expect(sequence).toBe(2);
+	});
+
+	it("handles invalid /env arguments locally instead of sending them as an agent message", async () => {
+		app = render(<ChatApp options={options} />);
+		await vi.waitFor(() => expect(app!.frames.join("\n")).toContain("Connected to"));
+		for (const command of ["/env invalid", "/env development https://dev.test/path", "/env development https://dev.test extra"]) {
+			await enter(command);
+			await vi.waitFor(() => expect(app!.lastFrame()).not.toContain(`› ${command}`));
+		}
+		expect(calls.filter((call) => call.body?.method)).toHaveLength(0);
+		expect(state.settings.environments.development.controlPlaneOrigin).toBeUndefined();
+	});
+
 	it("welcomes a fresh connection once and persists its ID before sending", async () => {
 		state.settings.environments.development.agents[agentKey]!.activeContextId = undefined;
 		const finish = delayReply();
@@ -275,6 +311,16 @@ describe("client credential delivery (controlled receiver, not SDK authenticatio
 		expect(calls.filter((call) => call.url.startsWith(local.url)).every((call) => call.authorization === "Bearer secret-guest-1")).toBe(true);
 		expect(sequence).toBe(1);
 		expect(JSON.stringify(state.logs)).not.toContain("secret-guest");
+	});
+
+	it("uses the saved custom origin through headless discovery and delivery", async () => {
+		state.settings.environments.development.controlPlaneOrigin = "https://dev.example.test";
+		let output = "";
+		await expect(runHeadless({ ...options, requestMode: "send-message", responseMode: "message-output", message: "hello", readMessageFromStdin: false }, {
+			stdout: { write: (text) => { output += text; } }, stderr: { write: () => undefined }
+		})).resolves.toBe(0);
+		expect(calls[0].url).toBe("https://dev.example.test/auth/anonymous-sessions");
+		expect(output).toContain("Controlled reply");
 	});
 
 	it("connects and sends interactively without restoring another caller's context", async () => {

@@ -1,7 +1,8 @@
 import {
 	type AionEnvironmentId,
 	AION_ENVIRONMENT_IDS,
-	isAionEnvironmentId
+	isAionEnvironmentId,
+	getControlPlaneApiBaseUrl
 } from "./lib/environment.js";
 import {
 	type RequestMode,
@@ -10,6 +11,8 @@ import {
 import { getPackageInfo } from "./packageInfo.js";
 
 export interface ChatCliOptions {
+	environmentId?: AionEnvironmentId;
+	controlPlaneOrigin?: string;
 	newSession?: boolean;
 	url?: string;
 	agentId?: string;
@@ -42,6 +45,7 @@ export type CliCommand =
 	| {
 			kind: "environment";
 			environmentId: AionEnvironmentId;
+			controlPlaneOrigin?: string;
 	  };
 
 const HELP_TEXT = `
@@ -53,6 +57,8 @@ Usage:
   aion-chat run [options] [message]
 
 Options:
+      --env <environment> [origin]  production, staging, or development; saves selection
+                                   Optional HTTP(S) API origin for development only
   -u, --url, --host <endpoint>   Agent or proxy URL to connect to
       --agent-id <agent-id>      Agent identifier for proxy-aware routing
       --token <token>            Bearer token for the explicit --url endpoint
@@ -90,6 +96,8 @@ Agent selection:
   -u, --url, --host <endpoint>   Explicit A2A endpoint or proxy URL
 
 Authentication:
+      --env <environment> [origin]  production, staging, or development; saves selection
+                                   Optional HTTP(S) API origin for development only
       --new-session              Replace guest identity for --url; prior history becomes inaccessible
       --token <token>            Bearer token for the explicit --url endpoint
       --header <key=value>       Repeatable custom HTTP header for the explicit --url endpoint
@@ -110,6 +118,7 @@ Output:
 
 Examples:
   aio run --agent @team-agent "Summarize the latest status"
+  aio run --env development http://localhost:8081 --agent @team-agent "Hello"
   cat prompt.txt | aio run --agent @team-agent -
   aio run --url http://localhost:8000 --agent-id demo-agent "Hello"
   aio run --agent @team-agent --request-mode streaming-message "Hello"
@@ -181,13 +190,13 @@ export function printRunHelp(): void {
 }
 
 function parseEnvironmentCommand(argv: string[]): CliCommand | undefined {
-	const [command, environmentId, extra] = argv;
+	const [command, environmentId, controlPlaneOrigin, extra] = argv;
 	if (command !== "environment" && command !== "env") {
 		return undefined;
 	}
 	if (!environmentId || extra) {
 		throw new Error(
-			`Expected one environment: ${AION_ENVIRONMENT_IDS.join(", ")}`
+			`Expected an environment and optional development API origin: ${AION_ENVIRONMENT_IDS.join(", ")}`
 		);
 	}
 	if (!isAionEnvironmentId(environmentId)) {
@@ -198,11 +207,24 @@ function parseEnvironmentCommand(argv: string[]): CliCommand | undefined {
 
 	return {
 		kind: "environment",
-		environmentId
+		environmentId,
+		...(controlPlaneOrigin !== undefined ? { controlPlaneOrigin: getControlPlaneApiBaseUrl(environmentId, controlPlaneOrigin) } : {})
 	};
 }
 
+function readEnvironmentFlag(argv: string[], index: number): {
+	environmentId: AionEnvironmentId; controlPlaneOrigin?: string; consumed: number
+} {
+	const environmentId = requireValue(argv, index, "--env");
+	if (!isAionEnvironmentId(environmentId)) throw new Error(`Unknown environment '${environmentId}'.`);
+	const candidate = argv[index + 2];
+	const hasOrigin = !!candidate && /^[a-z][a-z0-9+.-]*:\/\//i.test(candidate);
+	return { environmentId, consumed: hasOrigin ? 2 : 1,
+		...(hasOrigin ? { controlPlaneOrigin: getControlPlaneApiBaseUrl(environmentId, candidate) } : {}) };
+}
+
 export function parseArgs(argv: string[]): ChatCliOptions {
+	let environment: Pick<ChatCliOptions, "environmentId" | "controlPlaneOrigin"> = {};
 	let url: string | undefined;
 	let agentId: string | undefined;
 	let token: string | undefined;
@@ -213,6 +235,12 @@ export function parseArgs(argv: string[]): ChatCliOptions {
 	for (let index = 0; index < argv.length; index += 1) {
 		const arg = argv[index];
 		switch (arg) {
+			case "--env": {
+				const { consumed, ...selection } = readEnvironmentFlag(argv, index);
+				environment = selection;
+				index += consumed;
+				break;
+			}
 			case "--url":
 			case "--host":
 			case "-u":
@@ -256,6 +284,7 @@ export function parseArgs(argv: string[]): ChatCliOptions {
 	}
 
 	return {
+		...environment,
 		...(url ? { url } : {}),
 		agentId,
 		token,
@@ -267,6 +296,7 @@ export function parseArgs(argv: string[]): ChatCliOptions {
 
 export function parseRunArgs(argv: string[]): HeadlessRunOptions {
 	let newSession = false;
+	let environment: Pick<ChatCliOptions, "environmentId" | "controlPlaneOrigin"> = {};
 	let url: string | undefined;
 	let agentId: string | undefined;
 	let agentSelector: string | undefined;
@@ -282,6 +312,12 @@ export function parseRunArgs(argv: string[]): HeadlessRunOptions {
 	for (let index = 0; index < argv.length; index += 1) {
 		const arg = argv[index];
 		switch (arg) {
+			case "--env": {
+				const { consumed, ...selection } = readEnvironmentFlag(argv, index);
+				environment = selection;
+				index += consumed;
+				break;
+			}
 			case "--url":
 			case "--host":
 			case "-u":
@@ -334,6 +370,10 @@ export function parseRunArgs(argv: string[]): HeadlessRunOptions {
 			case "--version":
 				printVersion();
 				process.exit(0);
+			case "--":
+				messageArgs.push(...argv.slice(index + 1));
+				index = argv.length;
+				break;
 			case "-":
 				readMessageFromStdin = true;
 				break;
@@ -346,6 +386,7 @@ export function parseRunArgs(argv: string[]): HeadlessRunOptions {
 	}
 
 	return {
+		...environment,
 		...(url ? { url } : {}),
 		agentId,
 		agentSelector,
@@ -362,6 +403,19 @@ export function parseRunArgs(argv: string[]): HeadlessRunOptions {
 }
 
 export function parseCliArgs(argv: string[]): CliCommand {
+	const normalized: string[] = [];
+	for (let index = 0; index < argv.length; index++) {
+		const arg = argv[index];
+		if (arg === "--") { normalized.push(...argv.slice(index)); break; }
+		if (arg.startsWith("--env=")) normalized.push("--env", arg.slice(6));
+		else {
+			normalized.push(arg);
+			if (["--url", "--host", "-u", "--agent-id", "--agent", "--token", "--header", "--push-receiver", "--request-mode", "--response-mode", "--env"].includes(arg) && index + 1 < argv.length) {
+				normalized.push(argv[++index]);
+			}
+		}
+	}
+	argv = normalized;
 	if (argv[0] === "run") {
 		return {
 			kind: "run",

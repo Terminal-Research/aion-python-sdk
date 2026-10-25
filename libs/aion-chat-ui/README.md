@@ -105,11 +105,29 @@ aio environment development
 aio env staging
 aion-chat environment staging
 aion-chat env development
+aio env development http://localhost:8081
+aio --env development https://dev-api.example.com
+aio run --env development https://dev-api.example.com --agent @team-agent "Hello"
 ```
 
 Environment commands switch the selected Aion service environment used by `aio login`, `/login`, and registry-backed agent discovery. They do not change the A2A endpoint supplied with `--url`.
 
-These commands are intentionally hidden: `aio environment ...`, `aio env ...`, `aion-chat environment ...`, and `aion-chat env ...` do not appear in command-line `--help`, and `/environment` and `/env` do not appear in the composer slash command picker. They are still executable when typed exactly.
+Inside chat, type `/env development [origin]`. The Python launcher accepts
+`aion chat --env development [origin]` and `aion chat run --env development [origin]`.
+For example: `aion chat --env development http://localhost:8081`.
+The optional URL is an HTTP(S) **API origin**, without a path, credentials, query or fragment.
+Custom origins are supported only for development. Without a URL, Chat reuses its saved development
+origin, initially `http://localhost:8080`; supply that URL explicitly to reset it. The selection is saved
+in `~/.config/aion/chat2.json` (or `$XDG_CONFIG_HOME/aion/chat2.json`). Chat does not use `AION_API_HOST`
+to select its control plane.
+
+The selected origin is used for registry discovery, login configuration and guest-session issuance.
+Account logins and guest identities are scoped to that origin. Use `/login` or `aio login` to sign in
+when selecting a new origin; an existing login is not copied to it. Changing origins retires active
+requests and registry context references. Credentials remain restricted to their configured source
+origin, including in development.
+
+These commands are intentionally hidden: `aio environment ...`, `aio env ...`, `aion-chat environment ...`, and `aion-chat env ...` do not appear in command-line `--help`, and `/environment` and `/env` do not appear in the composer slash command picker. They are still executable when typed exactly. The `--env` option appears in both interactive and `run` command-line help.
 
 ## Development
 
@@ -125,7 +143,12 @@ version as those clients.
 `SourceCredentials` is the shared fetch boundary for discovery, interactive
 connections and headless requests. It pins each credential to the configured
 source origin and refuses redirects. The registry keeps account authentication;
-direct sources without explicit credentials use `AnonymousSession`. Guest
+direct sources without explicit credentials use `AnonymousSession`. A refused
+credential destination reports the source name, the requested origin and the
+source's trusted origin, without including URL user information, paths or query
+strings. It does not ask the user to log in again or trigger token refresh. The
+source origin includes its scheme, host and port; development uses the same
+check as staging and production. Guest
 lifecycle and keychain records are separate from WorkOS refresh tokens. The
 Python helper exposes `get-session` and `set-session` using `sessionKey` and
 `session`, never the account `refreshToken` field.

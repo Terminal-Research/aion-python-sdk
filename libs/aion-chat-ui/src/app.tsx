@@ -29,6 +29,7 @@ import {
 	parseAgentSelection
 } from "./lib/agentSelection.js";
 import {
+	selectChatEnvironment,
 	loadChatSettings,
 	saveChatSettings,
 	type ChatSettings
@@ -63,6 +64,7 @@ import {
 	type AionEnvironmentId,
 	AION_ENVIRONMENT_IDS,
 	getControlPlaneApiBaseUrl,
+	getGraphQLHttpUrl,
 	isAionEnvironmentId
 } from "./lib/environment.js";
 import {
@@ -334,10 +336,11 @@ type ExactSlashCommand =
 	| { kind: "login" }
 	| { kind: "copy" }
 	| { kind: "clear" }
-	| { kind: "environment"; environmentId?: AionEnvironmentId };
+	| { kind: "environment"; environmentId?: AionEnvironmentId; controlPlaneOrigin?: string }
+	| { kind: "invalid"; message: string };
 
 function parseExactSlashCommand(value: string): ExactSlashCommand | undefined {
-	const [command, environmentId, extra] = value.trim().split(/\s+/);
+	const [command, environmentId, extra, trailing] = value.trim().split(/\s+/);
 	if (command === "/session" && (environmentId === "new" || environmentId === "retry")) {
 		return { kind: "session", action: environmentId, sourceKey: extra };
 	}
@@ -350,12 +353,16 @@ function parseExactSlashCommand(value: string): ExactSlashCommand | undefined {
 	if (command === "/clear" && !environmentId) {
 		return { kind: "clear" };
 	}
-	if ((command === "/environment" || command === "/env") && !extra) {
-		if (!environmentId) {
-			return { kind: "environment" };
+	if (command === "/environment" || command === "/env") {
+		if (!environmentId) return { kind: "environment" };
+		if (!isAionEnvironmentId(environmentId) || trailing) {
+			return { kind: "invalid", message: "Use /env <production|staging|development> [development-api-origin]." };
 		}
-		if (isAionEnvironmentId(environmentId)) {
-			return { kind: "environment", environmentId };
+		try {
+			return { kind: "environment", environmentId,
+				...(extra !== undefined ? { controlPlaneOrigin: getControlPlaneApiBaseUrl(environmentId, extra) } : {}) };
+		} catch (error) {
+			return { kind: "invalid", message: error instanceof Error ? error.message : "Invalid API origin." };
 		}
 	}
 	return undefined;
@@ -381,7 +388,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	);
 	const activeEnvironmentSettings =
 		chatSettings.environments[selectedEnvironment];
-	const controlPlaneApiBaseUrl = getControlPlaneApiBaseUrl(selectedEnvironment);
+	const controlPlaneOrigin = activeEnvironmentSettings.controlPlaneOrigin;
+	const controlPlaneApiBaseUrl = getControlPlaneApiBaseUrl(selectedEnvironment, controlPlaneOrigin);
 	const agentEndpointUrl = options.url;
 	const [pushLabel, setPushLabel] = useState(
 		options.pushNotifications ? "Starting..." : "Disabled"
@@ -437,9 +445,9 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	);
 	const [reconnectNonce, setReconnectNonce] = useState(0);
 	const credentials = useMemo(() => new SourceCredentials({
-		environmentId: selectedEnvironment, cli: options,
-		accountToken: () => getStoredAccessToken(selectedEnvironment)
-	}), [selectedEnvironment, options.token, options.headers]);
+		environmentId: selectedEnvironment, controlPlaneOrigin, cli: options,
+		accountToken: () => getStoredAccessToken(selectedEnvironment, { controlPlaneOrigin })
+	}), [selectedEnvironment, controlPlaneOrigin, options.token, options.headers]);
 	useEffect(() => () => credentials.dispose(), [credentials]);
 	const credentialScopeRef = useRef<string | undefined>(undefined);
 	const connectionSignalRef = useRef<AbortSignal | undefined>(undefined);
@@ -607,11 +615,15 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		setWorkingStartedAt(undefined);
 	};
 
-	const reloadEnvironmentState = (environmentId: AionEnvironmentId): void => {
-		const nextSettings: ChatSettings = {
-			...chatSettings,
-			selectedEnvironment: environmentId
-		};
+	const reloadEnvironmentState = (environmentId: AionEnvironmentId, origin?: string): void => {
+		credentials.cancelPending();
+		welcomeLifetimeRef.current.abort();
+		welcomeLifetimeRef.current = new AbortController();
+		createdContextsRef.current.clear();
+		lastConnectionNoticeRef.current = undefined;
+		connectedAgentKeyRef.current = undefined;
+		credentialScopeRef.current = undefined;
+		const nextSettings = selectChatEnvironment(chatSettings, environmentId, origin);
 		const nextEnvironmentSettings = nextSettings.environments[environmentId];
 		persistSettings(nextSettings);
 		setSelectedEnvironment(environmentId);
@@ -748,7 +760,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			const runtimeSources = mergeAgentSources(
 				activeEnvironmentSettings.agentSources,
 				selectedEnvironment,
-				agentEndpointUrl
+				agentEndpointUrl,
+				controlPlaneOrigin
 			);
 			const explicitSourceKey = agentEndpointUrl
 				? createExplicitAgentSource(agentEndpointUrl).sourceKey
@@ -763,11 +776,13 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				fetch,
 				{
 					environmentId: selectedEnvironment,
+					controlPlaneOrigin,
 					controlPlaneAccessTokenProvider: (request) =>
 						getStoredAccessToken(selectedEnvironment, {
-							forceRefresh: request?.forceRefresh
+							forceRefresh: request?.forceRefresh,
+							controlPlaneOrigin
 						}),
-					graphQLFetchImpl: credentials.fetch(createDefaultRegistryAgentSource(selectedEnvironment)),
+					graphQLFetchImpl: credentials.fetch(createDefaultRegistryAgentSource(selectedEnvironment, controlPlaneOrigin)),
 					sourceFetchImpl: (source) => credentials.fetch(source),
 					logger: chatSessionLogger
 				}
@@ -1438,6 +1453,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		chatSessionLogger.info("auth.login.started", {
 			environmentId: selectedEnvironment
 		});
+		const loginSignal = credentials.signal;
 		try {
 			const session = await loginWithWorkOS(selectedEnvironment, {
 				onDeviceAuthorization: async (prompt) => {
@@ -1456,12 +1472,15 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				onSlowDown: (intervalSeconds) => {
 					appendStatus(`Login polling slowed to every ${intervalSeconds}s.`);
 				}
-			});
+			}, { controlPlaneOrigin });
+			if (loginSignal.aborted) return;
 			const bootstrap = await runLoginBootstrap({
 				environmentId: selectedEnvironment,
 				accessToken: session.accessToken,
+				graphQLUrl: getGraphQLHttpUrl(selectedEnvironment, controlPlaneOrigin),
 				logger: chatSessionLogger
 			});
+			if (loginSignal.aborted) return;
 			const postAuthPath = resolvePostAuthPath(bootstrap);
 			if (postAuthPath) {
 				const postAuthUrl = buildWebAppRouteUrl(selectedEnvironment, postAuthPath);
@@ -1491,22 +1510,25 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	};
 
 	const runEnvironmentSlashCommand = (
-		environmentId: AionEnvironmentId | undefined
+		environmentId: AionEnvironmentId | undefined,
+		origin?: string
 	): void => {
 		if (!environmentId) {
 			appendSystem(
-				`Current environment: ${selectedEnvironment}\nAvailable environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
+				`Current environment: ${selectedEnvironment} (${controlPlaneApiBaseUrl})\nAvailable environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
 			);
 			return;
 		}
 
-		if (environmentId === selectedEnvironment) {
-			appendSystem(`Current environment: ${selectedEnvironment}`);
+		const effectiveOrigin = getControlPlaneApiBaseUrl(environmentId,
+			origin ?? chatSettings.environments[environmentId].controlPlaneOrigin);
+		if (environmentId === selectedEnvironment && effectiveOrigin === controlPlaneApiBaseUrl) {
+			appendSystem(`Current environment: ${selectedEnvironment} (${effectiveOrigin})`);
 			return;
 		}
 
-		reloadEnvironmentState(environmentId);
-		appendSystem(`Aion environment set to ${environmentId}.`);
+		reloadEnvironmentState(environmentId, origin);
+		appendSystem(`Aion environment set to ${environmentId} (${effectiveOrigin}).`);
 	};
 
 	const activateNewContext = (nextContextId: string): void => {
@@ -1630,6 +1652,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		}
 
 		resetSlashSelection();
+		if (command.kind === "invalid") { appendSystem(command.message); return true; }
 		if (command.kind === "session") {
 			const source = command.sourceKey ? agentSources[command.sourceKey] : selectedAgent?.source;
 			if (!source) {
@@ -1658,7 +1681,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			return true;
 		}
 
-		runEnvironmentSlashCommand(command.environmentId);
+		runEnvironmentSlashCommand(command.environmentId, command.controlPlaneOrigin);
 		return true;
 	};
 

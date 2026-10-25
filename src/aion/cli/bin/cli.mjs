@@ -44369,8 +44369,8 @@ function cliTruncate(text, columns, options2 = {}) {
 // node_modules/ink/build/wrap-text.js
 var cache2 = {};
 var wrapText = (text, maxWidth, wrapType) => {
-  const cacheKey = text + String(maxWidth) + String(wrapType);
-  const cachedText = cache2[cacheKey];
+  const cacheKey2 = text + String(maxWidth) + String(wrapType);
+  const cachedText = cache2[cacheKey2];
   if (cachedText) {
     return cachedText;
   }
@@ -44391,7 +44391,7 @@ var wrapText = (text, maxWidth, wrapType) => {
     }
     wrappedText = cliTruncate(text, maxWidth, { position });
   }
-  cache2[cacheKey] = wrappedText;
+  cache2[cacheKey2] = wrappedText;
   return wrappedText;
 };
 var wrap_text_default = wrapText;
@@ -49156,14 +49156,28 @@ function isAionEnvironmentId(value) {
 function getAionEnvironment(id) {
   return AION_ENVIRONMENTS[id];
 }
-function getControlPlaneApiBaseUrl(id) {
-  return getAionEnvironment(id).controlPlaneApiBaseUrl;
+function normalizeControlPlaneOrigin(id, value) {
+  if (value === void 0) return void 0;
+  if (id !== "development") throw new Error("A custom API origin is only supported for development.");
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("Expected an HTTP(S) API origin, such as http://localhost:8080.");
+  }
+  if (!/^https?:$/.test(url.protocol) || url.username || url.password || url.pathname !== "/" || url.search || url.hash || !/^[a-z][a-z0-9+.-]*:\/\/[^/?#\\\s]+\/?$/i.test(value)) {
+    throw new Error("Expected an HTTP(S) API origin without credentials, path, query, or fragment.");
+  }
+  return url.origin === AION_ENVIRONMENTS[id].controlPlaneApiBaseUrl ? void 0 : url.origin;
+}
+function getControlPlaneApiBaseUrl(id, origin) {
+  return normalizeControlPlaneOrigin(id, origin) ?? getAionEnvironment(id).controlPlaneApiBaseUrl;
 }
 function getWebAppBaseUrl(id) {
   return getAionEnvironment(id).webAppBaseUrl;
 }
-function getAuthConfigUrl(id) {
-  return `${getControlPlaneApiBaseUrl(id)}/auth/cli/config`;
+function getAuthConfigUrl(id, origin) {
+  return `${getControlPlaneApiBaseUrl(id, origin)}/auth/cli/config`;
 }
 function getGraphQLHttpUrlForBaseUrl(baseUrl) {
   const parsed = new URL(baseUrl);
@@ -49172,8 +49186,8 @@ function getGraphQLHttpUrlForBaseUrl(baseUrl) {
   parsed.hash = "";
   return parsed.toString();
 }
-function getGraphQLHttpUrl(id) {
-  return getGraphQLHttpUrlForBaseUrl(getControlPlaneApiBaseUrl(id));
+function getGraphQLHttpUrl(id, origin) {
+  return getGraphQLHttpUrlForBaseUrl(getControlPlaneApiBaseUrl(id, origin));
 }
 
 // package.json
@@ -49277,6 +49291,8 @@ Usage:
   aion-chat run [options] [message]
 
 Options:
+      --env <environment> [origin]  production, staging, or development; saves selection
+                                   Optional HTTP(S) API origin for development only
   -u, --url, --host <endpoint>   Agent or proxy URL to connect to
       --agent-id <agent-id>      Agent identifier for proxy-aware routing
       --token <token>            Bearer token for the explicit --url endpoint
@@ -49313,6 +49329,8 @@ Agent selection:
   -u, --url, --host <endpoint>   Explicit A2A endpoint or proxy URL
 
 Authentication:
+      --env <environment> [origin]  production, staging, or development; saves selection
+                                   Optional HTTP(S) API origin for development only
       --new-session              Replace guest identity for --url; prior history becomes inaccessible
       --token <token>            Bearer token for the explicit --url endpoint
       --header <key=value>       Repeatable custom HTTP header for the explicit --url endpoint
@@ -49333,6 +49351,7 @@ Output:
 
 Examples:
   aio run --agent @team-agent "Summarize the latest status"
+  aio run --env development http://localhost:8081 --agent @team-agent "Hello"
   cat prompt.txt | aio run --agent @team-agent -
   aio run --url http://localhost:8000 --agent-id demo-agent "Hello"
   aio run --agent @team-agent --request-mode streaming-message "Hello"
@@ -49395,13 +49414,13 @@ function printRunHelp() {
 `);
 }
 function parseEnvironmentCommand(argv) {
-  const [command, environmentId, extra] = argv;
+  const [command, environmentId, controlPlaneOrigin, extra] = argv;
   if (command !== "environment" && command !== "env") {
     return void 0;
   }
   if (!environmentId || extra) {
     throw new Error(
-      `Expected one environment: ${AION_ENVIRONMENT_IDS.join(", ")}`
+      `Expected an environment and optional development API origin: ${AION_ENVIRONMENT_IDS.join(", ")}`
     );
   }
   if (!isAionEnvironmentId(environmentId)) {
@@ -49411,10 +49430,23 @@ function parseEnvironmentCommand(argv) {
   }
   return {
     kind: "environment",
-    environmentId
+    environmentId,
+    ...controlPlaneOrigin !== void 0 ? { controlPlaneOrigin: getControlPlaneApiBaseUrl(environmentId, controlPlaneOrigin) } : {}
+  };
+}
+function readEnvironmentFlag(argv, index) {
+  const environmentId = requireValue(argv, index, "--env");
+  if (!isAionEnvironmentId(environmentId)) throw new Error(`Unknown environment '${environmentId}'.`);
+  const candidate = argv[index + 2];
+  const hasOrigin = !!candidate && /^[a-z][a-z0-9+.-]*:\/\//i.test(candidate);
+  return {
+    environmentId,
+    consumed: hasOrigin ? 2 : 1,
+    ...hasOrigin ? { controlPlaneOrigin: getControlPlaneApiBaseUrl(environmentId, candidate) } : {}
   };
 }
 function parseArgs(argv) {
+  let environment = {};
   let url;
   let agentId;
   let token;
@@ -49424,6 +49456,12 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     switch (arg) {
+      case "--env": {
+        const { consumed, ...selection } = readEnvironmentFlag(argv, index);
+        environment = selection;
+        index += consumed;
+        break;
+      }
       case "--url":
       case "--host":
       case "-u":
@@ -49466,6 +49504,7 @@ function parseArgs(argv) {
     }
   }
   return {
+    ...environment,
     ...url ? { url } : {},
     agentId,
     token,
@@ -49476,6 +49515,7 @@ function parseArgs(argv) {
 }
 function parseRunArgs(argv) {
   let newSession = false;
+  let environment = {};
   let url;
   let agentId;
   let agentSelector;
@@ -49490,6 +49530,12 @@ function parseRunArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     switch (arg) {
+      case "--env": {
+        const { consumed, ...selection } = readEnvironmentFlag(argv, index);
+        environment = selection;
+        index += consumed;
+        break;
+      }
       case "--url":
       case "--host":
       case "-u":
@@ -49542,6 +49588,10 @@ function parseRunArgs(argv) {
       case "--version":
         printVersion();
         process.exit(0);
+      case "--":
+        messageArgs.push(...argv.slice(index + 1));
+        index = argv.length;
+        break;
       case "-":
         readMessageFromStdin = true;
         break;
@@ -49553,6 +49603,7 @@ function parseRunArgs(argv) {
     }
   }
   return {
+    ...environment,
     ...url ? { url } : {},
     agentId,
     agentSelector,
@@ -49568,6 +49619,22 @@ function parseRunArgs(argv) {
   };
 }
 function parseCliArgs(argv) {
+  const normalized = [];
+  for (let index = 0; index < argv.length; index++) {
+    const arg = argv[index];
+    if (arg === "--") {
+      normalized.push(...argv.slice(index));
+      break;
+    }
+    if (arg.startsWith("--env=")) normalized.push("--env", arg.slice(6));
+    else {
+      normalized.push(arg);
+      if (["--url", "--host", "-u", "--agent-id", "--agent", "--token", "--header", "--push-receiver", "--request-mode", "--response-mode", "--env"].includes(arg) && index + 1 < argv.length) {
+        normalized.push(argv[++index]);
+      }
+    }
+  }
+  argv = normalized;
   if (argv[0] === "run") {
     return {
       kind: "run",
@@ -56784,11 +56851,11 @@ function createDefaultLocalAgentSource() {
     status: "unchecked"
   };
 }
-function createDefaultRegistryAgentSource(environmentId) {
+function createDefaultRegistryAgentSource(environmentId, controlPlaneOrigin) {
   return {
     sourceKey: `${DEFAULT_REGISTRY_AGENT_SOURCE_KEY_PREFIX}-${environmentId}`,
     type: "registry",
-    url: getControlPlaneApiBaseUrl(environmentId),
+    url: getControlPlaneApiBaseUrl(environmentId, controlPlaneOrigin),
     description: `Aion ${environmentId} registry`,
     enabled: true,
     isDefault: true,
@@ -56814,15 +56881,15 @@ function isTransientAgentSource(source) {
 function createAgentKey(sourceKey, identifier) {
   return `${sourceKey}:${slugKey(identifier)}-${hashValue(identifier).slice(0, 8)}`;
 }
-function mergeAgentSources(persistedSources, environmentId, explicitUrl) {
+function mergeAgentSources(persistedSources, environmentId, explicitUrl, controlPlaneOrigin) {
   const sources = /* @__PURE__ */ new Map();
   const defaultSource = createDefaultLocalAgentSource();
   sources.set(defaultSource.sourceKey, defaultSource);
-  const defaultRegistrySource = createDefaultRegistryAgentSource(environmentId);
+  const defaultRegistrySource = createDefaultRegistryAgentSource(environmentId, controlPlaneOrigin);
   sources.set(defaultRegistrySource.sourceKey, defaultRegistrySource);
   for (const source of Object.values(persistedSources)) {
     if (source.enabled) {
-      sources.set(source.sourceKey, source);
+      sources.set(source.sourceKey, source.sourceKey === defaultRegistrySource.sourceKey ? { ...source, url: defaultRegistrySource.url } : source);
     }
   }
   if (explicitUrl) {
@@ -56908,7 +56975,8 @@ function defaultSettings() {
     )
   };
 }
-function normalizeEnvironmentSettings(value, fallback) {
+function normalizeEnvironmentSettings(value, fallback, environmentId) {
+  const controlPlaneOrigin = normalizeControlPlaneOrigin(environmentId, value?.controlPlaneOrigin);
   const requestMode = isRequestMode(value?.requestMode) ? value.requestMode : fallback.requestMode;
   const responseMode = isResponseMode(value?.responseMode) ? value.responseMode : fallback.responseMode;
   const selectedAgentId = typeof value?.selectedAgentId === "string" && value.selectedAgentId.trim() ? value.selectedAgentId : void 0;
@@ -56930,6 +56998,8 @@ function normalizeEnvironmentSettings(value, fallback) {
       agentSources[normalized.sourceKey] = normalized;
     }
   }
+  const registry = createDefaultRegistryAgentSource(environmentId, controlPlaneOrigin);
+  agentSources[registry.sourceKey] = { ...registry, ...agentSources[registry.sourceKey], url: registry.url };
   const agents = {};
   for (const [key, agent] of Object.entries(value?.agents ?? {})) {
     const normalized = normalizeAgentRecord(key, agent);
@@ -56940,6 +57010,7 @@ function normalizeEnvironmentSettings(value, fallback) {
   return {
     requestMode,
     responseMode,
+    ...controlPlaneOrigin ? { controlPlaneOrigin } : {},
     ...selectedAgentId ? { selectedAgentId } : {},
     ...selectedAgentKey ? { selectedAgentKey } : {},
     agentSources,
@@ -56954,14 +57025,16 @@ function normalizeSettings(parsed) {
       requestMode: parsed.requestMode,
       responseMode: parsed.responseMode
     },
-    defaults.environments[selectedEnvironment]
+    defaults.environments[selectedEnvironment],
+    selectedEnvironment
   );
   const environments = Object.fromEntries(
     AION_ENVIRONMENT_IDS.map((id) => [
       id,
       normalizeEnvironmentSettings(
         parsed.environments?.[id],
-        id === selectedEnvironment ? legacyFallback : defaults.environments[id]
+        id === selectedEnvironment ? legacyFallback : defaults.environments[id],
+        id
       )
     ])
   );
@@ -57068,11 +57141,37 @@ function updateChatSettings(update, settingsPath = resolveChatSettingsPath()) {
   const { settings } = loadChatSettings(settingsPath);
   return saveChatSettings(update(settings), settingsPath);
 }
-function saveSelectedEnvironment(environmentId, settingsPath = resolveChatSettingsPath()) {
-  return updateChatSettings((settings) => ({
+function selectChatEnvironment(settings, environmentId, origin) {
+  const current = settings.environments[environmentId];
+  const controlPlaneOrigin = origin === void 0 ? current.controlPlaneOrigin : normalizeControlPlaneOrigin(environmentId, origin);
+  const registry = createDefaultRegistryAgentSource(environmentId, controlPlaneOrigin);
+  const changed = getControlPlaneApiBaseUrl(environmentId, current.controlPlaneOrigin) !== registry.url;
+  const next = {
+    ...current,
+    controlPlaneOrigin,
+    agentSources: {
+      ...current.agentSources,
+      [registry.sourceKey]: {
+        ...registry,
+        ...current.agentSources[registry.sourceKey],
+        url: registry.url
+      }
+    },
+    // Registry identities and context IDs are not portable between control planes.
+    agents: changed ? Object.fromEntries(Object.entries(current.agents).filter(([, agent]) => agent.sourceKey !== registry.sourceKey)) : current.agents
+  };
+  if (changed) {
+    delete next.selectedAgentId;
+    delete next.selectedAgentKey;
+  }
+  return {
     ...settings,
-    selectedEnvironment: environmentId
-  }), settingsPath);
+    selectedEnvironment: environmentId,
+    environments: { ...settings.environments, [environmentId]: next }
+  };
+}
+function saveSelectedEnvironment(environmentId, settingsPath = resolveChatSettingsPath(), controlPlaneOrigin) {
+  return updateChatSettings((settings) => selectChatEnvironment(settings, environmentId, controlPlaneOrigin), settingsPath);
 }
 
 // src/lib/browser.ts
@@ -58034,6 +58133,21 @@ async function fetchRegistryAgentIdentities(options2) {
   return resolvedIdentities;
 }
 
+// src/lib/credentialErrors.ts
+var CredentialDestinationError = class extends Error {
+  constructor(source, trustedOrigin, requestedOrigin, includesUserInfo = false) {
+    const reason = includesUserInfo ? "URLs containing a username or password are not allowed. " : "The requested origin does not match this source. ";
+    super(
+      `Blocked request to ${requestedOrigin}. Trusted credential destination for "${source.description}": ${trustedOrigin}. ` + reason + "No credentials were sent. Check the source URL and agent-card URL."
+    );
+    this.trustedOrigin = trustedOrigin;
+    this.requestedOrigin = requestedOrigin;
+    this.name = "CredentialDestinationError";
+  }
+  trustedOrigin;
+  requestedOrigin;
+};
+
 // src/lib/agents/discovery.ts
 var MANIFEST_PATH = "/.well-known/manifest.json";
 var AGENT_CARD_PATH3 = "/.well-known/agent-card.json";
@@ -58288,6 +58402,7 @@ function registryUnavailableResult(source, now, lastError) {
   };
 }
 function registryDiscoveryErrorMessage(error) {
+  if (error instanceof CredentialDestinationError) return error.message;
   const message = error instanceof Error ? error.message : String(error);
   if (/workos|token|auth|login|credential|jwt|expired|unauthorized|forbidden/iu.test(message)) {
     return REGISTRY_AUTH_FAILED_MESSAGE;
@@ -58300,6 +58415,7 @@ function registryDiscoveryErrorMessage(error) {
   return REGISTRY_UNEXPECTED_ERROR_MESSAGE;
 }
 function isRegistryAuthenticationError(error) {
+  if (error instanceof CredentialDestinationError) return false;
   const message = error instanceof Error ? error.message : String(error);
   return /workos|token|auth|login|credential|jwt|expired|unauthorized|forbidden|401|403/iu.test(
     message
@@ -58316,7 +58432,7 @@ async function fetchRegistryIdentitiesWithToken(source, accessToken, options2) {
 }
 async function discoverRegistrySource(source, fetchImpl, now, options2) {
   let accessToken;
-  if (options2 && normalizeSourceUrl(source.url) !== normalizeSourceUrl(getControlPlaneApiBaseUrl(options2.environmentId))) {
+  if (options2 && normalizeSourceUrl(source.url) !== normalizeSourceUrl(getControlPlaneApiBaseUrl(options2.environmentId, options2.controlPlaneOrigin))) {
     return registryUnavailableResult(source, now, "Account credentials are restricted to the selected control-plane registry.");
   }
   try {
@@ -58939,8 +59055,8 @@ function parseCliAuthConfig(value) {
     }
   };
 }
-async function fetchCliAuthConfig(environmentId, fetchImpl = fetch) {
-  const url = getAuthConfigUrl(environmentId);
+async function fetchCliAuthConfig(environmentId, fetchImpl = fetch, controlPlaneOrigin) {
+  const url = getAuthConfigUrl(environmentId, controlPlaneOrigin);
   const response = await fetchImpl(url);
   if (!response.ok) {
     throw new Error(`Failed to fetch CLI auth config from ${url}: ${response.status}`);
@@ -58952,8 +59068,13 @@ async function fetchCliAuthConfig(environmentId, fetchImpl = fetch) {
 import { spawn as spawn3 } from "child_process";
 var SERVICE_NAME = "aion-chat";
 var AION_CHAT_CREDENTIAL_HELPER_ENV = "AION_CHAT_CREDENTIAL_HELPER";
-function accountName(environmentId) {
-  return `${environmentId}:user`;
+function accountName(environmentId, controlPlaneOrigin) {
+  const origin = normalizeControlPlaneOrigin(environmentId, controlPlaneOrigin);
+  return `${environmentId}:user${origin ? `:${encodeURIComponent(origin)}` : ""}`;
+}
+function originField(environmentId, origin) {
+  const normalized = normalizeControlPlaneOrigin(environmentId, origin);
+  return normalized ? { controlPlaneOrigin: normalized } : {};
 }
 function credentialError(action, error) {
   const message = error instanceof Error ? error.message : String(error);
@@ -59001,15 +59122,15 @@ var HelperCredentialStore = class {
   constructor(commandValue) {
     this.command = parseCredentialHelperCommand(commandValue);
   }
-  async getRefreshToken(environmentId) {
-    const response = await this.request({ action: "get", environmentId });
+  async getRefreshToken(environmentId, controlPlaneOrigin) {
+    const response = await this.request({ action: "get", environmentId, ...originField(environmentId, controlPlaneOrigin) });
     return response.refreshToken?.trim() || void 0;
   }
-  async setRefreshToken(environmentId, refreshToken) {
-    await this.request({ action: "set", environmentId, refreshToken });
+  async setRefreshToken(environmentId, refreshToken, controlPlaneOrigin) {
+    await this.request({ action: "set", environmentId, refreshToken, ...originField(environmentId, controlPlaneOrigin) });
   }
-  async deleteRefreshToken(environmentId) {
-    await this.request({ action: "delete", environmentId });
+  async deleteRefreshToken(environmentId, controlPlaneOrigin) {
+    await this.request({ action: "delete", environmentId, ...originField(environmentId, controlPlaneOrigin) });
   }
   async getAnonymousSession(sessionKey) {
     const response = await this.request({ action: "get-session", sessionKey });
@@ -59073,34 +59194,34 @@ var KeyringCredentialStore = class {
     const { AsyncEntry } = await loadKeyring();
     await new AsyncEntry(SERVICE_NAME, key).setPassword(value);
   }
-  async getRefreshToken(environmentId) {
+  async getRefreshToken(environmentId, controlPlaneOrigin) {
     try {
       const { AsyncEntry } = await loadKeyring();
       const token = await new AsyncEntry(
         SERVICE_NAME,
-        accountName(environmentId)
+        accountName(environmentId, controlPlaneOrigin)
       ).getPassword();
       return token ?? void 0;
     } catch (error) {
       throw credentialError("read", error);
     }
   }
-  async setRefreshToken(environmentId, refreshToken) {
+  async setRefreshToken(environmentId, refreshToken, controlPlaneOrigin) {
     try {
       const { AsyncEntry } = await loadKeyring();
-      await new AsyncEntry(SERVICE_NAME, accountName(environmentId)).setPassword(
+      await new AsyncEntry(SERVICE_NAME, accountName(environmentId, controlPlaneOrigin)).setPassword(
         refreshToken
       );
     } catch (error) {
       throw credentialError("store", error);
     }
   }
-  async deleteRefreshToken(environmentId) {
+  async deleteRefreshToken(environmentId, controlPlaneOrigin) {
     try {
       const { AsyncEntry } = await loadKeyring();
       await new AsyncEntry(
         SERVICE_NAME,
-        accountName(environmentId)
+        accountName(environmentId, controlPlaneOrigin)
       ).deletePassword();
     } catch (error) {
       throw credentialError("delete", error);
@@ -59124,6 +59245,13 @@ var DEFAULT_POLL_INTERVAL_SECONDS = 5;
 var SLOW_DOWN_INCREMENT_SECONDS = 5;
 var REFRESH_SKEW_SECONDS = 60;
 var accessTokenCache = /* @__PURE__ */ new Map();
+function cacheKey(id, origin) {
+  return JSON.stringify([id, getControlPlaneApiBaseUrl(id, origin)]);
+}
+function originArgs(id, origin) {
+  const normalized = normalizeControlPlaneOrigin(id, origin);
+  return normalized ? [normalized] : [];
+}
 function wait(ms) {
   return new Promise((resolve3) => {
     setTimeout(resolve3, ms);
@@ -59259,7 +59387,7 @@ async function pollForToken(config, deviceCode, expiresInSeconds, initialInterva
   }
   throw new Error("WorkOS login expired before authorization completed.");
 }
-async function refreshSession(environmentId, config, refreshToken, fetchImpl, credentialStore) {
+async function refreshSession(environmentId, config, refreshToken, fetchImpl, credentialStore, controlPlaneOrigin) {
   if (!config.workos.supportsDirectRefresh) {
     throw new Error("This Aion API environment does not support direct CLI refresh.");
   }
@@ -59279,14 +59407,15 @@ async function refreshSession(environmentId, config, refreshToken, fetchImpl, cr
     );
   }
   const session = normalizeTokenResponse(await response.json());
-  await credentialStore.setRefreshToken(environmentId, session.refreshToken);
-  accessTokenCache.set(environmentId, session);
+  await credentialStore.setRefreshToken(environmentId, session.refreshToken, ...originArgs(environmentId, controlPlaneOrigin));
+  accessTokenCache.set(cacheKey(environmentId, controlPlaneOrigin), session);
   return session;
 }
 async function loginWithWorkOS(environmentId, callbacks = {}, options2 = {}) {
+  const controlPlaneOrigin = normalizeControlPlaneOrigin(environmentId, options2.controlPlaneOrigin);
   const fetchImpl = options2.fetchImpl ?? fetch;
   const credentialStore = options2.credentialStore ?? defaultCredentialStore;
-  const config = await fetchCliAuthConfig(environmentId, fetchImpl);
+  const config = await fetchCliAuthConfig(environmentId, fetchImpl, controlPlaneOrigin);
   const deviceAuthorization = await requestDeviceAuthorization(config, fetchImpl);
   await callbacks.onDeviceAuthorization?.({
     userCode: deviceAuthorization.user_code,
@@ -59302,28 +59431,30 @@ async function loginWithWorkOS(environmentId, callbacks = {}, options2 = {}) {
     callbacks,
     fetchImpl
   );
-  await credentialStore.setRefreshToken(environmentId, session.refreshToken);
-  accessTokenCache.set(environmentId, session);
+  await credentialStore.setRefreshToken(environmentId, session.refreshToken, ...originArgs(environmentId, controlPlaneOrigin));
+  accessTokenCache.set(cacheKey(environmentId, controlPlaneOrigin), session);
   return session;
 }
 async function getStoredAccessToken(environmentId, options2 = {}) {
-  const cached = accessTokenCache.get(environmentId);
+  const cached = accessTokenCache.get(cacheKey(environmentId, options2.controlPlaneOrigin));
   if (!options2.forceRefresh && cached && !tokenNeedsRefresh(cached)) {
     return cached.accessToken;
   }
+  const controlPlaneOrigin = normalizeControlPlaneOrigin(environmentId, options2.controlPlaneOrigin);
   const fetchImpl = options2.fetchImpl ?? fetch;
   const credentialStore = options2.credentialStore ?? defaultCredentialStore;
-  const refreshToken = await credentialStore.getRefreshToken(environmentId);
+  const refreshToken = await credentialStore.getRefreshToken(environmentId, ...originArgs(environmentId, controlPlaneOrigin));
   if (!refreshToken) {
     return void 0;
   }
-  const config = await fetchCliAuthConfig(environmentId, fetchImpl);
+  const config = await fetchCliAuthConfig(environmentId, fetchImpl, controlPlaneOrigin);
   const session = await refreshSession(
     environmentId,
     config,
     refreshToken,
     fetchImpl,
-    credentialStore
+    credentialStore,
+    controlPlaneOrigin
   );
   return session.accessToken;
 }
@@ -59526,7 +59657,7 @@ var SourceCredentials = class {
     return this.lifetime.signal;
   }
   isRegistry(source) {
-    return source.type === "registry" && normalizeSourceUrl(source.url) === normalizeSourceUrl(getControlPlaneApiBaseUrl(this.options.environmentId));
+    return source.type === "registry" && normalizeSourceUrl(source.url) === normalizeSourceUrl(getControlPlaneApiBaseUrl(this.options.environmentId, this.options.controlPlaneOrigin));
   }
   explicitHeaders(source) {
     const headers = new Headers(isTransientAgentSource(source) ? this.options.cli.headers : {});
@@ -59543,7 +59674,7 @@ var SourceCredentials = class {
     let guest = this.guests.get(key);
     if (!guest) {
       guest = new AnonymousSession({
-        controlPlaneUrl: getControlPlaneApiBaseUrl(this.options.environmentId),
+        controlPlaneUrl: getControlPlaneApiBaseUrl(this.options.environmentId, this.options.controlPlaneOrigin),
         environmentId: this.options.environmentId,
         sourceId: source.sourceKey,
         destinationOrigin: trustedUrl(source.url).origin,
@@ -59578,7 +59709,12 @@ var SourceCredentials = class {
       const request = input instanceof Request ? input : void 0;
       const url = new URL(request?.url ?? String(input));
       if (url.origin !== destination || url.username || url.password) {
-        throw new Error("Untrusted credential destination.");
+        throw new CredentialDestinationError(
+          source,
+          destination,
+          url.origin,
+          Boolean(url.username || url.password)
+        );
       }
       const signals = [epoch, signal, init?.signal, request?.signal].filter(
         (value) => !!value
@@ -59599,6 +59735,7 @@ var SourceCredentials = class {
           if (typeof claims.sub === "string") owner = `${claims.iss}:${claims.sub}`;
         } catch {
         }
+        if (this.options.controlPlaneOrigin) owner = `${getControlPlaneApiBaseUrl(this.options.environmentId, this.options.controlPlaneOrigin)}:${owner}`;
         this.owners.set(source.sourceKey, `account:${hashValue(owner)}`);
       } else if (source.type === "registry") {
         throw new Error("Account credentials are restricted to the selected control-plane registry.");
@@ -59774,7 +59911,7 @@ function shouldReplaceCurrentStreamSection(event, kind) {
   return status === "finalized" || statusReason === "complete_message" || statusReason === "complete_task";
 }
 function parseExactSlashCommand(value) {
-  const [command, environmentId, extra] = value.trim().split(/\s+/);
+  const [command, environmentId, extra, trailing] = value.trim().split(/\s+/);
   if (command === "/session" && (environmentId === "new" || environmentId === "retry")) {
     return { kind: "session", action: environmentId, sourceKey: extra };
   }
@@ -59787,12 +59924,19 @@ function parseExactSlashCommand(value) {
   if (command === "/clear" && !environmentId) {
     return { kind: "clear" };
   }
-  if ((command === "/environment" || command === "/env") && !extra) {
-    if (!environmentId) {
-      return { kind: "environment" };
+  if (command === "/environment" || command === "/env") {
+    if (!environmentId) return { kind: "environment" };
+    if (!isAionEnvironmentId(environmentId) || trailing) {
+      return { kind: "invalid", message: "Use /env <production|staging|development> [development-api-origin]." };
     }
-    if (isAionEnvironmentId(environmentId)) {
-      return { kind: "environment", environmentId };
+    try {
+      return {
+        kind: "environment",
+        environmentId,
+        ...extra !== void 0 ? { controlPlaneOrigin: getControlPlaneApiBaseUrl(environmentId, extra) } : {}
+      };
+    } catch (error) {
+      return { kind: "invalid", message: error instanceof Error ? error.message : "Invalid API origin." };
     }
   }
   return void 0;
@@ -59815,7 +59959,8 @@ function ChatApp({ options: options2 }) {
     initialSettingsResult.settings.selectedEnvironment
   );
   const activeEnvironmentSettings = chatSettings.environments[selectedEnvironment];
-  const controlPlaneApiBaseUrl = getControlPlaneApiBaseUrl(selectedEnvironment);
+  const controlPlaneOrigin = activeEnvironmentSettings.controlPlaneOrigin;
+  const controlPlaneApiBaseUrl = getControlPlaneApiBaseUrl(selectedEnvironment, controlPlaneOrigin);
   const agentEndpointUrl = options2.url;
   const [pushLabel, setPushLabel] = (0, import_react37.useState)(
     options2.pushNotifications ? "Starting..." : "Disabled"
@@ -59870,9 +60015,10 @@ function ChatApp({ options: options2 }) {
   const [reconnectNonce, setReconnectNonce] = (0, import_react37.useState)(0);
   const credentials = (0, import_react37.useMemo)(() => new SourceCredentials({
     environmentId: selectedEnvironment,
+    controlPlaneOrigin,
     cli: options2,
-    accountToken: () => getStoredAccessToken(selectedEnvironment)
-  }), [selectedEnvironment, options2.token, options2.headers]);
+    accountToken: () => getStoredAccessToken(selectedEnvironment, { controlPlaneOrigin })
+  }), [selectedEnvironment, controlPlaneOrigin, options2.token, options2.headers]);
   (0, import_react37.useEffect)(() => () => credentials.dispose(), [credentials]);
   const credentialScopeRef = (0, import_react37.useRef)(void 0);
   const connectionSignalRef = (0, import_react37.useRef)(void 0);
@@ -60020,11 +60166,15 @@ function ChatApp({ options: options2 }) {
     setStreamLabel("Idle");
     setWorkingStartedAt(void 0);
   };
-  const reloadEnvironmentState = (environmentId) => {
-    const nextSettings = {
-      ...chatSettings,
-      selectedEnvironment: environmentId
-    };
+  const reloadEnvironmentState = (environmentId, origin) => {
+    credentials.cancelPending();
+    welcomeLifetimeRef.current.abort();
+    welcomeLifetimeRef.current = new AbortController();
+    createdContextsRef.current.clear();
+    lastConnectionNoticeRef.current = void 0;
+    connectedAgentKeyRef.current = void 0;
+    credentialScopeRef.current = void 0;
+    const nextSettings = selectChatEnvironment(chatSettings, environmentId, origin);
     const nextEnvironmentSettings = nextSettings.environments[environmentId];
     persistSettings(nextSettings);
     setSelectedEnvironment(environmentId);
@@ -60132,7 +60282,8 @@ function ChatApp({ options: options2 }) {
       const runtimeSources = mergeAgentSources(
         activeEnvironmentSettings.agentSources,
         selectedEnvironment,
-        agentEndpointUrl
+        agentEndpointUrl,
+        controlPlaneOrigin
       );
       const explicitSourceKey = agentEndpointUrl ? createExplicitAgentSource(agentEndpointUrl).sourceKey : void 0;
       chatSessionLogger.debug("agent.discovery.refresh.started", {
@@ -60145,10 +60296,12 @@ function ChatApp({ options: options2 }) {
         fetch,
         {
           environmentId: selectedEnvironment,
+          controlPlaneOrigin,
           controlPlaneAccessTokenProvider: (request) => getStoredAccessToken(selectedEnvironment, {
-            forceRefresh: request?.forceRefresh
+            forceRefresh: request?.forceRefresh,
+            controlPlaneOrigin
           }),
-          graphQLFetchImpl: credentials.fetch(createDefaultRegistryAgentSource(selectedEnvironment)),
+          graphQLFetchImpl: credentials.fetch(createDefaultRegistryAgentSource(selectedEnvironment, controlPlaneOrigin)),
           sourceFetchImpl: (source) => credentials.fetch(source),
           logger: chatSessionLogger
         }
@@ -60718,6 +60871,7 @@ ${JSON.stringify(
     chatSessionLogger.info("auth.login.started", {
       environmentId: selectedEnvironment
     });
+    const loginSignal = credentials.signal;
     try {
       const session = await loginWithWorkOS(selectedEnvironment, {
         onDeviceAuthorization: async (prompt) => {
@@ -60740,12 +60894,15 @@ Code: ${prompt.userCode}`
         onSlowDown: (intervalSeconds) => {
           appendStatus(`Login polling slowed to every ${intervalSeconds}s.`);
         }
-      });
+      }, { controlPlaneOrigin });
+      if (loginSignal.aborted) return;
       const bootstrap = await runLoginBootstrap({
         environmentId: selectedEnvironment,
         accessToken: session.accessToken,
+        graphQLUrl: getGraphQLHttpUrl(selectedEnvironment, controlPlaneOrigin),
         logger: chatSessionLogger
       });
+      if (loginSignal.aborted) return;
       const postAuthPath = resolvePostAuthPath(bootstrap);
       if (postAuthPath) {
         const postAuthUrl = buildWebAppRouteUrl(selectedEnvironment, postAuthPath);
@@ -60774,20 +60931,24 @@ ${postAuthUrl}`);
       );
     }
   };
-  const runEnvironmentSlashCommand = (environmentId) => {
+  const runEnvironmentSlashCommand = (environmentId, origin) => {
     if (!environmentId) {
       appendSystem(
-        `Current environment: ${selectedEnvironment}
+        `Current environment: ${selectedEnvironment} (${controlPlaneApiBaseUrl})
 Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       );
       return;
     }
-    if (environmentId === selectedEnvironment) {
-      appendSystem(`Current environment: ${selectedEnvironment}`);
+    const effectiveOrigin = getControlPlaneApiBaseUrl(
+      environmentId,
+      origin ?? chatSettings.environments[environmentId].controlPlaneOrigin
+    );
+    if (environmentId === selectedEnvironment && effectiveOrigin === controlPlaneApiBaseUrl) {
+      appendSystem(`Current environment: ${selectedEnvironment} (${effectiveOrigin})`);
       return;
     }
-    reloadEnvironmentState(environmentId);
-    appendSystem(`Aion environment set to ${environmentId}.`);
+    reloadEnvironmentState(environmentId, origin);
+    appendSystem(`Aion environment set to ${environmentId} (${effectiveOrigin}).`);
   };
   const activateNewContext = (nextContextId) => {
     setCurrentContextId(nextContextId);
@@ -60895,6 +61056,10 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       return false;
     }
     resetSlashSelection();
+    if (command.kind === "invalid") {
+      appendSystem(command.message);
+      return true;
+    }
     if (command.kind === "session") {
       const source = command.sourceKey ? agentSources[command.sourceKey] : selectedAgent?.source;
       if (!source) {
@@ -60924,7 +61089,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       runClearSlashCommand();
       return true;
     }
-    runEnvironmentSlashCommand(command.environmentId);
+    runEnvironmentSlashCommand(command.environmentId, command.controlPlaneOrigin);
     return true;
   };
   const applySlashSubmenuSelection = (optionIndex = selectedSlashSubmenuIndex) => {
@@ -61892,16 +62057,20 @@ async function runHeadless(options2, dependencies = {}) {
     stderr
   );
   const environmentSettings = settings.environments[selectedEnvironment];
+  const controlPlaneOrigin = environmentSettings.controlPlaneOrigin;
+  const accountToken = () => controlPlaneOrigin ? getStoredAccessTokenImpl(selectedEnvironment, { controlPlaneOrigin }) : getStoredAccessTokenImpl(selectedEnvironment);
   const explicitSourceKey = options2.url ? createExplicitAgentSource(options2.url).sourceKey : void 0;
   const runtimeSources = mergeAgentSources(
     environmentSettings.agentSources,
     selectedEnvironment,
-    options2.url
+    options2.url,
+    controlPlaneOrigin
   );
   const credentials = new SourceCredentials({
     environmentId: selectedEnvironment,
+    controlPlaneOrigin,
     cli: options2,
-    accountToken: () => getStoredAccessTokenImpl(selectedEnvironment),
+    accountToken,
     store: dependencies.sessionStore,
     fetch: fetchImpl
   });
@@ -61924,8 +62093,9 @@ async function runHeadless(options2, dependencies = {}) {
     }
     const discovery = await discoverAgentSourcesImpl(runtimeSources, fetchImpl, {
       environmentId: selectedEnvironment,
-      controlPlaneAccessTokenProvider: () => getStoredAccessTokenImpl(selectedEnvironment),
-      graphQLFetchImpl: credentials.fetch(createDefaultRegistryAgentSource(selectedEnvironment)),
+      controlPlaneOrigin,
+      controlPlaneAccessTokenProvider: accountToken,
+      graphQLFetchImpl: credentials.fetch(createDefaultRegistryAgentSource(selectedEnvironment, controlPlaneOrigin)),
       sourceFetchImpl: (source) => credentials.fetch(source),
       logger
     });
@@ -62013,6 +62183,7 @@ var import_jsx_runtime12 = __toESM(require_jsx_runtime(), 1);
 async function runLoginCommand() {
   const { settings } = loadChatSettings();
   const environmentId = settings.selectedEnvironment;
+  const controlPlaneOrigin = settings.environments[environmentId].controlPlaneOrigin;
   process.stdout.write(`Starting Aion login for ${environmentId}...
 `);
   const session = await loginWithWorkOS(environmentId, {
@@ -62038,10 +62209,11 @@ ${url}
 Polling slowed to every ${intervalSeconds}s.
 `);
     }
-  });
+  }, { controlPlaneOrigin });
   const bootstrap = await runLoginBootstrap({
     environmentId,
-    accessToken: session.accessToken
+    accessToken: session.accessToken,
+    graphQLUrl: getGraphQLHttpUrl(environmentId, controlPlaneOrigin)
   });
   const postAuthPath = resolvePostAuthPath(bootstrap);
   if (postAuthPath) {
@@ -62059,12 +62231,13 @@ ${postAuthUrl}
 Logged in to Aion ${environmentId}.
 `);
 }
-function runEnvironmentCommand(environmentId) {
-  const warning = saveSelectedEnvironment(environmentId);
+function runEnvironmentCommand(environmentId, origin, announce = true) {
+  const warning = saveSelectedEnvironment(environmentId, void 0, origin);
   if (warning) {
     throw new Error(warning);
   }
-  process.stdout.write(`Aion environment set to ${environmentId}.
+  const current = loadChatSettings().settings.environments[environmentId];
+  if (announce) process.stdout.write(`Aion environment set to ${environmentId} (${getControlPlaneApiBaseUrl(environmentId, current.controlPlaneOrigin)}).
 `);
 }
 async function continueAfterUpdateCheck() {
@@ -62129,8 +62302,11 @@ async function main() {
       return;
     }
     if (command.kind === "environment") {
-      runEnvironmentCommand(command.environmentId);
+      runEnvironmentCommand(command.environmentId, command.controlPlaneOrigin);
       return;
+    }
+    if (command.options.environmentId) {
+      runEnvironmentCommand(command.options.environmentId, command.options.controlPlaneOrigin, false);
     }
     if (command.kind === "run") {
       await runHeadlessCommand(command.options);

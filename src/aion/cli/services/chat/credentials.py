@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import sys
 from typing import Any, TextIO
+from urllib.parse import quote, urlsplit
 
 from aion.core.exceptions import AionError
 
@@ -32,16 +33,40 @@ class CredentialHelperError(AionError, RuntimeError):
     """Error raised when the one-shot credential helper cannot complete."""
 
 
-def _account_name(environment_id: str) -> str:
+def _account_name(environment_id: str, control_plane_origin: str | None = None) -> str:
     """Return the Python helper account key for an environment.
 
     Args:
         environment_id: Aion environment identifier, such as ``development``.
+        control_plane_origin: Optional explicit development origin for a separate login slot.
 
     Returns:
         Account key used within the Python credential helper service namespace.
     """
-    return f"{environment_id}:user"
+    if control_plane_origin is None:
+        return f"{environment_id}:user"
+    try:
+        url = urlsplit(control_plane_origin)
+        valid = (
+            environment_id == "development"
+            and url.scheme in {"http", "https"} and bool(url.hostname)
+            and not url.username and not url.password
+            and url.path in {"", "/"} and not url.query and not url.fragment
+            and "?" not in control_plane_origin and "#" not in control_plane_origin
+        )
+        port = url.port
+    except (ValueError, TypeError) as exc:
+        raise CredentialHelperError("Invalid development API origin.") from exc
+    if not valid:
+        raise CredentialHelperError("Invalid development API origin.")
+    host = url.hostname.lower()
+    if ":" in host:
+        host = f"[{host}]"
+    suffix = f":{port}" if port is not None and (url.scheme, port) not in {("http", 80), ("https", 443)} else ""
+    origin = f"{url.scheme}://{host}{suffix}"
+    if origin == "http://localhost:8080":
+        return f"{environment_id}:user"
+    return f"{environment_id}:user:{quote(origin, safe='')}"
 
 
 def _load_keyring() -> Any:
@@ -142,7 +167,7 @@ def _handle_request(request: dict[str, Any]) -> dict[str, str | None]:
         _set_password(request["sessionKey"], request["session"])
         return {}
     environment_id = request["environmentId"]
-    account_name = _account_name(environment_id)
+    account_name = _account_name(environment_id, request.get("controlPlaneOrigin"))
 
     if action == "get":
         token = _get_password(account_name)

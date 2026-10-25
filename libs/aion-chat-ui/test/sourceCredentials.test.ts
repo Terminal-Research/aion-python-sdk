@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { SourceCredentials } from "../src/lib/sourceCredentials.js";
+import { CredentialDestinationError } from "../src/lib/credentialErrors.js";
 import { createDefaultLocalAgentSource, createDefaultRegistryAgentSource, createExplicitAgentSource } from "../src/lib/agents/model.js";
 
 const local = createDefaultLocalAgentSource();
@@ -83,10 +84,42 @@ describe("source-aware credentials", () => {
 
 	it("blocks redirects and card/manifest pivots before acquiring or sending credentials", async () => {
 		const { credentials, fetcher, account } = setup();
-		await expect(credentials.fetch(local)("https://evil.test/card")).rejects.toThrow("Untrusted");
+		await expect(credentials.fetch(local)("https://evil.test/card")).rejects.toThrow(CredentialDestinationError);
 		expect(fetcher).not.toHaveBeenCalled(); expect(account).not.toHaveBeenCalled();
 		await credentials.fetch(local)(local.url);
 		expect(fetcher.mock.lastCall?.[1]).toMatchObject({ redirect: "error", credentials: "omit" });
+	});
+
+	it.each([local, registry, createExplicitAgentSource("https://explicit.test")])(
+		"reports the source and both origins without exposing URL secrets: $sourceKey",
+		async (source) => {
+			const { credentials, fetcher, account } = setup();
+			const target = "https://private-user:private-password@other.test/card?token=private-query#private-fragment";
+			const error = await credentials.fetch(source)(target).catch((value: unknown) => value);
+			expect(error).toBeInstanceOf(CredentialDestinationError);
+			expect(error).toMatchObject({
+				trustedOrigin: new URL(source.url).origin,
+				requestedOrigin: "https://other.test"
+			});
+			const message = (error as Error).message;
+			expect(message).toContain(source.description);
+			expect(message).toContain(new URL(source.url).origin);
+			expect(message).toContain("https://other.test");
+			expect(message).toContain("No credentials were sent");
+			for (const secret of ["private-user", "private-password", "private-query", "private-fragment"]) {
+				expect(message).not.toContain(secret);
+			}
+			expect(fetcher).not.toHaveBeenCalled();
+			expect(account).not.toHaveBeenCalled();
+		}
+	);
+
+	it("explains why a same-origin URL containing user credentials was rejected", async () => {
+		const { credentials, fetcher, account } = setup();
+		await expect(credentials.fetch(local)("http://user:password@localhost:8000/card"))
+			.rejects.toThrow("URLs containing a username or password are not allowed");
+		expect(fetcher).not.toHaveBeenCalled();
+		expect(account).not.toHaveBeenCalled();
 	});
 
 	it("never converts an account auth failure into guest mode", async () => {

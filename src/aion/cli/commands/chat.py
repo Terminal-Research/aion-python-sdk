@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from typing import Optional
+from urllib.parse import urlsplit
 
 import asyncclick as click
 
@@ -16,7 +18,67 @@ from aion.cli.services.chat import (
 from aion.cli.utils.header_parser import parse_headers
 
 
-@click.group(name="chat", invoke_without_command=True)
+def _normalize_environment_args(args: list[str], *, group: bool = False) -> list[str]:
+    """Expand ``--env development [origin]`` before Click's fixed-arity parser."""
+    normalized: list[str] = []
+    index = 0
+    while index < len(args):
+        value = args[index]
+        if value == "--" or (group and value == "run"):
+            normalized.extend(args[index:])
+            break
+        if value.startswith("--env="):
+            normalized.extend(["--env", value.partition("=")[2]])
+            index += 1
+        elif value == "--env" and index + 1 < len(args):
+            normalized.extend(args[index:index + 2])
+            index += 2
+        else:
+            normalized.append(value)
+            index += 1
+            # Other options own their next token, even when that token is --env.
+            if value in {"--url", "--host", "-u", "--agent-id", "--agent", "--token",
+                         "--header", "--push-receiver", "--request-mode", "--response-mode",
+                         "--control-plane-origin"} and index < len(args):
+                normalized.append(args[index])
+                index += 1
+            continue
+        if index < len(args) and re.match(r"^[a-z][a-z0-9+.-]*://", args[index], re.I):
+            normalized.extend(["--control-plane-origin", args[index]])
+            index += 1
+    return normalized
+
+
+class _ChatGroup(click.Group):
+    async def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        return await super().parse_args(ctx, _normalize_environment_args(args, group=True))
+
+
+class _ChatRunCommand(click.Command):
+    async def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        return await super().parse_args(ctx, _normalize_environment_args(args))
+
+
+def _validate_environment_origin(environment: str | None, origin: str | None) -> None:
+    if origin is None:
+        return
+    try:
+        url = urlsplit(origin)
+        valid = (environment == "development" and url.scheme in {"http", "https"}
+                 and bool(url.hostname) and not url.username and not url.password
+                 and url.path in {"", "/"} and not url.query and not url.fragment
+                 and "?" not in origin and "#" not in origin)
+        _ = url.port
+    except ValueError:
+        valid = False
+    if not valid:
+        raise click.UsageError("Custom API origins require --env development and an HTTP(S) origin without credentials, path, query, or fragment.")
+
+
+@click.group(name="chat", invoke_without_command=True, cls=_ChatGroup)
+@click.option("--env", "environment_id", type=click.Choice(["production", "staging", "development"]),
+              help="Save the selected environment. Use --env development [origin] for a custom HTTP(S) API origin, e.g. http://localhost:8081. The agent endpoint set with --url is separate.")
+@click.option("--control-plane-origin", default=None, hidden=True)
 @click.option(
     "--url",
     "--host",
@@ -53,6 +115,8 @@ from aion.cli.utils.header_parser import parse_headers
 @click.pass_context
 def chat(
     ctx: click.Context,
+    environment_id: Optional[str],
+    control_plane_origin: Optional[str],
     endpoint: Optional[str],
     agent_id: Optional[str],
     token: Optional[str],
@@ -64,7 +128,10 @@ def chat(
     if ctx.invoked_subcommand is not None:
         return
 
+    _validate_environment_origin(environment_id, control_plane_origin)
     options = ChatLaunchOptions(
+        environment_id=environment_id,
+        control_plane_origin=control_plane_origin,
         endpoint=endpoint,
         agent_id=agent_id,
         token=token,
@@ -81,7 +148,10 @@ def chat(
     raise click.exceptions.Exit(exit_code)
 
 
-@chat.command(name="run", context_settings={"max_content_width": 100})
+@chat.command(name="run", cls=_ChatRunCommand, context_settings={"max_content_width": 100})
+@click.option("--env", "environment_id", type=click.Choice(["production", "staging", "development"]),
+              help="Save the selected environment. Use --env development [origin] for a custom HTTP(S) API origin, e.g. http://localhost:8081. The agent endpoint set with --url is separate.")
+@click.option("--control-plane-origin", default=None, hidden=True)
 @click.option(
     "--new-session",
     is_flag=True,
@@ -140,8 +210,12 @@ def chat(
     help="Output rendering mode.",
 )
 @click.argument("message", nargs=-1, required=False)
+@click.pass_context
 def run(
+    ctx: click.Context,
     new_session: bool,
+    environment_id: Optional[str],
+    control_plane_origin: Optional[str],
     endpoint: Optional[str],
     agent_id: Optional[str],
     agent: Optional[str],
@@ -180,7 +254,13 @@ def run(
       aion chat run --agent @team-agent --request-mode streaming-message "Hello"
       aion chat run --agent @team-agent --response-mode a2a "Hello"
     """
+    if environment_id is None and ctx.parent is not None:
+        environment_id = ctx.parent.params.get("environment_id")
+        control_plane_origin = control_plane_origin or ctx.parent.params.get("control_plane_origin")
+    _validate_environment_origin(environment_id, control_plane_origin)
     options = ChatRunLaunchOptions(
+        environment_id=environment_id,
+        control_plane_origin=control_plane_origin,
         new_session=new_session,
         endpoint=endpoint,
         agent_id=agent_id,

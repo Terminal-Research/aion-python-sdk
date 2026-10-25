@@ -26,10 +26,12 @@ import {
 } from "./lib/updateCheck.js";
 import { runHeadless } from "./lib/headlessRun.js";
 import { loginWithWorkOS } from "./lib/workosAuth.js";
+import { getControlPlaneApiBaseUrl, getGraphQLHttpUrl } from "./lib/environment.js";
 
 async function runLoginCommand(): Promise<void> {
 	const { settings } = loadChatSettings();
 	const environmentId = settings.selectedEnvironment;
+	const controlPlaneOrigin = settings.environments[environmentId].controlPlaneOrigin;
 	process.stdout.write(`Starting Aion login for ${environmentId}...\n`);
 	const session = await loginWithWorkOS(environmentId, {
 		onDeviceAuthorization: async (prompt) => {
@@ -49,10 +51,11 @@ async function runLoginCommand(): Promise<void> {
 		onSlowDown: (intervalSeconds) => {
 			process.stdout.write(`\nPolling slowed to every ${intervalSeconds}s.\n`);
 		}
-	});
+	}, { controlPlaneOrigin });
 	const bootstrap = await runLoginBootstrap({
 		environmentId,
-		accessToken: session.accessToken
+		accessToken: session.accessToken,
+		graphQLUrl: getGraphQLHttpUrl(environmentId, controlPlaneOrigin)
 	});
 	const postAuthPath = resolvePostAuthPath(bootstrap);
 	if (postAuthPath) {
@@ -66,12 +69,13 @@ async function runLoginCommand(): Promise<void> {
 	process.stdout.write(`\nLogged in to Aion ${environmentId}.\n`);
 }
 
-function runEnvironmentCommand(environmentId: Parameters<typeof saveSelectedEnvironment>[0]): void {
-	const warning = saveSelectedEnvironment(environmentId);
+function runEnvironmentCommand(environmentId: Parameters<typeof saveSelectedEnvironment>[0], origin?: string, announce = true): void {
+	const warning = saveSelectedEnvironment(environmentId, undefined, origin);
 	if (warning) {
 		throw new Error(warning);
 	}
-	process.stdout.write(`Aion environment set to ${environmentId}.\n`);
+	const current = loadChatSettings().settings.environments[environmentId];
+	if (announce) process.stdout.write(`Aion environment set to ${environmentId} (${getControlPlaneApiBaseUrl(environmentId, current.controlPlaneOrigin)}).\n`);
 }
 
 async function continueAfterUpdateCheck(): Promise<boolean> {
@@ -144,8 +148,11 @@ async function main(): Promise<void> {
 			return;
 		}
 		if (command.kind === "environment") {
-			runEnvironmentCommand(command.environmentId);
+			runEnvironmentCommand(command.environmentId, command.controlPlaneOrigin);
 			return;
+		}
+		if (command.options.environmentId) {
+			runEnvironmentCommand(command.options.environmentId, command.options.controlPlaneOrigin, false);
 		}
 		if (command.kind === "run") {
 			await runHeadlessCommand(command.options);

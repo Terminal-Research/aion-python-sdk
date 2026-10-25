@@ -92,9 +92,10 @@ export function parseCliAuthConfig(value: unknown): CliAuthConfig {
 
 export async function fetchCliAuthConfig(
 	environmentId: AionEnvironmentId,
-	fetchImpl: typeof fetch = fetch
+	fetchImpl: typeof fetch = fetch,
+	controlPlaneOrigin?: string
 ): Promise<CliAuthConfig> {
-	const url = getAuthConfigUrl(environmentId);
+	const url = getAuthConfigUrl(environmentId, controlPlaneOrigin);
 	const response = await fetchImpl(url);
 	if (!response.ok) {
 		throw new Error(`Failed to fetch CLI auth config from ${url}: ${response.status}`);

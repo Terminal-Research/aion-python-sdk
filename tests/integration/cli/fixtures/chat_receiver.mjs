@@ -8,7 +8,7 @@ globalThis.fetch = async (input, init) => {
   appendFileSync(process.env.AION_CHAT_TEST_REQUESTS, JSON.stringify({
     url: request.url, authorization: request.headers.get("Authorization")
   }) + "\n");
-  if (request.url === "http://localhost:8080/auth/anonymous-sessions") {
+  if (request.url === `${process.env.AION_CHAT_TEST_CONTROL_PLANE ?? "http://localhost:8080"}/auth/anonymous-sessions`) {
     return Response.json({ sessionId: "00000000-0000-4000-8000-000000000001",
       token: "fixture-guest-bearer", expiresAt: new Date(Date.now() + 30 * 86400000).toISOString() });
   }

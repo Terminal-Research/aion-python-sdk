@@ -48,16 +48,32 @@ export function getAionEnvironment(id: AionEnvironmentId): AionEnvironment {
 	return AION_ENVIRONMENTS[id];
 }
 
-export function getControlPlaneApiBaseUrl(id: AionEnvironmentId): string {
-	return getAionEnvironment(id).controlPlaneApiBaseUrl;
+/** Explicit development API origin; never inferred from the agent's environment. */
+export function normalizeControlPlaneOrigin(
+	id: AionEnvironmentId, value?: string
+): string | undefined {
+	if (value === undefined) return undefined;
+	if (id !== "development") throw new Error("A custom API origin is only supported for development.");
+	let url: URL;
+	try { url = new URL(value); }
+	catch { throw new Error("Expected an HTTP(S) API origin, such as http://localhost:8080."); }
+	if (!/^https?:$/.test(url.protocol) || url.username || url.password ||
+		url.pathname !== "/" || url.search || url.hash || !/^[a-z][a-z0-9+.-]*:\/\/[^/?#\\\s]+\/?$/i.test(value)) {
+		throw new Error("Expected an HTTP(S) API origin without credentials, path, query, or fragment.");
+	}
+	return url.origin === AION_ENVIRONMENTS[id].controlPlaneApiBaseUrl ? undefined : url.origin;
+}
+
+export function getControlPlaneApiBaseUrl(id: AionEnvironmentId, origin?: string): string {
+	return normalizeControlPlaneOrigin(id, origin) ?? getAionEnvironment(id).controlPlaneApiBaseUrl;
 }
 
 export function getWebAppBaseUrl(id: AionEnvironmentId): string {
 	return getAionEnvironment(id).webAppBaseUrl;
 }
 
-export function getAuthConfigUrl(id: AionEnvironmentId): string {
-	return `${getControlPlaneApiBaseUrl(id)}/auth/cli/config`;
+export function getAuthConfigUrl(id: AionEnvironmentId, origin?: string): string {
+	return `${getControlPlaneApiBaseUrl(id, origin)}/auth/cli/config`;
 }
 
 export function getGraphQLHttpUrlForBaseUrl(baseUrl: string): string {
@@ -68,12 +84,12 @@ export function getGraphQLHttpUrlForBaseUrl(baseUrl: string): string {
 	return parsed.toString();
 }
 
-export function getGraphQLHttpUrl(id: AionEnvironmentId): string {
-	return getGraphQLHttpUrlForBaseUrl(getControlPlaneApiBaseUrl(id));
+export function getGraphQLHttpUrl(id: AionEnvironmentId, origin?: string): string {
+	return getGraphQLHttpUrlForBaseUrl(getControlPlaneApiBaseUrl(id, origin));
 }
 
-export function getGraphQLWebSocketUrl(id: AionEnvironmentId): string {
-	const apiBaseUrl = getControlPlaneApiBaseUrl(id);
+export function getGraphQLWebSocketUrl(id: AionEnvironmentId, origin?: string): string {
+	const apiBaseUrl = getControlPlaneApiBaseUrl(id, origin);
 	const parsed = new URL(apiBaseUrl);
 	parsed.protocol = parsed.protocol === "https:" ? "wss:" : "ws:";
 	parsed.pathname = "/ws/graphql";
