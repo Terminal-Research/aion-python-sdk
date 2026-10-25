@@ -531,6 +531,7 @@ async def test_prepared_upload_uses_original_credentials_and_returns_http_receip
     {"url": "http://api.aion.test/files"},
     {"method": "DELETE"}, {"byteSize": 6}, {"maximumBytes": 4},
     {"operationId": "different"}, {"parameters": {"purpose": "ServiceIdentityAvatar"}},
+    {"metadata": {"fileName": "other.txt"}}, {"metadata": {"fileName": None}},
 ])
 async def test_unsafe_prepared_upload_is_rejected_before_obtaining_token(change):
     class NoToken:

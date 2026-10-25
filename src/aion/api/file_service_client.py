@@ -485,8 +485,8 @@ class AionFileClient:
             content: Complete replacement byte content.
             expected_version_id: Exact immutable head expected by the caller.
             expected_revision: Recording revision expected by the caller.
-            file_name: Multipart leaf name. The saved name is preserved;
-                use update_metadata to rename it.
+            file_name: New saved leaf filename, sent on the multipart file part.
+                Use update_metadata to rename without replacing content.
             description: Omission preserves; None clears; a string replaces.
             tags: Omission preserves; None or an empty list clears.
             media_type: MIME type for the replacement content.
@@ -685,7 +685,7 @@ def _prepared_target(
             raise ValueError("Prepared upload requires a filename and MIME type")
         metadata = descriptor.get("metadata", {})
         if not isinstance(metadata, dict) or not metadata.keys() <= {
-                "fileName", "description", "tags"}:
+                "description", "tags"}:
             raise ValueError("Invalid prepared upload metadata")
         return method, path, dict(params)
     except (KeyError, TypeError, ValueError, AttributeError) as error:
