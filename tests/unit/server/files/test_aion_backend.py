@@ -180,9 +180,9 @@ class TestRequestShape:
         )
         request = seen[0]
         assert request.method == "POST"
-        assert request.url.path == "/files/agent-artifacts"
+        assert request.url.path == "/files"
         assert request.url.params["organizationId"] == ORG
-        assert "purpose" not in request.url.params
+        assert request.url.params["purpose"] == "AgentArtifact"
         deadline = datetime.fromisoformat(request.url.params["retentionExpiresAt"])
         assert before + timedelta(days=30) <= deadline <= after + timedelta(days=30)
         assert request.url.params["byteSize"] == "4"

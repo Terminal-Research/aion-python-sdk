@@ -73,9 +73,9 @@ async def test_create_forwards_runtime_attribution_without_selector(
 
     async def handle(request: httpx.Request) -> httpx.Response:
         assert request.method == "POST"
-        assert request.url.path == "/files/agent-artifacts"
+        assert request.url.path == "/files"
         assert request.url.params["organizationId"] == "organization-1"
-        assert "purpose" not in request.url.params
+        assert request.url.params["purpose"] == "AgentArtifact"
         assert request.url.params["byteSize"] == "5"
         assert request.headers["Authorization"] == "Bearer version-token"
         assert AION_PRINCIPAL_SELECTOR_HEADER not in request.headers
@@ -321,10 +321,12 @@ async def test_naive_retention_deadline_never_reaches_http():
 @pytest.mark.parametrize("image_type", ["avatar", "background"])
 async def test_profile_routes_carry_targets_without_policy_overrides(image_type):
     async def handle(request):
-        assert request.url.path == f"/files/profile-images/{image_type}"
+        assert request.url.path == "/files"
         assert request.url.params["associationKind"] == "Identity"
         assert request.url.params["associationId"] == "service-1"
-        assert "purpose" not in request.url.params
+        assert request.url.params["purpose"] == (
+            "IdentityBackground" if image_type == "background" else "ServiceIdentityAvatar"
+        )
         assert "retentionExpiresAt" not in request.url.params
         return httpx.Response(200, json={"id": "image-1"})
 
@@ -362,7 +364,7 @@ async def test_artifact_deadline_is_explicit_and_metadata_does_not_renew_it():
         seen.append(request)
         if request.method == "POST":
             assert request.url.params["retentionExpiresAt"] == "2100-01-01T00:00:00Z"
-            assert "purpose" not in request.url.params
+            assert request.url.params["purpose"] == "AgentArtifact"
             assert "storageCategory" not in request.url.params
         return httpx.Response(200, json={"id": "f"})
 
@@ -374,5 +376,183 @@ async def test_artifact_deadline_is_explicit_and_metadata_does_not_renew_it():
             )
             await files.get_metadata("f")
     assert [(r.method, r.url.path) for r in seen] == [
-        ("POST", "/files/agent-artifacts"), ("GET", "/files/f"),
+        ("POST", "/files"), ("GET", "/files/f"),
     ]
+
+
+@pytest.mark.anyio("asyncio")
+@pytest.mark.parametrize("purpose", ["AgentArtifact", "OrganizationArtifact"])
+async def test_artifact_metadata_precedes_bytes_and_preserves_user_auth(purpose):
+    from email.parser import BytesParser
+    from email.policy import default
+
+    class UserToken:
+        async def get_token(self):
+            return "connect-user-token"
+
+    async def handle(request):
+        assert request.url.path == "/files"
+        assert request.url.params["purpose"] == purpose
+        assert request.headers["authorization"] == "Bearer connect-user-token"
+        assert AION_USAGE_ATTRIBUTION_HEADER not in request.headers
+        if purpose == "AgentArtifact":
+            assert request.url.params["agentIdentityId"] == "owner-1"
+        else:
+            assert "agentIdentityId" not in request.url.params
+        message = BytesParser(policy=default).parsebytes(
+            b"Content-Type: " + request.headers["content-type"].encode() +
+            b"\r\n\r\n" + request.content)
+        parts = list(message.iter_parts())
+        assert [p.get_param("name", header="content-disposition") for p in parts] == [
+            "metadata", "file"]
+        assert json.loads(parts[0].get_payload(decode=True)) == {
+            "description": "Report", "tags": [" Research "]}
+        assert parts[1].get_payload(decode=True) == b"local bytes"
+        return httpx.Response(200, json={"id": "f", "versionId": "v", "revision": 1})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+        async with AionFileClient(jwt_manager=UserToken(), http_client=http) as files:
+            create = (files.create_agent_artifact if purpose == "AgentArtifact"
+                      else files.create_organization_artifact)
+            await create(b"local bytes", organization_id="org", file_name="r.txt",
+                         description="Report", tags=[" Research "],
+                         **({"agent_identity_id": "owner-1"}
+                            if purpose == "AgentArtifact" else {}))
+
+
+@pytest.mark.anyio("asyncio")
+async def test_metadata_patch_keeps_omission_null_and_empty_values_distinct():
+    edits = []
+    operation = str(uuid4())
+
+    async def handle(request):
+        assert request.method == "PATCH"
+        assert request.headers["content-type"] == "application/merge-patch+json"
+        assert request.url.params["operationId"] == operation
+        assert request.url.params["expectedVersionId"] == "v"
+        assert request.url.params["expectedRevision"] == "3"
+        edits.append(json.loads(request.content)["metadata"])
+        return httpx.Response(200, json={"revision": 4})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+        async with AionFileClient(jwt_manager=StaticTokenManager(), http_client=http) as files:
+            for kwargs in ({"description": None}, {"tags": []}, {"file_name": "new.txt"}):
+                await files.update_metadata("f", expected_version_id="v",
+                    expected_revision=3, operation_id=operation, **kwargs)
+    assert edits == [{"description": None}, {"tags": []}, {"fileName": "new.txt"}]
+
+
+@pytest.mark.anyio("asyncio")
+async def test_replacement_omission_preserves_metadata_and_explicit_null_clears():
+    bodies = []
+
+    async def handle(request):
+        bodies.append(request.content)
+        return httpx.Response(200, json={"id": "f"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+        async with AionFileClient(jwt_manager=StaticTokenManager(), http_client=http) as files:
+            for kwargs in ({}, {"description": None, "tags": []}):
+                await files.replace("f", b"bytes", expected_version_id="v",
+                    expected_revision=1, file_name="upload.txt", **kwargs)
+    assert b'name="metadata"' not in bodies[0]
+    assert b'"description": null' in bodies[1]
+    assert b'"tags": []' in bodies[1]
+    assert bodies[1].index(b'name="metadata"') < bodies[1].index(b'name="file"')
+
+
+@pytest.mark.anyio("asyncio")
+async def test_list_preserves_filters_and_cursor_without_inventing_authority():
+    calls = []
+
+    async def handle(request):
+        calls.append(dict(request.url.params))
+        assert request.method == "GET" and request.url.path == "/files"
+        assert AION_USAGE_ATTRIBUTION_HEADER not in request.headers
+        return httpx.Response(200, json={"items": [], "nextPageToken": "next"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+        async with AionFileClient(jwt_manager=StaticTokenManager(), http_client=http) as files:
+            result = await files.list_files(purpose="AgentArtifact",
+                organization_id="org", agent_identity_id="a", file_name_regex=r"^report.*\.csv$",
+                case_sensitive=True, page_size=50)
+            await files.list_files(purpose="AgentArtifact", organization_id="org",
+                agent_identity_id="a", file_name_regex=r"^report.*\.csv$",
+                case_sensitive=True, page_size=50, page_token=result["nextPageToken"])
+    assert calls[0] == {"purpose": "AgentArtifact", "organizationId": "org",
+                       "agentIdentityId": "a", "fileNameRegex": r"^report.*\.csv$",
+                       "caseSensitive": "true", "pageSize": "50"}
+    assert calls[1] == {**calls[0], "pageToken": "next"}
+
+
+def _upload_descriptor():
+    operation = str(uuid4())
+    return {"method": "POST", "url": "https://api.aion.test/files",
+            "operationId": operation, "byteSize": 5, "maximumBytes": 20 * 1024 * 1024,
+            "fileName": "x.txt", "mediaType": "text/plain", "metadata": {"tags": ["test"]},
+            "parameters": {"operationId": operation, "byteSize": "5",
+                           "organizationId": "org", "agentIdentityId": "a",
+                           "purpose": "AgentArtifact"}}
+
+
+@pytest.mark.anyio("asyncio")
+@pytest.mark.parametrize("replacement", [False, True])
+async def test_prepared_upload_uses_original_credentials_and_returns_http_receipt(replacement):
+    descriptor = _upload_descriptor()
+    if replacement:
+        descriptor.update(method="PUT", url=f"https://api.aion.test/files/{uuid4()}")
+        descriptor["parameters"] = {"operationId": descriptor["operationId"],
+            "byteSize": "5", "expectedVersionId": str(uuid4()), "expectedRevision": "2"}
+
+    async def handle(request):
+        assert request.method == descriptor["method"]
+        assert dict(request.url.params) == descriptor["parameters"]
+        assert request.headers[AION_USAGE_ATTRIBUTION_HEADER] == "original-carrier"
+        assert request.headers["authorization"] == "Bearer version-token"
+        return httpx.Response(200, json={"id": "f", "versionId": "v", "revision": 3})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+        async with AionFileClient(jwt_manager=StaticTokenManager(),
+                base_url="https://api.aion.test", http_client=http) as files:
+            receipt = await files.upload_prepared(descriptor, b"bytes",
+                                                  usage_attribution="original-carrier")
+    assert receipt == {"id": "f", "versionId": "v", "revision": 3}
+
+
+@pytest.mark.anyio("asyncio")
+@pytest.mark.parametrize("change", [
+    {"url": "https://elsewhere.test/files"},
+    {"url": "https://api.aion.test.evil.test/files"},
+    {"url": "https://user:password@api.aion.test/files"},
+    {"url": "https://api.aion.test/files?token=secret"},
+    {"url": "https://api.aion.test/files#fragment"},
+    {"url": "https://api.aion.test/admin/users"},
+    {"url": "https://api.aion.test/files/../admin"},
+    {"url": "http://api.aion.test/files"},
+    {"method": "DELETE"}, {"byteSize": 6}, {"maximumBytes": 4},
+    {"operationId": "different"}, {"parameters": {"purpose": "ServiceIdentityAvatar"}},
+])
+async def test_unsafe_prepared_upload_is_rejected_before_obtaining_token(change):
+    class NoToken:
+        async def get_token(self):
+            pytest.fail("Unsafe descriptor must not obtain credentials")
+
+    async with AionFileClient(jwt_manager=NoToken(), base_url="https://api.aion.test") as files:
+        with pytest.raises(AionFileValidationError):
+            await files.upload_prepared({**_upload_descriptor(), **change}, b"bytes")
+
+
+@pytest.mark.anyio("asyncio")
+async def test_prepared_upload_does_not_follow_redirects_even_if_client_enables_them():
+    seen = []
+
+    async def handle(request):
+        seen.append(str(request.url))
+        return httpx.Response(307, headers={"location": "https://elsewhere.test/files"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle), follow_redirects=True) as http:
+        async with AionFileClient(jwt_manager=StaticTokenManager(),
+                base_url="https://api.aion.test", http_client=http) as files:
+            with pytest.raises(AionFileStorageError):
+                await files.upload_prepared(_upload_descriptor(), b"bytes")
+    assert len(seen) == 1

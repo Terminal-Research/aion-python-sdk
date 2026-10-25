@@ -54,8 +54,18 @@ The REST helpers target these control-plane endpoints:
 | `GET /v1/models/{model}` | Retrieves one model-service catalog entry. |
 | `POST /alpha/decisions` | Evaluates named questions using the experimental Decisions API. |
 | `POST /v1/chat/completions` | Creates a model-service chat completion, including streaming responses when requested. |
-| `POST /files/agent-artifacts` | Creates protected agent output. |
+| `POST /files?purpose=AgentArtifact` | Creates protected agent output. |
+| `POST /files?purpose=OrganizationArtifact` | Creates a workspace-owned artifact. |
+| `GET /files?purpose=AgentArtifact` | Lists retained files with scoped pagination and filename search. |
 | `PUT /files/{fileId}` | Replaces a File under an exact version/revision fence. |
+| `PATCH /files/{fileId}` | Creates a metadata version without changing bytes. |
+
+`AionFileClient` accepts any asynchronous bearer-token source, including user
+sessions and Connect tokens. It forwards runtime attribution unchanged for
+callbacks. `upload_prepared` executes a File MCP upload descriptor with caller-
+supplied bytes, checks the configured API origin and File route, and never
+follows redirects. Public File contracts and examples are in the
+[File Service docs](https://docs.aion.to/docs/resources/file-service).
 
 ### Decisions
 
