@@ -65,7 +65,7 @@ def api():
         if state.failure:
             error = {"code": -32600, "data": details} if path == "mcp" else details
             return JSONResponse({"error": error}, status_code=409)
-        if path == "files/agent-artifacts":
+        if path == "files":
             form = await request.form()
             state.content = await form["file"].read()
         if path == "files/file-1/versions/version-1/grants":
@@ -176,7 +176,7 @@ async def test_artifact_delivery_and_explicit_fresh_grant_over_real_http(api):
                 usage_attribution="opaque-forwarded")
             assert (await recipient.get(fresh["url"])).content == b"recipient bytes"
         paths = [path for path, _ in api.requests]
-        assert paths.count("files/agent-artifacts") == 1
+        assert paths.count("files") == 1
         assert paths.count("files/file-1/versions/version-1/grants") == 2
         for _, headers in api.requests:
             assert headers["authorization"] == "Bearer version-token"
