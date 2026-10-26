@@ -52,6 +52,7 @@ __all__ = [
     "AionAuthenticationError",
     "AionFileValidationError",
     "AionModelPrincipalError",
+    "AionImageError",
     "InvalidPrincipalError",
     "AionDaemonIdentityRequired",
     "ExtensionRejection",
@@ -73,6 +74,14 @@ class AionError(Exception):
         sentence instead.
         """
         return None
+
+
+class AionImageError(AionError):
+    """Image generation failed or returned an incomplete or invalid response.
+
+    Images yielded before this error remain available to the caller. Do not
+    retry an ambiguous paid request automatically: it can create another charge.
+    """
 
 
 class TaskFailedError(AionError):

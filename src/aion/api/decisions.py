@@ -82,7 +82,7 @@ DecisionAnswer = NoulAnswer | ChoiceAnswer | ScoreAnswer | BoxAnswer
 
 
 class DecisionUsage(TypedDict, total=False):
-    """Observed counts and Aion's response-time USD quote, when available."""
+    """Observed counts and Aion's response-time credit quote, when available."""
 
     input_tokens: int | None
     output_tokens: int | None
