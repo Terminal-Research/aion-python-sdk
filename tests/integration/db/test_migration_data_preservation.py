@@ -289,3 +289,86 @@ def test_migration_004_preserves_task_data(at_revision_003):
         ).scalar()
     assert orphan_msgs == 0
     assert orphan_arts == 0
+
+
+def test_migration_004_keeps_one_copy_of_each_repeated_entry(at_revision_003):
+    """A snapshot that lists an entry twice backfills one row for it.
+
+    The child tables are unique on ``(task_id, message_id)`` and
+    ``(task_id, artifact_id)``. The first copy of a message is kept, messages
+    without an id are all kept, and ``seq`` stays gapless so the next
+    ``append_new`` lands after the last row. The last copy of an artifact is
+    kept.
+    """
+    engine = at_revision_003
+    task_id = uuid.uuid4()
+
+    def message(message_id, role, text_):
+        entry = {"role": role, "parts": [{"text": text_}]}
+        if message_id is not None:
+            entry["messageId"] = message_id
+        return entry
+
+    history = [
+        message("msg-001", "user", "hello"),
+        message("msg-002", "agent", "reply"),
+        message("msg-002", "agent", "reply"),
+        message(None, "agent", "no id, first"),
+        message(None, "agent", "no id, second"),
+        message("msg-001", "user", "hello, delivered again"),
+        message("msg-003", "agent", "bye"),
+    ]
+    artifacts = [
+        {"artifactId": "aion:stream-delta", "parts": [{"text": "Hel"}]},
+        {"artifactId": "art-x", "name": "result", "parts": [{"text": "x"}]},
+        {"artifactId": "aion:stream-delta", "parts": [{"text": "lo"}]},
+    ]
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                f"INSERT INTO {TASKS_TABLE} "
+                "(id, context_id, status, history, artifacts) "
+                "VALUES (:id, :ctx, CAST(:status AS jsonb), CAST(:history AS jsonb), "
+                "CAST(:artifacts AS jsonb))"
+            ),
+            {
+                "id": task_id,
+                "ctx": f"ctx-{uuid.uuid4().hex[:8]}",
+                "status": json.dumps({"state": "TASK_STATE_COMPLETED"}),
+                "history": json.dumps(history),
+                "artifacts": json.dumps(artifacts),
+            },
+        )
+
+    command.upgrade(alembic_config, "head")
+
+    with engine.begin() as conn:
+        msgs = conn.execute(
+            text(
+                f"SELECT seq, message_id, payload FROM {TASK_MESSAGES_TABLE} "
+                "WHERE task_id = :tid ORDER BY seq"
+            ),
+            {"tid": task_id},
+        ).mappings().all()
+        arts = conn.execute(
+            text(
+                f"SELECT artifact_id, payload FROM {TASK_ARTIFACTS_TABLE} "
+                "WHERE task_id = :tid ORDER BY artifact_id"
+            ),
+            {"tid": task_id},
+        ).mappings().all()
+
+    assert [m["seq"] for m in msgs] == [0, 1, 2, 3, 4]
+    assert [m["message_id"] for m in msgs] == ["msg-001", "msg-002", None, None, "msg-003"]
+    assert [m["payload"]["parts"][0]["text"] for m in msgs] == [
+        "hello",
+        "reply",
+        "no id, first",
+        "no id, second",
+        "bye",
+    ]
+
+    assert [a["artifact_id"] for a in arts] == ["aion:stream-delta", "art-x"]
+    assert arts[0]["payload"]["parts"] == [{"text": "lo"}]
+    assert arts[1]["payload"]["name"] == "result"
