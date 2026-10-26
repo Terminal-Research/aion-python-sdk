@@ -25,6 +25,18 @@ upserts the same row rather than appending a new one, matching how the A2A
 event pipeline already merges an artifact's parts in memory before a save is
 ever made). Both child tables cascade-delete with their task.
 
+A snapshot can list the same entry more than once: one message twice, usually
+an agent reply in two adjacent positions, or several artifacts under one
+``artifactId``, typically the ``aion:stream-delta`` chunks of one stream. The
+child tables hold one row per ``(task_id, message_id)`` and per
+``(task_id, artifact_id)``, so the backfill keeps the first copy of a message
+- the one the unique index keeps when a message is delivered again - and the
+last copy of an artifact, the one a non-appending update leaves in place.
+``seq`` is numbered over the messages kept, without gaps:
+``TaskMessagesRepository.append_new`` writes the next entry at the row count,
+and a gap would put that entry on a stored ``seq``, where the insert is
+silently dropped.
+
 ``tasks.agent_id`` and ``task_claims.agent_id`` identify which agent process
 owns a row when one database is shared by several agents. Existing ``tasks``
 rows predate the column and carry no such identity, so they are backfilled
@@ -290,25 +302,38 @@ def upgrade() -> None:
     op.execute(
         f"""
         INSERT INTO {TASK_MESSAGES_TABLE} (task_id, seq, message_id, payload)
-        SELECT t.id,
-               ordinality - 1,
-               message ->> 'messageId',
+        SELECT task_id,
+               row_number() OVER (PARTITION BY task_id ORDER BY ordinality) - 1,
+               message_id,
                message
-          FROM {TASKS_TABLE} t,
-               LATERAL jsonb_array_elements(COALESCE(t.history, '[]'::jsonb))
-                   WITH ORDINALITY AS h(message, ordinality)
+          FROM (
+               SELECT t.id AS task_id,
+                      h.ordinality,
+                      h.message ->> 'messageId' AS message_id,
+                      h.message,
+                      row_number() OVER (
+                          PARTITION BY t.id, h.message ->> 'messageId'
+                          ORDER BY h.ordinality
+                      ) AS copy
+                 FROM {TASKS_TABLE} t,
+                      LATERAL jsonb_array_elements(COALESCE(t.history, '[]'::jsonb))
+                          WITH ORDINALITY AS h(message, ordinality)
+               ) entries
+         WHERE message_id IS NULL OR copy = 1
         """
     )
     op.execute(
         f"""
         INSERT INTO {TASK_ARTIFACTS_TABLE} (task_id, artifact_id, payload)
-        SELECT t.id,
-               artifact ->> 'artifactId',
-               artifact
+        SELECT DISTINCT ON (t.id, a.artifact ->> 'artifactId')
+               t.id,
+               a.artifact ->> 'artifactId',
+               a.artifact
           FROM {TASKS_TABLE} t,
                LATERAL jsonb_array_elements(COALESCE(t.artifacts, '[]'::jsonb))
-                   AS a(artifact)
-         WHERE artifact ->> 'artifactId' IS NOT NULL
+                   WITH ORDINALITY AS a(artifact, ordinality)
+         WHERE a.artifact ->> 'artifactId' IS NOT NULL
+         ORDER BY t.id, a.artifact ->> 'artifactId', a.ordinality DESC
         """
     )
 
