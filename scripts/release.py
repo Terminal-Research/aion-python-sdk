@@ -14,7 +14,8 @@ GitHub Release kind and every check below are derived from it.
 ``publish``
     Everything ``check`` does, preceded by a preflight over git, GitHub and
     PyPI and followed by a confirmation prompt, and then one action: create
-    the GitHub Release whose ``py-v*`` tag starts ``publish-python.yml``. That
+    the GitHub Release whose ``py-v*`` tag, put on the commit the checks ran
+    on, starts ``publish-python.yml``. That
     workflow builds, checks and uploads to PyPI automatically when its
     build job succeeds. Nothing is uploaded from this machine, and the
     release is the last thing this script does - every step before it can
@@ -227,7 +228,22 @@ def pypi_has_version(version: Version) -> bool:
     return version.text in payload.get("releases", {})
 
 
-def preflight(version: Version) -> str:
+@dataclass(frozen=True)
+class Source:
+    """The state a release is cut from, as the preflight found it.
+
+    Attributes:
+        commit    — the full SHA of ``HEAD``, which was ``origin/main`` when the
+                    preflight ran: the commit the gate checks and the tag
+                    lands on.
+        repo_url  — the repository's URL on GitHub, for the closing hint.
+    """
+
+    commit: str
+    repo_url: str
+
+
+def preflight(version: Version) -> Source:
     """Check everything that must hold before a release is created.
 
     The checks are ordered from cheapest to slowest, and every one of them is
@@ -238,7 +254,7 @@ def preflight(version: Version) -> str:
         version: the version about to be released.
 
     Returns:
-        The repository's URL on GitHub, for the closing hint.
+        The commit the release is cut from and the repository's URL.
 
     Raises:
         ReleaseError: naming the first condition that does not hold.
@@ -283,7 +299,7 @@ def preflight(version: Version) -> str:
             "spent for good - bump [project].version and release the next one"
         )
     say(f"    pypi: {PROJECT_NAME} {version.text} is not published")
-    return repo_url
+    return Source(commit=head, repo_url=repo_url)
 
 
 # --- confirmation -------------------------------------------------------------
@@ -336,13 +352,15 @@ def command_publish(args: argparse.Namespace) -> None:
     """``publish``: preflight, gate, confirm, create the release."""
     version = read_version()
     announce(version)
-    repo_url = preflight(version)
+    source = preflight(version)
     run_gate(args.python)
     confirm(version, args.yes)
 
+    # The checked commit, not the branch: main can move while the gate runs,
+    # and a branch name would put the tag on whatever its tip is by then.
     argv = [
         "gh", "release", "create", version.tag,
-        "--target", RELEASE_BRANCH,
+        "--target", source.commit,
         "--title", version.tag,
         "--generate-notes",
     ]
@@ -354,7 +372,7 @@ def command_publish(args: argparse.Namespace) -> None:
         f"\n{version.tag} is published as a GitHub Release. The workflow "
         f"'{PUBLISH_WORKFLOW}' is now building and checking it; if the build "
         "succeeds, the workflow uploads to PyPI automatically:\n"
-        f"    {repo_url}/actions/workflows/{PUBLISH_WORKFLOW}\n"
+        f"    {source.repo_url}/actions/workflows/{PUBLISH_WORKFLOW}\n"
         "A successful upload spends the version number for good - PyPI never "
         "takes a file name twice."
     )

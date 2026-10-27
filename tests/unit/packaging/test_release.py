@@ -241,6 +241,8 @@ def test_an_unreachable_pypi_is_an_error_not_a_no(monkeypatch: pytest.MonkeyPatc
 
 # --- the commands -------------------------------------------------------------
 
+SOURCE = release.Source(commit="0123456789abcdef0123456789abcdef01234567", repo_url="https://x")
+
 
 def test_check_runs_the_gate_and_nothing_else(monkeypatch: pytest.MonkeyPatch) -> None:
     recorder = Recorder()
@@ -259,7 +261,7 @@ def test_publish_runs_preflight_gate_prompt_then_creates_the_release(
     recorder = Recorder()
     monkeypatch.setattr(release.subprocess, "run", recorder)
     monkeypatch.setattr(release, "read_version", lambda: release.Version("0.2.0rc1", True))
-    monkeypatch.setattr(release, "preflight", lambda v: order.append("preflight") or "https://x")
+    monkeypatch.setattr(release, "preflight", lambda v: order.append("preflight") or SOURCE)
     monkeypatch.setattr(release, "confirm", lambda v, yes: order.append(f"confirm yes={yes}"))
 
     assert release.main(["publish"]) == 0
@@ -268,7 +270,7 @@ def test_publish_runs_preflight_gate_prompt_then_creates_the_release(
     assert recorder.targets() == GATE_TARGETS
     assert recorder.calls[-1] == [
         "gh", "release", "create", "py-v0.2.0rc1",
-        "--target", "main", "--title", "py-v0.2.0rc1", "--generate-notes", "--prerelease",
+        "--target", SOURCE.commit, "--title", "py-v0.2.0rc1", "--generate-notes", "--prerelease",
     ]
 
 
@@ -276,7 +278,7 @@ def test_a_final_version_is_not_flagged_as_a_prerelease(monkeypatch: pytest.Monk
     recorder = Recorder()
     monkeypatch.setattr(release.subprocess, "run", recorder)
     monkeypatch.setattr(release, "read_version", lambda: VERSION)
-    monkeypatch.setattr(release, "preflight", lambda v: "https://x")
+    monkeypatch.setattr(release, "preflight", lambda v: SOURCE)
     monkeypatch.setattr(release, "confirm", lambda v, yes: None)
     assert release.main(["publish", "--yes"]) == 0
     assert recorder.calls[-1][:4] == ["gh", "release", "create", "py-v0.2.0"]
@@ -287,7 +289,7 @@ def test_a_refused_prompt_creates_nothing(monkeypatch: pytest.MonkeyPatch, capsy
     recorder = Recorder()
     monkeypatch.setattr(release.subprocess, "run", recorder)
     monkeypatch.setattr(release, "read_version", lambda: VERSION)
-    monkeypatch.setattr(release, "preflight", lambda v: "https://x")
+    monkeypatch.setattr(release, "preflight", lambda v: SOURCE)
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr("builtins.input", lambda _: "n")
 
@@ -316,7 +318,7 @@ def test_a_failing_gate_never_reaches_the_prompt(monkeypatch: pytest.MonkeyPatch
     recorder = Recorder(fail_on="dist-check")
     monkeypatch.setattr(release.subprocess, "run", recorder)
     monkeypatch.setattr(release, "read_version", lambda: VERSION)
-    monkeypatch.setattr(release, "preflight", lambda v: "https://x")
+    monkeypatch.setattr(release, "preflight", lambda v: SOURCE)
     monkeypatch.setattr(release, "confirm", lambda v, yes: pytest.fail("prompted after a failure"))
     assert release.main(["publish"]) == 1
     assert recorder.targets() == GATE_TARGETS[:5]

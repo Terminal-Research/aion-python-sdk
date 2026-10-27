@@ -88,8 +88,10 @@ Both commands run `scripts/release.py`, read the version from
 3. **The question.** Anything but `y` stops here. `make release YES=1` answers
    it, for a run without a terminal; without `YES=1` a run that has no
    terminal to ask on stops instead of assuming.
-4. **The release.** Creates the GitHub Release `py-v<version>` on `main` with
-   generated notes; a pre-release version gets the pre-release flag by itself.
+4. **The release.** Creates the GitHub Release `py-v<version>` with generated
+   notes, its tag on the commit the preflight found at `HEAD`: the one the
+   checks ran on, even if `main` has moved on meanwhile. A pre-release version
+   gets the pre-release flag by itself.
    Publishing the release is what starts the workflow that uploads to PyPI.
 
 The release is the last thing it does. A failure anywhere before it stops the
@@ -104,9 +106,10 @@ same), or `make dist-smoke SMOKE_ARGS="--python 3.12"` and
 `make tests-scenarios-dist SCENARIOS_ARGS="--python 3.12"` on their own.
 
 The same release by hand, if ever needed: `gh release create py-v0.2.0
---target main --title py-v0.2.0 --generate-notes`, plus `--prerelease` for a
-pre-release; or in the UI, Releases → Draft a new release → tag `py-v0.2.0`,
-target `main`, publish.
+--target <commit> --title py-v0.2.0 --generate-notes`, with the full SHA of
+the commit the checks passed on, plus `--prerelease` for a pre-release; or in
+the UI, Releases → Draft a new release → tag `py-v0.2.0` on that commit,
+publish.
 
 ### Version rules
 
