@@ -27,6 +27,7 @@ from a2a.types import (
     TaskStatus,
 )
 
+from aion.core.a2a import ArtifactId
 from aion.core.agent import conversation
 from aion.server.agent.adapters import ExecutionConfig
 from aion.server.tasks.admission import ContextHolder
@@ -186,6 +187,19 @@ async def test_each_artifact_id_is_numbered_on_its_own() -> None:
     events = await context.write("t2", spec(), whole("other"), COMPLETED)
 
     assert versions_of(events) == ["1", "0"]
+
+
+async def test_the_sdks_own_artifacts_carry_no_version() -> None:
+    context = Context()
+
+    events = await context.write("t1", spec(), whole(ArtifactId.THINKING_DELTA.value), COMPLETED)
+
+    (thought,) = [
+        event for event in events
+        if isinstance(event, TaskArtifactUpdateEvent) and event.artifact.artifact_id == ArtifactId.THINKING_DELTA.value
+    ]
+    assert "version" not in thought.artifact.metadata
+    assert versions_of([event for event in events if event is not thought]) == ["0"]
 
 
 async def test_a_caller_that_does_not_hold_the_context_numbers_from_zero() -> None:
