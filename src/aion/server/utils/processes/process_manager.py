@@ -35,7 +35,13 @@ def _run_in_process_group(target_function: Callable, *args, **kwargs):
             # platform refuses a new session.  Termination falls back to the
             # Process API when no group id was recorded.
             pass
-    return target_function(*args, **kwargs)
+    try:
+        return target_function(*args, **kwargs)
+    finally:
+        # A fork child clears the parent's atexit hooks. Its asynchronous
+        # Logstash worker must drain before multiprocessing exits the process,
+        # including when startup returns early, raises, or calls sys.exit().
+        logging.shutdown()
 
 
 @dataclass

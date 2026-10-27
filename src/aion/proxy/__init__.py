@@ -23,9 +23,8 @@ try:
     )
     from .types import AgentHealthInfo, SystemHealthResponse
 except MissingOptionalDependency as exc:
-    # The proxy reads the server's settings, so aion.server's guard gets there
-    # first. Same extras, so only the name changes: the reader imported
-    # aion.proxy, and that is what the line says.
+    # Preserve a nested dependency guard's cause while naming the package
+    # the reader imported.
     raise missing_server_extra_error("aion.proxy", exc) from exc
 except ModuleNotFoundError as exc:
     if is_own_module(exc.name):

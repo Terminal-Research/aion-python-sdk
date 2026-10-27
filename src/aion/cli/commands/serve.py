@@ -110,28 +110,13 @@ async def serve(
         from aion.core.logging import set_process_role
         from aion.server.logging import setup_root_logger
 
+        set_process_role("CLI")
+        setup_root_logger()
+
+        # Application imports validate database settings. Keep them inside the
+        # logged failure path, after the logging handlers are ready.
         from aion.cli.handlers.serve import ServeHandler
-    except MissingOptionalDependency as ex:
-        # aion.server has already worked out that a library is missing and
-        # said which extras bring it. Only the name of the command that needed
-        # them is added here, so the line starts where the user did.
-        raise click.ClickException(
-            str(missing_server_extra_error("aion serve", ex))
-        ) from ex
-    except ModuleNotFoundError as ex:
-        if is_own_module(ex.name):
-            # Our own code is missing from an installation that has it by
-            # construction. Nothing the user installs fixes that, so let it
-            # travel with its traceback.
-            raise
-        raise click.ClickException(
-            str(missing_server_extra_error("aion serve", ex))
-        ) from ex
 
-    set_process_role("CLI")
-    setup_root_logger()
-
-    try:
         # Load configuration
         reader = AionConfigReader()
         config = reader.load_and_validate_config()
@@ -160,6 +145,16 @@ async def serve(
             startup_timeout=startup_timeout
         )
 
+    except MissingOptionalDependency as ex:
+        raise click.ClickException(
+            str(missing_server_extra_error("aion serve", ex))
+        ) from ex
+    except ModuleNotFoundError as ex:
+        if is_own_module(ex.name):
+            raise
+        raise click.ClickException(
+            str(missing_server_extra_error("aion serve", ex))
+        ) from ex
     except Exception as ex:
         logger.exception(f"Failed to start server: {str(ex)}")
         raise click.ClickException(f"Unable to start AION system: {str(ex)}")

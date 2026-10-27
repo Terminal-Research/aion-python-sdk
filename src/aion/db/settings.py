@@ -20,7 +20,8 @@ class DatabaseSettings(BaseSettings):
 
     model_config = SettingsConfigDict(
         case_sensitive=False,
-        extra="ignore"
+        extra="ignore",
+        hide_input_in_errors=True,
     )
 
     pg_url: Optional[str] = Field(
@@ -66,14 +67,14 @@ class DatabaseSettings(BaseSettings):
             return None
 
         if not re.match(r'^postgresql://.*', value):
-            raise ValueError(f"Invalid PostgreSQL URL format: {value}")
+            raise ValueError("Invalid PostgreSQL URL format; expected postgresql://")
 
         try:
             parsed = urlparse(value)
-            if not parsed.scheme or not parsed.netloc:
-                raise ValueError(f"Invalid PostgreSQL URL structure: {value}")
-        except Exception as e:
-            raise ValueError(f"Failed to parse PostgreSQL URL: {value}") from e
+        except ValueError:
+            raise ValueError("Failed to parse PostgreSQL URL") from None
+        if not parsed.scheme or not parsed.netloc:
+            raise ValueError("Invalid PostgreSQL URL structure; expected a host")
 
         return value
 
@@ -139,8 +140,6 @@ class DatabaseSettings(BaseSettings):
             return None
 
 
-try:
-    db_settings = DatabaseSettings()
-except Exception as ex:
-    print(f"Error loading database configuration: {ex}")
-    raise
+# The startup boundary reports validation failures through the configured
+# logger. Neither the validator nor Pydantic's error text may echo the DSN.
+db_settings = DatabaseSettings()

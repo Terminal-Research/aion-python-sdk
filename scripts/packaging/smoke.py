@@ -48,9 +48,10 @@ def probe_imports(*modules: str) -> str:
     return "\n".join(lines)
 
 
-def probe_needs_extra(module: str, *extras: str) -> str:
-    """Code asserting that importing ``module`` asks for ``extras`` by name.
+def probe_needs_extra(module: str, *extras: str, attribute: str | None = None) -> str:
+    """Assert importing a module or its lazy entry point names the required extras.
 
+    ``attribute`` exercises packages that defer their imports until use.
     The failure this replaces is an ImportError from somewhere inside a
     third-party package, naming a module the person who wrote the agent has
     never heard of.
@@ -61,12 +62,13 @@ def probe_needs_extra(module: str, *extras: str) -> str:
     the checks in this directory and installs a server with no framework
     behind it, which is never what the reader wants next.
     """
+    statement = f"from {module} import {attribute}" if attribute else f"import {module}"
     return f"""
 from aion.core.utils.optional_deps import MissingOptionalDependency
 
 wanted = {list(extras)!r}
 try:
-    import {module}
+    {statement}
 except MissingOptionalDependency as exc:
     message = str(exc)
     for extra in wanted:
@@ -294,7 +296,10 @@ asyncio.run(check())
             *(
                 Step(
                     f"{module} names the server extras",
-                    code=probe_needs_extra(module, "langgraph-server", "adk-server"),
+                    code=probe_needs_extra(
+                        module, "langgraph-server", "adk-server",
+                        attribute="run_server" if module == "aion.server" else None,
+                    ),
                 )
                 for module in ("aion.server", "aion.db.postgres", "aion.proxy")
             ),
@@ -463,12 +468,14 @@ asyncio.run(check())
             ),
             Step(
                 "aion.server names the server extras",
-                code=probe_needs_extra("aion.server", "langgraph-server", "adk-server"),
+                code=probe_needs_extra(
+                    "aion.server", "langgraph-server", "adk-server", attribute="run_server"
+                ),
             ),
             # Not fastapi, uvicorn, starlette or sqlalchemy: google-adk depends
             # on all four, so their presence here says nothing about [server].
             # These three are what only [server] brings, and the database
-            # driver is what aion.server's guard actually trips over.
+            # driver is what the server entry point's guard actually trips over.
             Step(
                 "no server-only libraries",
                 code=probe_absent("psycopg", "asgi_proxy", "logstash_async"),

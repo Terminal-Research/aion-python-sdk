@@ -1,8 +1,8 @@
 """Importing the server layer in an install that has no server extras.
 
 `pip install aionto-sdk` brings every aion.* subpackage but only the base
-third-party dependencies, so importing aion.server, aion.db.postgres or
-aion.proxy there fails on a library such as fastapi or sqlalchemy - not on
+third-party dependencies, so importing a server entry point, aion.db.postgres
+or aion.proxy there fails on a library such as fastapi or sqlalchemy - not on
 Aion code. What the reader must be told is which extra to install, and there
 are two of them: nothing at this depth knows which framework the agent uses.
 
@@ -17,9 +17,15 @@ import pytest
 from tests.conftest import SERVER_LIBRARIES
 
 
-# The packages that guard their imports, and the third-party library each one
-# is expected to trip over first in a base install.
+# The packages that guard their server entry points. aion.server itself is
+# lightweight so its logging can be initialized before application imports.
 GUARDED_PACKAGES = ("aion.server", "aion.db.postgres", "aion.proxy")
+
+
+def _import_statement(package: str) -> str:
+    if package == "aion.server":
+        return "from aion.server import run_server"
+    return f"import {package}"
 
 
 @pytest.mark.parametrize("package", GUARDED_PACKAGES)
@@ -29,7 +35,7 @@ def test_import_names_both_server_extras(package: str, run_python_without) -> No
         SERVER_LIBRARIES,
         f"""
         try:
-            import {package}
+            {_import_statement(package)}
         except ImportError as exc:
             print(type(exc).__name__)
             print(exc)
@@ -52,7 +58,7 @@ def test_import_never_names_the_internal_server_extra(
         SERVER_LIBRARIES,
         f"""
         try:
-            import {package}
+            {_import_statement(package)}
         except ImportError as exc:
             print(exc)
         """,
@@ -69,7 +75,7 @@ def test_import_keeps_the_original_failure(package: str, run_python_without) -> 
         SERVER_LIBRARIES,
         f"""
         try:
-            import {package}
+            {_import_statement(package)}
         except ImportError as exc:
             cause = exc.__cause__
             print(type(cause).__name__, cause.name)
@@ -98,7 +104,7 @@ def test_a_missing_aion_module_is_not_reported_as_an_extra(
         (own_module,),
         f"""
         try:
-            import {package}
+            {_import_statement(package)}
         except ImportError as exc:
             print(type(exc).__name__)
             print(exc)
@@ -116,8 +122,6 @@ def test_a_missing_aion_module_is_not_reported_as_an_extra(
         # aion.server reaches aion.db.postgres, whose guard fires first when
         # only the database libraries are missing.
         ("aion.server", "aion.db.postgres"),
-        # aion.proxy reads the server's settings, so aion.server's guard fires.
-        ("aion.proxy", "aion.server"),
     ],
 )
 def test_import_is_reported_under_the_package_that_was_imported(
@@ -133,7 +137,7 @@ def test_import_is_reported_under_the_package_that_was_imported(
         ("sqlalchemy",),
         f"""
         try:
-            import {package}
+            {_import_statement(package)}
         except ImportError as exc:
             print(type(exc).__name__)
             print(exc)
@@ -147,3 +151,16 @@ def test_import_is_reported_under_the_package_that_was_imported(
     assert f"{inner} requires optional dependencies." not in result.stdout
     # The wrapping keeps the missing library's name reachable.
     assert "cause: MissingOptionalDependency sqlalchemy" in result.stdout
+
+
+def test_proxy_settings_do_not_import_the_application_database(run_python_without):
+    """The proxy reads server settings without bootstrapping an agent database."""
+    result = run_python_without(
+        ("sqlalchemy", "aion.db.postgres"),
+        """
+        import sys
+        import aion.proxy
+        assert 'aion.db.settings' not in sys.modules
+        """,
+    )
+    assert result.returncode == 0, result.stderr
