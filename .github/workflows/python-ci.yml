@@ -2,20 +2,18 @@ name: Python CI
 
 # Every pull request update runs the complete source-checkout gate. Jobs are
 # independent, so a failing group does not prevent the others from reporting.
-# A push to main runs the same gate again as a signal about the merged branch.
+# Pushes do not start it: changes reach main through pull requests, and with
+# "Require branches to be up to date" the checked pull request is what lands.
 # Require the CI result check in main's branch ruleset to make this a merge gate.
 on:
   pull_request:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# A newer push to a pull request supersedes its running checks. Main and
-# manual runs are never cancelled: each is the verdict on one commit.
+# A newer push to a pull request supersedes its running checks. Manual runs
+# are never cancelled: each is the verdict on one commit.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
