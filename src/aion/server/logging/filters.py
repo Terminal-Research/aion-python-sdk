@@ -2,6 +2,8 @@
 
 import logging
 
+from aion.core.logging.base import AionLogRecord
+
 # Rules for stream handler: namespace -> minimum log level, None = exclude entirely
 BASE_RULES: dict[str, int | None] = {
     "httpcore": logging.WARNING,
@@ -91,6 +93,10 @@ class ServerAionContextFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         if not getattr(record, '_aion_enriched', False):
+            # Root and library loggers can predate Aion's logger class. Their
+            # records need the same optional fields before either formatter runs.
+            for field in AionLogRecord.__annotations__:
+                record.__dict__.setdefault(field, None)
             self._enrich_otel(record)
             self._enrich_server_context(record)
             record._aion_enriched = True
@@ -112,8 +118,10 @@ class ServerAionContextFilter(logging.Filter):
 
     @classmethod
     def _enrich_server_context(cls, record: logging.LogRecord) -> None:
-        """Populate Aion deployment, task, and request fields from the current execution scope."""
+        """Attach the running version even before startup or outside a request."""
         try:
+            record.aion_version_id = record.aion_version_id or cls._get_app_version_id()
+
             from aion.server.agent.execution.scope import get_execution_scope
 
             scope = get_execution_scope()
@@ -143,7 +151,7 @@ class ServerAionContextFilter(logging.Filter):
             pass
 
     @staticmethod
-    def _get_app_version_id() -> str:
+    def _get_app_version_id() -> str | None:
         """Return the running agent's version_id from app settings as a fallback."""
         from aion.server.settings import app_settings
         return app_settings.version_id

@@ -10,8 +10,8 @@ __all__ = ["AionLogstashFilter"]
 class AionLogstashFilter(logging.Filter):
     """Filter log records for Logstash processing.
 
-    Only allows records with INFO level or higher that contain
-    valid request context information.
+    Allows INFO and higher records identified by the running version, an
+    invocation distribution, or a trace. A request is not required.
     """
 
     def filter(self, record: AionLogRecord) -> bool:

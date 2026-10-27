@@ -45,6 +45,14 @@ class _AgentServer(uvicorn.Server):
         super().__init__(config=config)
         self._before_drain = before_drain
 
+    async def startup(self, sockets: Optional[list[socket.socket]] = None) -> None:
+        """Report readiness only after the application starts and sockets bind."""
+        await super().startup(sockets=sockets)
+        if self.started:
+            logger.info("Agent server ready; accepting requests")
+        else:
+            logger.error("Agent server startup failed; application did not become ready")
+
     async def shutdown(self, sockets: Optional[list[socket.socket]] = None) -> None:
         for server in self.servers:
             server.close()
@@ -151,9 +159,11 @@ async def run_server(
         # name itself; once it is, the agent's own name takes over.
         set_process_role("Agent")
         setup_root_logger()
+        logger.info("Agent server starting: agent_id=%s port=%s", agent_id, port)
 
         # RUN AGENT
         await async_serve(agent_id, agent_config, port, startup_callback, serialized_socket)
+        logger.info("Agent server stopped: agent_id=%s", agent_id)
     except KeyboardInterrupt:
         logger.info("Interrupted by user")
         sys.exit(0)

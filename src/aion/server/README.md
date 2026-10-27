@@ -595,3 +595,27 @@ predicate (`is_ephemeral_event`): a webhook receives what the task stores.
 The deduplicator does not retain their IDs, so repeated chunks remain
 deliverable. Ordinary artifacts still persist. This filter does not remove
 artifacts from previously stored tasks.
+
+
+## Server and background logging
+
+Applications use ordinary Python loggers. The server's root handlers write to
+its console and, when `LOGSTASH_HOST` and `LOGSTASH_PORT` are configured, to
+Logstash. `LOG_LEVEL` defaults to `INFO`; Logstash excludes debug records and
+records without a running version, invocation distribution, or trace.
+
+`VERSION_ID` identifies startup, shutdown, scheduled jobs, and background threads
+without requiring an incoming request. Within a request, its version and tracing
+context take precedence. Logs emitted before a version is supplied or resolved
+remain on the console unless another accepted identity is present; they are not
+buffered for later attribution. Ordinary library and root log records receive
+the same optional context fields as Aion records.
+
+The agent process logs `Agent server starting` after configuring its handlers.
+`Agent server ready; accepting requests` follows completed application startup
+and socket binding. A failed lifespan emits a failure event instead. These events
+use the SDK logger, independently of the suppressed Uvicorn INFO messages.
+
+An independently launched child process must configure its own logging or relay
+structured records to its parent. Environment inheritance alone does not carry
+Python handlers into that process. Raw subprocess stderr is not a log protocol.
