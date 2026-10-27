@@ -154,25 +154,42 @@ Every scenario builds on the shape of a turn, which is what
 | # | Event | Meaning |
 |---|---|---|
 | 1 | `Task` `SUBMITTED` | the stream opens; the task now exists |
-| 2 | `TaskStatusUpdateEvent` `WORKING`, with a message | one durable reply; the first is the transition into a running task; repeated per reply |
-| 3 | `Task` terminal | the stream closes on `COMPLETED`, `FAILED`, `CANCELED` or `INPUT_REQUIRED` |
+| 2 | `TaskStatusUpdateEvent` `WORKING`, with a message | one reply; the first is the transition into a running task; repeated per reply |
+| 3 | `TaskArtifactUpdateEvent` `aion:assistant-answer` | the last reply again, as the task's result, because the task produced no other |
+| 4 | `Task` terminal | the stream closes on `COMPLETED`, `FAILED`, `CANCELED` or `INPUT_REQUIRED` |
 
-A turn whose first event is not a status the task keeps - an artifact, a
-streamed chunk, a live-only status - gets a `WORKING` status without a message
-right before that event, so the task is never `SUBMITTED` while output reaches
-the client. A reply the agent streams therefore opens with that `WORKING`,
-then one `TaskArtifactUpdateEvent` per chunk under the artifact id
-`aion:stream-delta` (the first with `append=False`, the rest with
-`append=True`), followed by the whole reply as a single `WORKING` status.
+A turn whose first event is not a status - an artifact, a streamed chunk -
+gets a `WORKING` status without a message right before that event, so the task
+is never `SUBMITTED` while output reaches the client.
 
-An ephemeral event is delivered and then forgotten: the client sees it, task
-history never does. There are two shapes of one idea, and which one an agent
-produces depends on who emits it. `Thread.typing()` sends a transient artifact
-under the id `aion:ephemeral-message`. A server-side extension flags a
-`WORKING` status with `aion:ephemeral` in its metadata, which is what
-`Ev.ephemeral` in the recorder reads. The ADK adapter does not hold the first
-of these today — `frameworks.DIVERGENCES` has the entry and what it does
-instead.
+The task stores everything the turn delivers, and a push subscriber receives
+it too. Four artifacts are the SDK's own, under reserved ids the recorder
+names (`STREAM_DELTA_ARTIFACT_ID` and the rest):
+
+- `aion:stream-delta` is the answer the model streamed. A section arrives as
+  chunks - the first with `append=False`, the rest with `append=True` - and
+  ends with one more update carrying its whole text in one part,
+  `append=False` and `lastChunk=True`. The streamed text never becomes a
+  message. The server joins the chunks that follow the last one it sent by
+  less than `AION_STREAM_DELTA_INTERVAL`, so how many arrive depends on how
+  fast the agent produced them; a scenario that counts chunks runs on the
+  `every-chunk` deployment, where the interval is zero
+  ([core/test_streaming.py](core/test_streaming.py)).
+- `aion:thinking-delta` holds the agent's thoughts, from `Thread.thinking()`:
+  one update and one text part per thought, the task's first with
+  `append=False` and every later one with `append=True`
+  ([core/test_thoughts.py](core/test_thoughts.py)).
+- `aion:reaction` is the agent's reaction to the message a message event
+  named ([core/test_reactions.py](core/test_reactions.py)).
+- `aion:assistant-answer` comes right before `COMPLETED` when the task
+  produced no result - no artifact of its own and no streamed answer; the
+  thoughts and a reaction do not count. It carries every part of the last
+  message of the completing turn. A failed or cancelled task gets none
+  ([core/test_assistant_answer.py](core/test_assistant_answer.py)).
+
+`section_texts`, `thought_texts` and `reply_texts` in the recorder read what a
+turn said through each of these; `section_end`, `thought` and `answer` match
+the updates in a shape.
 
 ## Writing a scenario
 

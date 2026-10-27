@@ -26,12 +26,12 @@ import logging
 import copy
 from typing import Any
 
+from a2a.server.tasks.task_manager import append_artifact_to_task
 from a2a.types import Artifact, Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf.struct_pb2 import Struct
 from aion.core.a2a.metadata import is_platform_metadata_key
 from aion.server.a2a.utils import task_history_message_ids
-from aion.server.a2a.constants import TRANSIENT_ARTIFACT_IDS
 
 __all__ = ["A2ATaskDeduplicator"]
 
@@ -125,10 +125,18 @@ class A2ATaskDeduplicator:
                 self._known_message_ids.add(item.status.message.message_id)
 
         elif isinstance(item, TaskArtifactUpdateEvent):
-            if item.artifact.artifact_id in TRANSIENT_ARTIFACT_IDS:
-                return
-
-            self._original_task.artifacts.append(copy.deepcopy(item.artifact))
+            # Applied the way the task manager applies it, so the chunks of a
+            # streamed artifact extend one artifact rather than piling up
+            # copies of it. The cache can start from a task the consumer has
+            # not written the artifact's first chunk to yet, so a chunk that
+            # extends an artifact the cache does not hold starts it here.
+            applied = copy.deepcopy(item)
+            if applied.append and not any(
+                artifact.artifact_id == applied.artifact.artifact_id
+                for artifact in self._original_task.artifacts
+            ):
+                applied.append = False
+            append_artifact_to_task(self._original_task, applied)
             if item.artifact.artifact_id:
                 self._known_artifact_ids.add(item.artifact.artifact_id)
 

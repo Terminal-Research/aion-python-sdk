@@ -82,7 +82,7 @@ class TestPostWithRouting:
         with patch(EMITTER_PATH, return_value=emitter):
             asyncio.run(thread.post(chunks(), target=routing))
 
-        # last call is the final durable event
+        # last call is the complete event that ends the section
         final_event = emitter.call_args_list[-1][0][0]
         assert AION_ROUTING_KEY in final_event.custom_metadata
         assert final_event.custom_metadata[AION_ROUTING_KEY]["contextId"] == "D06DM456"

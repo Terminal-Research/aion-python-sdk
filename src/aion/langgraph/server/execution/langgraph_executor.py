@@ -234,7 +234,10 @@ class LangGraphExecutor(AgentFrameworkExecutor):
             context: "RequestContext",
             converter: LangGraphA2AConverter,
     ) -> AsyncIterator[AgentEvent]:
-        """Emit result events and the terminal complete or interrupt event."""
+        """Close a streaming section the run left open, then emit result events and the terminal complete or interrupt event."""
+        for a2a_event in converter.close_stream():
+            yield a2a_event
+
         snapshot = await self._graph_state(config)
 
         for a2a_event in self._result_handler.handle(

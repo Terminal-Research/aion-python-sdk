@@ -414,6 +414,9 @@ class AionAgentRequestExecutor(AgentExecutor):
             logger.exception("Task crashed: %s", ex)
             await self._close_task(task_updater, pipeline, task, reason=CRASH_REASON.format(task_id=task.id))
         else:
+            # A chunk held back for the next event goes out with the end of
+            # the turn when no event follows it.
+            await _flush(pipeline)
             if turn.stoppable and outcome not in NON_ACTIVE_TASK_STATES:
                 await self._close_stopped(turn, task, task_updater, pipeline)
         finally:
@@ -427,6 +430,7 @@ class AionAgentRequestExecutor(AgentExecutor):
         if turn.stopped_for == _SHUTDOWN:
             await self._close_task(task_updater, pipeline, task, reason=SHUTDOWN_REASON, code=codes.SERVER_SHUTDOWN)
         elif not pipeline.terminal_seen:
+            await _flush(pipeline)
             try:
                 await task_updater.cancel()
             except Exception:  # noqa: BLE001 - the cancel writes CANCELED itself then
@@ -489,6 +493,7 @@ class AionAgentRequestExecutor(AgentExecutor):
         """
         if pipeline.terminal_seen:
             return
+        await _flush(pipeline)
         uri = routed_extension_of(task)
         if uri is not None and reason:
             if retryable is None:
@@ -712,3 +717,11 @@ async def _close(events: Any) -> None:
         await aclose()
     except Exception:
         logger.exception("Closing an executor's stream failed")
+
+
+async def _flush(pipeline: AionEventPipeline) -> None:
+    """Deliver the events the pipeline still holds: at the end of the turn, and ahead of an outcome the server writes itself."""
+    try:
+        await pipeline.flush()
+    except Exception:  # noqa: BLE001 - must not mask the original failure
+        logger.exception("Could not deliver the events held back before the task was closed")

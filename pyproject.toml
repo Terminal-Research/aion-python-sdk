@@ -310,7 +310,7 @@ markers = [
     # them. The "scenario suite -" prefix is what scripts/scenarios_matrix.py
     # reads to tell a suite from the markers above.
     "smoke: scenario suite - agent answers at all: card, health, help, echo",
-    "streaming: scenario suite - chunked replies, ephemeral typing, unary send",
+    "streaming: scenario suite - streamed answers, thoughts, unary send",
     "events: scenario suite - event order, ids, outbox, get_task agreement",
     "terminal_states: scenario suite - COMPLETED, FAILED, CANCELED, INPUT_REQUIRED",
     "interrupts: scenario suite - INPUT_REQUIRED and resume",

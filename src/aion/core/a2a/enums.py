@@ -25,11 +25,15 @@ class MessageType(str, Enum):
 
 
 class ArtifactId(str, Enum):
-    """Artifact IDs used in A2A message headers."""
+    """Ids of the artifacts the SDK fills itself, one artifact of each per task."""
     STREAM_DELTA = "aion:stream-delta"
+    """The agent's answer as the model streamed it: the last section of the task."""
     THINKING_DELTA = "aion:thinking-delta"
-    EPHEMERAL_MESSAGE = "aion:ephemeral-message"
+    """The agent's thoughts, one text part per thought, for the whole task."""
+    ASSISTANT_ANSWER = "aion:assistant-answer"
+    """The last agent message of a completed task that produced no result artifact."""
     REACTION = "aion:reaction"
+    """The agent's latest reaction to a message of the conversation."""
 
 
 class ArtifactName(str, Enum):
@@ -37,7 +41,7 @@ class ArtifactName(str, Enum):
     MESSAGE_RESULT = "Message Result"
     STREAM_DELTA = "Stream Delta"
     THINKING_DELTA = "Thinking Delta"
-    EPHEMERAL_MESSAGE = "Ephemeral Message"
+    ASSISTANT_ANSWER = "Assistant Answer"
     REACTION = "Reaction"
     OUTPUT_FILE = "Output File"
 

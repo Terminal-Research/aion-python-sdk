@@ -3,7 +3,7 @@
 Focus areas:
   - Platform metadata protection (https://docs.aion.to* keys must not be overwritten)
   - Message deduplication: by ID, without ID, apply_processed_item side-effects
-  - Artifact deduplication and transient artifact handling
+  - Artifact deduplication, and processed artifact updates applied as the task manager applies them
   - Status event: duplicate detection, state change bypasses deduplication
   - Task merge: original identity is preserved, new history/artifacts are appended
 """
@@ -12,6 +12,7 @@ import pytest
 from a2a.types import (
     Artifact,
     Message,
+    Part,
     Role,
     Task,
     TaskArtifactUpdateEvent,
@@ -254,26 +255,79 @@ class TestDeduplicateArtifactEvent:
         event = _make_artifact_event("")
         assert ded.deduplicate_artifact_event(event) is not None
 
-    def test_apply_processed_item_non_transient_artifact_tracked(self):
-        """Verify that apply processed item non transient artifact tracked."""
+    def test_apply_processed_item_artifact_tracked(self):
+        """A processed artifact is known to the cache, like any other."""
         ded = A2ATaskDeduplicator(_make_task())
         event = _make_artifact_event("persistent-art")
         ded.apply_processed_item(event)
         assert ded.deduplicate_artifact_event(_make_artifact_event("persistent-art")) is None
 
-    def test_apply_processed_item_transient_artifact_not_tracked(self):
-        """Transient artifacts must not suppress subsequent live chunks."""
+
+def _chunk(artifact_id: str, text: str, *, append: bool) -> TaskArtifactUpdateEvent:
+    return TaskArtifactUpdateEvent(
+        task_id="task-1",
+        context_id="ctx-1",
+        artifact=Artifact(artifact_id=artifact_id, parts=[Part(text=text)]),
+        append=append,
+    )
+
+
+def _cached_artifacts(ded: A2ATaskDeduplicator) -> list[tuple[str, list[str]]]:
+    """The artifacts the cache holds, as an empty task patch merged into it shows them."""
+    merged = ded.deduplicate_task(Task())
+    return [(a.artifact_id, [part.text for part in a.parts]) for a in merged.artifacts]
+
+
+class TestProcessedArtifactUpdates:
+    """The cache applies an artifact update the way the task manager stores it."""
+
+    @pytest.mark.parametrize("artifact_id", [
+        ArtifactId.STREAM_DELTA.value,
+        ArtifactId.THINKING_DELTA.value,
+        "report",
+    ])
+    def test_chunks_extend_one_artifact(self, artifact_id):
         ded = A2ATaskDeduplicator(_make_task())
-        for transient_id in (
-            ArtifactId.STREAM_DELTA.value,
-            ArtifactId.THINKING_DELTA.value,
-            ArtifactId.EPHEMERAL_MESSAGE.value,
-            ArtifactId.REACTION.value,
-        ):
-            event = _make_artifact_event(transient_id)
-            ded.apply_processed_item(event)
-            # Still passes through — transient IDs are never deduplicated
-            assert ded.deduplicate_artifact_event(_make_artifact_event(transient_id)) is not None
+
+        ded.apply_processed_item(_chunk(artifact_id, "Hel", append=False))
+        ded.apply_processed_item(_chunk(artifact_id, "lo", append=True))
+
+        assert _cached_artifacts(ded) == [(artifact_id, ["Hel", "lo"])]
+
+    def test_an_update_without_append_replaces_the_artifact(self):
+        ded = A2ATaskDeduplicator(_make_task())
+
+        ded.apply_processed_item(_chunk(ArtifactId.STREAM_DELTA.value, "Hel", append=False))
+        ded.apply_processed_item(_chunk(ArtifactId.STREAM_DELTA.value, "lo", append=True))
+        ded.apply_processed_item(_chunk(ArtifactId.STREAM_DELTA.value, "Hello", append=False))
+
+        assert _cached_artifacts(ded) == [(ArtifactId.STREAM_DELTA.value, ["Hello"])]
+
+    def test_a_chunk_of_an_artifact_the_cache_does_not_hold_starts_it(self):
+        """The cache can start from a task the consumer has not written the artifact's first chunk to."""
+        ded = A2ATaskDeduplicator(_make_task())
+
+        ded.apply_processed_item(_chunk(ArtifactId.THINKING_DELTA.value, "second thought", append=True))
+        ded.apply_processed_item(_chunk(ArtifactId.THINKING_DELTA.value, "third thought", append=True))
+
+        assert _cached_artifacts(ded) == [(ArtifactId.THINKING_DELTA.value, ["second thought", "third thought"])]
+
+    def test_a_chunk_extends_an_artifact_of_the_original_task(self):
+        original = _make_task(artifacts=[Artifact(artifact_id="report", parts=[Part(text="page 1")])])
+        ded = A2ATaskDeduplicator(original)
+
+        ded.apply_processed_item(_chunk("report", "page 2", append=True))
+
+        assert _cached_artifacts(ded) == [("report", ["page 1", "page 2"])]
+        assert [part.text for part in original.artifacts[0].parts] == ["page 1"]
+
+    def test_applying_does_not_change_the_processed_event(self):
+        ded = A2ATaskDeduplicator(_make_task())
+        event = _chunk("report", "page 1", append=True)
+
+        ded.apply_processed_item(event)
+
+        assert event.append is True
 
 
 class TestDeduplicateStatusEvent:
@@ -683,41 +737,40 @@ class TestDefensiveHelpers:
 class TestReservedShortNamespace:
     """`aion:` keys are platform control flags, not client data.
 
-    `aion:ephemeral` decides whether an event is persisted at all, so a client
-    able to set it through its own metadata could drop its events from the task
-    record.
+    `aion:network` carries routing and identity, so a client able to set it
+    through its own metadata could steer the server.
     """
 
     def test_untrusted_source_cannot_set_an_aion_key(self):
         original = _make_task(metadata={"user-key": "keep"})
         deduplicator = A2ATaskDeduplicator(original)
         incoming = _make_task(
-            metadata={"aion:ephemeral": True, "user-key": "updated"}
+            metadata={"aion:network": {"route": "elsewhere"}, "user-key": "updated"}
         )
 
         merged = deduplicator.deduplicate(incoming)
 
         metadata = MessageToDict(merged.metadata)
-        assert "aion:ephemeral" not in metadata
+        assert "aion:network" not in metadata
         assert metadata["user-key"] == "updated"
 
     def test_untrusted_source_cannot_smuggle_an_aion_key_in_a_nested_value(self):
         original = _make_task()
         deduplicator = A2ATaskDeduplicator(original)
-        incoming = _make_task(metadata={"nested": {"aion:ephemeral": True, "ok": 1}})
+        incoming = _make_task(metadata={"nested": {"aion:network": {"route": "elsewhere"}, "ok": 1}})
 
         merged = deduplicator.deduplicate(incoming)
 
         nested = MessageToDict(merged.metadata)["nested"]
-        assert "aion:ephemeral" not in nested
+        assert "aion:network" not in nested
         assert nested["ok"] == 1
 
     def test_trusted_source_may_set_an_aion_key(self):
-        """The server's own components mark their events ephemeral this way."""
+        """The server's own components write their control flags this way."""
         original = _make_task()
         deduplicator = A2ATaskDeduplicator(original, trusted_source=True)
-        incoming = _make_task(metadata={"aion:ephemeral": True})
+        incoming = _make_task(metadata={"aion:network": {"route": "here"}})
 
         merged = deduplicator.deduplicate(incoming)
 
-        assert MessageToDict(merged.metadata)["aion:ephemeral"] is True
+        assert MessageToDict(merged.metadata)["aion:network"] == {"route": "here"}

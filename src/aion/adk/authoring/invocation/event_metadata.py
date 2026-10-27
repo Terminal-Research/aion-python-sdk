@@ -79,12 +79,17 @@ class AionOutput(BaseModel):
     )
     reaction: ReactionActionPayload | None = Field(
         default=None,
-        description="Emit a transient reaction action to the distribution without persisting to task state.",
+        description="Emit a reaction action to the distribution as the aion:reaction artifact.",
+    )
+    thinking: bool | None = Field(
+        default=None,
+        description="Emit event content as one thought of the aion:thinking-delta artifact. "
+                    "The event stays out of the ADK session.",
     )
 
     @model_validator(mode="after")
     def check_at_most_one(self) -> AionOutput:
-        filled = sum(1 for v in (self.artifact, self.card, self.reaction) if v is not None)
+        filled = sum(1 for v in (self.artifact, self.card, self.reaction) if v is not None) + bool(self.thinking)
         if filled > 1:
             raise ValueError("At most one of AionOutput fields may be set, got multiple.")
         return self
@@ -100,6 +105,12 @@ class AionOutput(BaseModel):
 def get_aion_output(event: Event) -> AionOutput | None:
     """Return the typed aion:output routing hint from an ADK Event, or None."""
     return AionOutput.from_custom_metadata(event.custom_metadata)
+
+
+def is_thinking_event(event: Event) -> bool:
+    """Whether an ADK Event carries a thought, which stays out of the ADK session."""
+    output = get_aion_output(event)
+    return bool(output and output.thinking)
 
 
 def get_aion_routing(event: Event) -> MessageActionPayload | None:
@@ -129,4 +140,5 @@ __all__ = [
     "get_aion_output",
     "get_aion_routing",
     "get_aion_user_metadata",
+    "is_thinking_event",
 ]

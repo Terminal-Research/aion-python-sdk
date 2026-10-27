@@ -13,6 +13,7 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 from aion.core.a2a import ArtifactId, ArtifactName
+from aion.core.a2a.deltas import stream_delta_chunk, stream_delta_final, thinking_delta
 from aion.core.a2a.metadata import agent_metadata
 from aion.core.a2a.extensions.messaging import MessageActionPayload
 from aion.core.agent.invocation.card import Card
@@ -22,13 +23,13 @@ from aion.core.constants import (
     MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
     MESSAGING_EXTENSION_URI_V1,
     REACTION_ACTION_PAYLOAD_SCHEMA_V1,
-    STREAM_DELTA_PAYLOAD_SCHEMA_V1,
 )
 from aion.langgraph.authoring.events.custom_events import (
     ArtifactCustomEvent,
     CardCustomEvent,
     MessageCustomEvent,
     ReactionCustomEvent,
+    ThinkingCustomEvent,
 )
 from collections.abc import Sequence
 from google.protobuf import json_format, struct_pb2
@@ -39,7 +40,9 @@ from typing import Any, Optional
 from ..converters.lc_to_a2a import LcToA2AConverter
 
 LangChainAgentMessage = AIMessage | AIMessageChunk
-SupportedCustomEvents = ArtifactCustomEvent | CardCustomEvent | MessageCustomEvent | ReactionCustomEvent
+SupportedCustomEvents = (
+    ArtifactCustomEvent | CardCustomEvent | MessageCustomEvent | ReactionCustomEvent | ThinkingCustomEvent
+)
 
 A2AAgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 
@@ -58,12 +61,14 @@ class LangGraphA2AConverter:
     def __init__(self, task_id: str, context_id: str):
         self._task_id = task_id
         self._context_id = context_id
-        self._streaming_started = False
-        # The model output the graph is streaming in "messages" mode: the id
-        # of the message its chunks belong to, and their text so far. None
-        # when the open stream, if any, came from the thread instead.
+        # The open section of `aion:stream-delta`: its text so far and the
+        # agent's metadata for it. The section comes from the graph's
+        # "messages" stream, a model call identified by `_graph_stream_id`,
+        # or from the thread, when `_graph_stream_id` is None.
+        self._section_open = False
+        self._section_text = ""
+        self._section_metadata: dict | None = None
         self._graph_stream_id: Optional[str] = None
-        self._graph_stream_text = ""
 
     def convert(self, event_type: str, event_data: Any) -> list[A2AAgentEvent]:
         """Convert a LangGraph event to zero or more A2A events.
@@ -85,6 +90,10 @@ class LangGraphA2AConverter:
             logger.warning(f"Unknown LangGraph event type: {event_type}")
             return []
 
+    def close_stream(self) -> list[A2AAgentEvent]:
+        """End a section of the streamed answer the run left open, with the text of its chunks."""
+        return self._close_section()
+
     def _convert_graph_message(self, message: Any) -> list[A2AAgentEvent]:
         """Convert a message from the graph's "messages" stream.
 
@@ -93,98 +102,109 @@ class LangGraphA2AConverter:
         appends, and so on. Only AI messages are the agent speaking; the
         others are the conversation's bookkeeping and are not sent. An AI
         message with nothing to show - a model turn that only calls a tool -
-        produces no event either, in `_convert_message`.
+        produces no event either.
 
+        The chunks of a model call are a section of ``aion:stream-delta``.
         Every call to a model streams under its own message id, and LangGraph
         does not repeat the finished message once its chunks went out. So a
-        chunk under a new id is where the previous model call ended: its text
-        becomes a durable message, and the new call opens a new stream.
+        chunk under a new id is where the previous model call ended: its
+        section ends with the text of its chunks, and the new call opens a
+        new one. A finished message under the open section's id is that
+        call's own closing message: its text ends the section. A finished
+        message of a call that did not stream is a message.
         """
         if not isinstance(message, AIMessage):
             return []
 
         events: list[A2AAgentEvent] = []
         if self._graph_stream_id is not None and message.id != self._graph_stream_id:
-            events.extend(self._close_graph_stream())
+            events.extend(self._close_section())
 
         if isinstance(message, AIMessageChunk):
             if self._graph_stream_id is None:
-                self._streaming_started = False
+                events.extend(self._close_section())
                 self._graph_stream_id = message.id
-            converted = self._convert_streaming_chunk(message)
-            for event in converted:
-                self._graph_stream_text += "".join(part.text for part in event.artifact.parts)
-            events.extend(converted)
+            events.extend(self._convert_streaming_chunk(message))
             return events
 
-        # A finished message under the open stream's id is that stream's own
-        # closing message; it replaces what was streamed.
-        self._graph_stream_id = None
-        self._graph_stream_text = ""
-        events.extend(self._convert_full_message(message))
+        if self._graph_stream_id is not None:
+            events.extend(self._close_section_with(message))
+        else:
+            events.extend(self._convert_full_message(message))
         return events
-
-    def _close_graph_stream(self) -> list[A2AAgentEvent]:
-        """End the model call the graph was streaming, keeping what it said."""
-        text, message_id = self._graph_stream_text, self._graph_stream_id
-        self._graph_stream_id = None
-        self._graph_stream_text = ""
-        self._streaming_started = False
-        if not text:
-            return []
-        return self._convert_full_message(AIMessage(content=text, id=message_id))
 
     def _convert_message(self, message: AIMessage | AIMessageChunk, metadata: dict | None = None) -> list[
         A2AAgentEvent]:
-        """Convert an AIMessage or AIMessageChunk to A2A events."""
+        """Convert an AIMessage or AIMessageChunk the thread or a node emitted to A2A events."""
         if isinstance(message, AIMessageChunk):
             return self._convert_streaming_chunk(message, metadata=metadata)
+        if self._section_open:
+            return self._close_section_with(message)
         return self._convert_full_message(message, metadata=metadata)
 
     def _convert_streaming_chunk(self, message: AIMessageChunk, metadata: dict | None = None) -> list[A2AAgentEvent]:
-        """Emit a stream-delta artifact event for a single AIMessageChunk.
+        """Emit a chunk of ``aion:stream-delta`` for a single AIMessageChunk.
 
         Chunks without content produce no event, so every emitted update carries
         at least one Part (langchain-core ends a stream with an empty
-        chunk_position="last" chunk). The first chunk sets append=False to open
-        the artifact; subsequent chunks use append=True. A content-bearing chunk
-        with chunk_position="last" carries last_chunk=True. The sequence ends
-        with the durable message or the terminal task status.
+        chunk_position="last" chunk). The first chunk of a section starts the
+        artifact over (append=False); the rest extend it. No chunk is the
+        section's last: the section ends with an event of its own.
         """
-        is_last_chunk = message.chunk_position == "last"
         parts = LcToA2AConverter.from_message(message)
         if not parts:
             return []
 
-        append = self._streaming_started
-        self._streaming_started = True
-
-        # Two different statements, in the two places the spec puts them. The
-        # artifact id says which channel this is; the schema marker on the
-        # *event* says what shape the payload in it has, and the messaging
-        # extension names `artifactUpdate.metadata` for it. status and
-        # status_reason stay on the artifact: they describe the artifact.
-        artifact_metadata: dict = {
-            "status": "active",
-            "status_reason": "chunk_streaming",
-        }
-        user_meta = agent_metadata(metadata) or None
-        if user_meta:
-            artifact_metadata.update(user_meta)
-
-        return [TaskArtifactUpdateEvent(
+        append = self._section_open
+        self._section_open = True
+        self._section_text += "".join(part.text for part in parts if part.WhichOneof("content") == "text")
+        self._section_metadata = agent_metadata(metadata) or None
+        return [stream_delta_chunk(
             task_id=self._task_id,
             context_id=self._context_id,
-            metadata={MESSAGING_EXTENSION_URI_V1: {"schema": STREAM_DELTA_PAYLOAD_SCHEMA_V1}},
-            artifact=Artifact(
-                artifact_id=ArtifactId.STREAM_DELTA.value,
-                name=ArtifactName.STREAM_DELTA.value,
-                parts=parts,
-                metadata=artifact_metadata,
-            ),
+            parts=parts,
             append=append,
-            last_chunk=is_last_chunk,
+            metadata=self._section_metadata,
         )]
+
+    def _close_section(self, text: str | None = None) -> list[A2AAgentEvent]:
+        """End the open section of ``aion:stream-delta`` with its whole text, if one is open.
+
+        Args:
+            text: The section's whole text from the message that closes it;
+                the text of its chunks when there is no such message.
+        """
+        if not self._section_open:
+            self._graph_stream_id = None
+            return []
+        final_text = self._section_text if text is None else text
+        metadata = self._section_metadata
+        self._section_open = False
+        self._section_text = ""
+        self._section_metadata = None
+        self._graph_stream_id = None
+        if not final_text:
+            return []
+        return [stream_delta_final(
+            task_id=self._task_id,
+            context_id=self._context_id,
+            text=final_text,
+            metadata=metadata,
+        )]
+
+    def _close_section_with(self, message: AIMessage) -> list[A2AAgentEvent]:
+        """End the open section with the message that closes it.
+
+        The message's text is the section's whole text; anything else it
+        carries, a file say, goes out as a message.
+        """
+        parts = LcToA2AConverter.from_message(message)
+        text_parts = [part for part in parts if part.WhichOneof("content") == "text"]
+        events = self._close_section("".join(part.text for part in text_parts) if text_parts else None)
+        rest = [part for part in parts if part.WhichOneof("content") != "text"]
+        if rest:
+            events.extend(self._message_event(rest, message_id=message.id, role=self._detect_role(message)))
+        return events
 
     def _convert_full_message(self, message: AIMessage, metadata: dict | None = None) -> list[A2AAgentEvent]:
         """Convert a complete (non-streaming) LangGraph message to A2A events.
@@ -200,20 +220,28 @@ class LangGraphA2AConverter:
         a2a_parts = LcToA2AConverter.from_message(message)
         if not a2a_parts:
             return []
+        return self._message_event(
+            a2a_parts,
+            message_id=message.id,
+            role=self._detect_role(message),
+            metadata=agent_metadata(metadata) or None,
+        )
 
-        # A durable message ends whatever was streaming: the next chunk opens
-        # a new section rather than extending the one this message closed.
-        self._streaming_started = False
-        role = self._detect_role(message)
-        message_id = message.id or str(uuid.uuid4())
-        user_meta = agent_metadata(metadata) or None
+    def _message_event(
+            self,
+            parts: list[Part],
+            *,
+            message_id: str | None,
+            role: Role,
+            metadata: dict | None = None,
+    ) -> list[A2AAgentEvent]:
         msg = Message(
             context_id=self._context_id,
             task_id=self._task_id,
-            message_id=message_id,
+            message_id=message_id or str(uuid.uuid4()),
             role=role,
-            parts=a2a_parts,
-            metadata=user_meta,
+            parts=parts,
+            metadata=metadata,
         )
         return [TaskStatusUpdateEvent(
             task_id=self._task_id,
@@ -257,10 +285,26 @@ class LangGraphA2AConverter:
         """Dispatch a typed custom event to the appropriate handler.
 
         Supports ArtifactCustomEvent (raw artifact passthrough),
-        CardCustomEvent (card message), MessageCustomEvent (ephemeral or
-        regular message), and ReactionCustomEvent (reaction action). Unknown
-        types are logged and silently dropped.
+        CardCustomEvent (card message), MessageCustomEvent (message or chunk
+        of the streamed answer), ReactionCustomEvent (reaction action) and
+        ThinkingCustomEvent (one thought). Unknown types are logged and
+        silently dropped.
+
+        A node emits after the model call it made has ended, so any event
+        but a thought or a reaction first ends the section that call was
+        streaming.
         """
+        if isinstance(event_data, ThinkingCustomEvent):
+            return self._convert_thinking(event_data)
+
+        if isinstance(event_data, ReactionCustomEvent):
+            return self._convert_reaction(event_data)
+
+        events = self._close_section() if self._graph_stream_id is not None else []
+        events.extend(self._convert_node_event(event_data))
+        return events
+
+    def _convert_node_event(self, event_data: SupportedCustomEvents) -> list[A2AAgentEvent]:
         if isinstance(event_data, ArtifactCustomEvent):
             event_metadata: dict = {}
             if event_data.routing is not None:
@@ -281,15 +325,10 @@ class LangGraphA2AConverter:
             return self._convert_card(event_data.card, routing=event_data.routing, metadata=event_data.metadata)
 
         if isinstance(event_data, MessageCustomEvent):
-            if event_data.ephemeral:
-                return self._convert_ephemeral(event_data.message)
             if event_data.routing is not None:
                 return self._convert_message_with_routing(event_data.message, event_data.routing,
                                                           metadata=event_data.metadata)
             return self._convert_message(event_data.message, metadata=event_data.metadata)
-
-        if isinstance(event_data, ReactionCustomEvent):
-            return self._convert_reaction(event_data)
 
         logger.warning(f"Ignoring unknown custom event type: {type(event_data)}")
         return []
@@ -317,7 +356,14 @@ class LangGraphA2AConverter:
 
         To send a routed card, pass a Card instance to Thread.reply() instead
         of a plain JSX string — plain strings are always treated as regular text.
+
+        A chunk is a chunk of the streamed answer, and a message that closes
+        an open section ends it, as without a target: the streamed text is
+        the answer, not a message to deliver.
         """
+        if isinstance(message, AIMessageChunk) or self._section_open:
+            return self._convert_message(message, metadata=metadata)
+
         a2a_parts = LcToA2AConverter.from_message(message)
         if not a2a_parts:
             return []
@@ -346,12 +392,23 @@ class LangGraphA2AConverter:
             status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
         )]
 
+    def _convert_thinking(self, event: ThinkingCustomEvent) -> list[A2AAgentEvent]:
+        """Carry a thought as one more part of ``aion:thinking-delta``."""
+        if not event.text:
+            return []
+        return [thinking_delta(
+            task_id=self._task_id,
+            context_id=self._context_id,
+            text=event.text,
+            metadata=agent_metadata(event.metadata) or None,
+        )]
+
     def _convert_reaction(self, event: ReactionCustomEvent) -> list[A2AAgentEvent]:
         """Convert a ReactionCustomEvent to an A2A event.
 
-        Produces a TaskArtifactUpdateEvent with a reserved artifact_id so the
-        distribution receives the ReactionActionPayload without it being saved
-        to task history or artifacts.
+        Produces a TaskArtifactUpdateEvent with the reserved artifact_id
+        ``aion:reaction``, which carries the ReactionActionPayload to the
+        distribution. The task keeps the latest reaction; it is not a result.
         """
         proto_value = struct_pb2.Value()
         json_format.ParseDict(event.payload.model_dump(by_alias=True, exclude_none=True), proto_value)
@@ -363,29 +420,6 @@ class LangGraphA2AConverter:
                 artifact_id=ArtifactId.REACTION.value,
                 name=ArtifactName.REACTION.value,
                 parts=[Part(data=proto_value)],
-            ),
-            append=False,
-            last_chunk=True,
-        )]
-
-    def _convert_ephemeral(self, message: LangChainAgentMessage) -> list[A2AAgentEvent]:
-        """Emit a transient message artifact that is displayed but not persisted.
-
-        Uses the fixed EPHEMERAL_MESSAGE artifact id so the client knows to
-        treat the content as a status hint rather than durable output.
-        Returns an empty list when the message has no text content.
-        """
-        parts = LcToA2AConverter.from_message(message)
-        if not parts:
-            return []
-
-        return [TaskArtifactUpdateEvent(
-            task_id=self._task_id,
-            context_id=self._context_id,
-            artifact=Artifact(
-                artifact_id=ArtifactId.EPHEMERAL_MESSAGE.value,
-                name=ArtifactName.EPHEMERAL_MESSAGE.value,
-                parts=parts,
             ),
             append=False,
             last_chunk=True,

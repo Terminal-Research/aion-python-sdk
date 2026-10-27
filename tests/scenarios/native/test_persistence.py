@@ -16,7 +16,7 @@ import pytest
 
 from tests.scenarios.agents.native_script import RECALL_PREFIX, confirmed_answer
 from tests.scenarios.frameworks import PREBUILT_AGENTS, Framework
-from tests.scenarios.harness import ScenarioClient, ServeProcess, ServeVariant, final_task, reply_texts
+from tests.scenarios.harness import ScenarioClient, ServeProcess, ServeVariant, final_task, section_texts
 from tests.scenarios.harness.pg import have_postgres, postgres_env
 
 pytestmark = [pytest.mark.native, pytest.mark.persistence]
@@ -62,7 +62,7 @@ async def test_the_conversation_survives_a_restart(pg_server: ServeProcess) -> N
     async with await _connect(pg_server) as client:
         events = await client.send("recall", context_id=first.context_id)
 
-    assert reply_texts(events) == [RECALL_PREFIX + "say hello"]
+    assert section_texts(events) == [RECALL_PREFIX + "say hello"]
 
 
 @pytest.mark.capability("interrupt")
@@ -78,7 +78,7 @@ async def test_a_paused_tool_resumes_after_a_restart(pg_server: ServeProcess) ->
         events = await client.send("yes", task_id=opened.task_id, context_id=opened.context_id)
 
     assert final_task(events).state == "COMPLETED"
-    assert reply_texts(events) == [confirmed_answer("yes")]
+    assert section_texts(events) == [confirmed_answer("yes")]
 
 
 @pytest.mark.capability("prebuilt-agent")
@@ -93,4 +93,4 @@ async def test_a_prebuilt_agents_conversation_survives_a_restart(pg_prebuilt_ser
     async with await _connect(pg_prebuilt_server) as client:
         events = await client.send("recall", context_id=first.context_id)
 
-    assert reply_texts(events) == [RECALL_PREFIX + "say hello"]
+    assert section_texts(events) == [RECALL_PREFIX + "say hello"]

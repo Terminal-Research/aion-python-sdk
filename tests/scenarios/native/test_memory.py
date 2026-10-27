@@ -19,7 +19,7 @@ from tests.scenarios.harness import (
     ScenarioClient,
     distribution_metadata,
     final_task,
-    reply_texts,
+    section_texts,
 )
 
 pytestmark = pytest.mark.native
@@ -31,7 +31,7 @@ async def test_the_next_turn_sees_the_earlier_ones(client: ScenarioClient) -> No
 
     events = await client.send("recall", context_id=first.context_id)
 
-    assert reply_texts(events) == [RECALL_PREFIX + "say hello | weather Kyiv"]
+    assert section_texts(events) == [RECALL_PREFIX + "say hello | weather Kyiv"]
 
 
 async def test_another_context_starts_empty(client: ScenarioClient) -> None:
@@ -40,7 +40,7 @@ async def test_another_context_starts_empty(client: ScenarioClient) -> None:
 
     events = await client.send("recall")
 
-    assert reply_texts(events) == [RECALL_PREFIX]
+    assert section_texts(events) == [RECALL_PREFIX]
 
 
 def _through(distribution_id: str) -> dict[str, Any]:
@@ -63,4 +63,4 @@ async def test_a_distribution_does_not_split_the_conversation(client: ScenarioCl
 
     events = await client.send("recall", context_id=first.context_id, **_through("distribution-b"))
 
-    assert reply_texts(events) == [RECALL_PREFIX + "say hello"]
+    assert section_texts(events) == [RECALL_PREFIX + "say hello"]

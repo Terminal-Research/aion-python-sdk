@@ -53,9 +53,9 @@ def make_graph_snapshot(values=None, interrupts=(), next=()):
     )
 
 
-def make_stream_result(delta_text=""):
-    """Create a StreamResult with given delta_text."""
-    return StreamResult(delta_text=delta_text)
+def make_stream_result(outbox=None):
+    """Create a StreamResult whose run wrote ``outbox``, or no outbox."""
+    return StreamResult(outbox=outbox)
 
 
 def make_a2a_part(text=None, url=None, raw=None, media_type=None):

@@ -11,11 +11,13 @@ rather than to every write.
 
 import pytest
 from a2a.types import (
+    Artifact,
     Message,
     Part,
     Role,
     SendMessageConfiguration,
     Task,
+    TaskArtifactUpdateEvent,
     TaskState,
     TaskStatus,
     TaskStatusUpdateEvent,
@@ -23,6 +25,8 @@ from a2a.types import (
 from a2a.utils.task import apply_history_length
 from unittest.mock import AsyncMock, Mock, patch
 
+from aion.core.a2a.deltas import stream_delta_chunk, stream_delta_final, thinking_delta
+from aion.core.a2a.enums import ArtifactId
 from aion.server.tasks.contexts import conversation_of
 from aion.server.tasks.task_manager import AionTaskManager
 
@@ -368,6 +372,75 @@ class TestMessagePlacement:
         task = await task_manager.get_task()
         assert [m.message_id for m in task.history] == ["msg-user"]
         assert not task.status.HasField("message")
+
+
+def _artifact_update(artifact_id: str, text: str, *, append: bool = False) -> TaskArtifactUpdateEvent:
+    return TaskArtifactUpdateEvent(
+        task_id=TASK_ID,
+        context_id=CONTEXT_ID,
+        artifact=Artifact(artifact_id=artifact_id, parts=[Part(text=text)]),
+        append=append,
+    )
+
+
+def _stored_parts(task: Task) -> dict[str, list[str]]:
+    return {artifact.artifact_id: [part.text for part in artifact.parts] for artifact in task.artifacts}
+
+
+class TestTheSDKsOwnArtifacts:
+    """The streamed answer, the thoughts and the reaction are stored like any other artifact."""
+
+    @pytest.mark.anyio
+    async def test_the_streamed_answer_is_stored_as_it_streams(self):
+        manager, store = _built(TaskState.TASK_STATE_WORKING)
+        chunks = [
+            stream_delta_chunk(task_id=TASK_ID, context_id=CONTEXT_ID, parts=[Part(text="Hel")], append=False),
+            stream_delta_chunk(task_id=TASK_ID, context_id=CONTEXT_ID, parts=[Part(text="lo")], append=True),
+        ]
+
+        for chunk in chunks:
+            assert await manager.process(chunk) is chunk
+        assert _stored_parts(store.task) == {ArtifactId.STREAM_DELTA.value: ["Hel", "lo"]}
+
+        await manager.process(stream_delta_final(task_id=TASK_ID, context_id=CONTEXT_ID, text="Hello"))
+        assert _stored_parts(store.task) == {ArtifactId.STREAM_DELTA.value: ["Hello"]}
+
+    @pytest.mark.anyio
+    async def test_every_thought_is_stored(self):
+        manager, store = _built(TaskState.TASK_STATE_WORKING)
+        first = thinking_delta(task_id=TASK_ID, context_id=CONTEXT_ID, text="reading the logs")
+        first.append = False
+
+        await manager.process(first)
+        await manager.process(thinking_delta(task_id=TASK_ID, context_id=CONTEXT_ID, text="found it"))
+
+        assert _stored_parts(store.task) == {ArtifactId.THINKING_DELTA.value: ["reading the logs", "found it"]}
+
+    @pytest.mark.anyio
+    async def test_the_latest_reaction_is_stored(self):
+        manager, store = _built(TaskState.TASK_STATE_WORKING)
+
+        await manager.process(_artifact_update(ArtifactId.REACTION.value, "eyes"))
+        await manager.process(_artifact_update(ArtifactId.REACTION.value, "thumbs-up"))
+
+        assert _stored_parts(store.task) == {ArtifactId.REACTION.value: ["thumbs-up"]}
+
+    @pytest.mark.anyio
+    async def test_the_sdks_artifacts_sit_beside_the_agents_own(self):
+        manager, store = _built(TaskState.TASK_STATE_WORKING)
+
+        await manager.process(_artifact_update("report", "page 1"))
+        await manager.process(stream_delta_final(task_id=TASK_ID, context_id=CONTEXT_ID, text="Here it is"))
+        await manager.process(_artifact_update(ArtifactId.THINKING_DELTA.value, "done"))
+        with patch("aion.server.tasks.task_manager.set_task_status", Mock()):
+            await manager.process(_status(TaskState.TASK_STATE_COMPLETED, _message("msg-final")))
+
+        assert _stored_parts(store.task) == {
+            "report": ["page 1"],
+            ArtifactId.STREAM_DELTA.value: ["Here it is"],
+            ArtifactId.THINKING_DELTA.value: ["done"],
+        }
+        assert store.task.status.state == TaskState.TASK_STATE_COMPLETED
 
 
 def _task(state: TaskState) -> Task:

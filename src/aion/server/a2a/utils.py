@@ -12,15 +12,9 @@ from a2a.types import (
 )
 
 from aion.core.a2a.enums import A2AMetadataKey, ArtifactId
-# Defined in core, where an executor that needs only the SDK base marks its
-# events; an ephemeral status update is dropped before the task manager folds
-# its message into history (``AionTaskManager._check_process_skip_event``).
-from aion.core.a2a.metadata import mark_status_event_ephemeral
 from aion.server.a2a.constants import (
-    EPHEMERAL_STATUS_METADATA_KEY,
     INTERRUPT_TASK_STATES,
     NON_ACTIVE_TASK_STATES,
-    TRANSIENT_ARTIFACT_IDS,
 )
 
 __all__ = [
@@ -37,9 +31,6 @@ __all__ = [
     "describe_event",
     "describe_artifact",
     "task_state_name",
-    "mark_status_event_ephemeral",
-    "is_ephemeral_status_event",
-    "is_ephemeral_event",
     "NO_TEXT",
 ]
 
@@ -47,10 +38,10 @@ NO_TEXT = "<no text>"
 """What a preview returns when the thing previewed carries no text at all."""
 
 RESERVED_ARTIFACT_LABELS = {
-    ArtifactId.STREAM_DELTA.value: "streaming text chunk",
-    ArtifactId.THINKING_DELTA.value: "streaming reasoning chunk",
-    ArtifactId.EPHEMERAL_MESSAGE.value: "ephemeral, not persisted",
-    ArtifactId.REACTION.value: "reaction, not persisted",
+    ArtifactId.STREAM_DELTA.value: "streamed answer",
+    ArtifactId.THINKING_DELTA.value: "agent thought",
+    ArtifactId.ASSISTANT_ANSWER.value: "answer from the last message",
+    ArtifactId.REACTION.value: "reaction",
 }
 
 
@@ -58,10 +49,9 @@ def describe_artifact(artifact_id: str) -> str:
     """Names an artifact the way a log line should.
 
     Reserved Aion ids carry their meaning, but only to a reader who knows them
-    by heart, so they are annotated: a stream delta is the agent typing at the
-    user, while an ephemeral message or a reaction is shown once and never
-    persisted. An artifact the agent named itself is left alone — its id is
-    already its meaning.
+    by heart, so they are annotated: a stream delta is the answer the model
+    streamed, a thinking delta one of the agent's thoughts. An artifact the
+    agent named itself is left alone — its id is already its meaning.
 
     Args:
         artifact_id: The id the artifact was emitted under.
@@ -158,31 +148,6 @@ def _message_suffix(status: TaskStatus) -> str:
     if not status.HasField('message'):
         return ''
     return f' message_id={status.message.message_id or "<unidentified>"}'
-
-
-def is_ephemeral_status_event(event: object) -> bool:
-    """Return True when ``event`` is a status update flagged ephemeral."""
-    if not isinstance(event, TaskStatusUpdateEvent):
-        return False
-    return (
-        EPHEMERAL_STATUS_METADATA_KEY in event.metadata
-        and bool(event.metadata[EPHEMERAL_STATUS_METADATA_KEY])
-    )
-
-
-def is_ephemeral_event(event: object) -> bool:
-    """Return True when ``event`` is live-only: delivered to a stream, never persisted.
-
-    Two kinds of event are: an artifact update under one of
-    ``TRANSIENT_ARTIFACT_IDS`` (stream and reasoning deltas, ephemeral
-    messages, reactions) and a status update flagged ephemeral. This is the
-    one predicate for "not part of the task": the task manager skips these
-    events instead of storing them, and the push channel, which carries only
-    what the task stores, skips them too.
-    """
-    if isinstance(event, TaskArtifactUpdateEvent):
-        return event.artifact.artifact_id in TRANSIENT_ARTIFACT_IDS
-    return is_ephemeral_status_event(event)
 
 
 def _require_task(task: object) -> Task:

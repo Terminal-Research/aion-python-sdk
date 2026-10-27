@@ -9,13 +9,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
+from aion.adk.authoring.invocation.event_metadata import is_thinking_event
 from aion.adk.authoring.invocation.context_vars import (
     reset_adk_ctx,
     reset_adk_emitter,
     set_adk_ctx,
     set_adk_emitter,
 )
-from aion.core.a2a import ArtifactId, A2AOutbox
+from aion.core.a2a import A2AOutbox
 from google.adk.events import Event
 
 from .event_converter import ADKToA2AEventConverter
@@ -30,9 +31,6 @@ AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 class ADKStreamResult:
     """Accumulated state after one ADK stream cycle.
 
-    delta_text — concatenated text extracted from STREAM_DELTA chunks.
-        Non-empty only when the agent streamed partial events without a
-        subsequent non-partial event to confirm the full message.
     outbox — the last `a2a_outbox` an event's state_delta carried during
         this cycle, serialized, or None when none did. Taken from the
         cycle's own events rather than from the session state: the session
@@ -40,7 +38,6 @@ class ADKStreamResult:
         read it back.
     """
 
-    delta_text: str
     outbox: Any = None
 
 
@@ -72,14 +69,13 @@ class ADKStreamExecutor:
         self._agent = agent
         self._session_service = session_service
         self._converter = converter
-        self._delta_text: str = ""
         self._outbox: Any = None
         self._persisted: set[str] = set()
 
     @property
     def result(self) -> ADKStreamResult:
         """Accumulated state. Valid after execute() iteration is complete."""
-        return ADKStreamResult(delta_text=self._delta_text, outbox=self._outbox)
+        return ADKStreamResult(outbox=self._outbox)
 
     async def execute(
         self,
@@ -170,7 +166,7 @@ class ADKStreamExecutor:
         invocation_context: Any,
         session: Any,
     ) -> AsyncIterator[AgentEvent]:
-        """Persist if not yet persisted, then convert, track and yield A2A events."""
+        """Persist if not yet persisted, then convert and yield A2A events."""
         if event.id not in self._persisted:
             await self._persist(event, invocation_context, session)
 
@@ -185,7 +181,6 @@ class ADKStreamExecutor:
                     logger.debug("Tool response: %s", fr.name)
 
         for a2a_event in await self._converter.convert(event):
-            self._track(a2a_event)
             yield a2a_event
 
     async def _persist(self, event: Event, invocation_context: Any, session: Any) -> None:
@@ -193,8 +188,12 @@ class ADKStreamExecutor:
 
         Events from agent.run_async() are persisted by the agent task before
         they are forwarded; events the thread emits reach the queue directly
-        and are persisted when the consumer takes them.
+        and are persisted when the consumer takes them. A thought is never
+        persisted: the next model call builds its request from the session,
+        and the model would take the thought for something it said.
         """
+        if is_thinking_event(event):
+            return
         # Looked up before stamping, which drops an outbox written as None:
         # that write still clears one made earlier in the same run.
         wrote_outbox = event.actions is not None and "a2a_outbox" in event.actions.state_delta
@@ -218,19 +217,6 @@ class ADKStreamExecutor:
                     event.actions.state_delta["a2a_outbox"] = outbox.model_dump()
                 else:
                     logger.warning("Unexpected a2a_outbox type: %s", type(outbox))
-
-    def _track(self, a2a_event: AgentEvent) -> None:
-        """Maintain delta_text accumulator from outgoing A2A events."""
-        if isinstance(a2a_event, TaskArtifactUpdateEvent):
-            if a2a_event.artifact.artifact_id == ArtifactId.STREAM_DELTA.value:
-                for part in a2a_event.artifact.parts:
-                    if part.text:
-                        self._delta_text += part.text
-            return
-
-        if isinstance(a2a_event, TaskStatusUpdateEvent):
-            if a2a_event.status.message is not None:
-                self._delta_text = ""
 
 
 __all__ = ["ADKStreamExecutor", "ADKStreamResult"]

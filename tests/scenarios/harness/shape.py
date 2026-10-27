@@ -1,10 +1,10 @@
 """Assert the shape of a recorded stream.
 
-A scenario states the sequence it expects - a status, some chunks, a message,
-the terminal task - and ``assert_shape`` walks the recorded events against it.
-A mismatch prints both the pattern and every event that actually arrived,
-because the interesting part of a stream failure is usually the event nobody
-expected.
+A scenario states the sequence it expects - a status, some chunks, the end of
+a section, the terminal task - and ``assert_shape`` walks the recorded events
+against it. A mismatch prints both the pattern and every event that actually
+arrived, because the interesting part of a stream failure is usually the event
+nobody expected.
 """
 
 from __future__ import annotations
@@ -12,30 +12,32 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
-from .recorder import Ev
+from .recorder import (
+    ASSISTANT_ANSWER_ARTIFACT_ID,
+    STREAM_DELTA_ARTIFACT_ID,
+    THINKING_DELTA_ARTIFACT_ID,
+    Ev,
+    is_chunk,
+    is_section_end,
+)
 
 __all__ = [
     "ANY",
     "SKIP",
     "Matcher",
+    "answer",
     "artifact",
     "assert_shape",
     "chunks",
-    "ephemeral",
+    "is_chunk",
+    "is_section_end",
     "match_shape",
     "message",
+    "section_end",
     "status",
     "task",
-    "STREAM_DELTA_ARTIFACT_ID",
+    "thought",
 ]
-
-STREAM_DELTA_ARTIFACT_ID = "aion:stream-delta"
-"""Artifact id the server streams a reply's text chunks under."""
-
-
-def is_chunk(event: Ev) -> bool:
-    """True for one streamed text chunk of a reply."""
-    return event.kind == "artifact" and event.artifact_id == STREAM_DELTA_ARTIFACT_ID
 
 
 @dataclass(frozen=True)
@@ -78,7 +80,6 @@ def status(
     *,
     text: Optional[str] = None,
     contains: Optional[str] = None,
-    ephemeral: Optional[bool] = None,
 ) -> Matcher:
     """One status update, optionally in a given state."""
     text_check = _text_check(text, contains)
@@ -88,8 +89,6 @@ def status(
             return False
         if state is not None and event.state != state:
             return False
-        if ephemeral is not None and event.ephemeral is not ephemeral:
-            return False
         return text_check(event)
 
     label = "status(" + ", ".join(
@@ -97,15 +96,9 @@ def status(
             state,
             f"text={text!r}" if text is not None else None,
             f"contains={contains!r}" if contains is not None else None,
-            f"ephemeral={ephemeral}" if ephemeral is not None else None,
         ) if part
     ) + ")"
     return Matcher(label=label, check=check)
-
-
-def ephemeral(*, contains: Optional[str] = None) -> Matcher:
-    """One status update the server marked ephemeral."""
-    return status(contains=contains, ephemeral=True)
 
 
 def message(*, text: Optional[str] = None, contains: Optional[str] = None) -> Matcher:
@@ -139,11 +132,11 @@ def artifact(
     last: Optional[bool] = None,
     contains: Optional[str] = None,
 ) -> Matcher:
-    """One artifact update, excluding the reply's own text chunks."""
+    """One artifact update other than the streamed answer's (``chunks`` and ``section_end``)."""
     text_check = _text_check(None, contains)
 
     def check(event: Ev) -> bool:
-        if event.kind != "artifact" or is_chunk(event):
+        if event.kind != "artifact" or event.artifact_id == STREAM_DELTA_ARTIFACT_ID:
             return False
         if name is not None and event.artifact_name != name:
             return False
@@ -161,8 +154,48 @@ def artifact(
     )
 
 
+def thought(*, text: Optional[str] = None, append: Optional[bool] = None) -> Matcher:
+    """One thinking-delta update, which carries one thought."""
+    text_check = _text_check(text, None)
+
+    def check(event: Ev) -> bool:
+        if event.kind != "artifact" or event.artifact_id != THINKING_DELTA_ARTIFACT_ID:
+            return False
+        if append is not None and event.append is not append:
+            return False
+        return text_check(event)
+
+    return Matcher(label=f"thought(text={text!r}, append={append})", check=check)
+
+
+def answer(*, text: Optional[str] = None) -> Matcher:
+    """The ``aion:assistant-answer`` update: the whole artifact at once, ``append`` unset, ``lastChunk`` set."""
+    text_check = _text_check(text, None)
+
+    def check(event: Ev) -> bool:
+        return (
+            event.kind == "artifact"
+            and event.artifact_id == ASSISTANT_ANSWER_ARTIFACT_ID
+            and not event.append
+            and event.last_chunk
+            and text_check(event)
+        )
+
+    return Matcher(label=f"answer(text={text!r})", check=check)
+
+
+def section_end(*, text: Optional[str] = None) -> Matcher:
+    """The stream-delta update that ends a section: its whole text, ``append`` unset, ``lastChunk`` set."""
+    text_check = _text_check(text, None)
+
+    def check(event: Ev) -> bool:
+        return is_section_end(event) and not event.append and text_check(event)
+
+    return Matcher(label=f"section_end(text={text!r})", check=check)
+
+
 def chunks(count: Optional[int] = None, *, at_least: Optional[int] = None) -> Matcher:
-    """Streamed text chunks of one reply: exactly ``count``, or at least ``at_least``."""
+    """Chunks of one streamed section: exactly ``count``, or at least ``at_least``."""
     if count is None and at_least is None:
         raise ValueError("chunks() needs either a count or at_least")
     minimum = count if count is not None else at_least

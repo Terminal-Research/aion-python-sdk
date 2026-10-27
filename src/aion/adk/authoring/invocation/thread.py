@@ -1,15 +1,15 @@
 """ADK thread abstraction for streaming agent responses.
 
 Provides a context-aware Thread class that emits messages, cards, artifacts,
-and ephemeral typing indicators via the ADK event emitter set up by the
-invocation context.
+and the agent's thoughts via the ADK event emitter set up by the invocation
+context.
 """
 
 from __future__ import annotations
 import logging
 
 from a2a.types import Artifact as A2AArtifact
-from aion.adk.authoring.invocation import emit_artifact, emit_card, emit_message
+from aion.adk.authoring.invocation import emit_artifact, emit_card, emit_message, emit_thinking
 from aion.core.a2a.extensions.messaging import MessageActionPayload
 from aion.core.agent import BaseThread
 from aion.core.agent.invocation.card import Card
@@ -116,7 +116,14 @@ class Thread(BaseThread):
             routing: Optional[MessageActionPayload] = None,
             metadata: dict | None = None,
     ) -> Event | None:
-        """Stream chunks as partial ADK Events, then emit a durable final event."""
+        """Stream chunks as partial ADK Events, then the whole text as a complete one.
+
+        The partial events are the chunks of a section of
+        ``aion:stream-delta``, and the complete event ends the section with
+        its whole text, as ADK's own streaming does. The streamed text is the
+        task's answer, not a message. The ADK session keeps it as what the
+        agent said.
+        """
         accumulated = ""
         try:
             async for chunk in iterator:
@@ -142,15 +149,15 @@ class Thread(BaseThread):
 
         return None
 
-    async def typing(self, content: str, *, metadata: dict | None = None) -> None:
-        """Emit an ephemeral typing/progress indicator.
+    async def thinking(self, content: str, *, metadata: dict | None = None) -> None:
+        """Add one thought to the task's ``aion:thinking-delta`` artifact.
 
-        Produces a complete event with aion:output hint that routes it to
-        EPHEMERAL_MESSAGE artifact — shown in real time, never persisted.
+        See ``emit_thinking``: the thought is not a message and stays out of
+        the ADK session.
         """
         if not isinstance(content, str):
             logger.warning(
-                "Thread.typing() received unsupported content type: %s. "
+                "Thread.thinking() received unsupported content type: %s. "
                 "Supported type: str.",
                 type(content).__name__,
             )
@@ -160,4 +167,4 @@ class Thread(BaseThread):
         if emitter is None:
             return
 
-        emit_message(emitter, content, ephemeral=True, metadata=metadata)
+        emit_thinking(emitter, content, metadata=metadata)

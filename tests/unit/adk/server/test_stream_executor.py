@@ -6,7 +6,9 @@ The executor takes it from the state deltas of the run's own events instead.
 
 And the agent runs in a task of its own, forwarding events through a queue,
 where ADK's Runner would persist each one before the agent resumes. The
-executor keeps that ordering.
+executor keeps that ordering, for every event but a thought: the next model
+request is built from the session, and the model would read a thought back
+as something it said.
 """
 
 from __future__ import annotations
@@ -17,12 +19,14 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from a2a.types import Message, Part, Role
+from a2a.types import Message, Part, Role, TaskArtifactUpdateEvent
 from google.adk.events import Event, EventActions
 from google.genai import types
 
+from aion.adk.authoring.invocation import emit_thinking
+from aion.adk.server.execution.event_converter import ADKToA2AEventConverter
 from aion.adk.server.execution.stream_executor import ADKStreamExecutor
-from aion.core.a2a import A2AOutbox
+from aion.core.a2a import A2AOutbox, ArtifactId
 
 
 def _outbox(text: str) -> A2AOutbox:
@@ -132,6 +136,8 @@ class _Agent:
                 yield value
             elif kind == "emit":
                 get_adk_emitter()(value)
+            elif kind == "think":
+                emit_thinking(get_adk_emitter(), value)
             elif kind == "fail":
                 raise RuntimeError("agent failed on purpose")
             elif kind == "hang":
@@ -202,3 +208,37 @@ async def test_an_event_before_a_cancel_is_written_once() -> None:
         await task
 
     assert appended == [before.id]
+
+
+def _thought(text: str) -> Event:
+    emitted: list[Event] = []
+    emit_thinking(emitted.append, text)
+    return emitted[0]
+
+
+async def test_a_thought_is_delivered_and_never_written_to_the_session() -> None:
+    """A thought the thread emits and one the agent yields both reach the
+    client as aion:thinking-delta; neither enters the session."""
+    first, last = _event({"n": 1}), _event({"n": 2})
+    yielded_thought = _thought("Comparing the two forecasts")
+    appended: list = []
+
+    async def append_event(session, event):
+        appended.append(event.id)
+        return event
+
+    executor = ADKStreamExecutor(
+        agent=_Agent(("yield", first), ("think", "Looking up the forecast"), ("yield", yielded_thought), ("yield", last)),
+        session_service=SimpleNamespace(append_event=append_event),
+        converter=ADKToA2AEventConverter(task_id="task-1", context_id="ctx-1"),
+    )
+
+    events = [event async for event in executor.execute(_CONTEXT, session=None)]
+
+    assert sorted(appended) == sorted([first.id, last.id])
+    thoughts = [
+        "".join(part.text for part in event.artifact.parts)
+        for event in events
+        if isinstance(event, TaskArtifactUpdateEvent) and event.artifact.artifact_id == ArtifactId.THINKING_DELTA.value
+    ]
+    assert thoughts == ["Looking up the forecast", "Comparing the two forecasts"]

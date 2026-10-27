@@ -4,7 +4,8 @@ A direct client - the kind that talks to ``aion serve`` without the Aion
 control plane - finds the extension on the agent card and uses its three
 methods over JSON-RPC and over HTTP+JSON through the proxy:
 
-* a conversation the caller had is listed and read back, its turns in order;
+* a conversation the caller had is listed and read back, its turns in order,
+  with every artifact of the tasks on the page of history it reads;
 * another caller neither sees it nor can delete it;
 * deleting it cancels the turn still running in it, and afterwards nothing of
   it is listed, read or continued: the same context ID starts a conversation
@@ -19,8 +20,16 @@ import uuid
 import httpx
 import pytest
 
-from tests.scenarios.commands import echo_text
-from tests.scenarios.harness import ScenarioClient, ServeProcess, final_task, session_subject
+from tests.scenarios.commands import echo_text, stream_text, think_text, thoughts_texts
+from tests.scenarios.harness import (
+    ASSISTANT_ANSWER_ARTIFACT_ID,
+    STREAM_DELTA_ARTIFACT_ID,
+    THINKING_DELTA_ARTIFACT_ID,
+    ScenarioClient,
+    ServeProcess,
+    final_task,
+    session_subject,
+)
 from tests.scenarios.harness.recorder import _payload_of, to_event
 
 pytestmark = [pytest.mark.contexts]
@@ -42,6 +51,14 @@ async def _other_caller(server: ServeProcess) -> ScenarioClient:
 async def _context_ids(client: ScenarioClient) -> list[str]:
     response = await client.rpc("GetContexts", {"historyLength": 100})
     return [entry["contextId"] for entry in response["result"]]
+
+
+def _artifacts(view: dict) -> dict[tuple[str, str], list[str]]:
+    """The artifacts of a GetContext result: (task id, artifact id) to the text of each part."""
+    return {
+        (entry["taskId"], entry["artifactId"]): [part["text"] for part in entry.get("parts", []) if "text" in part]
+        for entry in view.get("artifacts", [])
+    }
 
 
 async def test_the_card_declares_the_context_extension(client: ScenarioClient) -> None:
@@ -95,6 +112,37 @@ async def test_a_conversation_is_listed_and_read_back(server: ServeProcess) -> N
         over_http = await client._http.post(f"{client.agent_url}/context:get", json={"contextId": context_id})
         assert over_http.status_code == 200
         assert over_http.json()["history"] == view["history"]
+
+
+@pytest.mark.command("think")
+async def test_a_context_returns_every_artifact_of_the_tasks_on_its_page(server: ServeProcess) -> None:
+    """Every artifact of each task whose messages are on the page, the streamed answer and the thoughts included.
+
+    The first turn streams its answer, so its only message is the caller's;
+    the second thinks and replies. A page of the two newest messages is the
+    second turn's, and so are the artifacts that come with it.
+    """
+    context_id = str(uuid.uuid4())
+    async with await _other_caller(server) as client:
+        streamed = final_task(await client.send("stream 3", context_id=context_id))
+        thought = final_task(await client.send("think 2", context_id=context_id))
+
+        view = (await client.rpc("GetContext", {"contextId": context_id}))["result"]
+        assert _artifacts(view) == {
+            (streamed.task_id, STREAM_DELTA_ARTIFACT_ID): [stream_text(3)],
+            (thought.task_id, THINKING_DELTA_ARTIFACT_ID): list(thoughts_texts(2)),
+            (thought.task_id, ASSISTANT_ANSWER_ARTIFACT_ID): [think_text()],
+        }
+
+        newest = (await client.rpc("GetContext", {"contextId": context_id, "historyLength": 2}))["result"]
+        assert [part["text"] for message in newest["history"] for part in message["parts"]] == [
+            "think 2",
+            think_text(),
+        ]
+        assert set(_artifacts(newest)) == {
+            (thought.task_id, THINKING_DELTA_ARTIFACT_ID),
+            (thought.task_id, ASSISTANT_ANSWER_ARTIFACT_ID),
+        }
 
 
 @pytest.mark.command("echo")

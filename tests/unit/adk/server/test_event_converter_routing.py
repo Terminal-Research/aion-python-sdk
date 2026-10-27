@@ -8,10 +8,10 @@ from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 
 from aion.adk.authoring.constants import AION_OUTPUT_KEY, AION_ROUTING_KEY
 from aion.adk.authoring.invocation.event_metadata import AionOutput, ArtifactOutput, CardOutput
-from aion.core.a2a import data_artifact, file_artifact, url_artifact
+from aion.core.a2a import ArtifactId, data_artifact, file_artifact, url_artifact
 from aion.core.constants import MESSAGING_EXTENSION_URI_V1, CARDS_EXTENSION_URI_V1
 from aion.core.agent.invocation.card import Card
-from aion.core.a2a.extensions.messaging import MessageActionPayload
+from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 
 from aion.adk.authoring.invocation.event_metadata import get_aion_routing
 from aion.adk.server.execution.event_converter import ADKToA2AEventConverter
@@ -232,40 +232,77 @@ class TestArtifactOutput:
         assert results[0].append is False
 
     async def test_artifact_event_ends_open_stream_delta(self):
-        """An artifact event during streaming ends the open STREAM_DELTA section and emits only the artifact."""
+        """An artifact event during streaming ends the open section with the text of its chunks, then emits the artifact."""
         artifact = url_artifact("https://example.com/f.pdf", mime_type="application/pdf", name="doc")
         loaded_part = types.Part(file_data=types.FileData(file_uri="https://example.com/f.pdf", mime_type="application/pdf"))
         event, svc = make_artifact_delta_event(artifact, loaded_part)
         converter = make_converter_with_ctx(artifact_service=svc)
 
-        partial_event = Event(
-            author="agent",
-            content=types.Content(parts=[types.Part(text="chunk")], role="model"),
-            partial=True,
-        )
-        await converter.convert(partial_event)
-        assert converter._streaming_started is True
-
+        await converter.convert(make_partial_event("chunk"))
         results = await converter.convert(event)
 
-        assert len(results) == 1
-        assert isinstance(results[0], TaskArtifactUpdateEvent)
-        assert results[0].artifact.name == "doc"
-        assert converter._streaming_started is False
+        assert len(results) == 2
+        final, artifact_event = results
+        assert final.artifact.artifact_id == ArtifactId.STREAM_DELTA.value
+        assert final.artifact.parts[0].text == "chunk"
+        assert (final.append, final.last_chunk) == (False, True)
+        assert isinstance(artifact_event, TaskArtifactUpdateEvent)
+        assert artifact_event.artifact.name == "doc"
+
+        next_section = await converter.convert(make_partial_event("next"))
+        assert next_section[0].append is False
 
 
-async def test_thinking_output_hint_produces_live_artifact_instead_of_durable_message():
-    """Preserve explicitly marked thinking text as a transient artifact event."""
-    event = make_text_event("Considering the next step")
-    event.custom_metadata = {
-        AION_OUTPUT_KEY: AionOutput(
-            artifact=ArtifactOutput(artifact_id="aion:thinking-delta")
-        ).model_dump(exclude_none=True)
-    }
+def make_partial_event(text: str) -> Event:
+    return Event(
+        author="agent",
+        content=types.Content(parts=[types.Part(text=text)], role="model"),
+        partial=True,
+    )
 
-    results = await make_converter().convert(event)
+
+def make_thought_event(text: str) -> Event:
+    return Event(
+        author="agent",
+        content=types.Content(parts=[types.Part(text=text)], role="model"),
+        partial=False,
+        custom_metadata={AION_OUTPUT_KEY: AionOutput(thinking=True).model_dump(exclude_none=True)},
+    )
+
+
+def make_reaction_event() -> Event:
+    reaction = ReactionActionPayload(context_id="C123", message_id="msg-1", reaction_key="eyes", operation="add")
+    return Event(
+        author="agent",
+        partial=False,
+        custom_metadata={AION_OUTPUT_KEY: AionOutput(reaction=reaction).model_dump(exclude_none=True)},
+    )
+
+
+async def test_thinking_output_hint_produces_a_thought_instead_of_a_message():
+    """A thought goes to aion:thinking-delta as one text part, not into a status message."""
+    results = await make_converter().convert(make_thought_event("Considering the next step"))
 
     assert len(results) == 1
     assert isinstance(results[0], TaskArtifactUpdateEvent)
-    assert results[0].artifact.artifact_id == "aion:thinking-delta"
-    assert results[0].artifact.parts[0].text == "Considering the next step"
+    assert results[0].artifact.artifact_id == ArtifactId.THINKING_DELTA.value
+    assert [part.text for part in results[0].artifact.parts] == ["Considering the next step"]
+
+
+async def test_reaction_output_hint_produces_the_reaction_artifact():
+    results = await make_converter().convert(make_reaction_event())
+
+    assert len(results) == 1
+    assert results[0].artifact.artifact_id == ArtifactId.REACTION.value
+    assert (results[0].append, results[0].last_chunk) == (False, True)
+
+
+async def test_a_reaction_does_not_end_the_open_section():
+    converter = make_converter()
+    await converter.convert(make_partial_event("It "))
+
+    reaction = await converter.convert(make_reaction_event())
+    after = await converter.convert(make_partial_event("is sunny."))
+
+    assert [event.artifact.artifact_id for event in reaction] == [ArtifactId.REACTION.value]
+    assert after[0].append is True

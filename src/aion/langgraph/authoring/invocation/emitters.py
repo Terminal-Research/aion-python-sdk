@@ -19,6 +19,7 @@ from ..events.custom_events import (
     CardCustomEvent,
     MessageCustomEvent,
     ReactionCustomEvent,
+    ThinkingCustomEvent,
 )
 
 
@@ -95,34 +96,55 @@ def emit_card(
 def emit_message(
         writer: StreamWriter,
         message: AIMessage | AIMessageChunk,
-        ephemeral: bool = False,
         routing: MessageActionPayload | None = None,
         metadata: dict | None = None,
 ) -> None:
     """Emit a message event during graph execution.
 
     Supports both full messages and streaming chunks:
-    - AIMessage > TaskStatusUpdateEvent(working, message=...)
-    - AIMessageChunk > TaskArtifactUpdateEvent(STREAM_DELTA) for real-time streaming
-
-    When ephemeral=True, both AIMessage and AIMessageChunk produce a
-    TaskArtifactUpdateEvent(EPHEMERAL_MESSAGE) that is sent to the client
-    but filtered out by the task store (not persisted in task history).
+    - AIMessage > TaskStatusUpdateEvent(working, message=...), kept in the task's history
+    - AIMessageChunk > TaskArtifactUpdateEvent(STREAM_DELTA), a chunk of the streamed answer;
+      a full AIMessage that follows the chunks ends their section with its text instead of
+      becoming a message
 
     Args:
         writer: LangGraph StreamWriter from node signature
         message: LangChain message to emit (AIMessage or AIMessageChunk)
-        ephemeral: If True, message is not persisted in task history
+        routing: Optional delivery routing target (MessageActionPayload)
+        metadata: Optional user-defined metadata forwarded to A2A Message.metadata.
+                  Keys must not start with "aion:" (reserved for service use).
 
     Example:
         def my_node(state: dict, writer: StreamWriter):
-            # Ephemeral progress notification (not saved)
-            emit_message(writer, AIMessage(content="Searching..."), ephemeral=True)
-
-            # Full message (saved in history)
             emit_message(writer, AIMessage(content="Done"))
     """
-    writer(MessageCustomEvent(message=message, ephemeral=ephemeral, routing=routing, metadata=metadata))
+    writer(MessageCustomEvent(message=message, routing=routing, metadata=metadata))
+
+
+def emit_thinking(
+        writer: StreamWriter,
+        text: str,
+        *,
+        metadata: dict | None = None,
+) -> None:
+    """Emit one thought of the agent during graph execution.
+
+    The thought becomes one more text part of the task's
+    ``aion:thinking-delta`` artifact, which keeps every thought of the task
+    for a client to show how the answer came about. It is not the answer and
+    not a message, and it does not enter the graph's state.
+
+    Args:
+        writer: LangGraph StreamWriter from node signature
+        text: The thought
+        metadata: Optional user-defined metadata merged into A2A Artifact.metadata.
+                  Keys must not start with "aion:" (reserved for service use).
+
+    Example:
+        def my_node(state: dict, writer: StreamWriter):
+            emit_thinking(writer, "Looking up the account...")
+    """
+    writer(ThinkingCustomEvent(text=text, metadata=metadata))
 
 
 def emit_reaction(
@@ -132,7 +154,8 @@ def emit_reaction(
     """Emit a reaction action event during graph execution.
 
     Instructs the distribution to add or remove a reaction on an existing provider message.
-    Produces an outbound A2A message with a single ReactionActionPayload DataPart.
+    Produces the ``aion:reaction`` artifact with a single ReactionActionPayload DataPart,
+    which the task keeps; a reaction is not a result of the task.
 
     Args:
         writer: LangGraph StreamWriter from node signature

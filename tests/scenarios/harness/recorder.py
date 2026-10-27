@@ -22,21 +22,43 @@ from a2a.types.a2a_pb2 import (
 from google.protobuf.json_format import MessageToDict
 
 __all__ = [
-    "EPHEMERAL_KEY",
+    "ASSISTANT_ANSWER_ARTIFACT_ID",
     "Ev",
+    "REACTION_ARTIFACT_ID",
+    "STREAM_DELTA_ARTIFACT_ID",
     "TERMINAL_STATES",
+    "THINKING_DELTA_ARTIFACT_ID",
+    "artifact_updates",
+    "data_of_parts",
     "final_task",
+    "is_chunk",
+    "is_section_end",
     "record_stream",
     "replies",
     "reply_texts",
+    "section_texts",
+    "stored_artifact",
     "stored_messages",
     "stored_texts",
     "text_of_parts",
+    "texts_of_parts",
+    "thought_texts",
     "to_event",
 ]
 
-EPHEMERAL_KEY = "aion:ephemeral"
-"""Metadata flag the server puts on a status update it will not persist."""
+# The artifacts the SDK fills itself, under ids it reserves. The task stores
+# each of them like any other artifact, and a push subscriber receives them.
+STREAM_DELTA_ARTIFACT_ID = "aion:stream-delta"
+"""The answer the model streamed: the chunks of a section, then its whole text."""
+
+THINKING_DELTA_ARTIFACT_ID = "aion:thinking-delta"
+"""The agent's thoughts: one text part per thought, for the whole task."""
+
+REACTION_ARTIFACT_ID = "aion:reaction"
+"""The agent's latest reaction to a message."""
+
+ASSISTANT_ANSWER_ARTIFACT_ID = "aion:assistant-answer"
+"""Every part of the last message of a task that completed with no other result."""
 
 TERMINAL_STATES = ("COMPLETED", "FAILED", "CANCELED", "REJECTED")
 """States a task does not leave. INPUT_REQUIRED is not one: it resumes."""
@@ -57,6 +79,16 @@ def text_of_parts(parts: Iterable[Any]) -> str:
     return "".join(part.text for part in parts if part.text)
 
 
+def texts_of_parts(parts: Iterable[Any]) -> tuple[str, ...]:
+    """The text of each text part of a message or artifact, in order."""
+    return tuple(part.text for part in parts if part.text)
+
+
+def data_of_parts(parts: Iterable[Any]) -> list[Any]:
+    """The value of each data part of a message or artifact, in order, as plain JSON."""
+    return [MessageToDict(part.data) for part in parts if part.HasField("data")]
+
+
 def _struct_to_dict(struct: Any) -> dict:
     """A protobuf Struct as a plain dict."""
     if struct is None:
@@ -73,11 +105,12 @@ class Ev:
         state: Task state name for ``task`` and ``status``, else None.
         final: True for the terminal ``task`` event that closes the stream.
         text: Concatenated text the event carries.
+        texts: The text of each text part, in order - one thought each on
+            a thinking-delta update.
         artifact_id: Id of the artifact an ``artifact`` event updates.
         artifact_name: Its name.
         append: The artifact update's append flag.
         last_chunk: The artifact update's last-chunk flag.
-        ephemeral: True when the server marked this status update ephemeral.
         task_id: Task the event belongs to, when it names one.
         context_id: Context the event belongs to, when it names one.
         metadata: Event metadata as a plain dict. The schema marker of the
@@ -93,11 +126,11 @@ class Ev:
     state: Optional[str] = None
     final: bool = False
     text: str = ""
+    texts: tuple[str, ...] = ()
     artifact_id: Optional[str] = None
     artifact_name: Optional[str] = None
     append: bool = False
     last_chunk: bool = False
-    ephemeral: bool = False
     task_id: Optional[str] = None
     context_id: Optional[str] = None
     metadata: dict = field(default_factory=dict)
@@ -108,8 +141,6 @@ class Ev:
         parts = [self.kind]
         if self.state:
             parts.append(self.state)
-        if self.ephemeral:
-            parts.append("ephemeral")
         if self.artifact_id:
             parts.append(f"artifact={self.artifact_name or self.artifact_id}")
             parts.append(f"append={self.append} last={self.last_chunk}")
@@ -128,6 +159,7 @@ def to_event(payload: Any) -> Ev:
             state=state,
             final=state in TERMINAL_STATES or state == "INPUT_REQUIRED",
             text=text_of_parts(payload.status.message.parts) if payload.status.HasField("message") else "",
+            texts=texts_of_parts(payload.status.message.parts) if payload.status.HasField("message") else (),
             task_id=payload.id or None,
             context_id=payload.context_id or None,
             metadata=_struct_to_dict(payload.metadata),
@@ -138,6 +170,7 @@ def to_event(payload: Any) -> Ev:
         return Ev(
             kind="message",
             text=text_of_parts(payload.parts),
+            texts=texts_of_parts(payload.parts),
             task_id=payload.task_id or None,
             context_id=payload.context_id or None,
             metadata=_struct_to_dict(payload.metadata),
@@ -145,15 +178,14 @@ def to_event(payload: Any) -> Ev:
         )
 
     if isinstance(payload, TaskStatusUpdateEvent):
-        metadata = _struct_to_dict(payload.metadata)
         return Ev(
             kind="status",
             state=_state_name(payload.status.state),
             text=text_of_parts(payload.status.message.parts) if payload.status.HasField("message") else "",
-            ephemeral=bool(metadata.get(EPHEMERAL_KEY)),
+            texts=texts_of_parts(payload.status.message.parts) if payload.status.HasField("message") else (),
             task_id=payload.task_id or None,
             context_id=payload.context_id or None,
-            metadata=metadata,
+            metadata=_struct_to_dict(payload.metadata),
             raw=payload,
         )
 
@@ -162,6 +194,7 @@ def to_event(payload: Any) -> Ev:
         return Ev(
             kind="artifact",
             text=text_of_parts(artifact.parts),
+            texts=texts_of_parts(artifact.parts),
             artifact_id=artifact.artifact_id or None,
             artifact_name=artifact.name or None,
             append=bool(payload.append),
@@ -203,17 +236,42 @@ def final_task(events: Sequence[Ev]) -> Ev:
 
 
 def replies(events: Sequence[Ev]) -> list[Ev]:
-    """The durable replies of a turn: working statuses that carry a message."""
-    return [
-        event
-        for event in events
-        if event.kind == "status" and event.text and not event.ephemeral
-    ]
+    """The messages the agent sent this turn: the statuses that carry one."""
+    return [event for event in events if event.kind == "status" and event.text]
 
 
 def reply_texts(events: Sequence[Ev]) -> list[str]:
-    """What the agent said this turn, in order."""
+    """The text of each message the agent sent this turn, in order."""
     return [event.text for event in replies(events)]
+
+
+def artifact_updates(events: Sequence[Ev], artifact_id: str) -> list[Ev]:
+    """The updates of one artifact this turn, in order."""
+    return [event for event in events if event.kind == "artifact" and event.artifact_id == artifact_id]
+
+
+def is_chunk(event: Ev) -> bool:
+    """True for one chunk of a streamed section: a stream-delta update without ``lastChunk``."""
+    return event.kind == "artifact" and event.artifact_id == STREAM_DELTA_ARTIFACT_ID and not event.last_chunk
+
+
+def is_section_end(event: Ev) -> bool:
+    """True for the stream-delta update that ends a section with its whole text (``lastChunk`` set)."""
+    return event.kind == "artifact" and event.artifact_id == STREAM_DELTA_ARTIFACT_ID and event.last_chunk
+
+
+def section_texts(events: Sequence[Ev]) -> list[str]:
+    """The whole text of each streamed section that ended this turn, in order.
+
+    This is what the model said by streaming: a section's chunks show it
+    growing, and the update that ends the section carries all of it.
+    """
+    return [event.text for event in events if is_section_end(event)]
+
+
+def thought_texts(events: Sequence[Ev]) -> list[str]:
+    """Every thought delivered this turn, in order: one text part of a thinking-delta update each."""
+    return [text for event in artifact_updates(events, THINKING_DELTA_ARTIFACT_ID) for text in event.texts]
 
 
 def stored_messages(task: Task) -> list[Message]:
@@ -244,3 +302,8 @@ def stored_messages(task: Task) -> list[Message]:
 def stored_texts(task: Task) -> list[str]:
     """Everything a stored task says, in order, each message once (``stored_messages``)."""
     return [part.text for message in stored_messages(task) for part in message.parts if part.text]
+
+
+def stored_artifact(task: Task, artifact_id: str) -> Optional[Artifact]:
+    """The artifact a stored task holds under this id, or None."""
+    return next((artifact for artifact in task.artifacts if artifact.artifact_id == artifact_id), None)

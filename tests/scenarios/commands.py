@@ -29,8 +29,11 @@ __all__ = [
     "DEFAULT_SLOW_SECONDS",
     "stream_chunks",
     "stream_text",
-    "TYPING_INDICATOR",
-    "typing_text",
+    "thought_text",
+    "thoughts_texts",
+    "think_text",
+    "REACTION_KEY",
+    "react_text",
     "step_text",
     "steps_texts",
     "ids_text",
@@ -183,8 +186,9 @@ class Command:
 COMMANDS: tuple[Command, ...] = (
     Command("help", "Show this menu", tags=("smoke",)),
     Command("echo", "Reply with the argument, unchanged", "<text>", ("smoke", "events")),
-    Command("stream", "Reply in n chunks of one message", "<n>", ("streaming",)),
-    Command("typing", "Send an ephemeral typing status, then a reply", tags=("streaming", "events")),
+    Command("stream", "Stream an answer in n chunks", "<n>", ("streaming",)),
+    Command("think", "Think n thoughts, then reply", "<n>", ("streaming",)),
+    Command("react", "React to the inbound message, then reply", tags=("events",)),
     Command("steps", "Emit n working statuses, then complete", "<n>", ("events",)),
     Command("slow", "Reply after n seconds", "<sec>", ("lifecycle",)),
     Command("artifacts", "Emit a two-part data artifact, an inline file and a url",
@@ -282,25 +286,42 @@ def slow_text(seconds: float) -> str:
 
 
 def stream_chunks(count: int) -> tuple[str, ...]:
-    """The chunks ``stream <n>`` sends, in order."""
+    """The chunks ``stream <n>`` streams, in order."""
     return tuple(f"[chunk {index}/{count}]" for index in range(1, count + 1))
 
 
 def stream_text(count: int) -> str:
-    """The whole message ``stream <n>`` adds up to."""
+    """The whole answer ``stream <n>`` adds up to."""
     return "".join(stream_chunks(count))
 
 
-# What ``typing`` sends, in order: the ephemeral indicator, then the durable
-# answer. Two different texts, so a scenario reading the stream can say which
-# of the two it is looking at - and reading the stored task, which of the two
-# was kept.
-TYPING_INDICATOR = "still working on it"
+# What ``think <n>`` sends, in order: n thoughts, then a reply. The reply is a
+# text no thought has, so a scenario reading the stream or the stored task can
+# tell the thoughts from what the agent said.
+def thought_text(index: int, count: int) -> str:
+    """The text of one thought ``think <n>`` sends."""
+    return f"thought {index}/{count}"
 
 
-def typing_text() -> str:
-    """The durable reply ``typing`` sends once the indicator is out."""
-    return "finished thinking"
+def thoughts_texts(count: int) -> tuple[str, ...]:
+    """Every thought ``think <n>`` sends, in order."""
+    return tuple(thought_text(index, count) for index in range(1, count + 1))
+
+
+def think_text() -> str:
+    """The reply ``think <n>`` sends after its thoughts."""
+    return "done thinking"
+
+
+# What ``react`` does with the message event it arrives on: one reaction to
+# that message, then a reply. Without an event there is no message to react
+# to, and only the reply goes out.
+REACTION_KEY = "thumbsup"
+
+
+def react_text() -> str:
+    """The reply ``react`` sends after its reaction."""
+    return "reacted"
 
 
 def step_text(index: int, count: int) -> str:

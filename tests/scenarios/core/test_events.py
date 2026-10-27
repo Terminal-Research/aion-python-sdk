@@ -15,6 +15,7 @@ from tests.scenarios.commands import IdsResponse, steps_texts
 from tests.scenarios.harness import (
     SKIP,
     ScenarioClient,
+    answer,
     assert_shape,
     final_task,
     reply_texts,
@@ -27,17 +28,20 @@ pytestmark = pytest.mark.events
 
 @pytest.mark.command("echo")
 async def test_a_turn_opens_with_submitted_and_closes_with_the_task(client: ScenarioClient) -> None:
-    """A plain turn is: Task SUBMITTED, the reply as WORKING, the terminal Task.
+    """A plain turn is: Task SUBMITTED, the reply as WORKING, the reply as the answer, the terminal Task.
 
     The WORKING status carrying the reply is the transition into a running
-    task; no status without content precedes it. The stream closes with the
-    Task itself, which is what a caller acts on.
+    task; no status without content precedes it. A task that produced
+    nothing but messages gets the last one as its ``aion:assistant-answer``
+    right before it completes. The stream closes with the Task itself, which
+    is what a caller acts on.
     """
     events = await client.send("echo shape")
 
     assert_shape(events, [
         task("SUBMITTED"),
         status("WORKING", text="shape"),
+        answer(text="shape"),
         task("COMPLETED"),
     ])
     assert final_task(events).final is True
@@ -54,12 +58,14 @@ async def test_working_statuses_arrive_in_order(client: ScenarioClient) -> None:
         status("WORKING", text="step 1/3"),
         status("WORKING", text="step 2/3"),
         status("WORKING", text="step 3/3"),
+        answer(text="step 3/3"),
         task("COMPLETED"),
     ])
-    for event in events:
+    statuses = [event for event in events if event.kind in ("task", "status")]
+    for event in statuses:
         assert event.raw.status.HasField("timestamp"), event
     completed_at = final_task(events).raw.status.timestamp.ToNanoseconds()
-    for event in events:
+    for event in statuses:
         assert event.raw.status.timestamp.ToNanoseconds() <= completed_at, event
 
 

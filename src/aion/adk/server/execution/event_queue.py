@@ -53,7 +53,7 @@ class ADKEventQueue:
 
         Safe to call from any async context. Used by the agent task
         (forwarding agent.run_async() events) and by the ContextVar emitter
-        (thread.reply, thread.typing, etc.).
+        (thread.reply, thread.thinking, etc.).
         """
         if self._is_closed:
             logger.warning("ADKEventQueue: queue is closed — event dropped.")

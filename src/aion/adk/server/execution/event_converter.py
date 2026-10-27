@@ -14,19 +14,18 @@ from a2a.types import (
 )
 from aion.adk.authoring.invocation import AionInvocationContext
 from aion.adk.authoring.invocation.event_metadata import (
-    AionOutput,
     get_aion_output,
     get_aion_routing,
     get_aion_user_metadata,
 )
 from aion.adk.server.transformers import A2ATransformer
 from aion.core.a2a import ArtifactId, ArtifactName
+from aion.core.a2a.deltas import stream_delta_chunk, stream_delta_final, thinking_delta
 from aion.core.a2a.extensions.messaging import ReactionActionPayload
 from aion.core.agent.invocation.card import Card
 from aion.core.agent.invocation.card.utils import build_card_a2a_part
 from aion.core.constants import CARDS_EXTENSION_URI_V1, MESSAGE_ACTION_PAYLOAD_SCHEMA_V1, MESSAGING_EXTENSION_URI_V1, \
-    REACTION_ACTION_PAYLOAD_SCHEMA_V1, STREAM_DELTA_PAYLOAD_SCHEMA_V1
-from aion.server.a2a.constants import TRANSIENT_ARTIFACT_IDS
+    REACTION_ACTION_PAYLOAD_SCHEMA_V1
 from google.adk.events import Event
 from google.protobuf import json_format, struct_pb2
 
@@ -40,9 +39,11 @@ class ADKToA2AEventConverter:
 
     Handles partial (streaming) and non-partial (complete) ADK events.
 
-    Partial ADK events are emitted as STREAM_DELTA artifact updates for live
-    display. Non-partial events close the stream and emit a durable
-    TaskStatusUpdateEvent with state=working.
+    Partial ADK events are the chunks of a section of ``aion:stream-delta``.
+    The non-partial event ADK sends after them carries the section's whole
+    text: it ends the section as the artifact's final event, and becomes no
+    message. A non-partial event that ends no section is a message, a
+    ``WORKING`` status update the task keeps in its history.
     """
 
     def __init__(
@@ -54,7 +55,9 @@ class ADKToA2AEventConverter:
         self._task_id = task_id
         self._context_id = context_id
         self._ctx = ctx
-        self._streaming_started = False
+        self._section_open = False
+        self._section_text = ""
+        self._section_metadata: dict | None = None
 
     async def convert(self, adk_event: Event) -> list[AgentEvent]:
         """Convert an ADK event to zero or more A2A events.
@@ -76,61 +79,57 @@ class ADKToA2AEventConverter:
             return await self._convert_non_partial(adk_event)
 
     def _convert_partial(self, adk_event: Event) -> list[AgentEvent]:
-        """Emit a STREAM_DELTA artifact update for a partial (streaming) ADK event.
+        """Emit a chunk of ``aion:stream-delta`` for a partial (streaming) ADK event.
 
-        The first chunk opens the artifact (append=False); subsequent chunks
-        use append=True. The sequence ends with the durable message emitted for
-        the next non-partial event or with the terminal task status.
-        User metadata from custom_metadata is merged into the artifact metadata
-        so the UI can filter or route individual chunks.
+        The first chunk of a section starts the artifact over (append=False);
+        the rest extend it. The agent's metadata from custom_metadata goes on
+        the artifact, so the UI can filter or route individual chunks.
 
-        Every partial carries last_chunk=False, and that is the ADK streaming
-        contract rather than a missing feature: intermediate responses are
-        partial=True and the turn ends with a separate partial=False response
-        carrying the aggregated content, so at the moment a partial is
-        converted there is nothing that could say it was the last one. The
-        information arrives with the next event.
+        No chunk is the last one, and that is the ADK streaming contract
+        rather than a missing feature: intermediate responses are partial=True
+        and the section ends with a separate partial=False response carrying
+        the aggregated content, so at the moment a partial is converted
+        nothing says it was the last one. The section's final event follows
+        with that response.
         """
         parts = A2ATransformer.transform_content(adk_event.content)
         if not parts:
             return []
 
-        append = self._streaming_started
-        if not self._streaming_started:
-            self._streaming_started = True
-
-        artifact_metadata = {"status": "active", "status_reason": "chunk_streaming"}
-        user_meta = get_aion_user_metadata(adk_event)
-        if user_meta:
-            artifact_metadata.update(user_meta)
-
-        # The artifact id says which channel this is; the schema marker on the
-        # event says what shape the payload in it has. The messaging extension
-        # names `artifactUpdate.metadata` as the marker's place, and a client
-        # reading the stream-delta schema looks for it there.
-        return [TaskArtifactUpdateEvent(
+        append = self._section_open
+        self._section_open = True
+        self._section_text += "".join(part.text for part in parts if part.WhichOneof("content") == "text")
+        self._section_metadata = get_aion_user_metadata(adk_event)
+        return [stream_delta_chunk(
             task_id=self._task_id,
             context_id=self._context_id,
-            metadata={MESSAGING_EXTENSION_URI_V1: {"schema": STREAM_DELTA_PAYLOAD_SCHEMA_V1}},
-            artifact=Artifact(
-                artifact_id=ArtifactId.STREAM_DELTA.value,
-                name=ArtifactName.STREAM_DELTA.value,
-                parts=parts,
-                metadata=artifact_metadata,
-            ),
+            parts=parts,
             append=append,
-            last_chunk=False,
+            metadata=self._section_metadata,
         )]
 
-    def _end_stream_delta(self) -> None:
-        """Forget the open STREAM_DELTA section so the next partial event opens a new one.
+    def _close_section(self, text: str | None = None) -> list[AgentEvent]:
+        """End the open section of ``aion:stream-delta`` with its whole text, if one is open.
 
-        The next partial event starts a fresh section with append=False. Every
-        STREAM_DELTA update carries content (an Artifact requires at least one
-        Part); the sequence itself ends with the durable message or the terminal
-        task status.
+        Args:
+            text: The section's whole text as the framework reports it; the
+                text of its chunks when it reports none.
         """
-        self._streaming_started = False
+        if not self._section_open:
+            return []
+        final_text = self._section_text if text is None else text
+        metadata = self._section_metadata
+        self._section_open = False
+        self._section_text = ""
+        self._section_metadata = None
+        if not final_text:
+            return []
+        return [stream_delta_final(
+            task_id=self._task_id,
+            context_id=self._context_id,
+            text=final_text,
+            metadata=metadata,
+        )]
 
     @staticmethod
     def _build_extension_part(data: dict, schema_uri: str) -> Part:
@@ -161,19 +160,15 @@ class ADKToA2AEventConverter:
         """Convert a complete (non-partial) ADK event to A2A events.
 
         If the event carries an aion:output hint, routes to the specified
-        artifact type instead of the default durable message path.
+        output - a reaction, a thought, a card - instead of the default path.
 
-        If streaming was active, the open STREAM_DELTA section is ended so a
-        later partial event opens a new one. Each file part is then emitted as a
-        standalone TaskArtifactUpdateEvent with a unique artifact id. All
-        remaining text parts are grouped into a single TaskStatusUpdateEvent
-        (state=working) so the client receives the durable message while the
-        task is still running. Finally, artifacts from artifact_delta are
+        An event that follows the chunks of a section carries the section's
+        whole text: its text becomes the final event of ``aion:stream-delta``,
+        and the rest of its content, if any, a message. Any other event's
+        content becomes a message: a TaskStatusUpdateEvent (state=working)
+        the client receives while the task is still running and the task
+        keeps in its history. Finally, artifacts from artifact_delta are
         loaded and emitted as TaskArtifactUpdateEvents.
-
-        An event routed to a transient artifact carries its text there
-        instead, and emits no durable message at all - see
-        _convert_transient_text.
         """
         results: list[AgentEvent] = []
 
@@ -182,7 +177,13 @@ class ADKToA2AEventConverter:
         if output and output.reaction is not None:
             return [self._build_reaction_event(output.reaction)]
 
+        if output and output.thinking:
+            return self._convert_thinking(adk_event)
+
         if output and output.card is not None:
+            # A card is the agent's own output after the model call it made,
+            # so the section that call was streaming has ended.
+            results.extend(self._close_section())
             if output.card.url:
                 card = Card(url=output.card.url)
             else:
@@ -214,82 +215,57 @@ class ADKToA2AEventConverter:
                 ))
             return results
 
-        self._end_stream_delta()
+        content_parts = A2ATransformer.transform_content(adk_event.content) if adk_event.content else []
+        if self._section_open:
+            text_parts = [part for part in content_parts if part.WhichOneof("content") == "text"]
+            results.extend(self._close_section("".join(part.text for part in text_parts) if text_parts else None))
+            content_parts = [part for part in content_parts if part.WhichOneof("content") != "text"]
 
-        transient = self._convert_transient_text(adk_event, output)
-        if transient is not None:
-            return [transient]
-
-        if adk_event.content:
-            content_parts = A2ATransformer.transform_content(adk_event.content)
-
-            if content_parts:
-                routing = get_aion_routing(adk_event)
-                extensions = []
-                if routing is not None:
-                    content_parts.append(self._build_extension_part(
-                        routing.model_dump(by_alias=True, exclude_none=True),
-                        MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
-                    ))
-                    extensions = [MESSAGING_EXTENSION_URI_V1]
-                role = Role.ROLE_USER if adk_event.author == "user" else Role.ROLE_AGENT
-                msg = Message(
-                    context_id=self._context_id,
-                    task_id=self._task_id,
-                    message_id=str(uuid.uuid4()),
-                    role=role,
-                    parts=content_parts,
-                    extensions=extensions or None,
-                    metadata=get_aion_user_metadata(adk_event),
-                )
-                results.append(TaskStatusUpdateEvent(
-                    task_id=self._task_id,
-                    context_id=self._context_id,
-                    status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
+        if content_parts:
+            routing = get_aion_routing(adk_event)
+            extensions = []
+            if routing is not None:
+                content_parts.append(self._build_extension_part(
+                    routing.model_dump(by_alias=True, exclude_none=True),
+                    MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
                 ))
+                extensions = [MESSAGING_EXTENSION_URI_V1]
+            role = Role.ROLE_USER if adk_event.author == "user" else Role.ROLE_AGENT
+            msg = Message(
+                context_id=self._context_id,
+                task_id=self._task_id,
+                message_id=str(uuid.uuid4()),
+                role=role,
+                parts=content_parts,
+                extensions=extensions or None,
+                metadata=get_aion_user_metadata(adk_event),
+            )
+            results.append(TaskStatusUpdateEvent(
+                task_id=self._task_id,
+                context_id=self._context_id,
+                status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
+            ))
 
         results.extend(await self._convert_artifact_delta(adk_event))
         return results
 
-    def _convert_transient_text(
-        self, adk_event: Event, output: AionOutput | None
-    ) -> AgentEvent | None:
-        """Carry a transient event's text as its artifact, not as a reply.
+    def _convert_thinking(self, adk_event: Event) -> list[AgentEvent]:
+        """Carry a thought as one more part of ``aion:thinking-delta``.
 
-        ``emit_message(..., ephemeral=True)`` and ``Thread.typing()`` put the
-        text in the event's content and name a transient artifact in the
-        ``aion:output`` hint. The artifact_delta path cannot deliver that: it
-        loads files out of the ADK artifact service, and these events save no
-        file. Without this, the text would fall through to the ordinary
-        durable-message path and be persisted into task history - the opposite
-        of what the caller asked for.
-
-        Returns None for every other event, so the routing hint keeps working
-        exactly as before for artifacts that do have a delta to load.
+        ``emit_thinking()`` and ``Thread.thinking()`` put the thought in the
+        event's content. A thought does not end a streaming section: it is
+        not the answer.
         """
-        hint = output.artifact if output else None
-        if hint is None or hint.artifact_id not in TRANSIENT_ARTIFACT_IDS:
-            return None
-        if adk_event.actions and adk_event.actions.artifact_delta:
-            return None
-
-        parts = A2ATransformer.transform_content(adk_event.content)
-        if not parts:
-            return None
-
-        artifact_metadata = get_aion_user_metadata(adk_event) or None
-        return TaskArtifactUpdateEvent(
+        parts = A2ATransformer.transform_content(adk_event.content) if adk_event.content else []
+        text = "".join(part.text for part in parts if part.WhichOneof("content") == "text")
+        if not text:
+            return []
+        return [thinking_delta(
             task_id=self._task_id,
             context_id=self._context_id,
-            artifact=Artifact(
-                artifact_id=hint.artifact_id,
-                name=hint.artifact_name or hint.artifact_id,
-                parts=parts,
-                metadata=artifact_metadata,
-            ),
-            append=False,
-            last_chunk=True,
-        )
+            text=text,
+            metadata=get_aion_user_metadata(adk_event),
+        )]
 
     async def _convert_artifact_delta(self, adk_event: Event) -> list[AgentEvent]:
         """Load artifacts from artifact_delta and emit TaskArtifactUpdateEvents.
@@ -352,33 +328,14 @@ class ADKToA2AEventConverter:
             results.append(event)
         return results
 
-    def finalize_stream(self, delta_text: str) -> list[AgentEvent]:
-        """End any open STREAM_DELTA and emit accumulated text as working status.
+    def finalize_stream(self) -> list[AgentEvent]:
+        """End a section the agent's run left open, with the text of its chunks.
 
-        Called when the agent stream ends with active streaming — partial events
-        arrived but no closing non-partial event followed. Handles the edge case
-        where the last ADK event was partial, leaving an open stream artifact and
-        unconfirmed text that needs to be emitted before the terminal event.
+        Called when the run is over: partial events arrived and no
+        non-partial event followed them, so the section's final event is
+        built from what its chunks said.
         """
-        results: list[AgentEvent] = []
-
-        self._end_stream_delta()
-
-        if delta_text:
-            msg = Message(
-                context_id=self._context_id,
-                task_id=self._task_id,
-                message_id=str(uuid.uuid4()),
-                role=Role.ROLE_AGENT,
-                parts=[Part(text=delta_text)],
-            )
-            results.append(TaskStatusUpdateEvent(
-                task_id=self._task_id,
-                context_id=self._context_id,
-                status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
-            ))
-
-        return results
+        return self._close_section()
 
     def generate_complete(self) -> TaskStatusUpdateEvent:
         """Produce a final TaskStatusUpdateEvent with state=completed.

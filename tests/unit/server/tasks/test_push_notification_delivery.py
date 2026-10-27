@@ -47,8 +47,8 @@ from a2a.types import (
 from a2a.types.a2a_pb2 import AuthenticationInfo, TaskPushNotificationConfig
 from unittest.mock import AsyncMock, Mock
 
+from aion.core.a2a.deltas import stream_delta_chunk, stream_delta_final, thinking_delta
 from aion.core.a2a.enums import ArtifactId
-from aion.server.a2a.utils import mark_status_event_ephemeral
 from aion.server.agent.execution import AionActiveTaskRegistry
 from aion.server.agent.execution.scope import clear_execution_scope, init_execution_scope
 from aion.server.core.app.handlers.terminal_task_projection import TerminalTaskProjection
@@ -347,35 +347,40 @@ def _working() -> TaskStatusUpdateEvent:
 
 
 class TestPushCarriesWhatTheTaskStores:
-    """The push channel carries every stored change of the task and nothing live-only."""
+    """The push channel carries every stored change of the task: the stream and the webhook get the same events."""
 
     @pytest.mark.anyio
-    async def test_live_only_events_reach_the_stream_but_not_the_webhook(self, execution_scope):
+    async def test_every_event_reaches_both_the_stream_and_the_webhook(self, execution_scope):
         progress = _working()
         progress.status.message.CopyFrom(Message(
             message_id="msg-progress", context_id=CONTEXT_ID, task_id=TASK_ID,
             role=Role.ROLE_AGENT, parts=[Part(text="running tests")],
         ))
-        mark_status_event_ephemeral(progress)
-        delta = TaskArtifactUpdateEvent(
-            task_id=TASK_ID, context_id=CONTEXT_ID,
-            artifact=Artifact(artifact_id=ArtifactId.STREAM_DELTA.value, parts=[Part(text="partial")]),
-        )
+        thought = thinking_delta(task_id=TASK_ID, context_id=CONTEXT_ID, text="checking the logs")
+        thought.append = False
+        chunk = stream_delta_chunk(task_id=TASK_ID, context_id=CONTEXT_ID, parts=[Part(text="parti")], append=False)
+        section = stream_delta_final(task_id=TASK_ID, context_id=CONTEXT_ID, text="partial")
         report = TaskArtifactUpdateEvent(
             task_id=TASK_ID, context_id=CONTEXT_ID,
             artifact=Artifact(artifact_id="report", parts=[Part(text="result")]),
         )
-        events = [_submitted(), progress, delta, report, _terminal_status(TaskState.TASK_STATE_COMPLETED)]
+        produced = [progress, thought, chunk, section, report]
+        events = [_submitted(), *produced, _terminal_status(TaskState.TASK_STATE_COMPLETED)]
 
         raw_push, stream_events = await _run_task_to_completion(
             events, ServerCallContext(user=_NamedUser("alice")),
         )
 
         pushed = _push_deliveries(raw_push)
-        assert progress in stream_events and delta in stream_events
-        assert progress not in pushed and delta not in pushed
-        assert report in pushed
-        _assert_ends_with_full_task(pushed, TaskState.TASK_STATE_COMPLETED)
+        assert all(event in stream_events for event in produced)
+        assert all(event in pushed for event in produced)
+        outcome = _assert_ends_with_full_task(pushed, TaskState.TASK_STATE_COMPLETED)
+        assert {a.artifact_id: [part.text for part in a.parts] for a in outcome.artifacts} == {
+            ArtifactId.THINKING_DELTA.value: ["checking the logs"],
+            ArtifactId.STREAM_DELTA.value: ["partial"],
+            "report": ["result"],
+        }
+        assert [m.message_id for m in outcome.history] == ["msg-progress", "msg-final"]
 
     @pytest.mark.anyio
     async def test_the_failed_a_crashed_producer_stores_is_pushed(self, execution_scope):

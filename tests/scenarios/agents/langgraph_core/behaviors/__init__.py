@@ -14,14 +14,14 @@ from tests.scenarios.agents.langgraph_core.invocation import Invocation
 from .cards import card
 from .config import config, event, ext, whoami
 from .errors import fail
-from .events import ids, steps
+from .events import ids, react, steps
 from .files import artifacts, parts, send_file
 from .interrupts import ask, ask_fail, ask_twice
 from .lifecycle import slow
 from .outbox import outbox_message, outbox_task
 from .payload import big
 from .smoke import echo, help_menu
-from .streaming import stream, typing_indicator
+from .streaming import stream, think
 
 __all__ = ["BEHAVIORS", "Behavior"]
 
@@ -31,7 +31,8 @@ BEHAVIORS: dict[str, Behavior] = {
     "help": help_menu,
     "echo": echo,
     "stream": stream,
-    "typing": typing_indicator,
+    "think": think,
+    "react": react,
     "steps": steps,
     "slow": slow,
     "ask": ask,

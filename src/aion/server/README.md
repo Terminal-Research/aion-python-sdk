@@ -302,7 +302,7 @@ relative to the A2A endpoint:
 | Method | HTTP+JSON | Result |
 | --- | --- | --- |
 | `GetContexts` | `POST /contexts:get` | the caller's contexts, most recently active first |
-| `GetContext` | `POST /context:get` | one context: chronological messages, up to 50 latest artifacts, latest status |
+| `GetContext` | `POST /context:get` | one context: a page of chronological messages, every artifact of the tasks on that page, latest status |
 | `DeleteContext` | `POST /context:delete` | `{"contextId": ...}` |
 
 A request without a verified caller is refused before any method runs: `401`
@@ -319,7 +319,9 @@ context - another caller's, or one that does not exist - is answered alike:
 caller without individual access is never bound. `GetContext` returns every
 participant's messages, not only the caller's, because a binding is to the
 whole conversation. Pagination selects the newest `historyLength` messages
-after skipping `historyOffset` and returns them in order. `title` and
+after skipping `historyOffset` and returns them in order, with every artifact
+of the tasks those messages belong to - the streamed answer and the thoughts
+included - newest first; a client matches the two by `taskId`. `title` and
 `summary` are always `null`: this server generates neither.
 
 **Deletion.** `DeleteContext` removes the caller's binding. While another
@@ -455,20 +457,19 @@ this section says otherwise.
 
 A run belongs to the server, not to the request that started it: it goes on
 when the client disconnects, and stores its outcome either way. A client
-follows it through one of the methods below. *Durable* is what the task
-stores - status changes with their messages, artifacts, the outcome.
-*Ephemeral* is live-only progress the task never stores: response and
-thinking deltas, ephemeral messages and reactions (see [Transient stream
-artifacts](#transient-stream-artifacts)), and status updates flagged
-`aion:ephemeral`.
+follows it through one of the methods below. The task stores everything the
+run produces - status changes with their messages, artifacts (the streamed
+answer and the agent's thoughts among them, see [The SDK's own
+artifacts](#the-sdks-own-artifacts)), the outcome - so every method sees the
+same task.
 
 | Method | How it is delivered | What arrives | Connection held |
 |---|---|---|---|
-| `SendStreamingMessage` | SSE on the request, opened and closed by the stored `Task` | everything, ephemeral included | until the task has an outcome or waits for input |
-| `SendMessage` | one JSON response: the `Task` once it has an outcome or waits for input; with `configuration.returnImmediately`, the task at once while the run goes on | durable only | as for the stream; none with `returnImmediately` |
-| push notifications | `configuration.taskPushNotificationConfig` on a send, or `CreateTaskPushNotificationConfig`; the server POSTs each change the task stores to the webhook, an outcome or a wait for input as the full `Task` | durable only | none |
-| `SubscribeToTask` | SSE: the stored task, then the live events until the task stops; a task that already has an outcome is refused | on the server running the task, everything; on another server the task's journal, so durable only | until the task stops |
-| `GetTask` | one JSON response: the stored task, its history cut to `historyLength` | durable only | none |
+| `SendStreamingMessage` | SSE on the request, opened and closed by the stored `Task` | every event of the run | until the task has an outcome or waits for input |
+| `SendMessage` | one JSON response: the `Task` once it has an outcome or waits for input; with `configuration.returnImmediately`, the task at once while the run goes on | the task | as for the stream; none with `returnImmediately` |
+| push notifications | `configuration.taskPushNotificationConfig` on a send, or `CreateTaskPushNotificationConfig`; the server POSTs each change the task stores to the webhook, an outcome or a wait for input as the full `Task` | every event of the run | none |
+| `SubscribeToTask` | SSE: the stored task, then the live events until the task stops; a task that already has an outcome is refused | every event of the run; on another server read from the task's journal | until the task stops |
+| `GetTask` | one JSON response: the stored task, its history cut to `historyLength` | the task | none |
 
 Push carries every outcome the task stores, including those the run did not
 write itself: a cancel written by another server, the `FAILED` of an agent
@@ -495,9 +496,7 @@ servers of one agent can share the database. The rules are a2a-sdk's:
   same transaction.
 - A subscriber on a server that is not running the task is served the stored
   task and then the task's journal, polled every 0.5 s, until the task stops
-  again. Live-only updates - response and thinking deltas, ephemeral
-  progress (see [Transient stream artifacts](#transient-stream-artifacts)) -
-  are never stored, so they reach only a subscriber on the executing server.
+  again.
 - The next turn of a paused task runs on whichever server receives it, from
   the stored task. Framework state has to be in the same database for that:
   the SDK's PostgreSQL checkpointer and session service are.
@@ -585,16 +584,33 @@ does not require copying extension payloads into response metadata. The A2A
 methods are served over JSON-RPC only; the Context extension adds its own
 HTTP+JSON routes (see [Contexts](#contexts)).
 
-### Transient stream artifacts
+### The SDK's own artifacts
 
-The task manager delivers `aion:stream-delta`, `aion:thinking-delta`,
-`aion:ephemeral-message`, and `aion:reaction` updates to live clients without
-adding them to stored task artifacts, and skips status updates flagged
-`aion:ephemeral` the same way. Push notifications skip both, by the same
-predicate (`is_ephemeral_event`): a webhook receives what the task stores.
-The deduplicator does not retain their IDs, so repeated chunks remain
-deliverable. Ordinary artifacts still persist. This filter does not remove
-artifacts from previously stored tasks.
+Messages are how the agent talks to the user; artifacts are what a task
+produced. The SDK fills four artifacts under reserved ids itself, one of
+each per task, and stores them like any other - the stream, the task record
+and push subscribers all get them:
+
+- `aion:stream-delta` is the answer the model streamed. A section's chunks
+  arrive with `append` set (the first without it); when the section ends,
+  its whole text arrives as one text part with `append` unset and
+  `lastChunk` set, replacing them. A later section of the task replaces it
+  in turn. The streamed text never becomes a message. `AionEventPipeline`
+  joins chunks that come faster than `AION_STREAM_DELTA_INTERVAL` (default
+  0.1 s), the same for every executor.
+- `aion:thinking-delta` holds the agent's thoughts, which only its own code
+  sends (`emit_thinking`, `Thread.thinking`): one text part per thought, for
+  the whole task. The pipeline makes the task's first thought create the
+  artifact and every later one extend it.
+- `aion:reaction` is the agent's latest reaction to a message.
+- `aion:assistant-answer` is given to a task that completes having produced
+  no other artifact in any of its turns: every part of the last message the
+  agent sent in the completing turn. A completed task without such a
+  message gets none, and the server logs a warning. A failed or cancelled
+  task never gets one.
+
+Any other artifact is a result of the task, and so is `aion:stream-delta`;
+the thoughts, the reaction and the copied answer are not.
 
 
 ## Server and background logging

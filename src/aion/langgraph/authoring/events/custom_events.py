@@ -41,19 +41,28 @@ class MessageCustomEvent(AionCustomEvent):
     """Message emission event supporting both full messages and streaming chunks.
 
     Emitted from nodes via emit_message().
-    ephemeral=False:
-        AIMessage > TaskStatusUpdateEvent(working, message=...)
-        AIMessageChunk > TaskArtifactUpdateEvent(STREAM_DELTA)
-    ephemeral=True:
-        AIMessage | AIMessageChunk > TaskArtifactUpdateEvent(EPHEMERAL_MESSAGE), not persisted
+        AIMessage > TaskStatusUpdateEvent(working, message=...), kept in the task's history
+        AIMessageChunk > TaskArtifactUpdateEvent(STREAM_DELTA), a chunk of the streamed answer
     """
 
     event_type: ClassVar[str] = "message"
 
     message: AIMessage | AIMessageChunk = Field(description="LangChain message to emit")
-    ephemeral: bool = Field(default=False, description="Emit as ephemeral artifact (not persisted in task history)")
     routing: Optional[MessageActionPayload] = Field(default=None, description="Outbound routing target; attached as DataPart by the distribution layer")
     metadata: Optional[dict[str, Any]] = Field(default=None, description="User-defined metadata forwarded to A2A Message.metadata")
+
+
+class ThinkingCustomEvent(AionCustomEvent):
+    """One thought of the agent.
+
+    Emitted from nodes via emit_thinking() and Thread.thinking().
+    Produces one more text part of the task's TaskArtifactUpdateEvent(THINKING_DELTA).
+    """
+
+    event_type: ClassVar[str] = "thinking"
+
+    text: str = Field(description="The thought")
+    metadata: Optional[dict[str, Any]] = Field(default=None, description="User-defined metadata merged into A2A Artifact.metadata")
 
 
 class ReactionCustomEvent(AionCustomEvent):

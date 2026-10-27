@@ -134,7 +134,10 @@ class ADKExecutor(AgentFrameworkExecutor):
             task_id: str,
             context_id: str,
     ) -> AsyncIterator[AgentEvent]:
-        """Emit result events and the terminal complete event."""
+        """Close a streaming section the run left open, then emit result events and the terminal complete event."""
+        for a2a_event in converter.finalize_stream():
+            yield a2a_event
+
         for a2a_event in self._result_handler.handle(
                 stream_result, converter, session, context, task_id, context_id
         ):

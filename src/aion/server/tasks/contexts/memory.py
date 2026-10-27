@@ -12,8 +12,6 @@ from aion.server.tasks.admission import ACTIVE, DELETED, DELETING, InMemoryConte
 from aion.server.tasks.stores.in_memory_task_store import InMemoryTaskStore
 
 from .catalog import (
-    ARTIFACT_WINDOW,
-    EXCLUDED_ARTIFACT_IDS,
     ContextActivity,
     ContextPage,
     ContextTaskState,
@@ -74,20 +72,22 @@ class InMemoryContextCatalog:
             bound_at = entry.bindings[member]
         tasks = await self._store.tasks_in_context(context_id)
 
-        messages = [message for task, _ in tasks for message in conversation_of(task)]
+        messages = [(task.id, message) for task, _ in tasks for message in conversation_of(task)]
         end = len(messages) - history_offset
-        history = messages[max(end - history_length, 0):max(end, 0)]
+        page = messages[max(end - history_length, 0):max(end, 0)]
+        history = [message for _, message in page]
+        page_tasks = {task_id for task_id, _ in page}
 
         # Each artifact's write time is its task's: the in-memory store keeps
         # no time per artifact. Later artifacts of one task count as newer.
         ranked = [
             ((updated_at, position, task.id, artifact.artifact_id), task.id, artifact)
             for task, updated_at in tasks
+            if task.id in page_tasks
             for position, artifact in enumerate(task.artifacts)
-            if artifact.artifact_id not in EXCLUDED_ARTIFACT_IDS
         ]
         ranked.sort(key=lambda item: item[0], reverse=True)
-        artifacts = [(task_id, artifact) for _, task_id, artifact in ranked[:ARTIFACT_WINDOW]]
+        artifacts = [(task_id, artifact) for _, task_id, artifact in ranked]
 
         latest = max(tasks, key=lambda item: item[1], default=None)
         return ContextPage(

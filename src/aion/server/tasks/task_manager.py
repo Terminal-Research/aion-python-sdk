@@ -18,7 +18,6 @@ from aion.server.a2a.constants import (
     TERMINAL_TASK_STATES,
 )
 from aion.server.a2a.utils import (
-    is_ephemeral_event,
     is_message_recorded,
     is_task_interrupted,
     record_closing_message,
@@ -217,25 +216,22 @@ class AionTaskManager(TaskManager):
         If the event is task-related (`Task`, `TaskStatusUpdateEvent`, `TaskArtifactUpdateEvent`),
         the internal task state is updated and persisted.
 
-        Missing status timestamps are assigned before persistence and delivery,
-        including ephemeral updates. Streams, push notifications and stored Task
-        snapshots therefore share one time instead of each receiver inventing it.
-        Explicit timestamps are preserved.
+        Missing status timestamps are assigned before persistence and delivery.
+        Streams, push notifications and stored Task snapshots therefore share
+        one time instead of each receiver inventing it. Explicit timestamps are
+        preserved.
 
         Args:
             event: The event object received from the agent.
 
         Returns:
-            The same event object that was processed (or skipped).
+            The same event object that was processed.
         """
         if isinstance(event, Message):
             event = await self._wrap_message_as_status_event(event)
 
         if isinstance(event, TaskStatusUpdateEvent) and not event.status.HasField("timestamp"):
             event.status.timestamp.GetCurrentTime()
-
-        if self._check_process_skip_event(event):
-            return event
 
         event = await self._carry_pending_message(event)
         await self._forget_recorded_status_message(event)
@@ -353,31 +349,6 @@ class AionTaskManager(TaskManager):
 
         state = event.status.state
         set_task_status(state.value if hasattr(state, 'value') else state)
-
-    @staticmethod
-    def _check_process_skip_event(event: Event) -> bool:
-        """Checks if an event should be skipped from processing and storage.
-
-        Response and thinking delta artifacts are filtered out to prevent
-        persisting intermediate chunks, keeping durable artifacts in storage.
-
-        Status updates flagged ephemeral are skipped the same way: the client
-        still receives them off the event stream (this method only gates
-        persistence), but they never become task.status.message and so are never
-        folded into history — the milestone-only history policy for live
-        progress (running commands, intermediate agent messages).
-
-        Both kinds are recognised by ``is_ephemeral_event``, the predicate the
-        push channel filters by as well, so what is pushed and what is stored
-        cannot drift apart.
-
-        Args:
-            event: The event to check.
-
-        Returns:
-            True if the event should be skipped, False otherwise.
-        """
-        return is_ephemeral_event(event)
 
     async def auto_discover_and_assign_task(self, interrupted: bool = False) -> Task | None:
         """

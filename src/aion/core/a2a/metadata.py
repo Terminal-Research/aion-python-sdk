@@ -4,9 +4,8 @@ A2A metadata is an open map, and both the platform and the agent write into
 it. Two prefixes belong to the platform:
 
 ``aion:``
-    Server-owned control flags and typed hints. ``aion:ephemeral`` decides
-    whether an event is persisted at all, ``aion:network`` carries routing and
-    identity, ``aion:messageType`` decides whether a message enters
+    Server-owned control flags and typed hints. ``aion:network`` carries
+    routing and identity, ``aion:messageType`` decides whether a message enters
     conversation history. A key an agent could set here is a key an agent
     could use to steer the server.
 
@@ -22,26 +21,20 @@ the server: the deduplicator applies it to inbound events, the framework
 adapters apply it where an agent's metadata enters a task, and the authoring
 toolkits state it to the agent author.
 
-The typed way to ask for platform behaviour is a parameter -
-``emit_message(..., ephemeral=True)``, ``routing=...`` - which the SDK turns
-into the ``aion:`` form on the wire. Writing the raw key is what this rule
-refuses.
+The typed way to ask for platform behaviour is a parameter - ``routing=...``
+- which the SDK turns into the ``aion:`` form on the wire. Writing the raw
+key is what this rule refuses.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Mapping
-
-if TYPE_CHECKING:
-    from a2a.types import TaskStatusUpdateEvent
+from typing import Any, Mapping
 
 __all__ = [
-    "EPHEMERAL_STATUS_METADATA_KEY",
     "PLATFORM_METADATA_PREFIX",
     "PLATFORM_METADATA_PREFIXES",
     "is_platform_metadata_key",
     "agent_metadata",
-    "mark_status_event_ephemeral",
 ]
 
 PLATFORM_METADATA_PREFIX = "https://docs.aion.to"
@@ -49,18 +42,6 @@ PLATFORM_METADATA_PREFIX = "https://docs.aion.to"
 
 PLATFORM_METADATA_PREFIXES: tuple[str, ...] = (PLATFORM_METADATA_PREFIX, "aion:")
 """Every namespace reserved for the platform. Not open for extension by callers."""
-
-EPHEMERAL_STATUS_METADATA_KEY = "aion:ephemeral"
-"""Flag on a status update that is delivered to the live stream and never stored.
-
-The status-message counterpart of the transient artifact ids: live progress
-that must not accumulate in the durable task record.
-"""
-
-
-def mark_status_event_ephemeral(event: "TaskStatusUpdateEvent") -> None:
-    """Flag a status update as ephemeral: streamed to the client, never persisted into the task."""
-    event.metadata[EPHEMERAL_STATUS_METADATA_KEY] = True
 
 
 def is_platform_metadata_key(key: Any) -> bool:

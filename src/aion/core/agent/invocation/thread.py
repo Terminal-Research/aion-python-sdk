@@ -17,8 +17,8 @@ class BaseThread(ABC):
     """Conversation thread bound to the current invocation.
 
     Provides common thread metadata, shared routing helpers, and a consistent
-    public API (reply, post, typing). Concrete implementations supply
-    the framework-specific transport for post() and typing().
+    public API (reply, post, thinking). Concrete implementations supply
+    the framework-specific transport for post() and thinking().
 
     Attributes:
         context: Full Aion runtime context for this invocation. Carries the
@@ -133,6 +133,11 @@ class BaseThread(ABC):
         ...
 
     @abstractmethod
-    async def typing(self, content: str, *, metadata: dict | None = None) -> None:
-        """Emit an ephemeral typing/progress indicator via the framework-specific transport."""
+    async def thinking(self, content: str, *, metadata: dict | None = None) -> None:
+        """Add one thought to the task's ``aion:thinking-delta`` artifact via the framework-specific transport.
+
+        A thought shows how the agent arrives at its answer. The task keeps
+        every thought, one text part each; a thought is neither a message nor
+        a result of the task.
+        """
         ...

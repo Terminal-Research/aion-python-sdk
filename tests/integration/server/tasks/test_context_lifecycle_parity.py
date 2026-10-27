@@ -5,7 +5,8 @@ catalog of one kind, so the two backends cannot drift apart:
 
 * a context is visible exactly to the callers bound to it, and its history is
   every participant's, chronological, paged newest-relative;
-* artifacts are qualified by task, newest first, without streaming deltas;
+* artifacts are every one of the tasks on the page of history - the streamed
+  answer and the thoughts included - qualified by task, newest first;
 * ``DeleteContext`` removes the caller's binding; the last one cancels the
   context's active tasks through the store, deletes its framework state under
   the holder's scope and removes its tasks, messages, artifacts, versions,
@@ -219,21 +220,45 @@ async def test_history_is_chronological_paged_and_conversational(backend):
     assert await backend.history("alice", "ctx", history_length=0) == []
 
 
-async def test_artifacts_are_qualified_newest_first_without_deltas(backend):
-    first = await backend.send("alice", "ctx", artifacts=(Artifact(artifact_id="report"),))
+async def test_artifacts_are_every_one_of_the_page_tasks_newest_first(backend):
+    first = await backend.send("alice", "ctx", _message("m1"), artifacts=(Artifact(artifact_id="report"),))
     second = await backend.send(
         "alice",
         "ctx",
-        artifacts=(Artifact(artifact_id="report"), Artifact(artifact_id=ArtifactId.STREAM_DELTA.value)),
+        _message("m2"),
+        _message("m3"),
+        artifacts=(
+            Artifact(artifact_id=ArtifactId.STREAM_DELTA.value),
+            Artifact(artifact_id=ArtifactId.THINKING_DELTA.value),
+            Artifact(artifact_id="report"),
+        ),
     )
 
     view = await backend.service.get_context(GetContextParams(context_id="ctx"), _caller("alice"))
 
     assert [(item.task_id, item.artifact.artifact_id) for item in view.artifacts] == [
         (second.id, "report"),
+        (second.id, ArtifactId.THINKING_DELTA.value),
+        (second.id, ArtifactId.STREAM_DELTA.value),
         (first.id, "report"),
     ]
     assert view.status.state == TaskState.TASK_STATE_COMPLETED
+
+
+async def test_artifacts_follow_the_page_of_history(backend):
+    first = await backend.send("alice", "ctx", _message("m1"), artifacts=(Artifact(artifact_id="draft"),))
+    second = await backend.send(
+        "alice", "ctx", _message("m2"), _message("m3"), artifacts=(Artifact(artifact_id="report"),)
+    )
+
+    async def page(**params) -> list[tuple[str, str]]:
+        view = await backend.service.get_context(GetContextParams(context_id="ctx", **params), _caller("alice"))
+        return [(item.task_id, item.artifact.artifact_id) for item in view.artifacts]
+
+    assert await page(history_length=2) == [(second.id, "report")]
+    assert await page(history_length=1, history_offset=2) == [(first.id, "draft")]
+    assert await page(history_length=2, history_offset=1) == [(second.id, "report"), (first.id, "draft")]
+    assert await page(history_length=0) == []
 
 
 async def test_a_context_is_visible_only_to_its_bound_callers(backend):

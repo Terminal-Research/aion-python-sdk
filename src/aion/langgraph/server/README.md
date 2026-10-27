@@ -99,7 +99,7 @@ def my_node(state: State) -> State:
     }
 ```
 
-`A2AOutbox` accepts either `message` or `task`. It answers the run whose node wrote it: the server reads it from that run's own updates, so the value the checkpoint keeps in the channel afterwards is not applied to later turns of the same context. When no node wrote `a2a_outbox` during the run, the server falls back to the accumulated `STREAM_DELTA` text from the current run as the final response message.
+`A2AOutbox` accepts either `message` or `task`. It answers the run whose node wrote it: the server reads it from that run's own updates, so the value the checkpoint keeps in the channel afterwards is not applied to later turns of the same context. A streamed answer is the `aion:stream-delta` artifact, not a message: a section the run leaves open is closed with the text of its chunks before the outbox is applied.
 
 With a file storage backend configured, an inline file part (`Part(raw=...)`) anywhere in the outbox - the message, or the task's status message, history and artifacts - is stored and replaced with a URL part before the response is delivered, as every outbound file is. A file that cannot be stored fails the task. The checkpoint still holds the outbox as the node returned it, bytes included; to keep file content out of graph state, send the file with `thread.post(file_artifact(...))` instead.
 

@@ -134,8 +134,8 @@ and writes them whole; the server does not translate them:
   line. A later turn reads the object from `context.current_task`;
 - the masking of secret values in everything it reports, and any limits of
   its own;
-- a live-only update marked with `mark_status_event_ephemeral`
-  (`aion.core.a2a.metadata`);
+- a thought of the run as `thinking_delta(...)` (`aion.core.a2a.deltas`),
+  one more text part of the task's `aion:thinking-delta` artifact;
 - an error as `error_parts(uri, code, text, retryable)`
   (`aion.core.a2a.errors`): a text part for a person and a data part
   `{code, message, retryable}` with schema `{uri}#ExtensionError` for a
@@ -333,8 +333,9 @@ executor runs it, and keeps a record of the turns running in this process.
 ### Outcome
 
 A turn's events go to the pipeline, which stores files given as bytes,
-delivers ephemeral updates without storing them, and moves the task to
-`WORKING`. A turn ends where its executor ends it; what the server writes:
+joins the chunks of the streamed answer, adds each thought to the task's
+thoughts, gives a completed task that produced only messages its answer
+(`aion:assistant-answer`), and moves the task to `WORKING`. A turn ends where its executor ends it; what the server writes:
 
 - a turn that raises `ExtensionRejection` is closed `REJECTED` with the
   refusal;

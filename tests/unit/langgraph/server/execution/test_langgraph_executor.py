@@ -2,6 +2,8 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from a2a.types import Message, Part, Role, TaskState, TaskStatusUpdateEvent
+from aion.core.a2a import A2AOutbox, ArtifactId
+from langchain_core.messages import AIMessageChunk
 from aion.server.agent.adapters import LegacyStateError
 from aion.server.agent.exceptions import ExecutionError, StateRetrievalError
 
@@ -189,7 +191,7 @@ class TestGraphStateAndFinalize:
             events = [
                 event
                 async for event in executor._finalize(
-                    StreamResult(delta_text=""),
+                    StreamResult(),
                     make_config(),
                     make_context(),
                     converter=LangGraphA2AConverter(task_id="task-1", context_id="ctx-1"),
@@ -200,3 +202,58 @@ class TestGraphStateAndFinalize:
         assert events[-1].status.state == TaskState.TASK_STATE_INPUT_REQUIRED
         assert events[-1].status.message.parts[0].text == "Need input"
         assert events[-1].status.message.metadata["interruptId"] == "i-1"
+
+    async def test_finalize_closes_an_open_section_before_the_result_and_the_completion(self):
+        """The section a model call left open ends with its text, then the outbox answer, then COMPLETED."""
+        executor = LangGraphExecutor(compiled_graph=Mock(), config=Mock())
+        converter = LangGraphA2AConverter(task_id="task-1", context_id="ctx-1")
+        converter.convert("messages", AIMessageChunk(content="It is ", id="run-1"))
+        converter.convert("messages", AIMessageChunk(content="sunny.", id="run-1"))
+        outbox = A2AOutbox(message=Message(message_id="m-1", role=Role.ROLE_AGENT, parts=[Part(text="Done.")]))
+
+        with patch.object(executor, "_graph_state", new=AsyncMock(return_value=make_graph_snapshot())):
+            events = [
+                event
+                async for event in executor._finalize(
+                    StreamResult(outbox=outbox), make_config(), make_context(), converter=converter
+                )
+            ]
+
+        final, result, terminal = events
+        assert final.artifact.artifact_id == ArtifactId.STREAM_DELTA.value
+        assert [part.text for part in final.artifact.parts] == ["It is sunny."]
+        assert (final.append, final.last_chunk) == (False, True)
+        assert isinstance(result, Message)
+        assert terminal.status.state == TaskState.TASK_STATE_COMPLETED
+
+    async def test_finalize_closes_an_open_section_before_an_interrupt(self):
+        """What the graph streamed before stopping for input ends as the section's text, not a message."""
+        executor = LangGraphExecutor(compiled_graph=Mock(), config=Mock())
+        converter = LangGraphA2AConverter(task_id="task-1", context_id="ctx-1")
+        converter.convert("messages", AIMessageChunk(content="I need to know whether ", id="run-1"))
+
+        with patch.object(executor, "_graph_state", new=AsyncMock(return_value=make_interrupted_snapshot())):
+            events = [
+                event
+                async for event in executor._finalize(StreamResult(), make_config(), make_context(), converter=converter)
+            ]
+
+        final, terminal = events
+        assert [part.text for part in final.artifact.parts] == ["I need to know whether "]
+        assert final.last_chunk is True
+        assert terminal.status.state == TaskState.TASK_STATE_INPUT_REQUIRED
+        assert terminal.status.message.parts[0].text == "Need input"
+
+    async def test_finalize_without_an_open_section_adds_no_stream_delta(self):
+        executor = LangGraphExecutor(compiled_graph=Mock(), config=Mock())
+        converter = LangGraphA2AConverter(task_id="task-1", context_id="ctx-1")
+
+        with patch.object(executor, "_graph_state", new=AsyncMock(return_value=make_graph_snapshot())):
+            events = [
+                event
+                async for event in executor._finalize(StreamResult(), make_config(), make_context(), converter=converter)
+            ]
+
+        assert len(events) == 1
+        assert events[0].status.state == TaskState.TASK_STATE_COMPLETED
+        assert not events[0].status.HasField("message")

@@ -7,8 +7,9 @@ tool is running - inside the framework's loop, where the adapter has to stop
 it. What the client is owed there:
 
 * a failure after the first chunks: those chunks arrived, the task is FAILED
-  on the wire and in ``tasks/get``, the chunks were not kept as history, and
-  nothing arrives afterwards;
+  on the wire and in ``tasks/get``, it keeps what was streamed as its
+  ``aion:stream-delta`` artifact and not as a message, and nothing arrives
+  afterwards;
 * a cancel mid-stream or mid-tool: the work itself stops - watched through a
   file the model and the tool append to as they go - and the next turn in the
   context is answered.
@@ -23,9 +24,21 @@ import pytest
 from a2a.types import TaskState
 
 from tests.scenarios.agents.native_script import WEATHER_PREAMBLE
-from tests.scenarios.harness import ScenarioClient, eventually, final_task, reply_texts, stored_texts
+from tests.scenarios.harness import (
+    ASSISTANT_ANSWER_ARTIFACT_ID,
+    STREAM_DELTA_ARTIFACT_ID,
+    ScenarioClient,
+    eventually,
+    final_task,
+    is_chunk,
+    is_section_end,
+    reply_texts,
+    section_texts,
+    stored_artifact,
+    stored_texts,
+    text_of_parts,
+)
 from tests.scenarios.harness.recorder import Ev, _payload_of, to_event
-from tests.scenarios.harness.shape import is_chunk
 
 pytestmark = pytest.mark.native
 
@@ -45,19 +58,23 @@ async def _failing_turn(client: ScenarioClient) -> tuple[list[Ev], str]:
 
 
 async def test_a_model_failing_after_its_first_chunks_fails_the_task(client: ScenarioClient) -> None:
-    """The chunks already sent stay sent; the outcome is FAILED on the wire."""
+    """The chunks already streamed reach the client before the outcome, which is FAILED on the wire.
+
+    The section never ended, so no update carries its whole text; the chunks
+    the server held back to join them go out before the failure.
+    """
     events, _ = await _failing_turn(client)
 
-    assert [event.text for event in events if is_chunk(event)] == ["word0 ", "word1 "]
+    assert "".join(event.text for event in events if is_chunk(event)) == "word0 word1 "
+    assert section_texts(events) == []
     assert final_task(events).state == "FAILED"
     assert reply_texts(events) == []
 
 
-async def test_the_failed_task_is_stored_as_failed_without_the_chunks(client: ScenarioClient) -> None:
-    """``tasks/get`` agrees, and the partial answer is not kept as history.
+async def test_the_failed_task_keeps_the_partial_answer_as_its_artifact(client: ScenarioClient) -> None:
+    """``tasks/get`` agrees: FAILED, the partial answer in the stream-delta artifact, none of it in the history.
 
-    Stream deltas are transient by design (the task manager skips them when
-    saving); only the caller's message and the failure remain.
+    A failed task gets no ``aion:assistant-answer``.
     """
     _, task_id = await _failing_turn(client)
 
@@ -65,6 +82,9 @@ async def test_the_failed_task_is_stored_as_failed_without_the_chunks(client: Sc
 
     assert stored.status.state == TaskState.TASK_STATE_FAILED
     assert not any(text.startswith("word") for text in stored_texts(stored))
+    streamed = stored_artifact(stored, STREAM_DELTA_ARTIFACT_ID)
+    assert streamed is not None and text_of_parts(streamed.parts) == "word0 word1 "
+    assert stored_artifact(stored, ASSISTANT_ANSWER_ARTIFACT_ID) is None
 
 
 async def test_nothing_arrives_after_the_failure(client: ScenarioClient) -> None:
@@ -79,25 +99,32 @@ async def test_nothing_arrives_after_the_failure(client: ScenarioClient) -> None
     assert stored_texts(after) == stored_texts(before)
 
 
-async def test_a_message_completed_before_the_failure_is_kept(client: ScenarioClient) -> None:
-    """What the agent had fully said stays said; only the partial answer is lost.
+async def test_a_section_ended_before_the_failure_reached_the_client_whole(client: ScenarioClient) -> None:
+    """What the model had fully said arrived whole; the task keeps the section it failed in.
 
     The model says a sentence, calls a tool, and fails a few words into the
-    answer after it. The sentence was a complete message - a durable reply on
-    the wire - so the stored task keeps it, as the server keeps every such
-    reply. The words after it were stream deltas, which are never stored.
+    answer after it. The sentence ended its section, so its whole text
+    reached the client. The answer after it opened a new section, which
+    replaces the sentence in the task's stream-delta artifact: the stored
+    task holds the words streamed before the failure, and no message.
     """
     events = await client.send("fail-after-tool 2")
 
-    assert reply_texts(events) == [WEATHER_PREAMBLE]
-    assert [event.text for event in events if is_chunk(event)][-2:] == ["word0 ", "word1 "]
+    assert section_texts(events) == [WEATHER_PREAMBLE]
+    end = next(index for index, event in enumerate(events) if is_section_end(event))
+    after = [event for event in events[end + 1:] if is_chunk(event)]
+    assert "".join(event.text for event in after) == "word0 word1 "
+    assert after[0].append is False
     closing = final_task(events)
     assert closing.state == "FAILED"
 
     stored = await client.get_task(closing.task_id)
     assert stored.status.state == TaskState.TASK_STATE_FAILED
-    assert WEATHER_PREAMBLE in stored_texts(stored)
-    assert not any(text.startswith("word") for text in stored_texts(stored))
+    streamed = stored_artifact(stored, STREAM_DELTA_ARTIFACT_ID)
+    assert streamed is not None and text_of_parts(streamed.parts) == "word0 word1 "
+    texts = stored_texts(stored)
+    assert WEATHER_PREAMBLE not in texts
+    assert not any(text.startswith("word") for text in texts)
 
 
 async def _start(client: ScenarioClient, text: str):
@@ -171,4 +198,4 @@ async def test_the_next_turn_after_a_cancel_is_answered(
     events = await client.send("say still here", context_id=context_id)
 
     assert final_task(events).state == "COMPLETED"
-    assert reply_texts(events) == ["still here"]
+    assert section_texts(events) == ["still here"]

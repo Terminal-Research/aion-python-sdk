@@ -1,28 +1,36 @@
-"""Replies that arrive in pieces, and the indicator sent while one is built.
+"""A streamed answer: chunks of a section, then the section's whole text.
 
-A chunked reply is one message the client sees grow. A typing indicator is
-the other half of the same idea and the opposite of durable: it is delivered
-live so that the caller knows the agent is busy, and it is never part of what
-the turn leaves behind.
+The model's streamed answer is the task's ``aion:stream-delta`` artifact. A
+client sees it grow chunk by chunk - the first chunk of a section with
+``append`` unset, the rest with it set - and then receives the whole text of
+the section in one part, ``append`` unset and ``lastChunk`` set, which
+replaces the chunks. The streamed text never becomes a message: the task
+keeps it as that artifact.
+
+The server joins the chunks that follow the last one it sent by less than
+``AION_STREAM_DELTA_INTERVAL``. The default deployment shows the joining; the
+scenarios that count chunks run where the interval is zero and every chunk
+goes out as the agent produced it.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from tests.scenarios.commands import (
-    TYPING_INDICATOR,
-    stream_chunks,
-    stream_text,
-    typing_text,
-)
+from tests.scenarios.commands import stream_chunks, stream_text
 from tests.scenarios.harness import (
+    ASSISTANT_ANSWER_ARTIFACT_ID,
+    STREAM_DELTA_ARTIFACT_ID,
     ScenarioClient,
     assert_shape,
     chunks,
     final_task,
+    is_chunk,
     reply_texts,
+    section_end,
+    section_texts,
     status,
+    stored_artifact,
     stored_texts,
     task,
 )
@@ -30,97 +38,122 @@ from tests.scenarios.harness import (
 pytestmark = pytest.mark.streaming
 
 
+# --------------------------------------------------------------------------
+# Every chunk, as the agent produced it
+# --------------------------------------------------------------------------
+
+@pytest.mark.variant("every-chunk")
 @pytest.mark.command("stream")
-async def test_a_chunked_reply_arrives_as_deltas_then_one_message(client: ScenarioClient) -> None:
-    """Chunks arrive as stream-delta artifacts, then the whole reply as one message."""
-    events = await client.send("stream 5")
+async def test_a_streamed_answer_arrives_as_chunks_then_its_whole_text(
+    every_chunk_client: ScenarioClient,
+) -> None:
+    """Chunks arrive as stream-delta updates, then the section's whole text as one more."""
+    events = await every_chunk_client.send("stream 5")
 
     assert_shape(events, [
         task("SUBMITTED"),
         status("WORKING", text=""),
         chunks(5),
-        status("WORKING", text=stream_text(5)),
+        section_end(text=stream_text(5)),
         task("COMPLETED"),
     ])
 
 
+@pytest.mark.variant("every-chunk")
 @pytest.mark.command("stream")
-async def test_the_chunks_are_the_message_broken_up(client: ScenarioClient) -> None:
-    """Every chunk arrives once, in order, and they add up to the reply."""
-    events = await client.send("stream 4")
+async def test_the_chunks_are_the_answer_broken_up(every_chunk_client: ScenarioClient) -> None:
+    """Every chunk arrives once, in order, and they add up to the section's whole text."""
+    events = await every_chunk_client.send("stream 4")
 
-    deltas = [event for event in events if event.kind == "artifact"]
-    assert [event.text for event in deltas] == list(stream_chunks(4))
-    assert reply_texts(events)[-1] == stream_text(4)
-    assert final_task(events).text == stream_text(4)
+    assert [event.text for event in events if is_chunk(event)] == list(stream_chunks(4))
+    assert section_texts(events) == [stream_text(4)]
 
 
+@pytest.mark.variant("every-chunk")
 @pytest.mark.command("stream")
-async def test_the_first_chunk_opens_the_artifact_and_the_rest_append(client: ScenarioClient) -> None:
-    """A chunked reply is one artifact: the first chunk opens it, the rest append."""
-    events = await client.send("stream 3")
+async def test_the_first_chunk_opens_the_section_and_the_rest_append(
+    every_chunk_client: ScenarioClient,
+) -> None:
+    """One artifact: the first chunk opens it, the rest append, the whole text replaces them."""
+    events = await every_chunk_client.send("stream 3")
 
-    deltas = [event for event in events if event.kind == "artifact"]
-    assert [event.append for event in deltas] == [False, True, True]
-    assert len({event.artifact_id for event in deltas}) == 1
+    updates = [event for event in events if event.kind == "artifact"]
+    assert [(event.append, event.last_chunk) for event in updates] == [
+        (False, False),
+        (True, False),
+        (True, False),
+        (False, True),
+    ]
+    assert {event.artifact_id for event in updates} == {STREAM_DELTA_ARTIFACT_ID}
 
 
+@pytest.mark.variant("every-chunk")
 @pytest.mark.command("stream")
-async def test_one_chunk_is_still_a_chunked_reply(client: ScenarioClient) -> None:
-    """`stream 1` keeps the same shape - one delta, then the message."""
-    events = await client.send("stream 1")
+async def test_one_chunk_is_still_a_section(every_chunk_client: ScenarioClient) -> None:
+    """`stream 1` keeps the same shape: one chunk, then the whole text."""
+    events = await every_chunk_client.send("stream 1")
 
     assert_shape(events, [
         task("SUBMITTED"),
         status("WORKING", text=""),
         chunks(1),
-        status("WORKING", text=stream_text(1)),
+        section_end(text=stream_text(1)),
         task("COMPLETED"),
     ])
 
 
 # --------------------------------------------------------------------------
-# The ephemeral indicator
+# The default deployment
 # --------------------------------------------------------------------------
 
-@pytest.mark.command("typing")
-async def test_the_indicator_is_delivered_before_the_reply(client: ScenarioClient) -> None:
-    """The caller learns the agent is busy, and the answer follows.
+@pytest.mark.command("stream")
+async def test_chunks_that_come_faster_than_the_interval_are_joined(client: ScenarioClient) -> None:
+    """The agent streams twenty chunks at once; fewer arrive, and none is lost from the whole text.
 
-    Delivery is the guarantee both adapters hold, so this reads the texts the
-    stream carried rather than the events that carried them: one adapter
-    sends the indicator as an ephemeral artifact, the other as a status, and
-    what a caller is owed here is the order.
+    The first chunk goes out as it comes. The ones right behind it wait and
+    are joined, text onto text, until the interval has passed or another
+    event of the turn comes; the section's whole text replaces whatever is
+    still waiting.
     """
-    events = await client.send("typing")
+    events = await client.send("stream 20")
 
-    delivered = [event.text for event in events if event.text]
-    assert TYPING_INDICATOR in delivered, f"the indicator never arrived: {events}"
-    assert typing_text() in delivered
-    assert delivered.index(TYPING_INDICATOR) < delivered.index(typing_text())
-    assert final_task(events).state == "COMPLETED"
-
-
-@pytest.mark.command("typing")
-async def test_the_indicator_is_not_a_durable_reply(client: ScenarioClient) -> None:
-    """The turn has one durable reply, and the indicator is not it."""
-    events = await client.send("typing")
-
-    assert reply_texts(events) == [typing_text()]
+    delivered = [event for event in events if is_chunk(event)]
+    assert 1 <= len(delivered) < 20
+    assert delivered[0].text == stream_chunks(20)[0]
+    assert delivered[0].append is False
+    assert all(event.append for event in delivered[1:])
+    assert stream_text(20).startswith("".join(event.text for event in delivered))
+    assert section_texts(events) == [stream_text(20)]
 
 
-@pytest.mark.command("typing")
-async def test_the_indicator_never_reaches_task_history(client: ScenarioClient) -> None:
-    """What was shown once is gone; what was said is kept."""
-    events = await client.send("typing")
+@pytest.mark.command("stream")
+async def test_the_streamed_answer_is_not_a_message(client: ScenarioClient) -> None:
+    """No status carries the streamed text, and the task's history holds only the caller's message."""
+    events = await client.send("stream 3")
 
-    stored = await client.get_task(final_task(events).task_id)
-    texts = stored_texts(stored)
+    assert reply_texts(events) == []
+    closing = final_task(events)
+    assert closing.text == ""
+    stored = await client.get_task(closing.task_id)
+    assert stored_texts(stored) == ["stream 3"]
 
-    assert typing_text() in texts
-    assert TYPING_INDICATOR not in texts, (
-        f"the ephemeral indicator was persisted into task history: {texts}"
-    )
+
+@pytest.mark.command("stream")
+async def test_the_task_keeps_the_whole_text_of_the_section(client: ScenarioClient) -> None:
+    """The stored stream-delta artifact is the section's whole text in one part, and it is the task's result.
+
+    A streamed answer is a result of the task, so the task gets no
+    ``aion:assistant-answer`` beside it.
+    """
+    events = await client.send("stream 3")
+    closing = final_task(events)
+
+    stored = await client.get_task(closing.task_id)
+    for where, holder in (("tasks/get", stored), ("the closing Task", closing.raw)):
+        streamed = stored_artifact(holder, STREAM_DELTA_ARTIFACT_ID)
+        assert streamed is not None, f"{where}: no streamed answer among {list(holder.artifacts)}"
+        assert [part.text for part in streamed.parts] == [stream_text(3)], where
+        assert stored_artifact(holder, ASSISTANT_ANSWER_ARTIFACT_ID) is None, where
 
 
 # --------------------------------------------------------------------------

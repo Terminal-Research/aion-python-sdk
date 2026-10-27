@@ -12,6 +12,7 @@ from aion.adk.authoring.invocation.event_metadata import (
     get_aion_output,
     get_aion_routing,
     get_aion_user_metadata,
+    is_thinking_event,
 )
 from aion.core.a2a.extensions.messaging import MessageActionPayload
 
@@ -54,6 +55,29 @@ class TestGetAionOutput:
         result = get_aion_output(event)
         assert result.card is not None
         assert result.card.url == "https://example.com/card"
+
+    def test_returns_typed_output_for_thinking(self):
+        event = make_event({AION_OUTPUT_KEY: AionOutput(thinking=True).model_dump(exclude_none=True)})
+        result = get_aion_output(event)
+        assert result.thinking is True
+        assert result.artifact is None
+
+    def test_thinking_with_another_output_is_rejected(self):
+        with pytest.raises(ValueError, match="At most one"):
+            AionOutput(thinking=True, card=CardOutput(url="https://example.com/card"))
+
+
+class TestIsThinkingEvent:
+    def test_event_marked_as_thought(self):
+        event = make_event({AION_OUTPUT_KEY: AionOutput(thinking=True).model_dump(exclude_none=True)})
+        assert is_thinking_event(event)
+
+    def test_event_without_metadata(self):
+        assert not is_thinking_event(make_event())
+
+    def test_event_with_another_output(self):
+        hint = AionOutput(card=CardOutput(url="https://example.com/card"))
+        assert not is_thinking_event(make_event({AION_OUTPUT_KEY: hint.model_dump(exclude_none=True)}))
 
 
 class TestGetAionRouting:

@@ -6,11 +6,12 @@ from aion.langgraph.authoring.events.custom_events import (
     ArtifactCustomEvent,
     MessageCustomEvent,
     ReactionCustomEvent,
+    ThinkingCustomEvent,
 )
 from aion.core.constants import MESSAGING_EXTENSION_URI_V1
 from aion.core.a2a import ArtifactId
 from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 
 from aion.langgraph.server.execution.event_converter import LangGraphA2AConverter
 
@@ -79,14 +80,25 @@ class TestConvertStreamingChunk:
             events = converter._convert_streaming_chunk(chunk)
         assert events == []
 
-    def test_content_last_chunk_carries_last_chunk_flag(self, converter):
-        """A content-bearing chunk the provider marked as last keeps last_chunk=True."""
+    def test_content_last_chunk_is_not_the_sections_last_chunk(self, converter):
+        """A content-bearing chunk the provider marked as last is still a chunk: the section ends with its own event."""
         chunk = make_mock_chunk(chunk_position="last")
         with patch(LC_CONVERTER_PATH, return_value=[Part(text="World!")]):
             events = converter._convert_streaming_chunk(chunk)
         assert len(events) == 1
-        assert events[0].last_chunk is True
+        assert events[0].last_chunk is False
         assert [p.text for p in events[0].artifact.parts] == ["World!"]
+
+    def test_chunk_carries_active_status_and_agent_metadata(self, converter):
+        """A chunk's artifact says the section is streaming, beside the agent's own metadata."""
+        chunk = make_mock_chunk()
+        with patch(LC_CONVERTER_PATH, return_value=[Part(text="a")]):
+            events = converter._convert_streaming_chunk(chunk, metadata={"lane": "weather", "aion:network": "x"})
+        metadata = events[0].artifact.metadata
+        assert metadata["status"] == "active"
+        assert metadata["status_reason"] == "chunk_streaming"
+        assert metadata["lane"] == "weather"
+        assert "aion:network" not in metadata
 
 
 class TestConvertFullMessage:
@@ -158,17 +170,24 @@ class TestConvertCustom:
         assert events[0].append is True
         assert events[0].last_chunk is False
 
-    def test_ephemeral_message_produces_ephemeral_artifact(self, converter):
-        """MessageCustomEvent with ephemeral=True produces an EPHEMERAL_MESSAGE artifact."""
-        msg = make_ai_message("thinking...")
-        event = MessageCustomEvent(message=msg, ephemeral=True)
-        with patch(LC_CONVERTER_PATH, return_value=[Part(text="thinking...")]):
-            events = converter._convert_custom(event)
+    def test_thinking_event_produces_one_part_of_the_thinking_artifact(self, converter):
+        """ThinkingCustomEvent produces a THINKING_DELTA artifact update with the thought as its one text part."""
+        events = converter._convert_custom(ThinkingCustomEvent(text="Looking up the account"))
         assert len(events) == 1
         assert isinstance(events[0], TaskArtifactUpdateEvent)
-        assert events[0].artifact.artifact_id == ArtifactId.EPHEMERAL_MESSAGE.value
-        assert events[0].append is False
-        assert events[0].last_chunk is True
+        assert events[0].artifact.artifact_id == ArtifactId.THINKING_DELTA.value
+        assert [part.text for part in events[0].artifact.parts] == ["Looking up the account"]
+        assert events[0].append is True
+        assert events[0].last_chunk is False
+
+    def test_thinking_event_keeps_only_the_agents_metadata(self, converter):
+        """Platform keys are dropped from a thought's metadata; the agent's own keys stay."""
+        event = ThinkingCustomEvent(text="Looking up", metadata={"step": "lookup", "aion:network": "x"})
+        events = converter._convert_custom(event)
+        assert dict(events[0].artifact.metadata) == {"step": "lookup"}
+
+    def test_thinking_event_without_text_produces_nothing(self, converter):
+        assert converter._convert_custom(ThinkingCustomEvent(text="")) == []
 
     def test_message_event_with_routing_adds_extension_part(self, converter):
         """MessageCustomEvent with routing appends MessageActionPayload as an extension Part."""
@@ -184,7 +203,7 @@ class TestConvertCustom:
         assert MESSAGING_EXTENSION_URI_V1 in result_msg.extensions
 
     def test_plain_message_event_produces_working_status_update(self, converter):
-        """MessageCustomEvent without routing/ephemeral yields TaskStatusUpdateEvent(WORKING)."""
+        """MessageCustomEvent without routing yields TaskStatusUpdateEvent(WORKING)."""
         msg = make_ai_message("Response")
         event = MessageCustomEvent(message=msg)
         with patch(LC_CONVERTER_PATH, return_value=[Part(text="Response")]):
@@ -210,6 +229,49 @@ class TestConvertCustom:
     def test_unknown_custom_type_returns_empty(self, converter):
         """Unknown custom event type produces no events."""
         assert converter._convert_custom(object()) == []
+
+
+class TestCloseStream:
+    """close_stream() ends a section the run left open, with the text of its chunks."""
+
+    def test_open_graph_section_ends_with_the_text_of_its_chunks(self, converter):
+        converter.convert("messages", AIMessageChunk(content="It is ", id="run-1"))
+        converter.convert("messages", AIMessageChunk(content="sunny.", id="run-1"))
+
+        events = converter.close_stream()
+
+        assert len(events) == 1
+        final = events[0]
+        assert final.artifact.artifact_id == ArtifactId.STREAM_DELTA.value
+        assert [part.text for part in final.artifact.parts] == ["It is sunny."]
+        assert (final.append, final.last_chunk) == (False, True)
+        assert final.artifact.metadata["status"] == "finalized"
+
+    def test_open_thread_section_ends_with_the_text_of_its_chunks(self, converter):
+        converter.convert("custom", MessageCustomEvent(message=AIMessageChunk(content="one "), metadata={"lane": "a"}))
+        converter.convert("custom", MessageCustomEvent(message=AIMessageChunk(content="two"), metadata={"lane": "a"}))
+
+        events = converter.close_stream()
+
+        assert [part.text for part in events[0].artifact.parts] == ["one two"]
+        assert events[0].artifact.metadata["lane"] == "a"
+
+    def test_nothing_open_produces_nothing(self, converter):
+        assert converter.close_stream() == []
+
+    def test_a_closed_section_is_not_closed_twice(self, converter):
+        converter.convert("messages", AIMessageChunk(content="It is sunny.", id="run-1"))
+        converter.close_stream()
+
+        assert converter.close_stream() == []
+
+    def test_the_next_chunk_starts_a_new_section(self, converter):
+        converter.convert("messages", AIMessageChunk(content="It is sunny.", id="run-1"))
+        converter.close_stream()
+
+        events = converter.convert("messages", AIMessageChunk(content="Anything else?", id="run-1"))
+
+        assert events[0].append is False
 
 
 class TestTerminalEvents:

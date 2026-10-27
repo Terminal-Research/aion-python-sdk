@@ -17,7 +17,7 @@ from tests.scenarios.agents.native_script import (
     confirmed_answer,
     report_text,
 )
-from tests.scenarios.harness import ScenarioClient, final_task, reply_texts
+from tests.scenarios.harness import STREAM_DELTA_ARTIFACT_ID, ScenarioClient, final_task, section_texts
 
 pytestmark = pytest.mark.native
 
@@ -33,19 +33,21 @@ async def test_a_tool_asking_the_user_pauses_the_task_for_input(client: Scenario
     events = await client.send("yes", task_id=opened.task_id, context_id=opened.context_id)
 
     assert final_task(events).state == "COMPLETED"
-    assert reply_texts(events) == [confirmed_answer("yes")]
+    assert section_texts(events) == [confirmed_answer("yes")]
 
 
 @pytest.mark.capability("artifact-service")
 async def test_an_artifact_a_tool_saves_reaches_the_client(client: ScenarioClient) -> None:
-    """``tool_context.save_artifact`` becomes an artifact on the wire and on the task."""
+    """``tool_context.save_artifact`` becomes an artifact on the wire and on the task, beside the streamed answer."""
     events = await client.send("report Q3")
 
     artifacts = [event for event in events if event.kind == "artifact" and event.artifact_name == REPORT_FILENAME]
     assert [event.text for event in artifacts] == [report_text("Q3")]
-    assert reply_texts(events) == [REPORT_SAVED]
+    assert section_texts(events) == [REPORT_SAVED]
     stored = await client.get_task(final_task(events).task_id)
-    assert [artifact.name for artifact in stored.artifacts] == [REPORT_FILENAME]
+    assert [
+        artifact.name for artifact in stored.artifacts if artifact.artifact_id != STREAM_DELTA_ARTIFACT_ID
+    ] == [REPORT_FILENAME]
 
 
 @pytest.mark.capability("session-state")
@@ -59,6 +61,6 @@ async def test_output_key_and_tool_state_are_in_the_next_turns_state(client: Sce
 
     events = await client.send("instruction", context_id=first.context_id)
 
-    (answer,) = reply_texts(events)
+    (answer,) = section_texts(events)
     assert f"Last answer: {NOTED}." in answer
     assert "Note: milk." in answer

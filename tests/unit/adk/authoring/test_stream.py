@@ -1,16 +1,17 @@
-"""Tests for ADK emit_* streaming helpers."""
+"""Tests for ADK emit_* streaming helpers and the Thread methods built on them."""
 
 import asyncio
 from aion.adk.authoring.constants import AION_OUTPUT_KEY, AION_ROUTING_KEY
-from aion.adk.authoring.invocation.emitters import emit_artifact, emit_card, emit_reaction, emit_message
-from aion.adk.authoring.invocation.event_metadata import get_aion_output
+from aion.adk.authoring.invocation.emitters import emit_artifact, emit_card, emit_reaction, emit_message, emit_thinking
+from aion.adk.authoring.invocation.event_metadata import get_aion_output, get_aion_user_metadata, is_thinking_event
 from aion.adk.authoring.invocation.invocation_context import AionInvocationContext
 from aion.core.a2a import FileActionPayload, data_artifact, file_artifact, url_artifact
-from aion.core.a2a.enums import ArtifactId
 from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 from aion.core.agent.invocation.card import Card
 from google.adk.events import Event
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
+THREAD_EMITTER_PATH = "aion.adk.authoring.invocation.thread.get_adk_emitter"
 
 
 def make_routing() -> MessageActionPayload:
@@ -32,7 +33,7 @@ class TestEmitText:
         assert event.partial is False
         assert event.content.parts[0].text == "hello"
 
-    def test_no_custom_metadata_without_routing_or_ephemeral(self):
+    def test_no_custom_metadata_without_routing_or_metadata(self):
         emitter = MagicMock()
         emit_message(emitter, "hello")
 
@@ -48,35 +49,100 @@ class TestEmitText:
         assert AION_ROUTING_KEY in event.custom_metadata
         assert event.custom_metadata[AION_ROUTING_KEY]["contextId"] == "D06DM456"
 
-    def test_ephemeral_sets_aion_output_artifact(self):
+    def test_user_metadata_kept_in_custom_metadata(self):
         emitter = MagicMock()
-        emit_message(emitter, "typing...", ephemeral=True)
+        emit_message(emitter, "hello", metadata={"trace_id": "abc"})
 
         event: Event = emitter.call_args[0][0]
+        assert event.custom_metadata == {"trace_id": "abc"}
+        assert get_aion_output(event) is None
+
+
+class TestEmitThinking:
+    def test_emits_complete_event_marked_as_thought(self):
+        emitter = MagicMock()
+        emit_thinking(emitter, "Looking up the account...")
+
+        emitter.assert_called_once()
+        event: Event = emitter.call_args[0][0]
+        assert event.partial is False
+        assert event.content.parts[0].text == "Looking up the account..."
         output = get_aion_output(event)
         assert output is not None
-        assert output.artifact is not None
-        assert output.artifact.artifact_id == ArtifactId.EPHEMERAL_MESSAGE.value
+        assert output.thinking is True
+        assert is_thinking_event(event)
 
-    def test_ephemeral_text_in_content_not_duplicated(self):
-        """Text is in event.content only — aion:output carries just the routing hint."""
+    def test_thought_names_no_artifact_card_or_reaction(self):
         emitter = MagicMock()
-        emit_message(emitter, "typing...", ephemeral=True)
+        emit_thinking(emitter, "Looking up the account...")
+
+        output = get_aion_output(emitter.call_args[0][0])
+        assert output.artifact is None
+        assert output.card is None
+        assert output.reaction is None
+
+    def test_user_metadata_kept_beside_the_thought_marker(self):
+        emitter = MagicMock()
+        emit_thinking(emitter, "Looking up the account...", metadata={"step": "lookup"})
 
         event: Event = emitter.call_args[0][0]
-        assert event.content is not None
-        assert event.content.parts[0].text == "typing..."
-        # aion:output.artifact must NOT contain parts/data — only routing metadata
-        output = get_aion_output(event)
-        assert "parts" not in output.model_dump(exclude_none=True).get("artifact", {})
-
-    def test_ephemeral_with_routing_has_both_keys(self):
-        emitter = MagicMock()
-        emit_message(emitter, "typing...", routing=make_routing(), ephemeral=True)
-
-        event: Event = emitter.call_args[0][0]
+        assert event.custom_metadata["step"] == "lookup"
         assert AION_OUTPUT_KEY in event.custom_metadata
-        assert AION_ROUTING_KEY in event.custom_metadata
+        assert get_aion_user_metadata(event) == {"step": "lookup"}
+
+    def test_caller_metadata_dict_is_not_modified(self):
+        emitter = MagicMock()
+        metadata = {"step": "lookup"}
+        emit_thinking(emitter, "Looking up the account...", metadata=metadata)
+
+        assert metadata == {"step": "lookup"}
+
+    def test_plain_message_is_not_a_thought(self):
+        emitter = MagicMock()
+        emit_message(emitter, "hello")
+
+        assert not is_thinking_event(emitter.call_args[0][0])
+
+
+class TestThreadThinking:
+    @staticmethod
+    def make_thread():
+        from aion.adk.authoring.invocation.thread import Thread
+        return Thread(
+            context=MagicMock(),
+            context_id="C123",
+            parent_context_id=None,
+            network="Slack",
+            default_reply_target="C123",
+        )
+
+    def test_thinking_emits_a_thought(self):
+        emitter = MagicMock()
+        thread = self.make_thread()
+
+        with patch(THREAD_EMITTER_PATH, return_value=emitter):
+            asyncio.run(thread.thinking("Looking up the account...", metadata={"step": "lookup"}))
+
+        emitter.assert_called_once()
+        event: Event = emitter.call_args[0][0]
+        assert is_thinking_event(event)
+        assert event.content.parts[0].text == "Looking up the account..."
+        assert get_aion_user_metadata(event) == {"step": "lookup"}
+
+    def test_thinking_rejects_non_string_content(self):
+        emitter = MagicMock()
+        thread = self.make_thread()
+
+        with patch(THREAD_EMITTER_PATH, return_value=emitter):
+            asyncio.run(thread.thinking({"not": "supported"}))
+
+        emitter.assert_not_called()
+
+    def test_thinking_without_emitter_does_nothing(self):
+        thread = self.make_thread()
+
+        with patch(THREAD_EMITTER_PATH, return_value=None):
+            assert asyncio.run(thread.thinking("Looking up the account...")) is None
 
 
 class TestEmitCard:

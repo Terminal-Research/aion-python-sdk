@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-208 scenarios in 38 files, 467 runs across 2 frameworks: 432 run, 34 skipped, 1 independent of the framework.
+225 scenarios in 41 files, 501 runs across 2 frameworks: 464 run, 36 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -14,15 +14,15 @@ A status cell reads `✓` when it runs, `skip` when `frameworks.UNSUPPORTED`, `f
 
 |  | Covered | Not yet |
 |---|---|---|
-| Commands | 22 of 22: `help`, `echo`, `stream`, `typing`, `steps`, `slow`, `artifacts`, `send-file`, `card`, `outbox-task`, `outbox-message`, `ask`, `ask-twice`, `ask-fail`, `fail`, `ext`, `whoami`, `event`, `config`, `ids`, `big`, `parts` | — |
+| Commands | 23 of 23: `help`, `echo`, `stream`, `think`, `react`, `steps`, `slow`, `artifacts`, `send-file`, `card`, `outbox-task`, `outbox-message`, `ask`, `ask-twice`, `ask-fail`, `fail`, `ext`, `whoami`, `event`, `config`, `ids`, `big`, `parts` | — |
 | Suites | 18 of 18: `smoke`, `streaming`, `events`, `terminal_states`, `interrupts`, `errors`, `artifacts`, `files`, `extensions`, `daemon`, `authentication`, `config`, `lifecycle`, `contexts`, `evolution`, `persistence`, `distributed`, `native` | — |
 
 ## Frameworks
 
 | Framework | Agent package | Entry | SDK extras | Commands implemented |
 |---|---|---|---|---|
-| langgraph | `tests.scenarios.agents.langgraph_core` | `graph.py:create_graph` | `langgraph-server` | 22 of 22 |
-| adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 19 of 22 |
+| langgraph | `tests.scenarios.agents.langgraph_core` | `graph.py:create_graph` | `langgraph-server` | 23 of 23 |
+| adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 20 of 23 |
 
 The `native` suite runs a second agent per framework instead: an ordinary agent on the framework's own path - a model, a tool, the framework's loop and memory - with no Aion authoring API and no part of the command contract. Its cells name the agent.
 
@@ -62,25 +62,38 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | Suite | What it covers | Scenarios | Run |
 |---|---|---|---|
 | `smoke` | agent answers at all: card, health, help, echo | 8 | `make tests-scenarios TAGS=smoke` |
-| `streaming` | chunked replies, ephemeral typing, unary send | 14 | `make tests-scenarios TAGS=streaming` |
-| `events` | event order, ids, outbox, get_task agreement | 21 | `make tests-scenarios TAGS=events` |
+| `streaming` | streamed answers, thoughts, unary send | 18 | `make tests-scenarios TAGS=streaming` |
+| `events` | event order, ids, outbox, get_task agreement | 24 | `make tests-scenarios TAGS=events` |
 | `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 11 | `make tests-scenarios TAGS=terminal_states` |
 | `interrupts` | INPUT_REQUIRED and resume | 10 | `make tests-scenarios TAGS=interrupts` |
 | `errors` | failures that must stay reported, not crash the server | 10 | `make tests-scenarios TAGS=errors` |
-| `artifacts` | artifact and card emission | 4 | `make tests-scenarios TAGS=artifacts` |
+| `artifacts` | artifact and card emission | 10 | `make tests-scenarios TAGS=artifacts` |
 | `files` | inline file parts: stored, rejected, or passed through | 12 | `make tests-scenarios TAGS=files` |
 | `extensions` | extension activation and payload delivery | 12 | `make tests-scenarios TAGS=extensions` |
 | `daemon` | daemon extension identity and environment | 7 | `make tests-scenarios TAGS=daemon` |
 | `authentication` | bearer tokens: required, verified, and naming the caller | 6 | `make tests-scenarios TAGS=authentication` |
 | `config` | aion.yaml configuration and deployment variants | 8 | `make tests-scenarios TAGS=config` |
-| `lifecycle` | cancel, concurrency, push notifications, startup | 10 | `make tests-scenarios TAGS=lifecycle` |
-| `contexts` | Context extension: list, read and delete conversations | 5 | `make tests-scenarios TAGS=contexts` |
+| `lifecycle` | cancel, concurrency, push notifications, startup | 13 | `make tests-scenarios TAGS=lifecycle` |
+| `contexts` | Context extension: list, read and delete conversations | 6 | `make tests-scenarios TAGS=contexts` |
 | `evolution` | the evolution extension through the SDK's wrapper and a stand-in toolkit: the standard path, refusals as REJECTED tasks, a cancel | 15 | `make tests-scenarios TAGS=evolution` |
 | `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 20 | `make tests-scenarios-persistence` |
 | `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 19 | `make tests-scenarios-distributed` |
 | `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 29 | `make tests-scenarios TAGS=native` |
 
 ## Scenarios by file
+
+### `tests/scenarios/core/test_assistant_answer.py`
+
+The answer of a task that only talked: the ``aion:assistant-answer`` artifact.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [Three messages, one answer: the last of them, right before COMPLETED.](core/test_assistant_answer.py#L44 "test_the_last_message_of_the_turn_is_the_answer") | `artifacts` | `steps` | `default` | ✓ | ✓ |
+| [The stored task holds the answer as its artifact and the reply in its history.](core/test_assistant_answer.py#L58 "test_the_task_keeps_the_answer_and_the_message") | `artifacts` | `echo` | `default` | ✓ | ✓ |
+| [A reply of text and a file becomes an answer of the same two parts.](core/test_assistant_answer.py#L72 "test_the_answer_carries_every_part_of_the_message") | `artifacts` | `send-file` | `default` | ✓ | ✓ |
+| [The artifacts the agent emitted are the task's result, so its reply stays a message only.](core/test_assistant_answer.py#L85 "test_a_task_with_an_artifact_of_its_own_gets_no_answer") | `artifacts` | `artifacts` | `default` | ✓ | [skip](#frameworks) |
+| [What the agent said before failing is a message of a failed turn, not its answer.](core/test_assistant_answer.py#L96 "test_a_failed_task_gets_no_answer") | `artifacts` | `fail` | `default` | ✓ | ✓ |
+| [A question that pauses the task is not its answer; the reply of the completing turn is.](core/test_assistant_answer.py#L108 "test_the_answer_comes_from_the_turn_that_completes") | `artifacts` | `ask` | `default` | ✓ | [skip](#frameworks) |
 
 ### `tests/scenarios/core/test_authentication.py`
 
@@ -148,11 +161,12 @@ The Context extension on a real deployment: discover it, list and read contexts,
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [Declared once and optional: its methods need no activation.](core/test_contexts.py#L47 "test_the_card_declares_the_context_extension") | `contexts` | — | `default` | ✓ | ✓ |
-| [``401`` on both bindings: a JSON-RPC error with ``-32051``, and a problem detail over HTTP+JSON.](core/test_contexts.py#L55 "test_a_call_without_a_token_is_refused_in_each_bindings_format") | `contexts` | — | `default` | ✓ | ✓ |
-| [A caller's conversation is listed and read back in order, over JSON-RPC and HTTP+JSON.](core/test_contexts.py#L76 "test_a_conversation_is_listed_and_read_back") | `contexts` | `echo` | `default` | ✓ | ✓ |
-| [Knowing a context ID lets another caller neither read nor delete the context.](core/test_contexts.py#L100 "test_another_caller_neither_sees_nor_deletes_it") | `contexts` | `echo` | `default` | ✓ | ✓ |
-| [Deleting a context cancels its running turn; the ID then starts a conversation with no memory.](core/test_contexts.py#L117 "test_deleting_a_context_cancels_its_running_turn_and_forgets_it") | `contexts` | `slow` | `default` | ✓ | ✓ |
+| [Declared once and optional: its methods need no activation.](core/test_contexts.py#L64 "test_the_card_declares_the_context_extension") | `contexts` | — | `default` | ✓ | ✓ |
+| [``401`` on both bindings: a JSON-RPC error with ``-32051``, and a problem detail over HTTP+JSON.](core/test_contexts.py#L72 "test_a_call_without_a_token_is_refused_in_each_bindings_format") | `contexts` | — | `default` | ✓ | ✓ |
+| [A caller's conversation is listed and read back in order, over JSON-RPC and HTTP+JSON.](core/test_contexts.py#L93 "test_a_conversation_is_listed_and_read_back") | `contexts` | `echo` | `default` | ✓ | ✓ |
+| [Every artifact of each task whose messages are on the page, the streamed answer and the thoughts included.](core/test_contexts.py#L117 "test_a_context_returns_every_artifact_of_the_tasks_on_its_page") | `contexts` | `think` | `default` | ✓ | ✓ |
+| [Knowing a context ID lets another caller neither read nor delete the context.](core/test_contexts.py#L148 "test_another_caller_neither_sees_nor_deletes_it") | `contexts` | `echo` | `default` | ✓ | ✓ |
+| [Deleting a context cancels its running turn; the ID then starts a conversation with no memory.](core/test_contexts.py#L165 "test_deleting_a_context_cancels_its_running_turn_and_forgets_it") | `contexts` | `slow` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_daemon.py`
 
@@ -199,13 +213,13 @@ The shape of a turn: which events arrive, in which order, under which ids.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [A plain turn is: Task SUBMITTED, the reply as WORKING, the terminal Task.](core/test_events.py#L28 "test_a_turn_opens_with_submitted_and_closes_with_the_task") | `events` | `echo` | `default` | ✓ | ✓ |
-| [`steps <n>` reports each step once, in order, before completing.](core/test_events.py#L46 "test_working_statuses_arrive_in_order") | `events` | `steps` | `default` | ✓ | ✓ |
-| [Every status of a turn, the opening SUBMITTED included, is no earlier than the one before it.](core/test_events.py#L66 "test_status_times_follow_the_turn") | `events` | `steps` | `default` | ✓ | ✓ |
-| [The task and context the agent reports are the ones on the wire.](core/test_events.py#L81 "test_the_agent_sees_the_ids_the_client_sees") | `events` | `ids` | `default` | ✓ | ✓ |
-| [Reusing a context keeps it and starts a fresh task under it.](core/test_events.py#L93 "test_a_second_message_in_a_context_starts_a_new_task") | `events` | `ids` | `default` | ✓ | ✓ |
-| [Reading the task back gives the state and the text the stream ended on.](core/test_events.py#L103 "test_get_task_agrees_with_the_closing_event") | `events` | `echo` | `default` | ✓ | ✓ |
-| [Nothing follows the closing Task, and the stream ends there.](core/test_events.py#L120 "test_the_stream_carries_nothing_after_the_terminal_task") | `events` | `echo` | `default` | ✓ | ✓ |
+| [A plain turn is: Task SUBMITTED, the reply as WORKING, the reply as the answer, the terminal Task.](core/test_events.py#L29 "test_a_turn_opens_with_submitted_and_closes_with_the_task") | `events` | `echo` | `default` | ✓ | ✓ |
+| [`steps <n>` reports each step once, in order, before completing.](core/test_events.py#L50 "test_working_statuses_arrive_in_order") | `events` | `steps` | `default` | ✓ | ✓ |
+| [Every status of a turn, the opening SUBMITTED included, is no earlier than the one before it.](core/test_events.py#L72 "test_status_times_follow_the_turn") | `events` | `steps` | `default` | ✓ | ✓ |
+| [The task and context the agent reports are the ones on the wire.](core/test_events.py#L87 "test_the_agent_sees_the_ids_the_client_sees") | `events` | `ids` | `default` | ✓ | ✓ |
+| [Reusing a context keeps it and starts a fresh task under it.](core/test_events.py#L99 "test_a_second_message_in_a_context_starts_a_new_task") | `events` | `ids` | `default` | ✓ | ✓ |
+| [Reading the task back gives the state and the text the stream ended on.](core/test_events.py#L109 "test_get_task_agrees_with_the_closing_event") | `events` | `echo` | `default` | ✓ | ✓ |
+| [Nothing follows the closing Task, and the stream ends there.](core/test_events.py#L126 "test_the_stream_carries_nothing_after_the_terminal_task") | `events` | `echo` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_evolution.py`
 
@@ -309,15 +323,28 @@ Push notification delivery to a real HTTP callback.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The server POSTs a terminal notification to the registered URL.](core/test_push_notifications.py#L169 "test_push_notification_reaches_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
-| [The callback receives what the task stores; the live-only indicator is not stored.](core/test_push_notifications.py#L205 "test_an_ephemeral_indicator_is_streamed_but_not_pushed") | `lifecycle` | `typing` | `push` | ✓ | ✓ |
-| [The FAILED a crash leaves reaches the callback as the full Task.](core/test_push_notifications.py#L226 "test_a_crashed_agent_s_failure_is_pushed") | `lifecycle` | `fail` | `push` | ✓ | ✓ |
-| [A task that stops for input is pushed once, as the full Task, after the turn's earlier events.](core/test_push_notifications.py#L245 "test_an_interrupt_is_pushed_to_a_caller_that_returned_immediately") | `lifecycle` | `ask` | `push` | ✓ | [skip](#frameworks) |
-| [A unary send's notifications carry status times in the order of the turn.](core/test_push_notifications.py#L282 "test_pushed_status_times_follow_the_turn_of_a_unary_send") | `lifecycle` | `steps` | `default` | ✓ | ✓ |
-| [The pushed body identifies the task the notification is about.](core/test_push_notifications.py#L313 "test_push_notification_carries_the_task_id") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
-| [The callback accepts the delivery, because it arrived authenticated.](core/test_push_notifications.py#L336 "test_a_declared_credential_is_presented_to_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
-| [The callback really checks: the same delivery without credentials is rejected.](core/test_push_notifications.py#L367 "test_an_undeclared_credential_is_refused_by_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
-| [The four push config methods, on a task of this caller; a config created without an id takes the task's.](core/test_push_notifications.py#L389 "test_a_push_config_is_created_read_listed_and_deleted") | `lifecycle` | `echo` | `default` | ✓ | ✓ |
+| [The server POSTs a terminal notification to the registered URL.](core/test_push_notifications.py#L208 "test_push_notification_reaches_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [Every stream-delta update the stream carried reaches the callback, in order; the task pushed last holds the whole text.](core/test_push_notifications.py#L254 "test_a_streamed_answer_is_pushed_as_it_was_streamed") | `lifecycle` | `stream` | `push` | ✓ | ✓ |
+| [Each thought reaches the callback as the update it was on the stream; the task pushed last holds them all.](core/test_push_notifications.py#L270 "test_thoughts_are_pushed") | `lifecycle` | `think` | `push` | ✓ | ✓ |
+| [The reaction reaches the callback as it reached the stream, and the task pushed last keeps it.](core/test_push_notifications.py#L284 "test_a_reaction_is_pushed") | `lifecycle` | `react` | `push` | ✓ | ✓ |
+| [The ``aion:assistant-answer`` update reaches the callback before the completed task, which holds it.](core/test_push_notifications.py#L313 "test_the_answer_of_a_task_that_only_talked_is_pushed") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The FAILED a crash leaves reaches the callback as the full Task.](core/test_push_notifications.py#L329 "test_a_crashed_agent_s_failure_is_pushed") | `lifecycle` | `fail` | `push` | ✓ | ✓ |
+| [A task that stops for input is pushed once, as the full Task, after the turn's earlier events.](core/test_push_notifications.py#L348 "test_an_interrupt_is_pushed_to_a_caller_that_returned_immediately") | `lifecycle` | `ask` | `push` | ✓ | [skip](#frameworks) |
+| [A unary send's notifications carry status times in the order of the turn.](core/test_push_notifications.py#L385 "test_pushed_status_times_follow_the_turn_of_a_unary_send") | `lifecycle` | `steps` | `default` | ✓ | ✓ |
+| [The pushed body identifies the task the notification is about.](core/test_push_notifications.py#L416 "test_push_notification_carries_the_task_id") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The callback accepts the delivery, because it arrived authenticated.](core/test_push_notifications.py#L439 "test_a_declared_credential_is_presented_to_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The callback really checks: the same delivery without credentials is rejected.](core/test_push_notifications.py#L470 "test_an_undeclared_credential_is_refused_by_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The four push config methods, on a task of this caller; a config created without an id takes the task's.](core/test_push_notifications.py#L492 "test_a_push_config_is_created_read_listed_and_deleted") | `lifecycle` | `echo` | `default` | ✓ | ✓ |
+
+### `tests/scenarios/core/test_reactions.py`
+
+A reaction to a message: the ``aion:reaction`` artifact.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [One update of ``aion:reaction``: the payload for the message the event named, under the schema marker.](core/test_reactions.py#L58 "test_a_reaction_arrives_as_its_artifact") | `events` | `react` | `default` | ✓ | ✓ |
+| [The stored task holds the reaction, as does the Task that closes the stream.](core/test_reactions.py#L69 "test_the_task_keeps_the_reaction") | `events` | `react` | `default` | ✓ | ✓ |
+| [The reaction, then the reply, then the reply again as the task's answer.](core/test_reactions.py#L82 "test_a_reaction_is_not_the_task_s_result") | `events` | `react` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_resubscribe.py`
 
@@ -352,27 +379,38 @@ The stream-delta channel has the shape the messaging extension specifies.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The reserved id is what makes a delta recognisable as live reply text.](core/test_stream_delta_shape.py#L29 "test_every_delta_names_the_channel_by_artifact_id") | `streaming` | `stream` | `default` | ✓ | ✓ |
-| [The marker sits on the artifact update, which is where the spec puts it.](core/test_stream_delta_shape.py#L39 "test_every_delta_carries_the_schema_marker_on_the_event") | `streaming` | `stream` | `default` | ✓ | ✓ |
-| [Artifact metadata describes the artifact; the schema belongs to the event.](core/test_stream_delta_shape.py#L57 "test_the_artifact_carries_its_own_status_not_the_schema") | `streaming` | `stream` | `default` | ✓ | ✓ |
-| [`lastChunk` does not end a stream-delta sequence, and is not how to read one.](core/test_stream_delta_shape.py#L68 "test_the_sequence_is_closed_by_the_durable_reply_not_by_last_chunk") | `streaming` | `stream` | `default` | ✓ | ✓ |
-| [A reader appends from the second delta on, and never receives an empty one.](core/test_stream_delta_shape.py#L99 "test_the_first_delta_opens_a_section_and_every_delta_carries_content") | `streaming` | `stream` | `default` | ✓ | ✓ |
-| [The one-chunk reply is the edge case the append rule is easiest to lose on.](core/test_stream_delta_shape.py#L119 "test_a_single_delta_is_still_the_opening_of_a_section") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [The reserved id is what makes an update recognisable as the streamed answer.](core/test_stream_delta_shape.py#L38 "test_every_update_names_the_channel_by_artifact_id") | `streaming` | `stream` | `every-chunk` | ✓ | ✓ |
+| [The marker sits on the artifact update, which is where the spec puts it.](core/test_stream_delta_shape.py#L49 "test_every_update_carries_the_schema_marker_on_the_event") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [Artifact metadata describes the artifact - streaming, then finalized; the schema belongs to the event.](core/test_stream_delta_shape.py#L67 "test_the_artifact_carries_its_own_status_not_the_schema") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [Only the update that ends the section has `lastChunk`, and it carries the whole text in one part.](core/test_stream_delta_shape.py#L81 "test_the_section_is_closed_by_its_whole_text") | `streaming` | `stream` | `every-chunk` | ✓ | ✓ |
+| [A reader appends from the second chunk on, and never receives an empty one.](core/test_stream_delta_shape.py#L102 "test_the_first_chunk_opens_a_section_and_every_chunk_carries_content") | `streaming` | `stream` | `every-chunk` | ✓ | ✓ |
+| [The one-chunk answer is the edge case the append rule is easiest to lose on.](core/test_stream_delta_shape.py#L122 "test_a_single_chunk_is_still_the_opening_of_a_section") | `streaming` | `stream` | `every-chunk` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_streaming.py`
 
-Replies that arrive in pieces, and the indicator sent while one is built.
+A streamed answer: chunks of a section, then the section's whole text.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [Chunks arrive as stream-delta artifacts, then the whole reply as one message.](core/test_streaming.py#L33 "test_a_chunked_reply_arrives_as_deltas_then_one_message") | `streaming` | `stream` | `default` | ✓ | ✓ |
-| [Every chunk arrives once, in order, and they add up to the reply.](core/test_streaming.py#L47 "test_the_chunks_are_the_message_broken_up") | `streaming` | `stream` | `default` | ✓ | ✓ |
-| [A chunked reply is one artifact: the first chunk opens it, the rest append.](core/test_streaming.py#L58 "test_the_first_chunk_opens_the_artifact_and_the_rest_append") | `streaming` | `stream` | `default` | ✓ | ✓ |
-| [`stream 1` keeps the same shape - one delta, then the message.](core/test_streaming.py#L68 "test_one_chunk_is_still_a_chunked_reply") | `streaming` | `stream` | `default` | ✓ | ✓ |
-| [The caller learns the agent is busy, and the answer follows.](core/test_streaming.py#L86 "test_the_indicator_is_delivered_before_the_reply") | `streaming` | `typing` | `default` | ✓ | ✓ |
-| [The turn has one durable reply, and the indicator is not it.](core/test_streaming.py#L104 "test_the_indicator_is_not_a_durable_reply") | `streaming` | `typing` | `default` | ✓ | ✓ |
-| [What was shown once is gone; what was said is kept.](core/test_streaming.py#L112 "test_the_indicator_never_reaches_task_history") | `streaming` | `typing` | `default` | ✓ | ✓ |
-| [`SendMessage` without a stream answers once: the task, completed, the reply on its status.](core/test_streaming.py#L131 "test_a_unary_send_answers_with_the_completed_task") | `streaming` | `echo` | `default` | ✓ | ✓ |
+| [Chunks arrive as stream-delta updates, then the section's whole text as one more.](core/test_streaming.py#L45 "test_a_streamed_answer_arrives_as_chunks_then_its_whole_text") | `streaming` | `stream` | `every-chunk` | ✓ | ✓ |
+| [Every chunk arrives once, in order, and they add up to the section's whole text.](core/test_streaming.py#L62 "test_the_chunks_are_the_answer_broken_up") | `streaming` | `stream` | `every-chunk` | ✓ | ✓ |
+| [One artifact: the first chunk opens it, the rest append, the whole text replaces them.](core/test_streaming.py#L72 "test_the_first_chunk_opens_the_section_and_the_rest_append") | `streaming` | `stream` | `every-chunk` | ✓ | ✓ |
+| [`stream 1` keeps the same shape: one chunk, then the whole text.](core/test_streaming.py#L90 "test_one_chunk_is_still_a_section") | `streaming` | `stream` | `every-chunk` | ✓ | ✓ |
+| [The agent streams twenty chunks at once; fewer arrive, and none is lost from the whole text.](core/test_streaming.py#L109 "test_chunks_that_come_faster_than_the_interval_are_joined") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [No status carries the streamed text, and the task's history holds only the caller's message.](core/test_streaming.py#L129 "test_the_streamed_answer_is_not_a_message") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [The stored stream-delta artifact is the section's whole text in one part, and it is the task's result.](core/test_streaming.py#L141 "test_the_task_keeps_the_whole_text_of_the_section") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [`SendMessage` without a stream answers once: the task, completed, the reply on its status.](core/test_streaming.py#L164 "test_a_unary_send_answers_with_the_completed_task") | `streaming` | `echo` | `default` | ✓ | ✓ |
+
+### `tests/scenarios/core/test_thoughts.py`
+
+The agent's thoughts: the ``aion:thinking-delta`` artifact.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The first thought opens the artifact, every later one is appended, then the agent replies.](core/test_thoughts.py#L35 "test_thoughts_arrive_one_update_each_before_the_reply") | `streaming` | `think` | `default` | ✓ | ✓ |
+| [One text part per update, none of them marked as the last: a thought never ends the artifact.](core/test_thoughts.py#L54 "test_every_thought_is_one_part") | `streaming` | `think` | `default` | ✓ | ✓ |
+| [The stored artifact holds the turn's thoughts, one part each, in order, as does the closing Task.](core/test_thoughts.py#L65 "test_the_task_keeps_every_thought_of_the_turn") | `streaming` | `think` | `default` | ✓ | ✓ |
+| [The reply is the only message of the turn, and the history holds no thought.](core/test_thoughts.py#L78 "test_a_thought_is_not_a_message") | `streaming` | `think` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/distributed/test_abandoned_tasks.py`
 
@@ -441,13 +479,13 @@ A native agent failing or being cancelled halfway through its work.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The chunks already sent stay sent; the outcome is FAILED on the wire.](native/test_failure_and_cancel.py#L47 "test_a_model_failing_after_its_first_chunks_fails_the_task") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [``tasks/get`` agrees, and the partial answer is not kept as history.](native/test_failure_and_cancel.py#L56 "test_the_failed_task_is_stored_as_failed_without_the_chunks") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [The failed run does not go on behind the outcome and answer later.](native/test_failure_and_cancel.py#L70 "test_nothing_arrives_after_the_failure") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [What the agent had fully said stays said; only the partial answer is lost.](native/test_failure_and_cancel.py#L82 "test_a_message_completed_before_the_failure_is_kept") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [The model's stream stops: the progress it writes per word stops growing.](native/test_failure_and_cancel.py#L140 "test_a_cancel_stops_the_model_mid_stream") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [The tool the framework is running stops too, not only the stream.](native/test_failure_and_cancel.py#L151 "test_a_cancel_stops_the_running_tool") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [The context is not left broken: the saved state of the cancelled run](native/test_failure_and_cancel.py#L162 "test_the_next_turn_after_a_cancel_is_answered") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The chunks already streamed reach the client before the outcome, which is FAILED on the wire.](native/test_failure_and_cancel.py#L60 "test_a_model_failing_after_its_first_chunks_fails_the_task") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [``tasks/get`` agrees: FAILED, the partial answer in the stream-delta artifact, none of it in the history.](native/test_failure_and_cancel.py#L74 "test_the_failed_task_keeps_the_partial_answer_as_its_artifact") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The failed run does not go on behind the outcome and answer later.](native/test_failure_and_cancel.py#L90 "test_nothing_arrives_after_the_failure") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [What the model had fully said arrived whole; the task keeps the section it failed in.](native/test_failure_and_cancel.py#L102 "test_a_section_ended_before_the_failure_reached_the_client_whole") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The model's stream stops: the progress it writes per word stops growing.](native/test_failure_and_cancel.py#L167 "test_a_cancel_stops_the_model_mid_stream") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The tool the framework is running stops too, not only the stream.](native/test_failure_and_cancel.py#L178 "test_a_cancel_stops_the_running_tool") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The context is not left broken: the saved state of the cancelled run](native/test_failure_and_cancel.py#L189 "test_the_next_turn_after_a_cancel_is_answered") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
 
 ### `tests/scenarios/native/test_framework_features.py`
 
@@ -456,8 +494,8 @@ Features only one framework has, used the way that framework documents them.
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
 | [``interrupt()`` inside a tool: INPUT_REQUIRED with the question, then resume.](native/test_framework_features.py#L25 "test_a_tool_asking_the_user_pauses_the_task_for_input") | `native` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
-| [``tool_context.save_artifact`` becomes an artifact on the wire and on the task.](native/test_framework_features.py#L39 "test_an_artifact_a_tool_saves_reaches_the_client") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
-| [What ``output_key`` and a tool wrote is there when the next turn runs.](native/test_framework_features.py#L51 "test_output_key_and_tool_state_are_in_the_next_turns_state") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+| [``tool_context.save_artifact`` becomes an artifact on the wire and on the task, beside the streamed answer.](native/test_framework_features.py#L39 "test_an_artifact_a_tool_saves_reaches_the_client") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+| [What ``output_key`` and a tool wrote is there when the next turn runs.](native/test_framework_features.py#L53 "test_output_key_and_tool_state_are_in_the_next_turns_state") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
 
 ### `tests/scenarios/native/test_memory.py`
 
@@ -475,13 +513,13 @@ An ordinary agent's answer, tool call and inputs, through `aion serve`.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The ordinary answer: tokens as they come, then the whole of it, once.](native/test_model_and_tools.py#L67 "test_the_answer_streams_as_deltas_then_lands_as_one_message") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [Only the model's words reach the client; the tool round-trip does not.](native/test_model_and_tools.py#L83 "test_the_tool_call_and_its_result_are_not_replies") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [The answer after the tool opens a stream of its own.](native/test_model_and_tools.py#L98 "test_two_model_calls_are_two_streams") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [No empty reply, no empty chunk: a silent tool request is silent.](native/test_model_and_tools.py#L109 "test_a_model_call_that_only_calls_a_tool_says_nothing") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [Contract: a file arrives as a file, a data part as its JSON text.](native/test_model_and_tools.py#L117 "test_a_file_and_a_data_part_reach_the_model_in_the_agreed_form") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [Thoughts stream first and are left out: a LangGraph reasoning block, an](native/test_model_and_tools.py#L143 "test_the_models_reasoning_is_not_sent") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [The model asks once, and the tool runs once.](native/test_model_and_tools.py#L153 "test_the_tool_runs_once_per_request") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The ordinary answer: tokens as they come, then the whole of it, once, as the task's artifact.](native/test_model_and_tools.py#L61 "test_the_answer_streams_as_chunks_then_its_whole_text") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [Only the model's words reach the client; the tool round-trip does not.](native/test_model_and_tools.py#L87 "test_the_tool_call_and_its_result_do_not_reach_the_client") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The answer after the tool is a section of its own, ended with its own whole text.](native/test_model_and_tools.py#L103 "test_two_model_calls_are_two_sections") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [No empty reply, no empty chunk: a silent tool request is silent.](native/test_model_and_tools.py#L119 "test_a_model_call_that_only_calls_a_tool_says_nothing") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [Contract: a file arrives as a file, a data part as its JSON text.](native/test_model_and_tools.py#L127 "test_a_file_and_a_data_part_reach_the_model_in_the_agreed_form") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The model's reasoning streams first and is left out: a LangGraph reasoning](native/test_model_and_tools.py#L153 "test_the_models_reasoning_is_not_sent") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The model asks once, and the tool runs once.](native/test_model_and_tools.py#L164 "test_the_tool_runs_once_per_request") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
 
 ### `tests/scenarios/native/test_persistence.py`
 
@@ -563,20 +601,21 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | Command | Summary | Tags | Scenarios | langgraph | adk |
 |---|---|---|---|---|---|
 | `help` | Show this menu | `smoke` | 1 | ✓ | ✓ |
-| `echo <text>` | Reply with the argument, unchanged | `smoke`, `events` | 22 | ✓ | ✓ |
-| `stream <n>` | Reply in n chunks of one message | `streaming` | 10 | ✓ | ✓ |
-| `typing` | Send an ephemeral typing status, then a reply | `streaming`, `events` | 4 | ✓ | ✓ |
-| `steps <n>` | Emit n working statuses, then complete | `events` | 4 | ✓ | ✓ |
+| `echo <text>` | Reply with the argument, unchanged | `smoke`, `events` | 24 | ✓ | ✓ |
+| `stream <n>` | Stream an answer in n chunks | `streaming` | 14 | ✓ | ✓ |
+| `think <n>` | Think n thoughts, then reply | `streaming` | 6 | ✓ | ✓ |
+| `react` | React to the inbound message, then reply | `events` | 4 | ✓ | ✓ |
+| `steps <n>` | Emit n working statuses, then complete | `events` | 5 | ✓ | ✓ |
 | `slow <sec>` | Reply after n seconds | `lifecycle` | 20 | ✓ | ✓ |
-| `artifacts` | Emit a two-part data artifact, an inline file and a url | `artifacts`, `files` | 2 | ✓ | [skip](#frameworks) |
-| `send-file <route>` | Send one inline file: artifact \| reply \| outbox-message \| outbox-task | `files` | 2 | ✓ | ✓ |
+| `artifacts` | Emit a two-part data artifact, an inline file and a url | `artifacts`, `files` | 3 | ✓ | [skip](#frameworks) |
+| `send-file <route>` | Send one inline file: artifact \| reply \| outbox-message \| outbox-task | `files` | 3 | ✓ | ✓ |
 | `card` | Emit one card | `artifacts` | 4 | ✓ | ✓ |
 | `outbox-task` | Return an A2A Task through the outbox | `events` | 6 | ✓ | ✓ |
 | `outbox-message` | Return an A2A Message through the outbox | `events` | 3 | ✓ | ✓ |
-| `ask` | Ask a question, then quote the answer | `interrupts` | 12 | ✓ | [skip](#frameworks) |
+| `ask` | Ask a question, then quote the answer | `interrupts` | 13 | ✓ | [skip](#frameworks) |
 | `ask-twice` | Ask two questions in a row | `interrupts` | 3 | ✓ | [skip](#frameworks) |
 | `ask-fail` | Ask a question, then fail on the answer | `interrupts`, `errors` | 3 | ✓ | [skip](#frameworks) |
-| `fail <mode>` | Fail on purpose: exception \| after-reply \| reason | `errors`, `terminal_states` | 8 | ✓ | ✓ |
+| `fail <mode>` | Fail on purpose: exception \| after-reply \| reason | `errors`, `terminal_states` | 9 | ✓ | ✓ |
 | `ext` | Report active and unknown extensions | `extensions` | 6 | ✓ | ✓ |
 | `whoami` | Report the daemon identity | `daemon` | 6 | ✓ | ✓ |
 | `event` | Report the event this turn carried | `extensions`, `events` | 4 | ✓ | ✓ |
