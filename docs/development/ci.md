@@ -1,8 +1,11 @@
 # Continuous integration
 
 `.github/workflows/python-ci.yml` runs the full source-checkout gate on every
-pull request update, on pushes to `main`, and when started manually. A newer
-push to the same pull request cancels its superseded run. The jobs in one run
+pull request update and when started manually. Pushes do not start it, to
+`main` included: changes reach `main` through pull requests, and the ruleset in
+[Require the checks before merging](#require-the-checks-before-merging) makes
+the checked pull request what lands. A newer push to the same pull request
+cancels its superseded run. The jobs in one run
 are independent, so one failing group does not stop the others.
 
 | Job | What it runs |
@@ -58,6 +61,8 @@ appeared on a pull request:
 3. Verify with a test pull request that a failing `CI result` blocks merging
    and that a direct push to `main` is rejected.
 
-Until the ruleset is active, CI reports failures but does not prevent a merge.
+Until the ruleset is active, CI reports failures but does not prevent a merge,
+and a commit pushed straight to `main` is not checked; start the workflow on
+`main` by hand to check it.
 A merge queue is optional. If one is added later, enable the `merge_group`
 trigger and run the same full gate for merge groups.
