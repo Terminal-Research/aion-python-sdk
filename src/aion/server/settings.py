@@ -151,6 +151,29 @@ class AppSettings(BaseEnvSettings):
         json_schema_extra=PLATFORM_SUPPLIED,
     )
 
+    deployment_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Deployment ID supplied by the Aion control plane. Fallback for the "
+            "aion.deployment.id log tag when request or agent framework trace baggage "
+            "does not provide a deployment. This variable also identifies a hosted "
+            "runtime for invocation authentication. Default: unset."
+        ),
+        alias="DEPLOYMENT_ID",
+        json_schema_extra=PLATFORM_SUPPLIED,
+    )
+
+    organization_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Organization that owns this deployment, supplied by the Aion control plane. "
+            "Fallback for the aion.organization.id log tag when request or agent "
+            "framework trace baggage does not provide an organization. Default: unset."
+        ),
+        alias="ORGANIZATION_ID",
+        json_schema_extra=PLATFORM_SUPPLIED,
+    )
+
     logstash_host: Optional[str] = Field(
         default=None,
         description="Logstash host to use.",
