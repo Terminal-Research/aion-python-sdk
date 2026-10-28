@@ -45,7 +45,9 @@ def log_receiver():
         def do_GET(self):
             # Hosted-mode startup validates the local JWKS even though no
             # request or real platform credential is involved in these tests.
-            body = json.dumps({"keys": [public_key]}).encode()
+            body = json.dumps(
+                events if self.path == "/startup-events" else {"keys": [public_key]}
+            ).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -163,6 +165,147 @@ if __name__ == '__main__':
     else:
         assert any(event["logger"] == "aion.db.postgres.utils" and "Could not connect" in event["message"] for event in errors), output
         assert any(event.get("error.type") == "RuntimeError" and "refusing to fall back" in event.get("error.message", "") for event in errors), output
+        db_error = next(event for event in errors if event["logger"] == "aion.db.postgres.utils")
+        assert db_error["span.name"] == "database.prepare"
+        child = next(event for event in events if event["message"] == "agent.startup failed")
+        parent = next(event for event in events if event["message"] == "application.startup failed")
+        assert db_error["trace.id"] == child["trace.id"] == parent["trace.id"]
+        assert db_error["parent.span.id"] == child["span.id"]
+        assert child["parent.span.id"] == parent["span.id"]
+    assert all(event.get("trace.id") for event in errors), (output, errors)
+
+
+@pytest.mark.parametrize("method", ["spawn", "fork"])
+def test_cli_startup_connects_agents_and_proxy_but_not_runtime_requests(tmp_path, log_receiver, method):
+    if method not in multiprocessing.get_all_start_methods():
+        pytest.skip(f"{method} is unavailable")
+    port, events = log_receiver
+    env = _environment(port)
+    (tmp_path / "aion.yaml").write_text(
+        'aion:\n  agents:\n    first:\n      path: "probe_agent:create_agent"\n'
+        '    second:\n      path: "probe_agent:create_agent"\n', encoding="utf-8"
+    )
+    (tmp_path / "probe_agent.py").write_text('''
+import logging
+from typing import TypedDict
+from langgraph.graph import StateGraph, START, END
+
+class State(TypedDict):
+    text: str
+
+def create_agent():
+    logging.getLogger("startup.probe").info("probe agent built")
+    graph = StateGraph(State)
+    graph.add_node("echo", lambda state: state)
+    graph.add_edge(START, "echo")
+    graph.add_edge("echo", END)
+    return graph
+''', encoding="utf-8")
+    with socket.socket() as reserved:
+        reserved.bind(("127.0.0.1", 0))
+        proxy_port = reserved.getsockname()[1]
+    code, output = _run(tmp_path, f'''
+import multiprocessing
+
+if __name__ == '__main__':
+    multiprocessing.set_start_method({method!r})
+    import logging
+    import asyncio
+    import httpx
+    from aion.cli.handlers.serve import ServeHandler
+    from aion.cli.cli import cli
+
+    async def monitor(self):
+        # Receiving the readiness message must mean sockets are listening.
+        async with httpx.AsyncClient() as client:
+            for agent in ("first", "second"):
+                response = await client.get(
+                    f"http://127.0.0.1:{proxy_port}/agents/{{agent}}/.well-known/agent-card.json")
+                assert response.status_code == 200, response.text
+        logging.getLogger("startup.probe").info("runtime supervisor")
+        # Logstash batches asynchronously. Observe delivery while these real
+        # servers still run, before their SIGTERM shutdown can end the process.
+        async with asyncio.timeout(25), httpx.AsyncClient() as client:
+            while True:
+                delivered = (await client.get("http://127.0.0.1:{port}/startup-events")).json()
+                ready = [event for event in delivered if event["message"] in
+                         ("agent.startup ready", "proxy.startup ready", "application.startup ready")]
+                requests = [event for event in delivered if event["logger"] ==
+                            "aion.server.core.middlewares.tracing"]
+                if len(ready) == 4 and len(requests) == 2:
+                    break
+                await asyncio.sleep(0.05)
+
+    ServeHandler._monitor = monitor
+    cli()
+''', env, "serve", "--port", str(proxy_port), "--port-range-start", "40000",
+        "--port-range-end", "41000", "--startup-timeout", "20")
+    assert code == 0, output
+    parent, = [event for event in events if event["message"] == "application.startup ready"]
+    children = [event for event in events if event["message"] in ("agent.startup ready", "proxy.startup ready")]
+    assert len(children) == 3, output
+    assert len({event["process.pid"] for event in children}) == 3
+    assert len({event["span.id"] for event in children}) == 3
+    for child in children:
+        _assert_attribution(child)
+        assert child["trace.id"] == parent["trace.id"]
+        assert child["parent.span.id"] == parent["span.id"]
+    built = [event for event in events if event["message"] == "probe agent built"]
+    assert len(built) == 2
+    assert all(event["trace.id"] == parent["trace.id"] and event["span.name"] == "agent.build" for event in built)
+    requests = [event for event in events if event["logger"] == "aion.server.core.middlewares.tracing"]
+    assert len(requests) == 2, output
+    assert all(event["trace.id"] and event["trace.id"] != parent["trace.id"] for event in requests)
+    background, = [event for event in events if event["message"] == "runtime supervisor"]
+    assert not background.get("trace.id")
+
+
+@pytest.mark.parametrize("method", ["spawn", "fork"])
+def test_restarting_a_managed_process_does_not_replay_the_initial_trace(tmp_path, log_receiver, method):
+    if method not in multiprocessing.get_all_start_methods():
+        pytest.skip(f"{method} is unavailable")
+    port, events = log_receiver
+    code, output = _run(tmp_path, f'''
+import logging
+import multiprocessing
+from aion.server.logging import setup_root_logger
+from aion.server.opentelemetry.startup import StartupSpan
+from aion.server.utils.processes.process_manager import ProcessManager
+
+def target(conn=None, startup_context=None):
+    setup_root_logger()
+    startup = StartupSpan("probe.startup", startup_context)
+    with startup.activate():
+        logging.getLogger("startup.probe").info("managed child startup")
+    startup.finish()
+    logging.getLogger("startup.probe").info("managed child runtime")
+
+if __name__ == '__main__':
+    multiprocessing.set_start_method({method!r})
+    setup_root_logger()
+    manager = ProcessManager()
+    startup = StartupSpan("application.startup")
+    try:
+        with startup.activate():
+            assert manager.create_process("probe", target, use_pipe=True, propagate_trace=True)
+            manager.processes["probe"].process.join(timeout=15)
+            assert manager.processes["probe"].process.exitcode == 0
+        startup.finish()
+        assert manager.restart_process("probe")
+        manager.processes["probe"].process.join(timeout=15)
+        assert manager.processes["probe"].process.exitcode == 0
+    finally:
+        manager.shutdown_all(timeout=2)
+''', _environment(port))
+    assert code == 0, output
+    children = [event for event in events if event["message"] == "managed child startup"]
+    assert len(children) == 2, output
+    assert len({event["trace.id"] for event in children}) == 2
+    assert children[0].get("parent.span.id")
+    assert not children[1].get("parent.span.id")
+    runtime = [event for event in events if event["message"] == "managed child runtime"]
+    assert len(runtime) == 2
+    assert all(not event.get("trace.id") for event in runtime)
 
 
 @pytest.mark.skipif("fork" not in multiprocessing.get_all_start_methods(), reason="fork unavailable")

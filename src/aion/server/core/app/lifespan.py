@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, AsyncGenerator
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.agent.execution.context import RequestScopeRuntimeContextProvider
 from aion.server.opentelemetry import init_tracing
+from aion.server.opentelemetry.startup import startup_phase, without_trace
 from fastapi import FastAPI
 
 if TYPE_CHECKING:
@@ -39,11 +40,13 @@ class AppLifespan:
     async def executor(self, app: FastAPI) -> AsyncGenerator[None, None]:
         """Async context manager for application lifespan management."""
         try:
-            await self.startup()
+            with startup_phase("server.lifespan", self.app_factory.startup_context):
+                await self.startup()
 
-            # call startup callback if presented
-            if self.app_factory.startup_callback is not None:
-                self.app_factory.startup_callback()
+                # Direct AppFactory users retain their lifespan callback.
+                # Managed servers acknowledge readiness after socket binding.
+                if self.app_factory.startup_callback is not None:
+                    self.app_factory.startup_callback()
 
             yield
         finally:
@@ -58,8 +61,9 @@ class AppLifespan:
         # SETUP OPEN-TELEMETRY
         init_tracing()
 
-        self._resume_context_deletions()
-        self._sweep_abandoned_tasks()
+        with without_trace():
+            self._resume_context_deletions()
+            self._sweep_abandoned_tasks()
 
     def _resume_context_deletions(self):
         """Finish, in the background, the context deletions a previous process left ``deleting``.

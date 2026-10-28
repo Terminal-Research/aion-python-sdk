@@ -11,6 +11,7 @@ from aion.core.settings import api_settings
 from aion.server import services as aion_services
 from aion.server.core.platform import AionWebSocketManager, WebsocketTransportFactory
 from aion.server.shutdown import shutdown_budget
+from aion.server.opentelemetry.startup import StartupSpan
 from aion.server.utils.processes import ProcessManager
 
 from aion.cli.services import (
@@ -104,7 +105,8 @@ class ServeHandler:
             port_range_end: int = 9000,
             proxy_port_search_start: int = 8000,
             proxy_port_search_end: int = 8100,
-            startup_timeout: int = 30
+            startup_timeout: int = 30,
+            startup_span: StartupSpan | None = None,
     ) -> bool:
         """
         Complete lifecycle: startup, broadcast config, monitor, and shutdown.
@@ -119,6 +121,7 @@ class ServeHandler:
             proxy_port_search_start: Starting port for proxy search if auto-finding
             proxy_port_search_end: Ending port for proxy search if auto-finding
             startup_timeout: Timeout in seconds for startup confirmation (0 to skip)
+            startup_span: Attempt opened by the CLI before importing the application.
 
         Returns:
             False when no agent started, so the command can fail; True once a
@@ -127,16 +130,26 @@ class ServeHandler:
         try:
             self._setup_signal_handlers()
 
-            # Startup phase
-            successful_agents, failed_agents, proxy_started = await self._startup(
-                config=config,
-                proxy_port=proxy_port,
-                port_range_start=port_range_start,
-                port_range_end=port_range_end,
-                proxy_port_search_start=proxy_port_search_start,
-                proxy_port_search_end=proxy_port_search_end,
-                startup_timeout=startup_timeout
-            )
+            startup = startup_span or StartupSpan("application.startup")
+            try:
+                with startup.activate():
+                    # Startup phase
+                    successful_agents, failed_agents, proxy_started = await self._startup(
+                        config=config,
+                        proxy_port=proxy_port,
+                        port_range_start=port_range_start,
+                        port_range_end=port_range_end,
+                        proxy_port_search_start=proxy_port_search_start,
+                        proxy_port_search_end=proxy_port_search_end,
+                        startup_timeout=startup_timeout
+                    )
+                if failed_agents or not successful_agents or not proxy_started:
+                    startup.finish("failed")
+                else:
+                    startup.finish("ready" if startup_timeout else "launched")
+            except BaseException as error:
+                startup.finish("failed", error)
+                raise
 
             # Exit if no agents started successfully
             if not successful_agents:
