@@ -60639,7 +60639,7 @@ function ChatApp({ options: options2 }) {
       if (obsolete()) {
         return void 0;
       }
-      if (workspaceChange && !discovery.registry) {
+      if (workspaceChange && workspaceChange.requireRegistry !== false && !discovery.registry) {
         appendNotification(discovery.errors.find((error) => error.source.type === "registry")?.error ?? "Workspace lookup failed. Please try again.");
         return void 0;
       }
@@ -60705,7 +60705,8 @@ function ChatApp({ options: options2 }) {
         credentialScope: credentials.owner(agent.source)
       })?.agentKey === currentEnvironment.selectedAgentKey) : void 0;
       const savedDirect = discovery.agents.find((agent) => agent.source.type !== "registry" && agent.agentKey === currentEnvironment.selectedAgentKey);
-      const candidates = workspaceChange || workspaceSelector !== void 0 || discovery.workspaceAccount && !discovery.registry ? discovery.agents.filter((agent) => agent.source.type === "registry") : discovery.agents;
+      const registryOnly = workspaceChange && workspaceChange.requireRegistry !== false || workspaceSelector !== void 0 || discovery.workspaceAccount && !discovery.registry;
+      const candidates = registryOnly ? discovery.agents.filter((agent) => agent.source.type === "registry") : discovery.agents;
       const nextSelected = selectDiscoveredAgent(candidates, {
         requestedAgentId: options2.agentId,
         selectedAgentKey: savedRegistryKey ?? legacySelected?.agentKey ?? savedDirect?.agentKey,
@@ -60750,9 +60751,16 @@ ${message}` : `Agent source discovery failed: ${message}`
   };
   (0, import_react37.useEffect)(() => {
     let closed = false;
-    void refreshAgentDiscovery({ isClosed: () => closed });
+    const transition = !agentEndpointUrl && !operationGate.busy ? startWorkspaceOperation() : void 0;
+    void refreshAgentDiscovery({
+      isClosed: () => closed,
+      ...transition ? { workspaceChange: { ...transition, requireRegistry: false } } : {}
+    }).finally(() => {
+      if (transition && workspaceConnectionRef.current?.operation !== transition.operation) transition.finish();
+    });
     return () => {
       closed = true;
+      transition?.operation.cancel();
     };
   }, [
     agentEndpointUrl,
@@ -61262,15 +61270,11 @@ ${JSON.stringify(
     setSelectedSlashSubmenuIndex(0);
     replaceDraft("");
   };
-  const runWorkspaceSlashCommand = async (selector) => {
-    if (agentEndpointUrl) {
-      appendNotification("Workspace selection is unavailable with --url. Restart Chat without --url to browse the registry.");
-      return;
-    }
+  const startWorkspaceOperation = () => {
     const operation = operationGate.begin("workspace");
     if (!operation) {
       appendNotification(operationGate.reason);
-      return;
+      return void 0;
     }
     const finish = () => {
       clearTimeout(timer);
@@ -61282,6 +61286,16 @@ ${JSON.stringify(
       appendNotification("Workspace selection timed out. Please try /workspace again.");
     }, 3e4);
     operation.signal.addEventListener("abort", finish, { once: true });
+    return { operation, finish };
+  };
+  const runWorkspaceSlashCommand = async (selector) => {
+    if (agentEndpointUrl) {
+      appendNotification("Workspace selection is unavailable with --url. Restart Chat without --url to browse the registry.");
+      return;
+    }
+    const transition = startWorkspaceOperation();
+    if (!transition) return;
+    const { operation, finish } = transition;
     try {
       if (selector !== void 0) {
         await refreshAgentDiscovery({ workspaceSelector: selector, workspaceChange: { operation, finish } });

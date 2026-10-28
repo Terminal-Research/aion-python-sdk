@@ -818,7 +818,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		announceExplicitSourceErrors?: boolean;
 		isClosed?: () => boolean;
 		workspaceSelector?: string;
-		workspaceChange?: { operation: ChatOperation; finish(): void };
+		workspaceChange?: { operation: ChatOperation; finish(): void; requireRegistry?: boolean };
 	} = {}): Promise<AgentSourceRecord[] | undefined> => {
 		discoveryLifetimeRef.current.abort();
 		const discoveryLifetime = new AbortController();
@@ -870,7 +870,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				return undefined;
 			}
 
-			if (workspaceChange && !discovery.registry) {
+			if (workspaceChange && workspaceChange.requireRegistry !== false && !discovery.registry) {
 				appendNotification(discovery.errors.find((error) => error.source.type === "registry")?.error ?? "Workspace lookup failed. Please try again.");
 				return undefined;
 			}
@@ -948,7 +948,11 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				})?.agentKey === currentEnvironment.selectedAgentKey) : undefined;
 			const savedDirect = discovery.agents.find((agent) => agent.source.type !== "registry" &&
 				agent.agentKey === currentEnvironment.selectedAgentKey);
-			const candidates = workspaceChange || workspaceSelector !== undefined || (discovery.workspaceAccount && !discovery.registry) ? discovery.agents.filter((agent) => agent.source.type === "registry") : discovery.agents;
+			const registryOnly = (workspaceChange && workspaceChange.requireRegistry !== false) ||
+				workspaceSelector !== undefined || (discovery.workspaceAccount && !discovery.registry);
+			const candidates = registryOnly
+				? discovery.agents.filter((agent) => agent.source.type === "registry")
+				: discovery.agents;
 			const nextSelected = selectDiscoveredAgent(candidates, {
 				requestedAgentId: options.agentId,
 				selectedAgentKey: savedRegistryKey ?? legacySelected?.agentKey ?? savedDirect?.agentKey,
@@ -996,9 +1000,18 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 	useEffect(() => {
 		let closed = false;
-		void refreshAgentDiscovery({ isClosed: () => closed });
+		const transition = !agentEndpointUrl && !operationGate.busy ? startWorkspaceOperation() : undefined;
+		// Startup has no current conversation to preserve on a selection error.
+		// Publish the available memberships so an invalid choice can open the picker.
+		void refreshAgentDiscovery({
+			isClosed: () => closed,
+			...(transition ? { workspaceChange: { ...transition, requireRegistry: false } } : {})
+		}).finally(() => {
+			if (transition && workspaceConnectionRef.current?.operation !== transition.operation) transition.finish();
+		});
 		return () => {
 			closed = true;
+			transition?.operation.cancel();
 		};
 	}, [
 		agentEndpointUrl,
@@ -1584,10 +1597,9 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		replaceDraft("");
 	};
 
-	const runWorkspaceSlashCommand = async (selector?: string): Promise<void> => {
-		if (agentEndpointUrl) { appendNotification("Workspace selection is unavailable with --url. Restart Chat without --url to browse the registry."); return; }
+	const startWorkspaceOperation = (): { operation: ChatOperation; finish(): void } | undefined => {
 		const operation = operationGate.begin("workspace");
-		if (!operation) { appendNotification(operationGate.reason!); return; }
+		if (!operation) { appendNotification(operationGate.reason!); return undefined; }
 		const finish = (): void => {
 			clearTimeout(timer);
 			if (workspaceConnectionRef.current?.operation === operation) workspaceConnectionRef.current = undefined;
@@ -1598,6 +1610,14 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			appendNotification("Workspace selection timed out. Please try /workspace again.");
 		}, 30_000);
 		operation.signal.addEventListener("abort", finish, { once: true });
+		return { operation, finish };
+	};
+
+	const runWorkspaceSlashCommand = async (selector?: string): Promise<void> => {
+		if (agentEndpointUrl) { appendNotification("Workspace selection is unavailable with --url. Restart Chat without --url to browse the registry."); return; }
+		const transition = startWorkspaceOperation();
+		if (!transition) return;
+		const { operation, finish } = transition;
 		try {
 			if (selector !== undefined) {
 				await refreshAgentDiscovery({ workspaceSelector: selector, workspaceChange: { operation, finish } });

@@ -251,9 +251,9 @@ it("supports the workspace picker and revalidates the chosen membership", async 
 	expect(membershipCalls).toBe(3);
 });
 
-it("opens a picker for a revoked saved workspace without sending a greeting elsewhere", async () => {
+it.each([undefined, "revoked"])("opens a picker for an invalid startup choice (%s) without sending a greeting elsewhere", async (workspace) => {
 	state.settings.environments.production.registryAccounts![accountScope].workspaceId = "revoked";
-	app = render(<ChatApp options={options} />);
+	app = render(<ChatApp options={{ ...options, workspace }} />);
 	await vi.waitFor(() => expect(app!.lastFrame()).toContain("Terminal Research"));
 	expect(rpc).toHaveLength(0); expect(catalogs).toEqual([]);
 	await act(async () => app!.stdin.write("3"));
@@ -318,4 +318,17 @@ it("invalidates pending choices when login changes the authenticated account", a
 	expect(savedChoice()).toBe("home");
 	expect(state.loads).toEqual([keyFor("home")]);
 	expect(state.settings.environments.production.selectedAgentKey).toBeUndefined();
+});
+
+it.each([undefined, "home"])("serializes startup selection (%s) with later workspace commands", async (workspace) => {
+	const pending = deferred();
+	holdMembership = () => pending.promise;
+	app = render(<ChatApp options={{ ...options, workspace }} />);
+	await vi.waitFor(() => expect(membershipCalls).toBe(1));
+	await enter("/workspace team");
+	expect(membershipCalls).toBe(1);
+	expect(app.frames.join("\n")).toContain("workspace change is in progress");
+	holdMembership = undefined;
+	pending.resolve(); await ready();
+	await enter("/workspace team"); await ready("team");
 });
