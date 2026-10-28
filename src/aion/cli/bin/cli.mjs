@@ -52705,6 +52705,9 @@ function buildWelcomeRequest(contextId) {
   request.message.extensions = [WELCOME_MESSAGE_EXTENSION_URI];
   return request;
 }
+function isWelcomeRequest(message) {
+  return message.role === Role.ROLE_USER && !message.parts.some((part) => part.content?.$case === "text" && part.content.value.trim()) && message.parts.some((part) => part.content?.$case === "data" && part.content.value?.type === "welcome-request" && part.metadata?.[WELCOME_MESSAGE_EXTENSION_URI]?.schema === WELCOME_REQUEST_SCHEMA);
+}
 function createChatThread(options2) {
   const contextId = (options2.createId ?? randomUUID2)();
   options2.onCreated(contextId);
@@ -56716,6 +56719,14 @@ var RESPONSE_MODE_OPTIONS = [
 ];
 var SLASH_COMMANDS = [
   {
+    id: "workspace",
+    label: "/workspace",
+    description: "Choose the workspace whose agents to browse.",
+    title: "Workspace",
+    subtitle: "Select a workspace by name or ID.",
+    options: []
+  },
+  {
     id: "session",
     label: "/session",
     description: "Retry guest authentication or explicitly replace a guest session.",
@@ -58501,8 +58512,21 @@ function registryUnavailableResult(source, now, lastError, workspaceAccount) {
     error: lastError
   };
 }
+var RegistryLookupError = class extends Error {
+  constructor(label, originalError, account) {
+    super(label + ": " + registryDiscoveryErrorMessage(originalError));
+    this.originalError = originalError;
+    this.account = account;
+    this.name = "RegistryLookupError";
+  }
+  originalError;
+  account;
+};
+function errorWorkspaceAccount(error) {
+  return error instanceof WorkspaceSelectionError || error instanceof RegistryLookupError ? error.account : void 0;
+}
 function registryDiscoveryErrorMessage(error) {
-  if (error instanceof CredentialDestinationError || error instanceof WorkspaceSelectionError) return error.message;
+  if (error instanceof CredentialDestinationError || error instanceof WorkspaceSelectionError || error instanceof RegistryLookupError) return error.message;
   const message = error instanceof Error ? error.message : String(error);
   if (/workos|token|auth|login|credential|jwt|expired|unauthorized|forbidden/iu.test(message)) {
     return REGISTRY_AUTH_FAILED_MESSAGE;
@@ -58515,6 +58539,7 @@ function registryDiscoveryErrorMessage(error) {
   return REGISTRY_UNEXPECTED_ERROR_MESSAGE;
 }
 function isRegistryAuthenticationError(error) {
+  if (error instanceof RegistryLookupError) return isRegistryAuthenticationError(error.originalError);
   if (error instanceof CredentialDestinationError || error instanceof WorkspaceSelectionError) return false;
   const message = error instanceof Error ? error.message : String(error);
   return /workos|token|auth|login|credential|jwt|expired|unauthorized|forbidden|401|403/iu.test(
@@ -58529,16 +58554,26 @@ async function fetchRegistryIdentitiesWithToken(source, accessToken, options2) {
     fetchImpl: options2.graphQLFetchImpl ?? fetch,
     logger: options2.logger
   };
-  const account = await fetchRegistryAccount(request);
+  let account;
+  try {
+    account = await fetchRegistryAccount(request);
+  } catch (error) {
+    if (isRegistryAuthenticationError(error) || error instanceof CredentialDestinationError) throw error;
+    throw new RegistryLookupError("Workspace membership lookup failed", error);
+  }
   const accountScope = registryAccountScope(options2.environmentId, account.userId, options2.controlPlaneOrigin);
   const workspace = resolveWorkspace(account, {
     selector: options2.workspaceSelector,
     savedWorkspaceId: options2.registryPreferences?.[accountScope]?.workspaceId
   });
-  return {
-    identities: await fetchRegistryAgentIdentities({ ...request, organizationId: workspace.id }),
-    registry: { account, workspace, accountScope }
-  };
+  try {
+    return {
+      identities: await fetchRegistryAgentIdentities({ ...request, organizationId: workspace.id }),
+      registry: { account, workspace, accountScope }
+    };
+  } catch (error) {
+    throw new RegistryLookupError(`Agent catalog lookup failed for workspace "${workspace.name}" (${workspace.id})`, error, account);
+  }
 }
 async function discoverRegistrySource(source, fetchImpl, now, options2) {
   let accessToken;
@@ -58547,10 +58582,10 @@ async function discoverRegistrySource(source, fetchImpl, now, options2) {
   }
   try {
     accessToken = await options2?.controlPlaneAccessTokenProvider?.();
-  } catch (error) {
+  } catch (error2) {
     options2?.logger?.warn("registry.auth.token_failed", {
       sourceKey: source.sourceKey,
-      error
+      error: error2
     });
     return registryUnavailableResult(source, now, REGISTRY_AUTH_FAILED_MESSAGE);
   }
@@ -58571,11 +58606,11 @@ async function discoverRegistrySource(source, fetchImpl, now, options2) {
       accessToken,
       options2
     );
-  } catch (error) {
-    if (isRegistryAuthenticationError(error)) {
+  } catch (error2) {
+    if (isRegistryAuthenticationError(error2)) {
       options2.logger?.warn("registry.auth.failed", {
         sourceKey: source.sourceKey,
-        error
+        error: error2
       });
       try {
         options2.logger?.debug("registry.auth.refresh_requested", {
@@ -58598,20 +58633,20 @@ async function discoverRegistrySource(source, fetchImpl, now, options2) {
           source,
           now,
           registryDiscoveryErrorMessage(refreshError),
-          refreshError instanceof WorkspaceSelectionError ? refreshError.account : void 0
+          errorWorkspaceAccount(refreshError)
         );
       }
     }
     if (!lookup) {
       options2.logger?.warn("registry.identities.failed", {
         sourceKey: source.sourceKey,
-        error
+        error: error2
       });
       return registryUnavailableResult(
         source,
         now,
-        registryDiscoveryErrorMessage(error),
-        error instanceof WorkspaceSelectionError ? error.account : void 0
+        registryDiscoveryErrorMessage(error2),
+        errorWorkspaceAccount(error2)
       );
     }
   }
@@ -58634,19 +58669,27 @@ async function discoverRegistrySource(source, fetchImpl, now, options2) {
     lastError: void 0
   };
   const agents = [];
+  const cardErrors = [];
   for (const identity of identities) {
     const agentCardUrl = cardUrlForEndpoint(identity.a2aUrl);
-    const agentCard = await fetchJson(agentCardUrl, fetchImpl, {
-      logger: options2.logger,
-      eventPrefix: "agent_card",
-      context: {
-        sourceKey: source.sourceKey,
-        identityId: identity.id,
-        identityName: identity.name,
-        identityAtName: identity.atName
-      }
-    });
+    let agentCard;
+    try {
+      agentCard = await fetchJson(agentCardUrl, fetchImpl, {
+        logger: options2.logger,
+        eventPrefix: "agent_card",
+        context: {
+          sourceKey: source.sourceKey,
+          identityId: identity.id,
+          identityName: identity.name,
+          identityAtName: identity.atName
+        }
+      });
+    } catch (error2) {
+      cardErrors.push(`${identityDisplayId(identity)}: ${registryDiscoveryErrorMessage(error2)}`);
+      continue;
+    }
     if (!agentCard) {
+      cardErrors.push(`${identityDisplayId(identity)}: agent card unavailable`);
       continue;
     }
     const displayId = identityDisplayId(identity);
@@ -58668,7 +58711,14 @@ async function discoverRegistrySource(source, fetchImpl, now, options2) {
       agentCard
     });
   }
-  return { source: resolvedSource, agents, registry, workspaceAccount: registry.account };
+  const error = cardErrors.length ? `Agent card lookup failed in workspace "${registry.workspace.name}": ${cardErrors.join("; ")}` : void 0;
+  return {
+    source: { ...resolvedSource, ...error ? { lastError: error, status: agents.length ? "available" : "unavailable" } : {} },
+    agents,
+    registry,
+    workspaceAccount: registry.account,
+    ...error ? { error } : {}
+  };
 }
 async function discoverSource(source, fetchImpl, now, options2) {
   if (!source.enabled) {
@@ -58879,7 +58929,7 @@ function isRecord2(value) {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 function isSavedMessage(value, contextId) {
-  if (!isRecord2(value) || typeof value.messageId !== "string" || !value.messageId || ![1, 2].includes(value.role) || value.contextId !== void 0 && value.contextId !== "" && value.contextId !== contextId || value.extensions !== void 0 && (!Array.isArray(value.extensions) || !value.extensions.every((item) => typeof item === "string")) || !Array.isArray(value.parts)) return false;
+  if (!isRecord2(value) || typeof value.messageId !== "string" || !value.messageId || value.taskId !== void 0 && typeof value.taskId !== "string" || ![1, 2].includes(value.role) || value.contextId !== void 0 && value.contextId !== "" && value.contextId !== contextId || value.extensions !== void 0 && (!Array.isArray(value.extensions) || !value.extensions.every((item) => typeof item === "string")) || !Array.isArray(value.parts)) return false;
   return value.parts.every((part) => {
     if (!isRecord2(part)) return false;
     if (part.content === void 0) return true;
@@ -58935,6 +58985,10 @@ var ChatOperationGate = class {
     const operation = {
       kind,
       signal: controller.signal,
+      cancel: () => {
+        controller.abort();
+        operation.finish();
+      },
       finish: () => {
         if (this.active?.operation === operation) this.active = void 0;
       }
@@ -59049,7 +59103,7 @@ function shouldShowNoAgentMessageNotice({
 // src/lib/restoredTranscript.ts
 function restoredTranscriptEntries(messages) {
   return messages.flatMap((message) => {
-    if (message.role === Role.ROLE_USER && message.extensions?.includes(WELCOME_MESSAGE_EXTENSION_URI)) return [];
+    if (isWelcomeRequest(message)) return [];
     if (message.role === Role.ROLE_AGENT && !shouldRenderLiveResponseMessage(message)) return [];
     const body = formatMessageParts(message.parts);
     return body ? [{ id: message.messageId, role: message.role === Role.ROLE_USER ? "user" : "agent", body, isFinalized: true }] : [];
@@ -60114,6 +60168,16 @@ function shouldReplaceCurrentStreamSection(event, kind) {
 }
 function parseExactSlashCommand(value) {
   const [command, environmentId, extra, trailing] = value.trim().split(/\s+/);
+  if (command === "/workspace") {
+    const raw = value.trim().slice("/workspace".length).trim();
+    if (!raw) return { kind: "workspace" };
+    const quote = raw[0];
+    if (quote === '"' || quote === "'") {
+      if (raw.length < 2 || raw.at(-1) !== quote) return { kind: "invalid", message: "Close the workspace name's quotation marks." };
+      return { kind: "workspace", selector: raw.slice(1, -1) };
+    }
+    return { kind: "workspace", selector: raw };
+  }
   if (command === "/session" && (environmentId === "new" || environmentId === "retry")) {
     return { kind: "session", action: environmentId, sourceKey: extra };
   }
@@ -60196,6 +60260,13 @@ function ChatApp({ options: options2 }) {
   const [clientState, setClientState] = (0, import_react37.useState)();
   const [pushConfig, setPushConfig] = (0, import_react37.useState)();
   const [discoveredAgents, setDiscoveredAgents] = (0, import_react37.useState)([]);
+  const [registrySelection, setRegistrySelection] = (0, import_react37.useState)();
+  const [workspaceAccount, setWorkspaceAccount] = (0, import_react37.useState)();
+  const workspaceSelectorRef = (0, import_react37.useRef)(options2.workspace);
+  const discoveryLifetimeRef = (0, import_react37.useRef)(new AbortController());
+  const connectionAbortRef = (0, import_react37.useRef)(void 0);
+  const workspaceConnectionRef = (0, import_react37.useRef)(void 0);
+  const [workspaceConnectionNonce, setWorkspaceConnectionNonce] = (0, import_react37.useState)(0);
   const [agentSources, setAgentSources] = (0, import_react37.useState)(
     activeEnvironmentSettings.agentSources
   );
@@ -60311,6 +60382,7 @@ function ChatApp({ options: options2 }) {
       welcomeLifetimeRef.current.abort();
       foregroundLifetimeRef.current.abort();
       operationGate.cancel();
+      discoveryLifetimeRef.current.abort();
       chatSessionLogger.info("chat.session.ended", {
         mode: "interactive",
         environmentId: environmentAtStart
@@ -60396,6 +60468,11 @@ function ChatApp({ options: options2 }) {
   };
   const reloadEnvironmentState = (environmentId, origin) => {
     operationGate.cancel();
+    discoveryLifetimeRef.current.abort();
+    workspaceSelectorRef.current = void 0;
+    setRegistrySelection(void 0);
+    setWorkspaceAccount(void 0);
+    setSlashSubmenuId(void 0);
     credentials.cancelPending();
     welcomeLifetimeRef.current.abort();
     welcomeLifetimeRef.current = new AbortController();
@@ -60440,10 +60517,14 @@ function ChatApp({ options: options2 }) {
     return {
       title: command.title,
       subtitle: command.subtitle,
-      options: command.options,
+      options: command.id === "workspace" ? (workspaceAccount?.workspaces ?? []).map((workspace) => ({
+        value: workspace.id,
+        label: workspace.name + (registrySelection?.workspace.id === workspace.id ? " (current)" : ""),
+        description: workspace.id
+      })) : command.options,
       selectedIndex: selectedSlashSubmenuIndex
     };
-  }, [selectedSlashSubmenuIndex, slashSubmenuId]);
+  }, [selectedSlashSubmenuIndex, slashSubmenuId, workspaceAccount, registrySelection]);
   const agentSuggestions = (0, import_react37.useMemo)(() => {
     if (slashQuery !== void 0 || slashSubmenuId || !isCursorAtDraftEnd) {
       return [];
@@ -60495,18 +60576,29 @@ function ChatApp({ options: options2 }) {
     });
   }, [slashCommands]);
   (0, import_react37.useEffect)(() => {
-    const optionCount = getSlashCommandById(slashSubmenuId)?.options.length ?? 0;
+    const optionCount = slashSubmenu?.options.length ?? 0;
     setSelectedSlashSubmenuIndex((current) => {
       if (optionCount === 0) {
         return 0;
       }
       return Math.min(current, optionCount - 1);
     });
-  }, [slashSubmenuId]);
+  }, [slashSubmenuId, workspaceAccount]);
   const refreshAgentDiscovery = async ({
     announceExplicitSourceErrors = true,
-    isClosed = () => false
+    isClosed = () => false,
+    workspaceSelector = workspaceSelectorRef.current,
+    workspaceChange
   } = {}) => {
+    discoveryLifetimeRef.current.abort();
+    const discoveryLifetime = new AbortController();
+    discoveryLifetimeRef.current = discoveryLifetime;
+    const signal = AbortSignal.any([
+      credentials.signal,
+      discoveryLifetime.signal,
+      ...workspaceChange ? [workspaceChange.operation.signal] : []
+    ]);
+    const obsolete = () => isClosed() || signal.aborted;
     try {
       const latestEnvironment = chatSettingsRef.current.environments[selectedEnvironment];
       const runtimeSources = agentEndpointUrl ? [createExplicitAgentSource(agentEndpointUrl)] : mergeAgentSources(
@@ -60527,14 +60619,14 @@ function ChatApp({ options: options2 }) {
         {
           environmentId: selectedEnvironment,
           controlPlaneOrigin,
-          workspaceSelector: options2.workspace,
+          workspaceSelector,
           registryPreferences: latestEnvironment.registryAccounts,
           controlPlaneAccessTokenProvider: (request) => getStoredAccessToken(selectedEnvironment, {
             forceRefresh: request?.forceRefresh,
             controlPlaneOrigin
           }),
-          graphQLFetchImpl: credentials.fetch(createDefaultRegistryAgentSource(selectedEnvironment, controlPlaneOrigin)),
-          sourceFetchImpl: (source) => credentials.fetch(source),
+          graphQLFetchImpl: credentials.fetch(createDefaultRegistryAgentSource(selectedEnvironment, controlPlaneOrigin), signal),
+          sourceFetchImpl: (source) => credentials.fetch(source, signal),
           logger: chatSessionLogger
         }
       );
@@ -60544,9 +60636,27 @@ function ChatApp({ options: options2 }) {
         agentCount: discovery.agents.length,
         errorCount: discovery.errors.length
       });
-      if (isClosed() || credentials.signal.aborted) {
+      if (obsolete()) {
         return void 0;
       }
+      if (workspaceChange && !discovery.registry) {
+        appendNotification(discovery.errors.find((error) => error.source.type === "registry")?.error ?? "Workspace lookup failed. Please try again.");
+        return void 0;
+      }
+      const switchingScope = !!(workspaceChange || registrySelection) && (registrySelection?.accountScope !== discovery.registry?.accountScope || registrySelection?.workspace.id !== discovery.registry?.workspace.id);
+      if (switchingScope) {
+        welcomeLifetimeRef.current.abort();
+        welcomeLifetimeRef.current = new AbortController();
+        connectionAbortRef.current?.abort();
+        setClientState(void 0);
+        connectedAgentKeyRef.current = void 0;
+        clearTranscript();
+      }
+      setRegistrySelection(discovery.registry);
+      setWorkspaceAccount(discovery.workspaceAccount);
+      if (discovery.workspaceAccount && !discovery.registry) setSlashSubmenuId("workspace");
+      if (discovery.registry) workspaceSelectorRef.current = void 0;
+      const currentEnvironment = chatSettingsRef.current.environments[selectedEnvironment];
       const nextSources = Object.fromEntries(
         discovery.sources.map((source) => [source.sourceKey, source])
       );
@@ -60565,11 +60675,11 @@ function ChatApp({ options: options2 }) {
       setDiscoveredAgents(discovery.agents);
       persistEnvironmentSettings(selectedEnvironment, {
         agents: nextAgents,
-        agentSources: { ...latestEnvironment.agentSources, ...persistentSources },
+        agentSources: { ...currentEnvironment.agentSources, ...persistentSources },
         ...discovery.registry ? { registryAccounts: {
-          ...latestEnvironment.registryAccounts,
+          ...currentEnvironment.registryAccounts,
           [discovery.registry.accountScope]: {
-            ...latestEnvironment.registryAccounts?.[discovery.registry.accountScope],
+            ...currentEnvironment.registryAccounts?.[discovery.registry.accountScope],
             workspaceId: discovery.registry.workspace.id
           }
         } } : {}
@@ -60585,41 +60695,49 @@ function ChatApp({ options: options2 }) {
         }
       }
       const registry = discovery.registry;
-      const savedRegistryKey = registry ? latestEnvironment.registryAccounts?.[registry.accountScope]?.selectedAgentKeys?.[registry.workspace.id] : void 0;
-      const legacySelected = registry && latestEnvironment.selectedAgentKey ? discovery.agents.find((agent) => agent.registry && eligibleLegacyRegistryAgent({
-        agents: latestEnvironment.agents,
+      const savedRegistryKey = registry ? currentEnvironment.registryAccounts?.[registry.accountScope]?.selectedAgentKeys?.[registry.workspace.id] : void 0;
+      const legacySelected = registry && currentEnvironment.selectedAgentKey ? discovery.agents.find((agent) => agent.registry && eligibleLegacyRegistryAgent({
+        agents: currentEnvironment.agents,
         sourceKey: agent.sourceKey,
         identityId: agent.agentId,
         workspaceId: registry.workspace.id,
         homeWorkspaceId: registry.account.homeWorkspaceId,
         credentialScope: credentials.owner(agent.source)
-      })?.agentKey === latestEnvironment.selectedAgentKey) : void 0;
-      const savedDirect = discovery.agents.find((agent) => agent.source.type !== "registry" && agent.agentKey === latestEnvironment.selectedAgentKey);
-      const candidates = options2.workspace !== void 0 ? discovery.agents.filter((agent) => agent.source.type === "registry") : discovery.agents;
+      })?.agentKey === currentEnvironment.selectedAgentKey) : void 0;
+      const savedDirect = discovery.agents.find((agent) => agent.source.type !== "registry" && agent.agentKey === currentEnvironment.selectedAgentKey);
+      const candidates = workspaceChange || workspaceSelector !== void 0 || discovery.workspaceAccount && !discovery.registry ? discovery.agents.filter((agent) => agent.source.type === "registry") : discovery.agents;
       const nextSelected = selectDiscoveredAgent(candidates, {
         requestedAgentId: options2.agentId,
         selectedAgentKey: savedRegistryKey ?? legacySelected?.agentKey ?? savedDirect?.agentKey,
         explicitSourceKey,
         autoSelectExplicit: Boolean(agentEndpointUrl)
       });
+      if (workspaceChange && nextSelected && (switchingScope || nextSelected.agentKey !== connectedAgentKeyRef.current || !clientState)) {
+        workspaceConnectionRef.current = { ...workspaceChange, agentKey: nextSelected.agentKey };
+        setWorkspaceConnectionNonce((value) => value + 1);
+      }
+      if (discovery.registry && !discovery.agents.some((agent) => agent.registry) && !discovery.errors.some((error) => error.source.type === "registry")) {
+        appendNotification(`No agents are available in workspace "${discovery.registry.workspace.name}". Use /workspace to choose another.`);
+      }
       if (nextSelected) {
         setSelectedAgentKey(nextSelected.agentKey);
         setSelectedAgentId(nextSelected.id);
         persistAgentSelection(nextSelected);
-      } else if (selectedAgentKey || !options2.agentId && selectedAgentId) {
+      } else {
         setSelectedAgentKey(void 0);
         setSelectedAgentId(void 0);
         setClientState(void 0);
         connectedAgentKeyRef.current = void 0;
         clearTranscript();
-        appendSystem("The selected agent is no longer available in this workspace. Choose an agent to continue.");
+        persistEnvironmentSettings(selectedEnvironment, { selectedAgentKey: void 0, selectedAgentId: void 0 });
+        if (selectedAgentKey || selectedAgentId) appendSystem("The selected agent is no longer available in this workspace. Choose an agent to continue.");
       }
       return discovery.sources;
     } catch (error) {
-      if (isClosed()) {
+      if (obsolete()) {
         return void 0;
       }
-      setDiscoveredAgents([]);
+      if (!workspaceChange) setDiscoveredAgents([]);
       const message = error instanceof Error ? error.message : String(error);
       if (announceExplicitSourceErrors) {
         appendNotification(
@@ -60650,12 +60768,16 @@ ${message}` : `Agent source discovery failed: ${message}`
   (0, import_react37.useEffect)(() => {
     let closed = false;
     const connectionLifetime = new AbortController();
-    connectionSignalRef.current = connectionLifetime.signal;
+    connectionAbortRef.current = connectionLifetime;
+    const workspaceConnection = workspaceConnectionRef.current?.agentKey === selectedAgent?.agentKey ? workspaceConnectionRef.current : void 0;
+    const connectionSignal = AbortSignal.any([connectionLifetime.signal, ...workspaceConnection ? [workspaceConnection.operation.signal] : []]);
+    connectionSignalRef.current = connectionSignal;
     setWorkingStartedAt(void 0);
     setStreamLabel("Idle");
     finalizeOpenStreamEntries();
     let closePush;
     const handlePushEvent = (event) => {
+      if (closed || connectionSignal.aborted) return;
       if (event.kind === "validation") {
         appendSystem(`Push notification validation received: ${String(event.payload)}`);
         return;
@@ -60682,7 +60804,7 @@ ${JSON.stringify(
             options2.pushReceiver,
             handlePushEvent
           );
-          if (closed) {
+          if (closed || connectionSignal.aborted) {
             await server.close();
             return;
           }
@@ -60697,11 +60819,11 @@ ${JSON.stringify(
           ...options2,
           headers: {},
           token: void 0,
-          fetchImpl: credentials.fetch(selectedAgent.source, connectionLifetime.signal),
+          fetchImpl: credentials.fetch(selectedAgent.source, connectionSignal),
           url: selectedAgent.connectionUrl,
           agentId: selectedAgent.connectionAgentId
         });
-        if (closed) {
+        if (closed || connectionSignal.aborted) {
           return;
         }
         const owner = credentials.owner(selectedAgent.source);
@@ -60756,12 +60878,14 @@ ${JSON.stringify(
           );
         }
       } catch (error) {
-        if (closed) {
+        if (closed || connectionSignal.aborted) {
           return;
         }
         appendSystem(
           `Connection failed: ${error instanceof Error ? error.message : String(error)}`
         );
+      } finally {
+        workspaceConnection?.finish();
       }
     };
     void connect();
@@ -60778,6 +60902,7 @@ ${JSON.stringify(
     options2.pushNotifications,
     options2.pushReceiver,
     reconnectNonce,
+    workspaceConnectionNonce,
     // Discovery refreshes replace records without changing the connection.
     selectedAgent?.agentKey,
     selectedAgent?.connectionUrl,
@@ -61114,6 +61239,11 @@ ${JSON.stringify(
       void runLoginSlashCommand();
       return;
     }
+    if (command.id === "workspace") {
+      resetSlashSelection();
+      void runWorkspaceSlashCommand();
+      return;
+    }
     if (command.id === "session") {
       resetSlashSelection();
       appendSystem("Use /session retry <source-key> or /session new <source-key>. " + GUEST_HISTORY_WARNING);
@@ -61131,6 +61261,56 @@ ${JSON.stringify(
     setSlashSubmenuId(command.id);
     setSelectedSlashSubmenuIndex(0);
     replaceDraft("");
+  };
+  const runWorkspaceSlashCommand = async (selector) => {
+    if (agentEndpointUrl) {
+      appendNotification("Workspace selection is unavailable with --url. Restart Chat without --url to browse the registry.");
+      return;
+    }
+    const operation = operationGate.begin("workspace");
+    if (!operation) {
+      appendNotification(operationGate.reason);
+      return;
+    }
+    const finish = () => {
+      clearTimeout(timer);
+      if (workspaceConnectionRef.current?.operation === operation) workspaceConnectionRef.current = void 0;
+      operation.finish();
+    };
+    const timer = setTimeout(() => {
+      operation.cancel();
+      appendNotification("Workspace selection timed out. Please try /workspace again.");
+    }, 3e4);
+    operation.signal.addEventListener("abort", finish, { once: true });
+    try {
+      if (selector !== void 0) {
+        await refreshAgentDiscovery({ workspaceSelector: selector, workspaceChange: { operation, finish } });
+      } else {
+        const signal = AbortSignal.any([operation.signal, credentials.signal]);
+        const token = await getStoredAccessToken(selectedEnvironment, { controlPlaneOrigin });
+        if (signal.aborted) return;
+        if (!token) {
+          appendNotification("Use /login before choosing a workspace.");
+          return;
+        }
+        const account = await fetchRegistryAccount({
+          environmentId: selectedEnvironment,
+          accessToken: token,
+          graphQLUrl: getGraphQLHttpUrl(selectedEnvironment, controlPlaneOrigin),
+          fetchImpl: credentials.fetch(createDefaultRegistryAgentSource(selectedEnvironment, controlPlaneOrigin), signal),
+          logger: chatSessionLogger
+        });
+        if (signal.aborted) return;
+        setWorkspaceAccount(account);
+        setSelectedSlashSubmenuIndex(0);
+        setSlashSubmenuId("workspace");
+        if (!account.workspaces.length) appendNotification("No accessible workspaces were returned for this account.");
+      }
+    } catch (error) {
+      if (!operation.signal.aborted) appendNotification(`Workspace lookup failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      if (workspaceConnectionRef.current?.operation !== operation) finish();
+    }
   };
   const runLoginSlashCommand = async () => {
     appendSystem(`Starting Aion login for ${selectedEnvironment}.`);
@@ -61181,6 +61361,9 @@ ${postAuthUrl}`);
       }
       appendSystem(`Logged in to Aion ${selectedEnvironment}.`);
       operationGate.cancel();
+      discoveryLifetimeRef.current.abort();
+      setRegistrySelection(void 0);
+      setWorkspaceAccount(void 0);
       credentials.cancelPending();
       welcomeLifetimeRef.current.abort();
       welcomeLifetimeRef.current = new AbortController();
@@ -61276,6 +61459,10 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
     }
   };
   const runClearSlashCommand = () => {
+    if (operationGate.kind === "workspace") {
+      appendNotification(operationGate.reason);
+      return;
+    }
     const selectedContextAgentKey = selectedAgent?.agentKey ?? selectedAgentKey;
     clearTranscript();
     startNewContext(connectedAgentKeyRef.current === selectedContextAgentKey ? clientState : void 0);
@@ -61308,6 +61495,10 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
     }
   };
   const runSourcesSlashCommand = async () => {
+    if (operationGate.kind === "workspace") {
+      appendNotification(operationGate.reason);
+      return;
+    }
     const refreshedSources = await refreshAgentDiscovery({
       announceExplicitSourceErrors: false
     });
@@ -61329,6 +61520,14 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
     resetSlashSelection();
     if (command.kind === "invalid") {
       appendSystem(command.message);
+      return true;
+    }
+    if (command.kind === "workspace") {
+      void runWorkspaceSlashCommand(command.selector);
+      return true;
+    }
+    if (operationGate.kind === "workspace" && ["session", "clear"].includes(command.kind)) {
+      appendNotification(operationGate.reason);
       return true;
     }
     if (command.kind === "session") {
@@ -61365,11 +61564,15 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
   };
   const applySlashSubmenuSelection = (optionIndex = selectedSlashSubmenuIndex) => {
     const command = getSlashCommandById(slashSubmenuId);
-    const option = command?.options[optionIndex];
+    const option = slashSubmenu?.options[optionIndex];
     if (!command || !option) {
       return;
     }
-    if (command.id === "request") {
+    if (command.id === "workspace") {
+      resetSlashSelection();
+      void runWorkspaceSlashCommand(option.value);
+      return;
+    } else if (command.id === "request") {
       applyRequestMode(option.value);
     } else if (command.id === "response") {
       applyResponseMode(option.value);
@@ -61475,6 +61678,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       if (useStreaming) {
         setStreamLabel("Streaming");
         let completedTask;
+        const completedMessages = [];
         let finalStatusUpdate;
         let reachedTerminal = false;
         let renderedAgentOutput = false;
@@ -61488,6 +61692,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
             event: summarizeProtocolEventForLog(event)
           });
           if (isMessage(event)) {
+            if (event.role === Role.ROLE_AGENT && shouldRenderLiveResponseMessage(event)) completedMessages.push(event);
             renderedAgentOutput = handleMessage(event, streamResponse) || renderedAgentOutput;
           } else if (isTask(event)) {
             if (isTerminalTaskState(event.status?.state)) {
@@ -61531,6 +61736,8 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
             [outboundMessage, finalStatusUpdate.status.message],
             finalStatusUpdate.taskId
           );
+        } else if (completedMessages.length) {
+          persistCompletedExchange(completedMessages.at(-1)?.contextId || requestContextId, [outboundMessage, ...completedMessages]);
         }
         chatSessionLogger.debug("a2a.request.completed", {
           transport: "stream",
@@ -61621,7 +61828,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       return;
     }
     if (isSlashSubmenuOpen && key.upArrow) {
-      const optionsCount = getSlashCommandById(slashSubmenuId)?.options.length ?? 0;
+      const optionsCount = slashSubmenu?.options.length ?? 0;
       if (optionsCount > 0) {
         setSelectedSlashSubmenuIndex(
           (current) => current === 0 ? optionsCount - 1 : current - 1
@@ -61630,7 +61837,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       return;
     }
     if (isSlashSubmenuOpen && key.downArrow) {
-      const optionsCount = getSlashCommandById(slashSubmenuId)?.options.length ?? 0;
+      const optionsCount = slashSubmenu?.options.length ?? 0;
       if (optionsCount > 0) {
         setSelectedSlashSubmenuIndex(
           (current) => current === optionsCount - 1 ? 0 : current + 1
@@ -61728,7 +61935,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
     }
     if (isSlashSubmenuOpen && input >= "1" && input <= "9") {
       const optionIndex = Number.parseInt(input, 10) - 1;
-      const optionsCount = getSlashCommandById(slashSubmenuId)?.options.length ?? 0;
+      const optionsCount = slashSubmenu?.options.length ?? 0;
       if (optionIndex >= 0 && optionIndex < optionsCount) {
         applySlashSubmenuSelection(optionIndex);
       }
@@ -61790,6 +61997,12 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
     ) }),
     /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(SystemNotificationStack, { notifications }),
     workingStartedAt ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Box_default, { marginBottom: 1, children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(WorkingIndicator, { startedAt: workingStartedAt }) }) : null,
+    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Box_default, { children: /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(Text, { dimColor: true, children: [
+      selectedEnvironment,
+      " \xB7 Workspace: ",
+      registrySelection?.workspace.name ?? (agentEndpointUrl ? "direct endpoint" : "not selected"),
+      " \xB7 /workspace"
+    ] }) }),
     /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
       ChatComposer,
       {

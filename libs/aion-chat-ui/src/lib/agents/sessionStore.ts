@@ -138,6 +138,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isSavedMessage(value: unknown, contextId: string): value is Message {
 	if (!isRecord(value) || typeof value.messageId !== "string" || !value.messageId ||
+		(value.taskId !== undefined && typeof value.taskId !== "string") ||
 		![1, 2].includes(value.role as number) || (value.contextId !== undefined && value.contextId !== "" && value.contextId !== contextId) ||
 		(value.extensions !== undefined && (!Array.isArray(value.extensions) || !value.extensions.every((item) => typeof item === "string"))) ||
 		!Array.isArray(value.parts)) return false;

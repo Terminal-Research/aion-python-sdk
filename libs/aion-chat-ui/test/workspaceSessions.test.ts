@@ -39,13 +39,14 @@ describe("exact workspace transcript restoration", () => {
 		expect(readFileSync(file, "utf8")).toBe(before);
 		expect(loadContextSession("production", "workspace-B", "active", directory).session?.messages).toEqual([]);
 	});
-	it.each(["missing", "invalid JSON", "wrong workspace", "wrong context", "malformed message", "malformed raw", "malformed extensions"])("reports %s without another session fallback", (kind) => {
+	it.each(["missing", "invalid JSON", "wrong workspace", "wrong context", "malformed message", "malformed raw", "malformed extensions", "malformed task"])("reports %s without another session fallback", (kind) => {
 		const { directory, file } = fixture();
 		const raw = JSON.parse(readFileSync(file, "utf8"));
 		if (kind === "wrong workspace") raw.agentKey = "workspace-B";
 		if (kind === "wrong context") raw.contextId = "different";
 		if (kind === "malformed message") raw.messages[1].parts = "bad";
 		if (kind === "malformed raw") raw.messages[1].parts = [{ content: { $case: "raw" } }];
+		if (kind === "malformed task") raw.messages[1].taskId = 10;
 		if (kind === "malformed extensions") raw.messages[1].extensions = {};
 		writeFileSync(file, kind === "invalid JSON" ? "{" : JSON.stringify(raw));
 		if (kind === "missing") rmSync(file);

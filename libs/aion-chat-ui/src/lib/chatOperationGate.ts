@@ -2,6 +2,7 @@ export interface ChatOperation {
 	kind: "reply" | "workspace";
 	signal: AbortSignal;
 	finish(): void;
+	cancel(): void;
 }
 
 /** Synchronous exclusion before the first await; cancelled work cannot unlock newer work. */
@@ -19,6 +20,7 @@ export class ChatOperationGate {
 		const controller = new AbortController();
 		const operation: ChatOperation = {
 			kind, signal: controller.signal,
+			cancel: () => { controller.abort(); operation.finish(); },
 			finish: () => { if (this.active?.operation === operation) this.active = undefined; }
 		};
 		this.active = { operation, controller };

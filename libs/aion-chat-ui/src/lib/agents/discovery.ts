@@ -396,8 +396,19 @@ function registryUnavailableResult(
 	};
 }
 
+class RegistryLookupError extends Error {
+	constructor(label: string, readonly originalError: unknown, readonly account?: RegistryAccount) {
+		super(label + ": " + registryDiscoveryErrorMessage(originalError));
+		this.name = "RegistryLookupError";
+	}
+}
+
+function errorWorkspaceAccount(error: unknown): RegistryAccount | undefined {
+	return error instanceof WorkspaceSelectionError || error instanceof RegistryLookupError ? error.account : undefined;
+}
+
 function registryDiscoveryErrorMessage(error: unknown): string {
-	if (error instanceof CredentialDestinationError || error instanceof WorkspaceSelectionError) return error.message;
+	if (error instanceof CredentialDestinationError || error instanceof WorkspaceSelectionError || error instanceof RegistryLookupError) return error.message;
 	const message = error instanceof Error ? error.message : String(error);
 	if (/workos|token|auth|login|credential|jwt|expired|unauthorized|forbidden/iu.test(message)) {
 		return REGISTRY_AUTH_FAILED_MESSAGE;
@@ -415,6 +426,7 @@ function registryDiscoveryErrorMessage(error: unknown): string {
 }
 
 function isRegistryAuthenticationError(error: unknown): boolean {
+	if (error instanceof RegistryLookupError) return isRegistryAuthenticationError(error.originalError);
 	if (error instanceof CredentialDestinationError || error instanceof WorkspaceSelectionError) return false;
 	const message = error instanceof Error ? error.message : String(error);
 	return /workos|token|auth|login|credential|jwt|expired|unauthorized|forbidden|401|403/iu.test(
@@ -434,16 +446,25 @@ async function fetchRegistryIdentitiesWithToken(
 		fetchImpl: options.graphQLFetchImpl ?? fetch,
 		logger: options.logger
 	};
-	const account = await fetchRegistryAccount(request);
+	let account: RegistryAccount;
+	try { account = await fetchRegistryAccount(request); }
+	catch (error) {
+		if (isRegistryAuthenticationError(error) || error instanceof CredentialDestinationError) throw error;
+		throw new RegistryLookupError("Workspace membership lookup failed", error);
+	}
 	const accountScope = registryAccountScope(options.environmentId, account.userId, options.controlPlaneOrigin);
 	const workspace = resolveWorkspace(account, {
 		selector: options.workspaceSelector,
 		savedWorkspaceId: options.registryPreferences?.[accountScope]?.workspaceId
 	});
-	return {
-		identities: await fetchRegistryAgentIdentities({ ...request, organizationId: workspace.id }),
-		registry: { account, workspace, accountScope }
-	};
+	try {
+		return {
+			identities: await fetchRegistryAgentIdentities({ ...request, organizationId: workspace.id }),
+			registry: { account, workspace, accountScope }
+		};
+	} catch (error) {
+		throw new RegistryLookupError(`Agent catalog lookup failed for workspace "${workspace.name}" (${workspace.id})`, error, account);
+	}
 }
 
 async function discoverRegistrySource(
@@ -513,7 +534,7 @@ async function discoverRegistrySource(
 					source,
 					now,
 					registryDiscoveryErrorMessage(refreshError),
-					refreshError instanceof WorkspaceSelectionError ? refreshError.account : undefined
+					errorWorkspaceAccount(refreshError)
 				);
 			}
 		}
@@ -527,7 +548,7 @@ async function discoverRegistrySource(
 				source,
 				now,
 				registryDiscoveryErrorMessage(error),
-				error instanceof WorkspaceSelectionError ? error.account : undefined
+				errorWorkspaceAccount(error)
 			);
 		}
 	}
@@ -551,19 +572,27 @@ async function discoverRegistrySource(
 	};
 	const agents: DiscoveredAgentRecord[] = [];
 
+	const cardErrors: string[] = [];
 	for (const identity of identities) {
 		const agentCardUrl = cardUrlForEndpoint(identity.a2aUrl);
-		const agentCard = await fetchJson<AgentCard>(agentCardUrl, fetchImpl, {
-			logger: options.logger,
-			eventPrefix: "agent_card",
-			context: {
-				sourceKey: source.sourceKey,
-				identityId: identity.id,
-				identityName: identity.name,
-				identityAtName: identity.atName
-			}
-		});
+		let agentCard: AgentCard | undefined;
+		try {
+			agentCard = await fetchJson<AgentCard>(agentCardUrl, fetchImpl, {
+				logger: options.logger,
+				eventPrefix: "agent_card",
+				context: {
+					sourceKey: source.sourceKey,
+					identityId: identity.id,
+					identityName: identity.name,
+					identityAtName: identity.atName
+				}
+			});
+		} catch (error) {
+			cardErrors.push(`${identityDisplayId(identity)}: ${registryDiscoveryErrorMessage(error)}`);
+			continue;
+		}
 		if (!agentCard) {
+			cardErrors.push(`${identityDisplayId(identity)}: agent card unavailable`);
 			continue;
 		}
 
@@ -587,7 +616,9 @@ async function discoverRegistrySource(
 		});
 	}
 
-	return { source: resolvedSource, agents, registry, workspaceAccount: registry.account };
+	const error = cardErrors.length ? `Agent card lookup failed in workspace "${registry.workspace.name}": ${cardErrors.join("; ")}` : undefined;
+	return { source: { ...resolvedSource, ...(error ? { lastError: error, status: agents.length ? "available" : "unavailable" } : {}) },
+		agents, registry, workspaceAccount: registry.account, ...(error ? { error } : {}) };
 }
 
 async function discoverSource(
