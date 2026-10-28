@@ -14,7 +14,8 @@ import {
 } from "../src/lib/graphql/authBootstrap.js";
 import {
 	AGENT_CATALOG_IDENTITIES_QUERY,
-	fetchRegistryAgentIdentities
+	fetchRegistryAgentIdentities,
+	fetchRegistryAccount
 } from "../src/lib/graphql/registry.js";
 import type {
 	ChatSessionLogger,
@@ -239,6 +240,10 @@ describe("login bootstrap", () => {
 });
 
 describe("registry GraphQL", () => {
+	const homeCatalog = async (options: Parameters<typeof fetchRegistryAccount>[0]) => {
+		const account = await fetchRegistryAccount(options);
+		return fetchRegistryAgentIdentities({ ...options, organizationId: account.homeWorkspaceId! });
+	};
 	it("requests current user and either A2A or AionChat identities", async () => {
 		const fetchImpl = vi
 			.fn()
@@ -313,19 +318,12 @@ describe("registry GraphQL", () => {
 			) as unknown as typeof fetch;
 
 		await expect(
-			fetchRegistryAgentIdentities({
+			homeCatalog({
 				environmentId: "development",
 				accessToken: "access-token",
 				fetchImpl
 			})
 		).resolves.toEqual([
-			{
-				id: "personal-1",
-				name: "Personal Agent",
-				atName: "@me",
-				a2aUrl: "https://agent.example/me",
-				updatedAt: "2026-05-01T00:00:00Z"
-			},
 			{
 				id: "principal-1",
 				name: "Team Agent",
@@ -369,12 +367,12 @@ describe("registry GraphQL", () => {
 			.mockResolvedValueOnce(respond({
 				agentIdentityDetails: [
 					detail("a2a-only", "A2A"), detail("both", "A2A", "AionChat"),
-					detail("self", "A2A"), detail("chat-only", "AionChat"),
+					detail("self", "A2A"), detail("self", "AionChat"), detail("chat-only", "AionChat"),
 					{ identity: { id: "unaddressable" }, distributionUsages: [] }
 				]
 			}));
 
-		const identities = await fetchRegistryAgentIdentities({
+		const identities = await homeCatalog({
 			environmentId: "development", accessToken: "access-token", fetchImpl
 		});
 
@@ -455,7 +453,7 @@ describe("registry GraphQL", () => {
 			) as unknown as typeof fetch;
 
 		await expect(
-			fetchRegistryAgentIdentities({
+			homeCatalog({
 				environmentId: "development",
 				accessToken: "access-token",
 				fetchImpl,
@@ -469,8 +467,8 @@ describe("registry GraphQL", () => {
 		const skippedEvents = logger.events.filter(
 			(event) => event.event === "registry.agent_identity.skipped"
 		);
-		expect(skippedEvents).toHaveLength(2);
-		expect(skippedEvents[1]).toMatchObject({
+		expect(skippedEvents).toHaveLength(1);
+		expect(skippedEvents[0]).toMatchObject({
 			level: "debug",
 			data: {
 				reason: "missing_a2a_url",

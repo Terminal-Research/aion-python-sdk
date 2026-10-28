@@ -57950,6 +57950,14 @@ query CurrentUser {
 		homeOrganization {
 			id
 			name
+			organizationType
+		}
+		memberships {
+			organization {
+				id
+				name
+				organizationType
+			}
 		}
 		agentIdentity {
 			id
@@ -58054,7 +58062,7 @@ function logSkippedIdentity(logger, identity, reason, extra = {}) {
     ...extra
   });
 }
-async function fetchRegistryAgentIdentities(options2) {
+async function fetchRegistryAccount(options2) {
   const graphQLUrl = options2.graphQLUrl ?? getGraphQLHttpUrl(options2.environmentId);
   const bootstrap = await runLoginBootstrap({
     environmentId: options2.environmentId,
@@ -58083,7 +58091,25 @@ async function fetchRegistryAgentIdentities(options2) {
     throw new Error("Aion registry did not return the current user.");
   }
   options2.logger?.debug("registry.current_user.loaded", summarizeCurrentUser(user));
-  const organizationId = user.homeOrganization?.id ?? user.agentIdentity.organizationId;
+  const workspaces = /* @__PURE__ */ new Map();
+  const organizations = [
+    user.homeOrganization,
+    ...(user.memberships ?? []).map((item) => item.organization)
+  ];
+  for (const organization of organizations) {
+    if (organization) workspaces.set(organization.id, organization);
+  }
+  return {
+    userId: user.id,
+    ...user.homeOrganization ? { homeWorkspaceId: user.homeOrganization.id } : {},
+    workspaces: [...workspaces.values()].sort(
+      (left, right) => (left.name ?? left.id).localeCompare(right.name ?? right.id) || left.id.localeCompare(right.id)
+    )
+  };
+}
+async function fetchRegistryAgentIdentities(options2) {
+  const graphQLUrl = options2.graphQLUrl ?? getGraphQLHttpUrl(options2.environmentId);
+  const { organizationId } = options2;
   const catalog = await executeGraphQL({
     environmentId: options2.environmentId,
     url: graphQLUrl,
@@ -58098,14 +58124,6 @@ async function fetchRegistryAgentIdentities(options2) {
     logger: options2.logger
   });
   const identities = /* @__PURE__ */ new Map();
-  const personalIdentity = normalizeIdentity(user.agentIdentity);
-  if (personalIdentity) {
-    identities.set(personalIdentity.id, personalIdentity);
-  } else {
-    logSkippedIdentity(options2.logger, user.agentIdentity, "missing_a2a_url", {
-      source: "current_user"
-    });
-  }
   for (const detail of catalog.data?.agentIdentityDetails ?? []) {
     const identity = normalizeIdentity(detail.identity);
     if (identity) {
@@ -58422,13 +58440,18 @@ function isRegistryAuthenticationError(error) {
   );
 }
 async function fetchRegistryIdentitiesWithToken(source, accessToken, options2) {
-  return fetchRegistryAgentIdentities({
+  const request = {
     environmentId: options2.environmentId,
     accessToken,
     graphQLUrl: getGraphQLHttpUrlForBaseUrl(source.url),
     fetchImpl: options2.graphQLFetchImpl ?? fetch,
     logger: options2.logger
-  });
+  };
+  const account = await fetchRegistryAccount(request);
+  if (!account.homeWorkspaceId) {
+    throw new Error("No home workspace is available. Select a workspace to discover agents.");
+  }
+  return fetchRegistryAgentIdentities({ ...request, organizationId: account.homeWorkspaceId });
 }
 async function discoverRegistrySource(source, fetchImpl, now, options2) {
   let accessToken;

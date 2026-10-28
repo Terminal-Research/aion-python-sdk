@@ -5,7 +5,7 @@ import {
 	getControlPlaneApiBaseUrl,
 	getGraphQLHttpUrlForBaseUrl
 } from "../environment.js";
-import { fetchRegistryAgentIdentities } from "../graphql/registry.js";
+import { fetchRegistryAccount, fetchRegistryAgentIdentities } from "../graphql/registry.js";
 import { CredentialDestinationError } from "../credentialErrors.js";
 import type { ChatSessionLogger } from "../sessionLogger.js";
 import {
@@ -412,13 +412,18 @@ async function fetchRegistryIdentitiesWithToken(
 	accessToken: string,
 	options: AgentDiscoveryOptions
 ): Promise<Awaited<ReturnType<typeof fetchRegistryAgentIdentities>>> {
-	return fetchRegistryAgentIdentities({
+	const request = {
 		environmentId: options.environmentId,
 		accessToken,
 		graphQLUrl: getGraphQLHttpUrlForBaseUrl(source.url),
 		fetchImpl: options.graphQLFetchImpl ?? fetch,
 		logger: options.logger
-	});
+	};
+	const account = await fetchRegistryAccount(request);
+	if (!account.homeWorkspaceId) {
+		throw new Error("No home workspace is available. Select a workspace to discover agents.");
+	}
+	return fetchRegistryAgentIdentities({ ...request, organizationId: account.homeWorkspaceId });
 }
 
 async function discoverRegistrySource(

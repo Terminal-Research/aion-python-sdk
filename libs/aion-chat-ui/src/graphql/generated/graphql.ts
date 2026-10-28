@@ -31,6 +31,14 @@ export type EndpointTypeGQL =
   | 'Twitter'
   | 'Voice';
 
+export type OrganizationTypeGQL =
+  /** Administrative organization reserved for Aion system operations */
+  | 'Admin'
+  /** Personal organization created for an individual user */
+  | 'Personal'
+  /** Shared organization with multiple members */
+  | 'Team';
+
 export type LoginBootstrapQueryVariables = Exact<{
   token: string;
 }>;
@@ -41,7 +49,7 @@ export type LoginBootstrapQuery = { login: { nextRoute: string | null, email: st
 export type CurrentUserQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type CurrentUserQuery = { user: { id: string, homeOrganization: { id: string, name: string } | null, agentIdentity: { id: string, name: string | null, atName: string | null, a2aUrl: string | null, agentType: AgentIdentityType, organizationId: string, updatedAt: string } } | null };
+export type CurrentUserQuery = { user: { id: string, homeOrganization: { id: string, name: string, organizationType: OrganizationTypeGQL } | null, memberships: Array<{ organization: { id: string, name: string, organizationType: OrganizationTypeGQL } }> | null, agentIdentity: { id: string, name: string | null, atName: string | null, a2aUrl: string | null, agentType: AgentIdentityType, organizationId: string, updatedAt: string } } | null };
 
 export type AgentCatalogIdentitiesQueryVariables = Exact<{
   organizationId: string | number;
