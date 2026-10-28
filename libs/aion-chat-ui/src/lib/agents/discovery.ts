@@ -5,7 +5,8 @@ import {
 	getControlPlaneApiBaseUrl,
 	getGraphQLHttpUrlForBaseUrl
 } from "../environment.js";
-import { fetchRegistryAccount, fetchRegistryAgentIdentities } from "../graphql/registry.js";
+import { fetchRegistryAccount, fetchRegistryAgentIdentities, type RegistryAccount, type RegistryWorkspace } from "../graphql/registry.js";
+import { registryAccountScope, registryAgentKey, resolveWorkspace, WorkspaceSelectionError, type RegistryAccountPreference } from "../workspaces.js";
 import { CredentialDestinationError } from "../credentialErrors.js";
 import type { ChatSessionLogger } from "../sessionLogger.js";
 import {
@@ -32,13 +33,23 @@ interface DiscoveryManifest {
 	endpoints?: Record<string, string>;
 }
 
+export interface RegistrySelection {
+	account: RegistryAccount;
+	workspace: RegistryWorkspace;
+	accountScope: string;
+}
+
 export interface SourceDiscoveryResult {
+	registry?: RegistrySelection;
+	workspaceAccount?: RegistryAccount;
 	source: AgentSourceRecord;
 	agents: DiscoveredAgentRecord[];
 	error?: string;
 }
 
 export interface AgentDiscoveryResult {
+	registry?: RegistrySelection;
+	workspaceAccount?: RegistryAccount;
 	sources: AgentSourceRecord[];
 	agents: DiscoveredAgentRecord[];
 	errors: SourceDiscoveryResult[];
@@ -57,6 +68,8 @@ export interface ControlPlaneAccessTokenRequest {
 }
 
 export interface AgentDiscoveryOptions {
+	workspaceSelector?: string;
+	registryPreferences?: Record<string, RegistryAccountPreference>;
 	environmentId: AionEnvironmentId;
 	controlPlaneOrigin?: string;
 	controlPlaneAccessTokenProvider?: (
@@ -366,9 +379,11 @@ function identityDisplayId(identity: {
 function registryUnavailableResult(
 	source: RuntimeAgentSource,
 	now: string,
-	lastError: string
+	lastError: string,
+	workspaceAccount?: RegistryAccount
 ): SourceDiscoveryResult {
 	return {
+		...(workspaceAccount ? { workspaceAccount } : {}),
 		source: {
 			...source,
 			type: "registry",
@@ -382,7 +397,7 @@ function registryUnavailableResult(
 }
 
 function registryDiscoveryErrorMessage(error: unknown): string {
-	if (error instanceof CredentialDestinationError) return error.message;
+	if (error instanceof CredentialDestinationError || error instanceof WorkspaceSelectionError) return error.message;
 	const message = error instanceof Error ? error.message : String(error);
 	if (/workos|token|auth|login|credential|jwt|expired|unauthorized|forbidden/iu.test(message)) {
 		return REGISTRY_AUTH_FAILED_MESSAGE;
@@ -400,7 +415,7 @@ function registryDiscoveryErrorMessage(error: unknown): string {
 }
 
 function isRegistryAuthenticationError(error: unknown): boolean {
-	if (error instanceof CredentialDestinationError) return false;
+	if (error instanceof CredentialDestinationError || error instanceof WorkspaceSelectionError) return false;
 	const message = error instanceof Error ? error.message : String(error);
 	return /workos|token|auth|login|credential|jwt|expired|unauthorized|forbidden|401|403/iu.test(
 		message
@@ -411,7 +426,7 @@ async function fetchRegistryIdentitiesWithToken(
 	source: RuntimeAgentSource,
 	accessToken: string,
 	options: AgentDiscoveryOptions
-): Promise<Awaited<ReturnType<typeof fetchRegistryAgentIdentities>>> {
+): Promise<{ identities: Awaited<ReturnType<typeof fetchRegistryAgentIdentities>>; registry: RegistrySelection }> {
 	const request = {
 		environmentId: options.environmentId,
 		accessToken,
@@ -420,10 +435,15 @@ async function fetchRegistryIdentitiesWithToken(
 		logger: options.logger
 	};
 	const account = await fetchRegistryAccount(request);
-	if (!account.homeWorkspaceId) {
-		throw new Error("No home workspace is available. Select a workspace to discover agents.");
-	}
-	return fetchRegistryAgentIdentities({ ...request, organizationId: account.homeWorkspaceId });
+	const accountScope = registryAccountScope(options.environmentId, account.userId, options.controlPlaneOrigin);
+	const workspace = resolveWorkspace(account, {
+		selector: options.workspaceSelector,
+		savedWorkspaceId: options.registryPreferences?.[accountScope]?.workspaceId
+	});
+	return {
+		identities: await fetchRegistryAgentIdentities({ ...request, organizationId: workspace.id }),
+		registry: { account, workspace, accountScope }
+	};
 }
 
 async function discoverRegistrySource(
@@ -454,13 +474,13 @@ async function discoverRegistrySource(
 		return registryUnavailableResult(source, now, REGISTRY_LOGIN_REQUIRED_MESSAGE);
 	}
 
-	let identities;
+	let lookup;
 	try {
 		options.logger?.debug("registry.identities.requested", {
 			sourceKey: source.sourceKey,
 			graphQLUrl: getGraphQLHttpUrlForBaseUrl(source.url)
 		});
-		identities = await fetchRegistryIdentitiesWithToken(
+		lookup = await fetchRegistryIdentitiesWithToken(
 			source,
 			accessToken,
 			options
@@ -478,7 +498,7 @@ async function discoverRegistrySource(
 				const refreshedAccessToken =
 					await options.controlPlaneAccessTokenProvider?.({ forceRefresh: true });
 				if (refreshedAccessToken && refreshedAccessToken !== accessToken) {
-					identities = await fetchRegistryIdentitiesWithToken(
+					lookup = await fetchRegistryIdentitiesWithToken(
 						source,
 						refreshedAccessToken,
 						options
@@ -492,12 +512,13 @@ async function discoverRegistrySource(
 				return registryUnavailableResult(
 					source,
 					now,
-					registryDiscoveryErrorMessage(refreshError)
+					registryDiscoveryErrorMessage(refreshError),
+					refreshError instanceof WorkspaceSelectionError ? refreshError.account : undefined
 				);
 			}
 		}
 
-		if (!identities) {
+		if (!lookup) {
 			options.logger?.warn("registry.identities.failed", {
 				sourceKey: source.sourceKey,
 				error
@@ -505,10 +526,12 @@ async function discoverRegistrySource(
 			return registryUnavailableResult(
 				source,
 				now,
-				registryDiscoveryErrorMessage(error)
+				registryDiscoveryErrorMessage(error),
+				error instanceof WorkspaceSelectionError ? error.account : undefined
 			);
 		}
 	}
+	const { identities, registry } = lookup;
 	options.logger?.debug("registry.identities.resolved", {
 		sourceKey: source.sourceKey,
 		identityCount: identities.length,
@@ -546,7 +569,8 @@ async function discoverRegistrySource(
 
 		const displayId = identityDisplayId(identity);
 		agents.push({
-			agentKey: createAgentKey(source.sourceKey, identity.id),
+			agentKey: registryAgentKey(source.sourceKey, identity.id, registry.accountScope, registry.workspace.id),
+			registry,
 			agentId: identity.id,
 			id: displayId,
 			path: identity.a2aUrl,
@@ -563,7 +587,7 @@ async function discoverRegistrySource(
 		});
 	}
 
-	return { source: resolvedSource, agents };
+	return { source: resolvedSource, agents, registry, workspaceAccount: registry.account };
 }
 
 async function discoverSource(
@@ -617,11 +641,15 @@ export async function discoverAgentSources(
 	const agents: DiscoveredAgentRecord[] = [];
 	const errors: SourceDiscoveryResult[] = [];
 
+	let registry: RegistrySelection | undefined;
+	let workspaceAccount: RegistryAccount | undefined;
 	for (const source of sources) {
 		options?.logger?.debug("source.discovery.started", summarizeSourceForLog(source));
 		try {
 			const sourceFetchImpl = options?.sourceFetchImpl?.(source) ?? fetchImpl;
 			const result = await discoverSource(source, sourceFetchImpl, now, options);
+			registry = result.registry ?? registry;
+			workspaceAccount = result.workspaceAccount ?? workspaceAccount;
 			resolvedSources.push(result.source);
 			agents.push(...result.agents);
 			if (result.error) {
@@ -670,6 +698,8 @@ export async function discoverAgentSources(
 	}
 
 	return {
+		...(registry ? { registry } : {}),
+		...(workspaceAccount ? { workspaceAccount } : {}),
 		sources: resolvedSources,
 		agents: [...agentMap.values()].sort((left, right) => left.id.localeCompare(right.id)),
 		errors

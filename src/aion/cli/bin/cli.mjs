@@ -56900,6 +56900,48 @@ function mergeAgentSources(persistedSources, environmentId, explicitUrl, control
 }
 
 // src/lib/workspaces.ts
+var WorkspaceSelectionError = class extends Error {
+  constructor(message, account) {
+    super(message);
+    this.account = account;
+    this.name = "WorkspaceSelectionError";
+  }
+  account;
+};
+function formatWorkspaces(workspaces) {
+  return workspaces.map((workspace) => `${workspace.name} (${workspace.id})`).join(", ");
+}
+function resolveWorkspace(account, options2 = {}) {
+  if (options2.selector !== void 0) {
+    const selector = options2.selector.trim();
+    const exactId = account.workspaces.find((item) => item.id === selector);
+    if (exactId) return exactId;
+    const matches = account.workspaces.filter((item) => item.name.trim().toLowerCase() === selector.toLowerCase());
+    if (selector && matches.length === 1) return matches[0];
+    if (matches.length > 1) {
+      throw new WorkspaceSelectionError(`Workspace '${selector}' is ambiguous. Use an ID: ${formatWorkspaces(matches)}.`, account);
+    }
+    throw new WorkspaceSelectionError(`Workspace '${selector}' is unavailable to this account. Available workspaces: ${formatWorkspaces(account.workspaces) || "none"}.`, account);
+  }
+  const id = options2.savedWorkspaceId ?? account.homeWorkspaceId;
+  const workspace = account.workspaces.find((item) => item.id === id);
+  if (workspace) return workspace;
+  throw new WorkspaceSelectionError(
+    options2.savedWorkspaceId !== void 0 ? "Your saved workspace is no longer available. Use /workspace or --workspace to select another." : "No home workspace is available. Use /workspace or --workspace to select a workspace.",
+    account
+  );
+}
+function registryAccountScope(environment, userId, origin) {
+  return hashValue(JSON.stringify([environment, getControlPlaneApiBaseUrl(environment, origin), userId]));
+}
+function registryAgentKey(sourceKey, identityId, accountScope, workspaceId) {
+  return createAgentKey(`${sourceKey}:workspace-${hashValue(JSON.stringify([accountScope, workspaceId]))}`, identityId);
+}
+function eligibleLegacyRegistryAgent(options2) {
+  if (!options2.credentialScope || options2.workspaceId !== options2.homeWorkspaceId) return void 0;
+  const legacy = options2.agents[createAgentKey(options2.sourceKey, options2.identityId)];
+  return legacy?.sourceKey === options2.sourceKey && legacy.agentId === options2.identityId && legacy.credentialScope === options2.credentialScope ? legacy : void 0;
+}
 function normalizeRegistryPreferences(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return void 0;
   const entries = Object.entries(value).flatMap(([scope, raw]) => {
@@ -58426,8 +58468,9 @@ function identityDisplayId(identity) {
   }
   return identity.id;
 }
-function registryUnavailableResult(source, now, lastError) {
+function registryUnavailableResult(source, now, lastError, workspaceAccount) {
   return {
+    ...workspaceAccount ? { workspaceAccount } : {},
     source: {
       ...source,
       type: "registry",
@@ -58440,7 +58483,7 @@ function registryUnavailableResult(source, now, lastError) {
   };
 }
 function registryDiscoveryErrorMessage(error) {
-  if (error instanceof CredentialDestinationError) return error.message;
+  if (error instanceof CredentialDestinationError || error instanceof WorkspaceSelectionError) return error.message;
   const message = error instanceof Error ? error.message : String(error);
   if (/workos|token|auth|login|credential|jwt|expired|unauthorized|forbidden/iu.test(message)) {
     return REGISTRY_AUTH_FAILED_MESSAGE;
@@ -58453,7 +58496,7 @@ function registryDiscoveryErrorMessage(error) {
   return REGISTRY_UNEXPECTED_ERROR_MESSAGE;
 }
 function isRegistryAuthenticationError(error) {
-  if (error instanceof CredentialDestinationError) return false;
+  if (error instanceof CredentialDestinationError || error instanceof WorkspaceSelectionError) return false;
   const message = error instanceof Error ? error.message : String(error);
   return /workos|token|auth|login|credential|jwt|expired|unauthorized|forbidden|401|403/iu.test(
     message
@@ -58468,10 +58511,15 @@ async function fetchRegistryIdentitiesWithToken(source, accessToken, options2) {
     logger: options2.logger
   };
   const account = await fetchRegistryAccount(request);
-  if (!account.homeWorkspaceId) {
-    throw new Error("No home workspace is available. Select a workspace to discover agents.");
-  }
-  return fetchRegistryAgentIdentities({ ...request, organizationId: account.homeWorkspaceId });
+  const accountScope = registryAccountScope(options2.environmentId, account.userId, options2.controlPlaneOrigin);
+  const workspace = resolveWorkspace(account, {
+    selector: options2.workspaceSelector,
+    savedWorkspaceId: options2.registryPreferences?.[accountScope]?.workspaceId
+  });
+  return {
+    identities: await fetchRegistryAgentIdentities({ ...request, organizationId: workspace.id }),
+    registry: { account, workspace, accountScope }
+  };
 }
 async function discoverRegistrySource(source, fetchImpl, now, options2) {
   let accessToken;
@@ -58493,13 +58541,13 @@ async function discoverRegistrySource(source, fetchImpl, now, options2) {
     });
     return registryUnavailableResult(source, now, REGISTRY_LOGIN_REQUIRED_MESSAGE);
   }
-  let identities;
+  let lookup;
   try {
     options2.logger?.debug("registry.identities.requested", {
       sourceKey: source.sourceKey,
       graphQLUrl: getGraphQLHttpUrlForBaseUrl(source.url)
     });
-    identities = await fetchRegistryIdentitiesWithToken(
+    lookup = await fetchRegistryIdentitiesWithToken(
       source,
       accessToken,
       options2
@@ -58516,7 +58564,7 @@ async function discoverRegistrySource(source, fetchImpl, now, options2) {
         });
         const refreshedAccessToken = await options2.controlPlaneAccessTokenProvider?.({ forceRefresh: true });
         if (refreshedAccessToken && refreshedAccessToken !== accessToken) {
-          identities = await fetchRegistryIdentitiesWithToken(
+          lookup = await fetchRegistryIdentitiesWithToken(
             source,
             refreshedAccessToken,
             options2
@@ -58530,11 +58578,12 @@ async function discoverRegistrySource(source, fetchImpl, now, options2) {
         return registryUnavailableResult(
           source,
           now,
-          registryDiscoveryErrorMessage(refreshError)
+          registryDiscoveryErrorMessage(refreshError),
+          refreshError instanceof WorkspaceSelectionError ? refreshError.account : void 0
         );
       }
     }
-    if (!identities) {
+    if (!lookup) {
       options2.logger?.warn("registry.identities.failed", {
         sourceKey: source.sourceKey,
         error
@@ -58542,10 +58591,12 @@ async function discoverRegistrySource(source, fetchImpl, now, options2) {
       return registryUnavailableResult(
         source,
         now,
-        registryDiscoveryErrorMessage(error)
+        registryDiscoveryErrorMessage(error),
+        error instanceof WorkspaceSelectionError ? error.account : void 0
       );
     }
   }
+  const { identities, registry } = lookup;
   options2.logger?.debug("registry.identities.resolved", {
     sourceKey: source.sourceKey,
     identityCount: identities.length,
@@ -58581,7 +58632,8 @@ async function discoverRegistrySource(source, fetchImpl, now, options2) {
     }
     const displayId = identityDisplayId(identity);
     agents.push({
-      agentKey: createAgentKey(source.sourceKey, identity.id),
+      agentKey: registryAgentKey(source.sourceKey, identity.id, registry.accountScope, registry.workspace.id),
+      registry,
       agentId: identity.id,
       id: displayId,
       path: identity.a2aUrl,
@@ -58597,7 +58649,7 @@ async function discoverRegistrySource(source, fetchImpl, now, options2) {
       agentCard
     });
   }
-  return { source: resolvedSource, agents };
+  return { source: resolvedSource, agents, registry, workspaceAccount: registry.account };
 }
 async function discoverSource(source, fetchImpl, now, options2) {
   if (!source.enabled) {
@@ -58636,11 +58688,15 @@ async function discoverAgentSources(sources, fetchImpl = fetch, options2) {
   const resolvedSources = [];
   const agents = [];
   const errors = [];
+  let registry;
+  let workspaceAccount;
   for (const source of sources) {
     options2?.logger?.debug("source.discovery.started", summarizeSourceForLog(source));
     try {
       const sourceFetchImpl = options2?.sourceFetchImpl?.(source) ?? fetchImpl;
       const result = await discoverSource(source, sourceFetchImpl, now, options2);
+      registry = result.registry ?? registry;
+      workspaceAccount = result.workspaceAccount ?? workspaceAccount;
       resolvedSources.push(result.source);
       agents.push(...result.agents);
       if (result.error) {
@@ -58682,6 +58738,8 @@ async function discoverAgentSources(sources, fetchImpl = fetch, options2) {
     agentMap.set(agent.agentKey, agent);
   }
   return {
+    ...registry ? { registry } : {},
+    ...workspaceAccount ? { workspaceAccount } : {},
     sources: resolvedSources,
     agents: [...agentMap.values()].sort((left, right) => left.id.localeCompare(right.id)),
     errors
@@ -58798,61 +58856,78 @@ function saveCompletedExchange(snapshot, sessionsDirectory = resolveSessionsDire
     return `chat2 could not save session: ${error instanceof Error ? error.message : String(error)}`;
   }
 }
-
-// src/lib/protocolOutput.ts
-var import_yaml = __toESM(require_dist(), 1);
 function isRecord2(value) {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+  return !!value && typeof value === "object" && !Array.isArray(value);
 }
-function isStreamResponse(value) {
-  if (!isRecord2(value) || !isRecord2(value.payload)) {
+function isSavedMessage(value, contextId) {
+  if (!isRecord2(value) || typeof value.messageId !== "string" || !value.messageId || ![1, 2].includes(value.role) || value.contextId !== void 0 && value.contextId !== "" && value.contextId !== contextId || value.extensions !== void 0 && (!Array.isArray(value.extensions) || !value.extensions.every((item) => typeof item === "string")) || !Array.isArray(value.parts)) return false;
+  return value.parts.every((part) => {
+    if (!isRecord2(part)) return false;
+    if (part.content === void 0) return true;
+    if (!isRecord2(part.content)) return false;
+    const content = part.content;
+    if (content.$case === "text" || content.$case === "url") return typeof content.value === "string";
+    if (content.$case === "data") return isRecord2(content.value);
+    if (content.$case === "raw" && isRecord2(content.value)) {
+      const bytes = Object.values(content.value);
+      if (!bytes.every((byte) => typeof byte === "number" && Number.isInteger(byte) && byte >= 0 && byte <= 255)) return false;
+      content.value = Uint8Array.from(bytes);
+      return true;
+    }
     return false;
-  }
-  if (!("value" in value.payload)) {
-    return false;
-  }
-  return ["task", "message", "statusUpdate", "artifactUpdate"].includes(
-    String(value.payload.$case)
-  );
+  });
 }
-function toProtocolJsonValue(value) {
-  if (isStreamResponse(value)) {
-    return StreamResponse.toJSON(value);
+function loadContextSession(environment, agentKey, contextId, sessionsDirectory = resolveSessionsDirectory()) {
+  const session = readSessionFile(resolveSessionFilePath(environment, agentKey, contextId, sessionsDirectory));
+  if (!session || session.schemaVersion !== 1 || session.environment !== environment || session.agentKey !== agentKey || session.contextId !== contextId || typeof session.createdAt !== "string" || typeof session.lastUpdatedAt !== "string" || !Number.isInteger(session.localTurnCount) || session.localTurnCount < 0 || !Array.isArray(session.messages) || !session.messages.every((message) => isSavedMessage(message, contextId))) {
+    return { warning: "This conversation is still selected, but its saved history could not be loaded." };
   }
-  if (isMessage(value)) {
-    return Message.toJSON(value);
-  }
-  if (isTask(value)) {
-    return Task.toJSON(value);
-  }
-  if (isTaskStatusUpdateEvent(value)) {
-    return TaskStatusUpdateEvent.toJSON(value);
-  }
-  if (isTaskArtifactUpdateEvent(value)) {
-    return TaskArtifactUpdateEvent.toJSON(value);
-  }
-  return void 0;
+  return { session: { ...session, messages: [...new Map(session.messages.map((message) => [message.messageId, message])).values()] } };
 }
-function toPlainValue(value) {
-  const protocolJson = toProtocolJsonValue(value);
-  if (protocolJson !== void 0) {
-    return protocolJson;
-  }
+function copyContextSession(session, agentKey, sessionsDirectory = resolveSessionsDirectory()) {
   try {
-    return JSON.parse(JSON.stringify(value));
+    const filePath = resolveSessionFilePath(session.environment, agentKey, session.contextId, sessionsDirectory);
+    mkdirSync3(path3.dirname(filePath), { recursive: true });
+    writeFileSync2(filePath, `${JSON.stringify({ ...session, agentKey }, null, 2)}
+`, "utf8");
+    return void 0;
   } catch {
-    return String(value);
+    return "The saved history could not be copied into this workspace.";
   }
 }
-function formatProtocolPayloadAsJson(payload) {
-  return JSON.stringify(toPlainValue(payload), null, 2);
-}
-function formatProtocolPayload(payload) {
-  const yaml = (0, import_yaml.stringify)(toPlainValue(payload)).trimEnd();
-  return `\`\`\`yaml
-${yaml}
-\`\`\``;
-}
+
+// src/lib/chatOperationGate.ts
+var ChatOperationGate = class {
+  active;
+  get kind() {
+    return this.active?.operation.kind;
+  }
+  get busy() {
+    return !!this.active;
+  }
+  get reason() {
+    if (this.active?.operation.kind === "reply") return "Please wait for the current reply to finish before switching workspaces.";
+    if (this.active) return "A workspace change is in progress. Please wait for it to finish.";
+    return void 0;
+  }
+  begin(kind) {
+    if (this.active) return void 0;
+    const controller = new AbortController();
+    const operation = {
+      kind,
+      signal: controller.signal,
+      finish: () => {
+        if (this.active?.operation === operation) this.active = void 0;
+      }
+    };
+    this.active = { operation, controller };
+    return operation;
+  }
+  cancel() {
+    this.active?.controller.abort();
+    this.active = void 0;
+  }
+};
 
 // src/lib/messageDisplay.ts
 function formatRawPart(part) {
@@ -58950,6 +59025,71 @@ function shouldShowNoAgentMessageNotice({
   renderedAgentOutput
 }) {
   return responseMode !== "a2a-protocol" && reachedTerminal && !renderedAgentOutput;
+}
+
+// src/lib/restoredTranscript.ts
+function restoredTranscriptEntries(messages) {
+  return messages.flatMap((message) => {
+    if (message.role === Role.ROLE_USER && message.extensions?.includes(WELCOME_MESSAGE_EXTENSION_URI)) return [];
+    if (message.role === Role.ROLE_AGENT && !shouldRenderLiveResponseMessage(message)) return [];
+    const body = formatMessageParts(message.parts);
+    return body ? [{ id: message.messageId, role: message.role === Role.ROLE_USER ? "user" : "agent", body, isFinalized: true }] : [];
+  });
+}
+
+// src/lib/protocolOutput.ts
+var import_yaml = __toESM(require_dist(), 1);
+function isRecord3(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+function isStreamResponse(value) {
+  if (!isRecord3(value) || !isRecord3(value.payload)) {
+    return false;
+  }
+  if (!("value" in value.payload)) {
+    return false;
+  }
+  return ["task", "message", "statusUpdate", "artifactUpdate"].includes(
+    String(value.payload.$case)
+  );
+}
+function toProtocolJsonValue(value) {
+  if (isStreamResponse(value)) {
+    return StreamResponse.toJSON(value);
+  }
+  if (isMessage(value)) {
+    return Message.toJSON(value);
+  }
+  if (isTask(value)) {
+    return Task.toJSON(value);
+  }
+  if (isTaskStatusUpdateEvent(value)) {
+    return TaskStatusUpdateEvent.toJSON(value);
+  }
+  if (isTaskArtifactUpdateEvent(value)) {
+    return TaskArtifactUpdateEvent.toJSON(value);
+  }
+  return void 0;
+}
+function toPlainValue(value) {
+  const protocolJson = toProtocolJsonValue(value);
+  if (protocolJson !== void 0) {
+    return protocolJson;
+  }
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return String(value);
+  }
+}
+function formatProtocolPayloadAsJson(payload) {
+  return JSON.stringify(toPlainValue(payload), null, 2);
+}
+function formatProtocolPayload(payload) {
+  const yaml = (0, import_yaml.stringify)(toPlainValue(payload)).trimEnd();
+  return `\`\`\`yaml
+${yaml}
+\`\`\``;
 }
 
 // src/lib/pushListener.ts
@@ -59998,6 +60138,8 @@ function ChatApp({ options: options2 }) {
   const [chatSettings, setChatSettings] = (0, import_react37.useState)(
     initialSettingsResult.settings
   );
+  const chatSettingsRef = (0, import_react37.useRef)(chatSettings);
+  const operationGate = (0, import_react37.useRef)(new ChatOperationGate()).current;
   const [selectedEnvironment, setSelectedEnvironment] = (0, import_react37.useState)(
     initialSettingsResult.settings.selectedEnvironment
   );
@@ -60149,6 +60291,7 @@ function ChatApp({ options: options2 }) {
     return () => {
       welcomeLifetimeRef.current.abort();
       foregroundLifetimeRef.current.abort();
+      operationGate.cancel();
       chatSessionLogger.info("chat.session.ended", {
         mode: "interactive",
         environmentId: environmentAtStart
@@ -60160,6 +60303,7 @@ function ChatApp({ options: options2 }) {
     };
   }, []);
   const persistSettings = (nextSettings) => {
+    chatSettingsRef.current = nextSettings;
     setChatSettings(nextSettings);
     const warning = saveChatSettings(nextSettings);
     if (warning) {
@@ -60167,16 +60311,37 @@ function ChatApp({ options: options2 }) {
     }
   };
   const persistEnvironmentSettings = (environmentId, update) => {
-    const current = chatSettings.environments[environmentId];
+    const latest = chatSettingsRef.current;
+    const current = latest.environments[environmentId];
     persistSettings({
-      ...chatSettings,
+      ...latest,
       environments: {
-        ...chatSettings.environments,
+        ...latest.environments,
         [environmentId]: {
           ...current,
           ...update
         }
       }
+    });
+  };
+  const persistAgentSelection = (agent) => {
+    if (isTransientAgentSource(agent.source)) return;
+    const environment = chatSettingsRef.current.environments[selectedEnvironment];
+    const registry = agent.registry;
+    persistEnvironmentSettings(selectedEnvironment, {
+      selectedAgentKey: agent.agentKey,
+      selectedAgentId: agent.id,
+      ...registry ? { registryAccounts: {
+        ...environment.registryAccounts,
+        [registry.accountScope]: {
+          ...environment.registryAccounts?.[registry.accountScope],
+          workspaceId: registry.workspace.id,
+          selectedAgentKeys: {
+            ...environment.registryAccounts?.[registry.accountScope]?.selectedAgentKeys,
+            [registry.workspace.id]: agent.agentKey
+          }
+        }
+      } } : {}
     });
   };
   const persistModes = (nextRequestMode, nextResponseMode) => {
@@ -60197,6 +60362,7 @@ function ChatApp({ options: options2 }) {
   };
   const clearTranscript = () => {
     foregroundLifetimeRef.current.abort();
+    if (operationGate.kind === "reply") operationGate.cancel();
     foregroundLifetimeRef.current = new AbortController();
     setEntries([]);
     setTranscriptGeneration((current) => current + 1);
@@ -60210,6 +60376,7 @@ function ChatApp({ options: options2 }) {
     setWorkingStartedAt(void 0);
   };
   const reloadEnvironmentState = (environmentId, origin) => {
+    operationGate.cancel();
     credentials.cancelPending();
     welcomeLifetimeRef.current.abort();
     welcomeLifetimeRef.current = new AbortController();
@@ -60217,7 +60384,7 @@ function ChatApp({ options: options2 }) {
     lastConnectionNoticeRef.current = void 0;
     connectedAgentKeyRef.current = void 0;
     credentialScopeRef.current = void 0;
-    const nextSettings = selectChatEnvironment(chatSettings, environmentId, origin);
+    const nextSettings = selectChatEnvironment(chatSettingsRef.current, environmentId, origin);
     const nextEnvironmentSettings = nextSettings.environments[environmentId];
     persistSettings(nextSettings);
     setSelectedEnvironment(environmentId);
@@ -60322,8 +60489,9 @@ function ChatApp({ options: options2 }) {
     isClosed = () => false
   } = {}) => {
     try {
-      const runtimeSources = mergeAgentSources(
-        activeEnvironmentSettings.agentSources,
+      const latestEnvironment = chatSettingsRef.current.environments[selectedEnvironment];
+      const runtimeSources = agentEndpointUrl ? [createExplicitAgentSource(agentEndpointUrl)] : mergeAgentSources(
+        latestEnvironment.agentSources,
         selectedEnvironment,
         agentEndpointUrl,
         controlPlaneOrigin
@@ -60340,6 +60508,7 @@ function ChatApp({ options: options2 }) {
         {
           environmentId: selectedEnvironment,
           controlPlaneOrigin,
+          registryPreferences: latestEnvironment.registryAccounts,
           controlPlaneAccessTokenProvider: (request) => getStoredAccessToken(selectedEnvironment, {
             forceRefresh: request?.forceRefresh,
             controlPlaneOrigin
@@ -60370,13 +60539,20 @@ function ChatApp({ options: options2 }) {
         discovery.agents.filter(
           (agent) => !isTransientAgentSource(agent.source) && agent.sourceKey !== explicitSourceKey
         ),
-        activeEnvironmentSettings.agents
+        chatSettingsRef.current.environments[selectedEnvironment].agents
       );
       setAgentSources(nextSources);
       setDiscoveredAgents(discovery.agents);
       persistEnvironmentSettings(selectedEnvironment, {
         agents: nextAgents,
-        agentSources: persistentSources
+        agentSources: { ...latestEnvironment.agentSources, ...persistentSources },
+        ...discovery.registry ? { registryAccounts: {
+          ...latestEnvironment.registryAccounts,
+          [discovery.registry.accountScope]: {
+            ...latestEnvironment.registryAccounts?.[discovery.registry.accountScope],
+            workspaceId: discovery.registry.workspace.id
+          }
+        } } : {}
       });
       if (announceExplicitSourceErrors) {
         for (const error of discovery.errors) {
@@ -60388,40 +60564,34 @@ function ChatApp({ options: options2 }) {
           }
         }
       }
+      const registry = discovery.registry;
+      const savedRegistryKey = registry ? latestEnvironment.registryAccounts?.[registry.accountScope]?.selectedAgentKeys?.[registry.workspace.id] : void 0;
+      const legacySelected = registry && latestEnvironment.selectedAgentKey ? discovery.agents.find((agent) => agent.registry && eligibleLegacyRegistryAgent({
+        agents: latestEnvironment.agents,
+        sourceKey: agent.sourceKey,
+        identityId: agent.agentId,
+        workspaceId: registry.workspace.id,
+        homeWorkspaceId: registry.account.homeWorkspaceId,
+        credentialScope: credentials.owner(agent.source)
+      })?.agentKey === latestEnvironment.selectedAgentKey) : void 0;
+      const savedDirect = discovery.agents.find((agent) => agent.source.type !== "registry" && agent.agentKey === latestEnvironment.selectedAgentKey);
       const nextSelected = selectDiscoveredAgent(discovery.agents, {
         requestedAgentId: options2.agentId,
-        selectedAgentKey,
-        selectedAgentId: options2.agentId ? void 0 : selectedAgentId,
+        selectedAgentKey: savedRegistryKey ?? legacySelected?.agentKey ?? savedDirect?.agentKey,
         explicitSourceKey,
         autoSelectExplicit: Boolean(agentEndpointUrl)
       });
       if (nextSelected) {
-        const shouldPersistSelection = !isTransientAgentSource(nextSelected.source);
         setSelectedAgentKey(nextSelected.agentKey);
         setSelectedAgentId(nextSelected.id);
-        persistEnvironmentSettings(selectedEnvironment, {
-          ...shouldPersistSelection ? {
-            selectedAgentKey: nextSelected.agentKey,
-            selectedAgentId: nextSelected.id
-          } : {},
-          agents: nextAgents,
-          agentSources: persistentSources
-        });
+        persistAgentSelection(nextSelected);
       } else if (selectedAgentKey || !options2.agentId && selectedAgentId) {
         setSelectedAgentKey(void 0);
         setSelectedAgentId(void 0);
         setClientState(void 0);
         connectedAgentKeyRef.current = void 0;
-        setCurrentContextId(void 0);
-        setTaskId(void 0);
-        setStreamLabel("Idle");
-        persistEnvironmentSettings(selectedEnvironment, {
-          selectedAgentKey: void 0,
-          selectedAgentId: void 0,
-          agents: nextAgents,
-          agentSources: persistentSources
-        });
-        appendSystem("The selected agent is no longer available.");
+        clearTranscript();
+        appendSystem("The selected agent is no longer available in this workspace. Choose an agent to continue.");
       }
       return discovery.sources;
     } catch (error) {
@@ -60514,12 +60684,44 @@ ${JSON.stringify(
         }
         const owner = credentials.owner(selectedAgent.source);
         const scope = `${selectedEnvironment}:${selectedAgent.agentKey}`;
-        const stored = activeEnvironmentSettings.agents[selectedAgent.agentKey];
+        const environment = chatSettingsRef.current.environments[selectedEnvironment];
+        let stored = environment.agents[selectedAgent.agentKey];
+        let historyAgentKey = selectedAgent.agentKey;
+        const registry = selectedAgent.registry;
+        if (registry && !stored?.activeContextId) {
+          const legacy = eligibleLegacyRegistryAgent({
+            agents: environment.agents,
+            sourceKey: selectedAgent.sourceKey,
+            identityId: selectedAgent.agentId,
+            workspaceId: registry.workspace.id,
+            homeWorkspaceId: registry.account.homeWorkspaceId,
+            credentialScope: owner
+          });
+          if (legacy?.activeContextId) {
+            historyAgentKey = legacy.agentKey;
+            stored = { ...stored, ...selectedAgent, activeContextId: legacy.activeContextId, credentialScope: owner };
+            persistEnvironmentSettings(selectedEnvironment, { agents: {
+              ...environment.agents,
+              [selectedAgent.agentKey]: stored
+            } });
+          }
+        }
         const sameOwner = !!owner && owner === credentialScopeRef.current && contextScopeRef.current === scope;
         if (!sameOwner) clearTranscript();
         setCurrentContextId(
           sameOwner && contextScopeRef.current === scope && contextIdRef.current ? contextIdRef.current : owner ? createdContextsRef.current.get(JSON.stringify([scope, owner])) ?? (stored?.credentialScope === owner ? stored.activeContextId : void 0) : void 0
         );
+        if (registry && !sameOwner && contextIdRef.current) {
+          const restored = loadContextSession(selectedEnvironment, historyAgentKey, contextIdRef.current);
+          if (restored.session) {
+            if (historyAgentKey !== selectedAgent.agentKey) {
+              const warning = copyContextSession(restored.session, selectedAgent.agentKey);
+              if (warning) appendNotification(warning);
+            }
+            setEntries(restoredTranscriptEntries(restored.session.messages));
+            for (const message of restored.session.messages) markShownMessage(shownMessageKeysRef.current, message);
+          } else if (restored.warning) appendNotification(restored.warning);
+        }
         credentialScopeRef.current = owner;
         setClientState(connected);
         connectedAgentKeyRef.current = selectedAgent.agentKey;
@@ -60814,12 +61016,12 @@ ${JSON.stringify(
         chatSessionLogPath: chatSessionLogger.logFilePath
       });
     }
-    const currentAgent = chatSettings.environments[selectedEnvironment].agents[selectedAgentKey] ?? selectedAgent;
+    const currentAgent = chatSettingsRef.current.environments[selectedEnvironment].agents[selectedAgentKey] ?? selectedAgent;
     const shouldPersistAgentContext = !selectedAgent || selectedAgent.agentKey !== selectedAgentKey || !isTransientAgentSource(selectedAgent.source);
     if (currentAgent && shouldPersistAgentContext) {
       persistEnvironmentSettings(selectedEnvironment, {
         agents: {
-          ...chatSettings.environments[selectedEnvironment].agents,
+          ...chatSettingsRef.current.environments[selectedEnvironment].agents,
           [selectedAgentKey]: {
             agentKey: currentAgent.agentKey,
             agentId: currentAgent.agentId,
@@ -60838,6 +61040,10 @@ ${JSON.stringify(
     }
   };
   const applySelectedAgentSuggestion = () => {
+    if (operationGate.kind === "workspace") {
+      appendNotification(operationGate.reason);
+      return;
+    }
     const suggestion = agentSuggestions[selectedSuggestionIndex];
     if (!suggestion) {
       return;
@@ -60851,12 +61057,7 @@ ${JSON.stringify(
     if (selectedAgentId !== selectedId || selectedAgentKey !== selectedKey) {
       setSelectedAgentId(selectedId);
       setSelectedAgentKey(selectedKey);
-      if (!agent || !isTransientAgentSource(agent.source)) {
-        persistEnvironmentSettings(selectedEnvironment, {
-          selectedAgentId: selectedId,
-          selectedAgentKey: selectedKey
-        });
-      }
+      if (agent) persistAgentSelection(agent);
     }
   };
   const dismissSlashDialog = () => {
@@ -60957,7 +61158,12 @@ ${postAuthUrl}`);
         }
       }
       appendSystem(`Logged in to Aion ${selectedEnvironment}.`);
+      operationGate.cancel();
       credentials.cancelPending();
+      welcomeLifetimeRef.current.abort();
+      welcomeLifetimeRef.current = new AbortController();
+      setDiscoveredAgents([]);
+      setClientState(void 0);
       clearTranscript();
       chatSessionLogger.info("auth.login.completed", {
         environmentId: selectedEnvironment,
@@ -61002,11 +61208,11 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
         nextContextId
       );
     }
-    const existing = key ? activeEnvironmentSettings.agents[key] : void 0;
+    const existing = key ? chatSettingsRef.current.environments[selectedEnvironment].agents[key] : void 0;
     if (key && existing) {
       persistEnvironmentSettings(selectedEnvironment, {
         agents: {
-          ...activeEnvironmentSettings.agents,
+          ...chatSettingsRef.current.environments[selectedEnvironment].agents,
           [key]: { ...existing, activeContextId: nextContextId, credentialScope: credentialScopeRef.current }
         }
       });
@@ -61149,6 +61355,22 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
     resetSlashSelection();
   };
   const submitPrompt = async () => {
+    const selection = parseAgentSelection(draft, discoveredAgents.map((agent) => agent.id));
+    if (operationGate.kind === "reply" && selection.agentId && !selection.message.trim()) operationGate.cancel();
+    const operation = operationGate.begin("reply");
+    if (!operation) {
+      appendNotification(operationGate.reason);
+      return;
+    }
+    try {
+      await submitPromptImpl(operation.signal);
+    } catch (error) {
+      if (!operation.signal.aborted) appendStatus(`Request preparation failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      operation.finish();
+    }
+  };
+  const submitPromptImpl = async (operationSignal) => {
     const selection = parseAgentSelection(
       draft,
       discoveredAgents.map((agent) => agent.id)
@@ -61157,13 +61379,10 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       const agent = discoveredAgents.find((item) => item.id === selection.agentId);
       setSelectedAgentId(selection.agentId);
       setSelectedAgentKey(agent?.agentKey);
-      if (!agent || !isTransientAgentSource(agent.source)) {
-        persistEnvironmentSettings(selectedEnvironment, {
-          selectedAgentId: selection.agentId,
-          selectedAgentKey: agent?.agentKey
-        });
-      }
+      if (agent) persistAgentSelection(agent);
       appendStatus(`Active agent changed to @${selection.agentId}`);
+      replaceDraft(selection.message);
+      return;
     }
     const trimmed = selection.message.trim();
     if (!trimmed) {
@@ -61178,7 +61397,8 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
     const requestSignal = AbortSignal.any([
       credentials.signal,
       connectionSignalRef.current ?? credentials.signal,
-      foregroundLifetimeRef.current.signal
+      foregroundLifetimeRef.current.signal,
+      operationSignal
     ]);
     const parts = await buildMessageParts2(trimmed);
     if (requestSignal.aborted) return;
@@ -61280,7 +61500,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
         if (completedTask) {
           persistCompletedExchange(
             completedTask.contextId,
-            getTaskMessages(completedTask),
+            [outboundMessage, ...getTaskMessages(completedTask)],
             completedTask.id
           );
         } else if (finalStatusUpdate?.status?.message) {
@@ -61322,7 +61542,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
           if (reachedTerminal) {
             persistCompletedExchange(
               response.contextId,
-              getTaskMessages(response),
+              [outboundMessage, ...getTaskMessages(response)],
               response.id
             );
           }

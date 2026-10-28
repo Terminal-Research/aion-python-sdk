@@ -87,8 +87,11 @@ import {
 } from "./lib/agents/model.js";
 import {
 	resolveSessionFilePath,
-	saveCompletedExchange
+	saveCompletedExchange, loadContextSession, copyContextSession
 } from "./lib/agents/sessionStore.js";
+import { ChatOperationGate } from "./lib/chatOperationGate.js";
+import { eligibleLegacyRegistryAgent } from "./lib/workspaces.js";
+import { restoredTranscriptEntries } from "./lib/restoredTranscript.js";
 import { createChatSessionLogger } from "./lib/sessionLogger.js";
 import {
 	formatProtocolPayload,
@@ -383,6 +386,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	const [chatSettings, setChatSettings] = useState<ChatSettings>(
 		initialSettingsResult.settings
 	);
+	const chatSettingsRef = useRef(chatSettings);
+	const operationGate = useRef(new ChatOperationGate()).current;
 	const [selectedEnvironment, setSelectedEnvironment] = useState<AionEnvironmentId>(
 		initialSettingsResult.settings.selectedEnvironment
 	);
@@ -543,6 +548,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		return () => {
 			welcomeLifetimeRef.current.abort();
 			foregroundLifetimeRef.current.abort();
+			operationGate.cancel();
 			chatSessionLogger.info("chat.session.ended", {
 				mode: "interactive",
 				environmentId: environmentAtStart
@@ -555,6 +561,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	}, []);
 
 	const persistSettings = (nextSettings: ChatSettings): void => {
+		chatSettingsRef.current = nextSettings;
 		setChatSettings(nextSettings);
 		const warning = saveChatSettings(nextSettings);
 		if (warning) {
@@ -566,16 +573,37 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		environmentId: AionEnvironmentId,
 		update: Partial<(typeof chatSettings.environments)[AionEnvironmentId]>
 	): void => {
-		const current = chatSettings.environments[environmentId];
+		const latest = chatSettingsRef.current;
+		const current = latest.environments[environmentId];
 		persistSettings({
-			...chatSettings,
+			...latest,
 			environments: {
-				...chatSettings.environments,
+				...latest.environments,
 				[environmentId]: {
 					...current,
 					...update
 				}
 			}
+		});
+	};
+
+	const persistAgentSelection = (agent: DiscoveredAgentRecord): void => {
+		if (isTransientAgentSource(agent.source)) return;
+		const environment = chatSettingsRef.current.environments[selectedEnvironment];
+		const registry = agent.registry;
+		persistEnvironmentSettings(selectedEnvironment, {
+			selectedAgentKey: agent.agentKey, selectedAgentId: agent.id,
+			...(registry ? { registryAccounts: {
+				...environment.registryAccounts,
+				[registry.accountScope]: {
+					...environment.registryAccounts?.[registry.accountScope],
+					workspaceId: registry.workspace.id,
+					selectedAgentKeys: {
+						...environment.registryAccounts?.[registry.accountScope]?.selectedAgentKeys,
+						[registry.workspace.id]: agent.agentKey
+					}
+				}
+			} } : {})
 		});
 	};
 
@@ -602,6 +630,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		// Retire the old conversation's responses, not the reusable connection
 		// or independent welcomes whose results belong to their original thread.
 		foregroundLifetimeRef.current.abort();
+		if (operationGate.kind === "reply") operationGate.cancel();
 		foregroundLifetimeRef.current = new AbortController();
 		setEntries([]);
 		setTranscriptGeneration((current) => current + 1);
@@ -616,6 +645,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	};
 
 	const reloadEnvironmentState = (environmentId: AionEnvironmentId, origin?: string): void => {
+		operationGate.cancel();
 		credentials.cancelPending();
 		welcomeLifetimeRef.current.abort();
 		welcomeLifetimeRef.current = new AbortController();
@@ -623,7 +653,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		lastConnectionNoticeRef.current = undefined;
 		connectedAgentKeyRef.current = undefined;
 		credentialScopeRef.current = undefined;
-		const nextSettings = selectChatEnvironment(chatSettings, environmentId, origin);
+		const nextSettings = selectChatEnvironment(chatSettingsRef.current, environmentId, origin);
 		const nextEnvironmentSettings = nextSettings.environments[environmentId];
 		persistSettings(nextSettings);
 		setSelectedEnvironment(environmentId);
@@ -757,8 +787,9 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		isClosed?: () => boolean;
 	} = {}): Promise<AgentSourceRecord[] | undefined> => {
 		try {
-			const runtimeSources = mergeAgentSources(
-				activeEnvironmentSettings.agentSources,
+			const latestEnvironment = chatSettingsRef.current.environments[selectedEnvironment];
+			const runtimeSources = agentEndpointUrl ? [createExplicitAgentSource(agentEndpointUrl)] : mergeAgentSources(
+				latestEnvironment.agentSources,
 				selectedEnvironment,
 				agentEndpointUrl,
 				controlPlaneOrigin
@@ -777,6 +808,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				{
 					environmentId: selectedEnvironment,
 					controlPlaneOrigin,
+					registryPreferences: latestEnvironment.registryAccounts,
 					controlPlaneAccessTokenProvider: (request) =>
 						getStoredAccessToken(selectedEnvironment, {
 							forceRefresh: request?.forceRefresh,
@@ -815,13 +847,20 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 						!isTransientAgentSource(agent.source) &&
 						agent.sourceKey !== explicitSourceKey
 				),
-				activeEnvironmentSettings.agents
+				chatSettingsRef.current.environments[selectedEnvironment].agents
 			);
 			setAgentSources(nextSources);
 			setDiscoveredAgents(discovery.agents);
 			persistEnvironmentSettings(selectedEnvironment, {
 				agents: nextAgents,
-				agentSources: persistentSources
+				agentSources: { ...latestEnvironment.agentSources, ...persistentSources },
+				...(discovery.registry ? { registryAccounts: {
+					...latestEnvironment.registryAccounts,
+					[discovery.registry.accountScope]: {
+						...latestEnvironment.registryAccounts?.[discovery.registry.accountScope],
+						workspaceId: discovery.registry.workspace.id
+					}
+				} } : {})
 			});
 
 			if (announceExplicitSourceErrors) {
@@ -837,43 +876,35 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				}
 			}
 
+			const registry = discovery.registry;
+			const savedRegistryKey = registry
+				? latestEnvironment.registryAccounts?.[registry.accountScope]?.selectedAgentKeys?.[registry.workspace.id]
+				: undefined;
+			const legacySelected = registry && latestEnvironment.selectedAgentKey ? discovery.agents.find((agent) => agent.registry &&
+				eligibleLegacyRegistryAgent({ agents: latestEnvironment.agents,
+					sourceKey: agent.sourceKey, identityId: agent.agentId!,
+					workspaceId: registry.workspace.id, homeWorkspaceId: registry.account.homeWorkspaceId,
+					credentialScope: credentials.owner(agent.source)
+				})?.agentKey === latestEnvironment.selectedAgentKey) : undefined;
+			const savedDirect = discovery.agents.find((agent) => agent.source.type !== "registry" &&
+				agent.agentKey === latestEnvironment.selectedAgentKey);
 			const nextSelected = selectDiscoveredAgent(discovery.agents, {
 				requestedAgentId: options.agentId,
-				selectedAgentKey,
-				selectedAgentId: options.agentId ? undefined : selectedAgentId,
+				selectedAgentKey: savedRegistryKey ?? legacySelected?.agentKey ?? savedDirect?.agentKey,
 				explicitSourceKey,
 				autoSelectExplicit: Boolean(agentEndpointUrl)
 			});
-
 			if (nextSelected) {
-				const shouldPersistSelection = !isTransientAgentSource(nextSelected.source);
 				setSelectedAgentKey(nextSelected.agentKey);
 				setSelectedAgentId(nextSelected.id);
-				persistEnvironmentSettings(selectedEnvironment, {
-					...(shouldPersistSelection
-						? {
-								selectedAgentKey: nextSelected.agentKey,
-								selectedAgentId: nextSelected.id
-							}
-						: {}),
-					agents: nextAgents,
-					agentSources: persistentSources
-				});
+				persistAgentSelection(nextSelected);
 			} else if (selectedAgentKey || (!options.agentId && selectedAgentId)) {
 				setSelectedAgentKey(undefined);
 				setSelectedAgentId(undefined);
 				setClientState(undefined);
 				connectedAgentKeyRef.current = undefined;
-				setCurrentContextId(undefined);
-				setTaskId(undefined);
-				setStreamLabel("Idle");
-				persistEnvironmentSettings(selectedEnvironment, {
-					selectedAgentKey: undefined,
-					selectedAgentId: undefined,
-					agents: nextAgents,
-					agentSources: persistentSources
-				});
-				appendSystem("The selected agent is no longer available.");
+				clearTranscript();
+				appendSystem("The selected agent is no longer available in this workspace. Choose an agent to continue.");
 			}
 
 			return discovery.sources;
@@ -971,7 +1002,23 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 				const owner = credentials.owner(selectedAgent.source);
 				const scope = `${selectedEnvironment}:${selectedAgent.agentKey}`;
-				const stored = activeEnvironmentSettings.agents[selectedAgent.agentKey];
+				const environment = chatSettingsRef.current.environments[selectedEnvironment];
+				let stored = environment.agents[selectedAgent.agentKey];
+				let historyAgentKey = selectedAgent.agentKey;
+				const registry = selectedAgent.registry;
+				if (registry && !stored?.activeContextId) {
+					const legacy = eligibleLegacyRegistryAgent({ agents: environment.agents,
+						sourceKey: selectedAgent.sourceKey, identityId: selectedAgent.agentId!,
+						workspaceId: registry.workspace.id, homeWorkspaceId: registry.account.homeWorkspaceId,
+						credentialScope: owner });
+					if (legacy?.activeContextId) {
+						historyAgentKey = legacy.agentKey;
+						stored = { ...stored, ...selectedAgent, activeContextId: legacy.activeContextId, credentialScope: owner };
+						persistEnvironmentSettings(selectedEnvironment, { agents: {
+							...environment.agents, [selectedAgent.agentKey]: stored
+						} });
+					}
+				}
 				const sameOwner = !!owner && owner === credentialScopeRef.current &&
 					contextScopeRef.current === scope;
 				if (!sameOwner) clearTranscript();
@@ -981,6 +1028,17 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 						: owner ? createdContextsRef.current.get(JSON.stringify([scope, owner]))
 							?? (stored?.credentialScope === owner ? stored.activeContextId : undefined) : undefined
 				);
+				if (registry && !sameOwner && contextIdRef.current) {
+					const restored = loadContextSession(selectedEnvironment, historyAgentKey, contextIdRef.current);
+					if (restored.session) {
+						if (historyAgentKey !== selectedAgent.agentKey) {
+							const warning = copyContextSession(restored.session, selectedAgent.agentKey);
+							if (warning) appendNotification(warning);
+						}
+						setEntries(restoredTranscriptEntries(restored.session.messages));
+						for (const message of restored.session.messages) markShownMessage(shownMessageKeysRef.current, message);
+					} else if (restored.warning) appendNotification(restored.warning);
+				}
 				credentialScopeRef.current = owner;
 				setClientState(connected);
 				connectedAgentKeyRef.current = selectedAgent.agentKey;
@@ -1339,7 +1397,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		}
 
 		const currentAgent =
-			chatSettings.environments[selectedEnvironment].agents[selectedAgentKey] ??
+			chatSettingsRef.current.environments[selectedEnvironment].agents[selectedAgentKey] ??
 			selectedAgent;
 		const shouldPersistAgentContext =
 			!selectedAgent ||
@@ -1348,7 +1406,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		if (currentAgent && shouldPersistAgentContext) {
 			persistEnvironmentSettings(selectedEnvironment, {
 				agents: {
-					...chatSettings.environments[selectedEnvironment].agents,
+					...chatSettingsRef.current.environments[selectedEnvironment].agents,
 					[selectedAgentKey]: {
 						agentKey: currentAgent.agentKey,
 						agentId: currentAgent.agentId,
@@ -1368,6 +1426,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	};
 
 	const applySelectedAgentSuggestion = (): void => {
+		if (operationGate.kind === "workspace") { appendNotification(operationGate.reason!); return; }
 		const suggestion = agentSuggestions[selectedSuggestionIndex];
 		if (!suggestion) {
 			return;
@@ -1383,12 +1442,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		if (selectedAgentId !== selectedId || selectedAgentKey !== selectedKey) {
 			setSelectedAgentId(selectedId);
 			setSelectedAgentKey(selectedKey);
-			if (!agent || !isTransientAgentSource(agent.source)) {
-				persistEnvironmentSettings(selectedEnvironment, {
-					selectedAgentId: selectedId,
-					selectedAgentKey: selectedKey
-				});
-			}
+			if (agent) persistAgentSelection(agent);
 		}
 	};
 
@@ -1491,7 +1545,12 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				}
 			}
 			appendSystem(`Logged in to Aion ${selectedEnvironment}.`);
+			operationGate.cancel();
 			credentials.cancelPending();
+			welcomeLifetimeRef.current.abort();
+			welcomeLifetimeRef.current = new AbortController();
+			setDiscoveredAgents([]);
+			setClientState(undefined);
 			clearTranscript();
 			chatSessionLogger.info("auth.login.completed", {
 				environmentId: selectedEnvironment,
@@ -1539,11 +1598,11 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				JSON.stringify([`${selectedEnvironment}:${key}`, credentialScopeRef.current]), nextContextId
 			);
 		}
-		const existing = key ? activeEnvironmentSettings.agents[key] : undefined;
+		const existing = key ? chatSettingsRef.current.environments[selectedEnvironment].agents[key] : undefined;
 		if (key && existing) {
 			persistEnvironmentSettings(selectedEnvironment, {
 				agents: {
-					...activeEnvironmentSettings.agents,
+					...chatSettingsRef.current.environments[selectedEnvironment].agents,
 					[key]: { ...existing, activeContextId: nextContextId, credentialScope: credentialScopeRef.current }
 				}
 			});
@@ -1702,6 +1761,17 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	};
 
 	const submitPrompt = async (): Promise<void> => {
+		const selection = parseAgentSelection(draft, discoveredAgents.map((agent) => agent.id));
+		if (operationGate.kind === "reply" && selection.agentId && !selection.message.trim()) operationGate.cancel();
+		const operation = operationGate.begin("reply");
+		if (!operation) { appendNotification(operationGate.reason!); return; }
+		try { await submitPromptImpl(operation.signal); }
+		catch (error) {
+			if (!operation.signal.aborted) appendStatus(`Request preparation failed: ${error instanceof Error ? error.message : String(error)}`);
+		} finally { operation.finish(); }
+	};
+
+	const submitPromptImpl = async (operationSignal: AbortSignal): Promise<void> => {
 		const selection = parseAgentSelection(
 			draft,
 			discoveredAgents.map((agent) => agent.id)
@@ -1710,13 +1780,10 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			const agent = discoveredAgents.find((item) => item.id === selection.agentId);
 			setSelectedAgentId(selection.agentId);
 			setSelectedAgentKey(agent?.agentKey);
-			if (!agent || !isTransientAgentSource(agent.source)) {
-				persistEnvironmentSettings(selectedEnvironment, {
-					selectedAgentId: selection.agentId,
-					selectedAgentKey: agent?.agentKey
-				});
-			}
+			if (agent) persistAgentSelection(agent);
 			appendStatus(`Active agent changed to @${selection.agentId}`);
+			replaceDraft(selection.message);
+			return;
 		}
 
 		const trimmed = selection.message.trim();
@@ -1733,7 +1800,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 		const requestSignal = AbortSignal.any([
 			credentials.signal, connectionSignalRef.current ?? credentials.signal,
-			foregroundLifetimeRef.current.signal
+			foregroundLifetimeRef.current.signal, operationSignal
 		]);
 		const parts = await buildMessageParts(trimmed);
 		if (requestSignal.aborted) return;
@@ -1849,7 +1916,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				if (completedTask) {
 					persistCompletedExchange(
 						completedTask.contextId,
-						getTaskMessages(completedTask),
+						[outboundMessage, ...getTaskMessages(completedTask)],
 						completedTask.id
 					);
 				} else if (finalStatusUpdate?.status?.message) {
@@ -1891,7 +1958,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 					if (reachedTerminal) {
 						persistCompletedExchange(
 							response.contextId,
-							getTaskMessages(response),
+							[outboundMessage, ...getTaskMessages(response)],
 							response.id
 						);
 					}

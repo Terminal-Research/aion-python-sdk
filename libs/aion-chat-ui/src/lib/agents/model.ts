@@ -42,6 +42,7 @@ export interface AgentRecord {
 }
 
 export interface DiscoveredAgentRecord extends AgentRecord {
+	registry?: import("./discovery.js").RegistrySelection;
 	id: string;
 	path: string;
 	source: AgentSourceRecord;
