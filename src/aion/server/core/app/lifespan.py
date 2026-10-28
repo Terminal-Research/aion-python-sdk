@@ -41,12 +41,18 @@ class AppLifespan:
         """Async context manager for application lifespan management."""
         try:
             with startup_phase("server.lifespan", self.app_factory.startup_context):
-                await self.startup()
+                try:
+                    await self.startup()
 
-                # Direct AppFactory users retain their lifespan callback.
-                # Managed servers acknowledge readiness after socket binding.
-                if self.app_factory.startup_callback is not None:
-                    self.app_factory.startup_callback()
+                    # Direct AppFactory users retain their lifespan callback.
+                    # Managed servers acknowledge readiness after socket binding.
+                    if self.app_factory.startup_callback is not None:
+                        self.app_factory.startup_callback()
+                except BaseException:
+                    # Uvicorn reports this after the lifespan context unwinds.
+                    # Keep the cause in the startup trace before re-raising.
+                    logger.exception("Agent lifespan initialization failed")
+                    raise
 
             yield
         finally:

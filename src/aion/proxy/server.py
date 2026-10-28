@@ -68,12 +68,17 @@ class AionAgentProxyServer:
         # Startup
         async with AsyncExitStack() as resources:
             with startup_phase("proxy.initialize", self.startup_span.context):
-                http_client = await resources.enter_async_context(self.http_client_manager.lifespan())
-                # Initialize request handler with HTTP client
-                self.request_handler = RequestHandler(self.agent_urls, http_client)
+                try:
+                    http_client = await resources.enter_async_context(self.http_client_manager.lifespan())
+                    # Initialize request handler with HTTP client
+                    self.request_handler = RequestHandler(self.agent_urls, http_client)
 
-                # Setup routes
-                ProxyRouter(agent_proxy_server=self, request_handler=self.request_handler).register_routes()
+                    # Setup routes
+                    ProxyRouter(agent_proxy_server=self, request_handler=self.request_handler).register_routes()
+                except BaseException:
+                    # Record the cause while the initialization span is current.
+                    logger.exception("Proxy lifespan initialization failed")
+                    raise
 
             yield
 
