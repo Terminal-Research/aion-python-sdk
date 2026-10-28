@@ -56899,6 +56899,22 @@ function mergeAgentSources(persistedSources, environmentId, explicitUrl, control
   return [...sources.values()];
 }
 
+// src/lib/workspaces.ts
+function normalizeRegistryPreferences(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return void 0;
+  const entries = Object.entries(value).flatMap(([scope, raw]) => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
+    const record = raw;
+    const selectedAgentKeys = record.selectedAgentKeys && typeof record.selectedAgentKeys === "object" && !Array.isArray(record.selectedAgentKeys) ? Object.fromEntries(Object.entries(record.selectedAgentKeys).filter((item) => typeof item[1] === "string" && Boolean(item[1].trim()))) : void 0;
+    return [[scope, {
+      // Preserve invalid explicit saved choices as errors instead of falling back home.
+      ...record.workspaceId !== void 0 ? { workspaceId: typeof record.workspaceId === "string" ? record.workspaceId : "" } : {},
+      ...selectedAgentKeys ? { selectedAgentKeys } : {}
+    }]];
+  });
+  return Object.fromEntries(entries);
+}
+
 // src/lib/chatSettings.ts
 function isRequestMode(value) {
   return value === "send-message" || value === "streaming-message";
@@ -57007,7 +57023,9 @@ function normalizeEnvironmentSettings(value, fallback, environmentId) {
       agents[normalized.agentKey] = normalized;
     }
   }
+  const registryAccounts = normalizeRegistryPreferences(value?.registryAccounts);
   return {
+    ...registryAccounts ? { registryAccounts } : {},
     requestMode,
     responseMode,
     ...controlPlaneOrigin ? { controlPlaneOrigin } : {},
@@ -57157,8 +57175,10 @@ function selectChatEnvironment(settings, environmentId, origin) {
         url: registry.url
       }
     },
-    // Registry identities and context IDs are not portable between control planes.
-    agents: changed ? Object.fromEntries(Object.entries(current.agents).filter(([, agent]) => agent.sourceKey !== registry.sourceKey)) : current.agents
+    // Scoped records stay available when returning to an origin; discard legacy indexes.
+    agents: changed ? Object.fromEntries(Object.entries(current.agents).filter(
+      ([, agent]) => agent.sourceKey !== registry.sourceKey || agent.agentKey.startsWith(`${registry.sourceKey}:workspace-`)
+    )) : current.agents
   };
   if (changed) {
     delete next.selectedAgentId;
