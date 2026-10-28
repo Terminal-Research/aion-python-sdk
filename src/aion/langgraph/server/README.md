@@ -66,7 +66,7 @@ For lower-level access, declare `runtime` or `context` in a handler signature �
 
 The server streams the graph in LangGraph's `messages` mode, which carries every message a node produces. Only AI messages with something to show are the agent speaking and reach the client, from whichever node produced them: a model's chunks stream as deltas, and a finished `AIMessage` is a reply. A `ToolMessage`, a `HumanMessage` or `SystemMessage` a node appends, a model turn that only calls a tool, tool-call blocks and reasoning are not sent.
 
-*From whichever node* is meant literally, and it is a deliberate consequence of the contract: the adapter does not know which node speaks for the agent, so the answer of an internal node — a planner, a router, a critic — reaches the client as well, as a stream and as a reply. Tagging the model call `nostream` is not enough to prevent that: it stops the tokens, but LangGraph still emits the `AIMessage` the node returns. To keep a model's output internal, call it with `nostream` **and** keep the result out of the messages — as plain data in a state key of its own:
+*From whichever node* is meant literally, and it is a deliberate consequence of the contract: the adapter does not know which node speaks for the agent, so the answer of an internal node — a planner, a router, a critic — reaches the client as well, as a stream or as a reply. Tagging the model call `nostream` is not enough to prevent that: it stops the tokens, but LangGraph still emits the `AIMessage` the node returns. To keep a model's output internal, call it with `nostream` **and** keep the result out of the messages — as plain data in a state key of its own:
 
 ```python
 internal_model = model.with_config(tags=["nostream"])
@@ -76,7 +76,7 @@ async def planner(state: State) -> dict:
     return {"plan": plan.text}  # a string, not an AIMessage
 ```
 
-Each model call streams under its own message id, and LangGraph does not repeat a message once its chunks went out. A chunk under a new id therefore closes the previous call's stream: what it said is sent as a reply, and the new call opens a stream of its own.
+Each model call streams under its own message id, and LangGraph does not repeat a message once its chunks went out. A chunk under a new id therefore ends the previous call's section of `aion:stream-delta`, and the new call opens a section of its own. The streamed text stays that artifact; it is never sent as a reply.
 
 ---
 
@@ -99,7 +99,7 @@ def my_node(state: State) -> State:
     }
 ```
 
-`A2AOutbox` accepts either `message` or `task`. It answers the run whose node wrote it: the server reads it from that run's own updates, so the value the checkpoint keeps in the channel afterwards is not applied to later turns of the same context. A streamed answer is the `aion:stream-delta` artifact, not a message: a section the run leaves open is closed with the text of its chunks before the outbox is applied.
+`A2AOutbox` accepts either `message` or `task`. It answers the run whose node wrote it: the server reads it from that run's own updates, so the value the checkpoint keeps in the channel afterwards is not applied to later turns of the same context. A streamed answer is the `aion:stream-delta` artifact, not a message: a section the run leaves open is closed before the outbox is applied.
 
 With a file storage backend configured, an inline file part (`Part(raw=...)`) anywhere in the outbox - the message, or the task's status message, history and artifacts - is stored and replaced with a URL part before the response is delivered, as every outbound file is. A file that cannot be stored fails the task. The checkpoint still holds the outbox as the node returned it, bytes included; to keep file content out of graph state, send the file with `thread.post(file_artifact(...))` instead.
 
