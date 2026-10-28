@@ -342,7 +342,7 @@ chat-bundle-check: $(CHAT_UI)/node_modules/.package-lock.json ## Check that the 
 # whatever RAISED_BY_SIBLING change the new resolution needs. The jobs that
 # install the newest releases keep covering everything published since.
 FLOORS_PYTHON ?= 3.12
-FLOORS_EXCLUDE_NEWER ?= 2026-10-20
+FLOORS_EXCLUDE_NEWER ?= 2026-10-28
 FLOORS_VENV := .venv-floors
 FLOORS_PY := $(FLOORS_VENV)/bin/python
 FLOORS_UV_PIP = $(UV) pip install --python $(FLOORS_PY) --exclude-newer $(FLOORS_EXCLUDE_NEWER)

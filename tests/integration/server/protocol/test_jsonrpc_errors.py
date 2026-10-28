@@ -37,6 +37,15 @@ async def test_a_request_that_is_not_one_json_rpc_2_0_call_is_invalid(served, bo
     assert response["error"]["code"] == INVALID_REQUEST
 
 
+@pytest.mark.parametrize("method", ["GetTask", "GetContexts"], ids=["a2a-method", "method-extension"])
+async def test_a_boolean_id_is_invalid(served, method) -> None:
+    """JSON-RPC ids are strings, integers or null; the answer echoes none of a bool."""
+    response = events_of(await served.post({"jsonrpc": "2.0", "id": True, "method": method, "params": {}}))
+
+    assert response["error"]["code"] == INVALID_REQUEST
+    assert response["id"] is None
+
+
 async def test_an_unknown_method_is_not_found(served) -> None:
     response = await served.rpc("tasks/list", {})
 

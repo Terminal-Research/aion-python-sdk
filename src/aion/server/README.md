@@ -404,7 +404,7 @@ part in who may see or cancel it.
 
 ## A2A methods: what a client sees
 
-The standard A2A methods are a2a-sdk 1.2's, and Aion's handler adds to them
+The standard A2A methods are a2a-sdk 1.3's, and Aion's handler adds to them
 rather than replacing them. A client sees a2a-sdk's behaviour except where
 this section says otherwise.
 

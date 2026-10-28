@@ -36,21 +36,14 @@ def _require_call_context(call_context: ServerCallContext | None) -> None:
         )
 
 
-def _has_finished(active_task: ActiveTask) -> bool:
-    """Report whether the SDK has closed this ActiveTask for good.
-
-    ``_is_finished`` is private to the SDK, and it is also the only signal for
-    this: the event is set when the consumer loop exits, or as soon as the
-    agent answers with a direct ``Message``, and both ``start`` and
-    ``subscribe`` refuse to run afterwards. Read in one place so
-    the dependency is a single line to revisit if the SDK grows a public
-    equivalent.
-    """
-    return active_task._is_finished.is_set()
-
-
 async def _wait_until_finished(active_task: ActiveTask) -> None:
-    """Wait for the SDK to close this ActiveTask; see ``_has_finished``."""
+    """Wait until ``ActiveTask.is_finished`` turns true.
+
+    The SDK reports the state but offers nothing to wait on, so this waits on
+    the private event behind the property: it is set when the consumer loop
+    exits, or as soon as the agent answers with a direct ``Message``, and
+    both ``start`` and ``subscribe`` refuse to run afterwards.
+    """
     await active_task._is_finished.wait()
 
 
@@ -92,7 +85,10 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
       ``AUTH_REQUIRED``: it is no longer handed out, and it is closed as soon
       as its consumer has handled the interrupt - pushed it among the rest.
       A finished one is never handed out again either, so the next turn
-      starts a fresh ``ActiveTask`` - on whichever instance it arrives at;
+      starts a fresh ``ActiveTask`` - on whichever instance it arrives at.
+      a2a-sdk's ``interrupted_task_timeout``, which releases an interrupted
+      ``ActiveTask`` only after it has been idle that long, is therefore not
+      passed on to the objects this registry creates;
     * tasks left running by a shutdown are settled as ``FAILED`` and pushed.
       The registry is the only layer that may: an outcome is otherwise always
       written by the execution itself, and the registry is where the
@@ -131,7 +127,7 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
             active_task = self._active_tasks.get(task_id)
             if (
                 active_task is None
-                or _has_finished(active_task)
+                or active_task.is_finished
                 or self._is_retiring(active_task)
             ):
                 return None
@@ -190,7 +186,7 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
                     raise RuntimeError('ActiveTaskRegistry is closed')
 
                 existing = self._active_tasks.get(task_id)
-                if existing is not None and _has_finished(existing):
+                if existing is not None and existing.is_finished:
                     stale = existing
                     self._active_tasks.pop(task_id, None)
                     self._task_managers.pop(task_id, None)
@@ -276,33 +272,21 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         self._task_managers[task_id] = task_manager
         return active_task
 
-    def _on_active_task_cleanup(self, active_task: ActiveTask) -> None:
-        """Remove an ActiveTask only if it is still the registered incarnation.
+    @override
+    async def _remove_task(self, active_task: ActiveTask) -> None:
+        """Drop the object's task manager with it, then push what its execution left unsent.
 
-        The SDK callback carries the task object, but its base implementation
-        schedules cleanup using only ``task_id``. That is racy with the
-        INPUT/AUTH replacement path: an old object's deferred cleanup could
-        otherwise pop a newer object that already reused the same id.
+        The base removes the object only while it is still the registered
+        one, so an old object's deferred cleanup never drops a newer one that
+        reuses the id after an INPUT/AUTH_REQUIRED turn; the manager is
+        dropped on the same terms. The execution is over by then, so this is
+        also where an outcome it stored without pushing is pushed
+        (``_push_unsent_outcome``).
         """
-        cleanup = asyncio.create_task(
-            self._remove_task_for_incarnation(active_task),
-            name=f"cleanup-active-task:{active_task.task_id}",
-        )
-        self._cleanup_tasks.add(cleanup)
-        cleanup.add_done_callback(self._cleanup_tasks.discard)
-
-    async def _remove_task_for_incarnation(self, active_task: ActiveTask) -> None:
-        """Drop one object and its manager, if they are still the registered ones.
-
-        The execution is over by then, so this is also where an outcome it
-        stored without pushing is pushed (``_push_unsent_outcome``).
-        """
+        await super()._remove_task(active_task)
         with self._lock:
-            if self._active_tasks.get(active_task.task_id) is active_task:
-                self._active_tasks.pop(active_task.task_id, None)
-                if self._task_managers.get(active_task.task_id) is active_task._task_manager:
-                    self._task_managers.pop(active_task.task_id, None)
-                logger.debug("Removed active task for %s", active_task.task_id)
+            if self._task_managers.get(active_task.task_id) is active_task._task_manager:
+                self._task_managers.pop(active_task.task_id, None)
         await self._push_unsent_outcome(active_task)
 
     @staticmethod
@@ -409,13 +393,6 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
                 )
             )
         return task
-
-    @override
-    async def _remove_task(self, task_id: str) -> None:
-        """Drop the task manager alongside the base registry's own entry."""
-        await super()._remove_task(task_id)
-        with self._lock:
-            self._task_managers.pop(task_id, None)
 
     @override
     async def aclose(self) -> None:
