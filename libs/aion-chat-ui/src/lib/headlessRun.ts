@@ -566,7 +566,8 @@ export async function runHeadless(
 	const explicitSourceKey = options.url
 		? createExplicitAgentSource(options.url).sourceKey
 		: undefined;
-	const runtimeSources = mergeAgentSources(
+	const runtimeSources = options.url ? [createExplicitAgentSource(options.url)] : options.workspace !== undefined
+		? [createDefaultRegistryAgentSource(selectedEnvironment, controlPlaneOrigin)] : mergeAgentSources(
 		environmentSettings.agentSources,
 		selectedEnvironment,
 		options.url,
@@ -590,6 +591,7 @@ export async function runHeadless(
 	});
 
 	try {
+		if (options.workspace !== undefined && options.url !== undefined) throw new Error("--workspace cannot be combined with --url.");
 		if (options.newSession) {
 			const source = runtimeSources.find((item) => item.sourceKey === explicitSourceKey);
 			if (!source) throw new Error("--new-session requires --url to choose the guest source.");
@@ -599,12 +601,23 @@ export async function runHeadless(
 		const discovery = await discoverAgentSourcesImpl(runtimeSources, fetchImpl, {
 			environmentId: selectedEnvironment,
 			controlPlaneOrigin,
+			workspaceSelector: options.workspace,
+			registryPreferences: environmentSettings.registryAccounts,
 			controlPlaneAccessTokenProvider: accountToken,
 			graphQLFetchImpl: credentials.fetch(createDefaultRegistryAgentSource(selectedEnvironment, controlPlaneOrigin)),
 			sourceFetchImpl: (source) => credentials.fetch(source),
 			logger
 		});
 		writeDiscoveryErrors(discovery, stderr);
+		if (!options.url && !discovery.registry && (options.workspace !== undefined || discovery.workspaceAccount)) {
+			throw new Error("Workspace selection failed. Choose an accessible workspace with --workspace.");
+		}
+		if (options.workspace !== undefined) discovery.agents = discovery.agents.filter((agent) => agent.source.type === "registry");
+		const registry = discovery.registry;
+		const savedRegistryKey = registry
+			? environmentSettings.registryAccounts?.[registry.accountScope]?.selectedAgentKeys?.[registry.workspace.id] : undefined;
+		const savedDirect = discovery.agents.find((agent) => agent.source.type !== "registry" &&
+			agent.agentKey === environmentSettings.selectedAgentKey);
 
 		if (discovery.agents.length === 0) {
 			throw new Error(
@@ -615,8 +628,8 @@ export async function runHeadless(
 		const selectedAgent = selectHeadlessAgent(
 			discovery,
 			options,
-			environmentSettings.selectedAgentKey,
-			environmentSettings.selectedAgentId,
+			savedRegistryKey ?? savedDirect?.agentKey,
+			undefined,
 			explicitSourceKey,
 			selectedEnvironment
 		);

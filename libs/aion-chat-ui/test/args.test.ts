@@ -126,3 +126,17 @@ describe("parseArgs", () => {
 		expect(output).toContain("Streaming a2a mode writes JSONL events.");
 	});
 });
+
+describe("workspace CLI arguments", () => {
+	it("preserves names with spaces and messages after the terminator", () => {
+		expect(parseArgs(["--workspace", "Terminal Research"]).workspace).toBe("Terminal Research");
+		expect(parseRunArgs(["--env", "development", "https://dev.test", "--workspace", "Terminal Research", "--", "--env hello"])).toMatchObject({
+			workspace: "Terminal Research", controlPlaneOrigin: "https://dev.test", message: "--env hello"
+		});
+		expect(parseCliArgs(["run", "--workspace=team-id", "hello"])).toMatchObject({ kind: "run", options: { workspace: "team-id" } });
+	});
+	it.each([parseArgs, parseRunArgs])("rejects empty names and direct endpoint conflicts", (parse) => {
+		expect(() => parse(["--workspace", " "])).toThrow("name or ID");
+		expect(() => parse(["--workspace", "Team", "--url", "http://localhost:8000"])).toThrow("cannot be combined");
+	});
+});

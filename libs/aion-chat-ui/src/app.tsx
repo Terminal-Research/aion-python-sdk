@@ -808,6 +808,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				{
 					environmentId: selectedEnvironment,
 					controlPlaneOrigin,
+					workspaceSelector: options.workspace,
 					registryPreferences: latestEnvironment.registryAccounts,
 					controlPlaneAccessTokenProvider: (request) =>
 						getStoredAccessToken(selectedEnvironment, {
@@ -888,7 +889,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				})?.agentKey === latestEnvironment.selectedAgentKey) : undefined;
 			const savedDirect = discovery.agents.find((agent) => agent.source.type !== "registry" &&
 				agent.agentKey === latestEnvironment.selectedAgentKey);
-			const nextSelected = selectDiscoveredAgent(discovery.agents, {
+			const candidates = options.workspace !== undefined ? discovery.agents.filter((agent) => agent.source.type === "registry") : discovery.agents;
+			const nextSelected = selectDiscoveredAgent(candidates, {
 				requestedAgentId: options.agentId,
 				selectedAgentKey: savedRegistryKey ?? legacySelected?.agentKey ?? savedDirect?.agentKey,
 				explicitSourceKey,
@@ -936,6 +938,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		credentials,
 		controlPlaneApiBaseUrl,
 		options.agentId,
+		options.workspace,
 		options.headers,
 		options.token,
 		reconnectNonce,

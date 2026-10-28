@@ -872,7 +872,48 @@ describe("runHeadless", () => {
 			globalThis.fetch = originalFetch;
 		}
 
-		expect(defaultFetchCalls).toContain("http://localhost:8000/default-localhost-8000");
+		expect(defaultFetchCalls).toEqual([]);
 		expect(explicitFetchCalls.some((url) => url.includes(explicitSourceKey))).toBe(true);
 	});
+});
+
+it("uses a workspace override without mutating interactive preferences or restoring its context", async () => {
+	const source = createDefaultRegistryAgentSource("development");
+	const registry = { account: { userId: "user", homeWorkspaceId: "home", workspaces: [{ id: "team", name: "Team", organizationType: "Team" as const }] }, accountScope: "scope", workspace: { id: "team", name: "Team", organizationType: "Team" as const } };
+	const agent = discoveredAgent({ source, sourceKey: source.sourceKey, agentKey: "scoped-team", registry });
+	const saved = settings(agent);
+	saved.environments.development.registryAccounts = { scope: { workspaceId: "home", selectedAgentKeys: { team: agent.agentKey } } };
+	const before = JSON.stringify(saved);
+	const connect = vi.fn(async () => ({ agentCard, client: { sendMessage: vi.fn(async () => message("reply", "agent", "Hello")) } } as unknown as ConnectedClient));
+	const result = await runHeadless(options({ workspace: "Team" }), {
+		loadChatSettingsImpl: () => ({ settings: saved }),
+		discoverAgentSourcesImpl: async (sources, _fetch, opts) => {
+			expect(sources.map((item) => item.type)).toEqual(["registry"]);
+			expect(opts?.workspaceSelector).toBe("Team");
+			return { sources: [source], agents: [agent, discoveredAgent()], errors: [], registry };
+		},
+		connectClientImpl: connect, getStoredAccessTokenImpl: async () => undefined,
+		stdout: { write: () => undefined }, stderr: { write: () => undefined },
+		createChatSessionLoggerImpl: () => ({ logger: createMockLogger() })
+	});
+	expect(result).toBe(0);
+	expect(connect).toHaveBeenCalledOnce();
+	const connected = await connect.mock.results[0].value;
+	expect(connected.client.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+		message: expect.objectContaining({ contextId: "" })
+	}));
+	expect(JSON.stringify(saved)).toBe(before);
+});
+
+it("does not invoke a local fallback when workspace validation fails", async () => {
+	const localAgent = discoveredAgent();
+	const connect = vi.fn();
+	await expect(runHeadless(options({ workspace: "Revoked", agentSelector: "@team-agent" }), {
+		loadChatSettingsImpl: () => ({ settings: settings(localAgent) }),
+		discoverAgentSourcesImpl: async () => discoveryResult(localAgent),
+		connectClientImpl: connect,
+		stdout: { write: () => undefined }, stderr: { write: () => undefined },
+		createChatSessionLoggerImpl: () => ({ logger: createMockLogger() })
+	})).rejects.toThrow("Workspace selection failed");
+	expect(connect).not.toHaveBeenCalled();
 });

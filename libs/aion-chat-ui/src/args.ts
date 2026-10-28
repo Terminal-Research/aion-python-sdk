@@ -13,6 +13,7 @@ import { getPackageInfo } from "./packageInfo.js";
 export interface ChatCliOptions {
 	environmentId?: AionEnvironmentId;
 	controlPlaneOrigin?: string;
+	workspace?: string;
 	newSession?: boolean;
 	url?: string;
 	agentId?: string;
@@ -60,6 +61,7 @@ Options:
       --env <environment> [origin]  production, staging, or development; saves selection
                                    Optional HTTP(S) API origin for development only
   -u, --url, --host <endpoint>   Agent or proxy URL to connect to
+      --workspace <name-or-id>   Workspace whose registry catalog to search
       --agent-id <agent-id>      Agent identifier for proxy-aware routing
       --token <token>            Bearer token for the explicit --url endpoint
       --header <key=value>       Repeatable custom HTTP header for the explicit --url endpoint
@@ -92,6 +94,7 @@ Message input:
 
 Agent selection:
       --agent <selector>         Discovered agent handle, display id, identity id, or agent key
+      --workspace <name-or-id>   Workspace whose registry catalog to search
       --agent-id <agent-id>      Agent identifier for proxy-aware routing with --url
   -u, --url, --host <endpoint>   Explicit A2A endpoint or proxy URL
 
@@ -226,6 +229,7 @@ function readEnvironmentFlag(argv: string[], index: number): {
 export function parseArgs(argv: string[]): ChatCliOptions {
 	let environment: Pick<ChatCliOptions, "environmentId" | "controlPlaneOrigin"> = {};
 	let url: string | undefined;
+	let workspace: string | undefined;
 	let agentId: string | undefined;
 	let token: string | undefined;
 	let pushNotifications = false;
@@ -245,6 +249,11 @@ export function parseArgs(argv: string[]): ChatCliOptions {
 			case "--host":
 			case "-u":
 				url = requireValue(argv, index, arg);
+				index += 1;
+				break;
+			case "--workspace":
+				workspace = requireValue(argv, index, arg).trim();
+				if (!workspace) throw new Error("--workspace requires a name or ID.");
 				index += 1;
 				break;
 			case "--agent-id":
@@ -283,8 +292,10 @@ export function parseArgs(argv: string[]): ChatCliOptions {
 		}
 	}
 
+	if (workspace !== undefined && url !== undefined) throw new Error("--workspace cannot be combined with --url; choose a registry workspace or a direct endpoint.");
 	return {
 		...environment,
+		...(workspace !== undefined ? { workspace } : {}),
 		...(url ? { url } : {}),
 		agentId,
 		token,
@@ -298,6 +309,7 @@ export function parseRunArgs(argv: string[]): HeadlessRunOptions {
 	let newSession = false;
 	let environment: Pick<ChatCliOptions, "environmentId" | "controlPlaneOrigin"> = {};
 	let url: string | undefined;
+	let workspace: string | undefined;
 	let agentId: string | undefined;
 	let agentSelector: string | undefined;
 	let token: string | undefined;
@@ -322,6 +334,11 @@ export function parseRunArgs(argv: string[]): HeadlessRunOptions {
 			case "--host":
 			case "-u":
 				url = requireValue(argv, index, arg);
+				index += 1;
+				break;
+			case "--workspace":
+				workspace = requireValue(argv, index, arg).trim();
+				if (!workspace) throw new Error("--workspace requires a name or ID.");
 				index += 1;
 				break;
 			case "--agent-id":
@@ -385,8 +402,10 @@ export function parseRunArgs(argv: string[]): HeadlessRunOptions {
 		}
 	}
 
+	if (workspace !== undefined && url !== undefined) throw new Error("--workspace cannot be combined with --url; choose a registry workspace or a direct endpoint.");
 	return {
 		...environment,
+		...(workspace !== undefined ? { workspace } : {}),
 		...(url ? { url } : {}),
 		agentId,
 		agentSelector,
@@ -407,10 +426,11 @@ export function parseCliArgs(argv: string[]): CliCommand {
 	for (let index = 0; index < argv.length; index++) {
 		const arg = argv[index];
 		if (arg === "--") { normalized.push(...argv.slice(index)); break; }
-		if (arg.startsWith("--env=")) normalized.push("--env", arg.slice(6));
+		if (arg.startsWith("--workspace=")) normalized.push("--workspace", arg.slice(12));
+		else if (arg.startsWith("--env=")) normalized.push("--env", arg.slice(6));
 		else {
 			normalized.push(arg);
-			if (["--url", "--host", "-u", "--agent-id", "--agent", "--token", "--header", "--push-receiver", "--request-mode", "--response-mode", "--env"].includes(arg) && index + 1 < argv.length) {
+			if (["--workspace", "--url", "--host", "-u", "--agent-id", "--agent", "--token", "--header", "--push-receiver", "--request-mode", "--response-mode", "--env"].includes(arg) && index + 1 < argv.length) {
 				normalized.push(argv[++index]);
 			}
 		}

@@ -49294,6 +49294,7 @@ Options:
       --env <environment> [origin]  production, staging, or development; saves selection
                                    Optional HTTP(S) API origin for development only
   -u, --url, --host <endpoint>   Agent or proxy URL to connect to
+      --workspace <name-or-id>   Workspace whose registry catalog to search
       --agent-id <agent-id>      Agent identifier for proxy-aware routing
       --token <token>            Bearer token for the explicit --url endpoint
       --header <key=value>       Repeatable custom HTTP header for the explicit --url endpoint
@@ -49325,6 +49326,7 @@ Message input:
 
 Agent selection:
       --agent <selector>         Discovered agent handle, display id, identity id, or agent key
+      --workspace <name-or-id>   Workspace whose registry catalog to search
       --agent-id <agent-id>      Agent identifier for proxy-aware routing with --url
   -u, --url, --host <endpoint>   Explicit A2A endpoint or proxy URL
 
@@ -49448,6 +49450,7 @@ function readEnvironmentFlag(argv, index) {
 function parseArgs(argv) {
   let environment = {};
   let url;
+  let workspace;
   let agentId;
   let token;
   let pushNotifications = false;
@@ -49466,6 +49469,11 @@ function parseArgs(argv) {
       case "--host":
       case "-u":
         url = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case "--workspace":
+        workspace = requireValue(argv, index, arg).trim();
+        if (!workspace) throw new Error("--workspace requires a name or ID.");
         index += 1;
         break;
       case "--agent-id":
@@ -49503,8 +49511,10 @@ function parseArgs(argv) {
         throw new Error(`Unknown argument '${arg}'`);
     }
   }
+  if (workspace !== void 0 && url !== void 0) throw new Error("--workspace cannot be combined with --url; choose a registry workspace or a direct endpoint.");
   return {
     ...environment,
+    ...workspace !== void 0 ? { workspace } : {},
     ...url ? { url } : {},
     agentId,
     token,
@@ -49517,6 +49527,7 @@ function parseRunArgs(argv) {
   let newSession = false;
   let environment = {};
   let url;
+  let workspace;
   let agentId;
   let agentSelector;
   let token;
@@ -49540,6 +49551,11 @@ function parseRunArgs(argv) {
       case "--host":
       case "-u":
         url = requireValue(argv, index, arg);
+        index += 1;
+        break;
+      case "--workspace":
+        workspace = requireValue(argv, index, arg).trim();
+        if (!workspace) throw new Error("--workspace requires a name or ID.");
         index += 1;
         break;
       case "--agent-id":
@@ -49602,8 +49618,10 @@ function parseRunArgs(argv) {
         messageArgs.push(arg);
     }
   }
+  if (workspace !== void 0 && url !== void 0) throw new Error("--workspace cannot be combined with --url; choose a registry workspace or a direct endpoint.");
   return {
     ...environment,
+    ...workspace !== void 0 ? { workspace } : {},
     ...url ? { url } : {},
     agentId,
     agentSelector,
@@ -49626,10 +49644,11 @@ function parseCliArgs(argv) {
       normalized.push(...argv.slice(index));
       break;
     }
-    if (arg.startsWith("--env=")) normalized.push("--env", arg.slice(6));
+    if (arg.startsWith("--workspace=")) normalized.push("--workspace", arg.slice(12));
+    else if (arg.startsWith("--env=")) normalized.push("--env", arg.slice(6));
     else {
       normalized.push(arg);
-      if (["--url", "--host", "-u", "--agent-id", "--agent", "--token", "--header", "--push-receiver", "--request-mode", "--response-mode", "--env"].includes(arg) && index + 1 < argv.length) {
+      if (["--workspace", "--url", "--host", "-u", "--agent-id", "--agent", "--token", "--header", "--push-receiver", "--request-mode", "--response-mode", "--env"].includes(arg) && index + 1 < argv.length) {
         normalized.push(argv[++index]);
       }
     }
@@ -60508,6 +60527,7 @@ function ChatApp({ options: options2 }) {
         {
           environmentId: selectedEnvironment,
           controlPlaneOrigin,
+          workspaceSelector: options2.workspace,
           registryPreferences: latestEnvironment.registryAccounts,
           controlPlaneAccessTokenProvider: (request) => getStoredAccessToken(selectedEnvironment, {
             forceRefresh: request?.forceRefresh,
@@ -60575,7 +60595,8 @@ function ChatApp({ options: options2 }) {
         credentialScope: credentials.owner(agent.source)
       })?.agentKey === latestEnvironment.selectedAgentKey) : void 0;
       const savedDirect = discovery.agents.find((agent) => agent.source.type !== "registry" && agent.agentKey === latestEnvironment.selectedAgentKey);
-      const nextSelected = selectDiscoveredAgent(discovery.agents, {
+      const candidates = options2.workspace !== void 0 ? discovery.agents.filter((agent) => agent.source.type === "registry") : discovery.agents;
+      const nextSelected = selectDiscoveredAgent(candidates, {
         requestedAgentId: options2.agentId,
         selectedAgentKey: savedRegistryKey ?? legacySelected?.agentKey ?? savedDirect?.agentKey,
         explicitSourceKey,
@@ -60620,6 +60641,7 @@ ${message}` : `Agent source discovery failed: ${message}`
     credentials,
     controlPlaneApiBaseUrl,
     options2.agentId,
+    options2.workspace,
     options2.headers,
     options2.token,
     reconnectNonce,
@@ -62323,7 +62345,7 @@ async function runHeadless(options2, dependencies = {}) {
   const controlPlaneOrigin = environmentSettings.controlPlaneOrigin;
   const accountToken = () => controlPlaneOrigin ? getStoredAccessTokenImpl(selectedEnvironment, { controlPlaneOrigin }) : getStoredAccessTokenImpl(selectedEnvironment);
   const explicitSourceKey = options2.url ? createExplicitAgentSource(options2.url).sourceKey : void 0;
-  const runtimeSources = mergeAgentSources(
+  const runtimeSources = options2.url ? [createExplicitAgentSource(options2.url)] : options2.workspace !== void 0 ? [createDefaultRegistryAgentSource(selectedEnvironment, controlPlaneOrigin)] : mergeAgentSources(
     environmentSettings.agentSources,
     selectedEnvironment,
     options2.url,
@@ -62348,6 +62370,7 @@ async function runHeadless(options2, dependencies = {}) {
     usesPersistedContext: false
   });
   try {
+    if (options2.workspace !== void 0 && options2.url !== void 0) throw new Error("--workspace cannot be combined with --url.");
     if (options2.newSession) {
       const source = runtimeSources.find((item) => item.sourceKey === explicitSourceKey);
       if (!source) throw new Error("--new-session requires --url to choose the guest source.");
@@ -62357,12 +62380,21 @@ async function runHeadless(options2, dependencies = {}) {
     const discovery = await discoverAgentSourcesImpl(runtimeSources, fetchImpl, {
       environmentId: selectedEnvironment,
       controlPlaneOrigin,
+      workspaceSelector: options2.workspace,
+      registryPreferences: environmentSettings.registryAccounts,
       controlPlaneAccessTokenProvider: accountToken,
       graphQLFetchImpl: credentials.fetch(createDefaultRegistryAgentSource(selectedEnvironment, controlPlaneOrigin)),
       sourceFetchImpl: (source) => credentials.fetch(source),
       logger
     });
     writeDiscoveryErrors(discovery, stderr);
+    if (!options2.url && !discovery.registry && (options2.workspace !== void 0 || discovery.workspaceAccount)) {
+      throw new Error("Workspace selection failed. Choose an accessible workspace with --workspace.");
+    }
+    if (options2.workspace !== void 0) discovery.agents = discovery.agents.filter((agent) => agent.source.type === "registry");
+    const registry = discovery.registry;
+    const savedRegistryKey = registry ? environmentSettings.registryAccounts?.[registry.accountScope]?.selectedAgentKeys?.[registry.workspace.id] : void 0;
+    const savedDirect = discovery.agents.find((agent) => agent.source.type !== "registry" && agent.agentKey === environmentSettings.selectedAgentKey);
     if (discovery.agents.length === 0) {
       throw new Error(
         `No agents discovered for ${selectedEnvironment}. Sources checked: ${formatSourceStatuses(discovery)}`
@@ -62371,8 +62403,8 @@ async function runHeadless(options2, dependencies = {}) {
     const selectedAgent = selectHeadlessAgent(
       discovery,
       options2,
-      environmentSettings.selectedAgentKey,
-      environmentSettings.selectedAgentId,
+      savedRegistryKey ?? savedDirect?.agentKey,
+      void 0,
       explicitSourceKey,
       selectedEnvironment
     );
