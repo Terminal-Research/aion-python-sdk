@@ -6,7 +6,9 @@ the built CLI bundle into the repository's `src/aion/cli/bin/cli.mjs`.
 
 Registry discovery requests `networkTypes: [A2A, AionChat]` in one GraphQL
 selection. The server matches either endpoint type and returns each identity
-once; the client also deduplicates the caller's personal identity by ID.
+once; the client deduplicates the catalog by identity ID. Workspace selection uses
+the current user's home organization and memberships. The catalog is authoritative;
+do not append the personal identity from CurrentUser outside that result.
 
 ## Inspecting Aion Chat Session Logs
 
@@ -76,5 +78,7 @@ completion is independent of the foreground request. Reconnect and context
 restoration reuse the existing ID without another welcome, including after a
 failed welcome. Agents without welcome support use the allocated ID on the
 first user prompt. Session saves merge messages by ID so concurrent welcomes
-cannot erase ordinary replies. Context fetching and transcript restoration
-remain unchanged.
+cannot erase ordinary replies. Registry histories and selected-agent preferences
+are scoped by account, environment, API origin and workspace. Restore only the
+validated active context, including its saved transcript. Never substitute the
+most recently updated session file or replay its events as live responses.
