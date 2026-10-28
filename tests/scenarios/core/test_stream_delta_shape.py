@@ -63,34 +63,31 @@ async def test_every_update_carries_the_schema_marker_on_the_event(client: Scena
 
 
 @pytest.mark.command("stream")
-async def test_the_artifact_carries_its_own_status_not_the_schema(client: ScenarioClient) -> None:
-    """Artifact metadata describes the artifact - streaming, then finalized; the schema belongs to the event."""
+async def test_the_artifact_carries_no_status_and_no_schema(client: ScenarioClient) -> None:
+    """The schema belongs to the event; where a section ends, ``lastChunk`` says, not the artifact's metadata."""
     events = await client.send("stream 3")
 
-    for chunk in (event for event in events if is_chunk(event)):
-        assert chunk.artifact_metadata.get("status") == "active"
-        assert chunk.artifact_metadata.get("status_reason") == "chunk_streaming"
-        assert MESSAGING_EXTENSION_URI_V1 not in chunk.artifact_metadata
-    (end,) = [event for event in events if is_section_end(event)]
-    assert end.artifact_metadata.get("status") == "finalized"
-    assert MESSAGING_EXTENSION_URI_V1 not in end.artifact_metadata
+    for update in _stream_updates(events):
+        assert "status" not in update.artifact_metadata
+        assert "status_reason" not in update.artifact_metadata
+        assert MESSAGING_EXTENSION_URI_V1 not in update.artifact_metadata
 
 
 @pytest.mark.command("stream")
-async def test_the_section_is_closed_by_its_whole_text(client: ScenarioClient) -> None:
-    """Only the update that ends the section has `lastChunk`, and it carries the whole text in one part.
+async def test_the_section_is_closed_by_the_end_mark(client: ScenarioClient) -> None:
+    """Only the update that ends the section has `lastChunk`: one empty part, appended.
 
-    It comes after the last chunk with ``append`` unset, so a client that
-    replaces the artifact with it holds the answer exactly once, however it
-    assembled the chunks. Nothing but the terminal task follows it.
+    The text is never sent twice, so a client that appends every update
+    holds the answer exactly once. Nothing but the terminal task follows it.
     """
     events = await client.send("stream 3")
 
     updates = _stream_updates(events)
     assert [update.last_chunk for update in updates] == [False, False, False, True]
     end = updates[-1]
-    assert end.append is False
-    assert end.texts == (stream_text(3),)
+    assert end.append is True
+    assert end.texts == ("",)
+    assert "".join(update.text for update in updates) == stream_text(3)
 
     after = events[events.index(end) + 1:]
     assert len(after) == 1 and after[0].kind == "task" and after[0].final, after
@@ -105,8 +102,7 @@ async def test_the_first_chunk_opens_a_section_and_every_chunk_carries_content(
     ``append`` is how a client knows whether a chunk starts a new section of
     the answer or continues the open one, so the first must say false and the
     rest true. And an empty chunk would tell a client rendering as it reads
-    nothing at all, so no update is emitted without content - the empty final
-    chunk langchain-core ends a stream with produces no event.
+    nothing at all, so only the end mark that closes the section is empty.
     """
     events = await client.send("stream 3")
 

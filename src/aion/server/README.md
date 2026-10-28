@@ -592,13 +592,17 @@ each per task, and stores them like any other - the stream, the task record
 and push subscribers all get them:
 
 - `aion:stream-delta` is the answer the model streamed. A section's chunks
-  arrive with `append` set (the first without it); when the section ends,
-  its whole text arrives as one text part with `append` unset and
-  `lastChunk` set, replacing them. A later section of the task replaces it
-  in turn. The streamed text never becomes a message. Every chunk is
-  stored and delivered as the agent produced it. A section `Thread.reply`
+  arrive with `append` set (the first without it, which starts the artifact
+  over) and are stored and delivered as the agent produced them. The
+  section ends with `lastChunk` set: on its last chunk when the framework
+  marks it, or else on an empty chunk after it; the text is never sent
+  again. When the task stops (`COMPLETED`, `INPUT_REQUIRED`, `FAILED`,
+  `CANCELED`), the task manager joins the text it holds into one part
+  (`join_streamed_answer`), which the closing Task, `GetTask` and
+  `GetContext` return. A later section of the task replaces the earlier
+  one. The streamed text never becomes a message. A section `Thread.reply`
   streams to a distribution carries its routing target as one more part on
-  its first chunk and on its whole text.
+  its first chunk, and the target stays beside the joined text.
 - `aion:thinking-delta` holds the agent's thoughts, which only its own code
   sends (`emit_thinking`, `Thread.thinking`): one text part per thought, for
   the whole task. The pipeline makes the task's first thought create the

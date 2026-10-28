@@ -279,18 +279,18 @@ def _status_messages(events) -> list[str]:
     ]
 
 
-async def test_a_streamed_section_ends_with_its_whole_text_in_one_part(adapter) -> None:
-    """Guarantee 10. The chunks, then the section's whole text replacing them."""
+async def test_a_streamed_section_ends_with_the_end_mark(adapter) -> None:
+    """Guarantee 10. The chunks, then one empty part that ends the section; the text is not sent again."""
     events = await adapter.run_events(Chunk("It "), Chunk("is sunny."), Close("It is sunny."))
 
     assert _stream_deltas(events) == [
         ("It ", False, False),
         ("is sunny.", True, False),
-        ("It is sunny.", False, True),
+        ("", True, True),
     ]
-    final = [event for event in events if isinstance(event, TaskArtifactUpdateEvent)][-1]
-    assert len(final.artifact.parts) == 1
-    assert final.artifact.metadata["status"] == "finalized"
+    end = [event for event in events if isinstance(event, TaskArtifactUpdateEvent)][-1]
+    assert [part.text for part in end.artifact.parts] == [""]
+    assert not end.artifact.HasField("metadata")
 
 
 async def test_the_closing_message_of_a_section_is_not_a_message(adapter) -> None:
@@ -300,15 +300,15 @@ async def test_the_closing_message_of_a_section_is_not_a_message(adapter) -> Non
     assert _status_messages(events) == []
 
 
-async def test_a_section_the_run_leaves_open_is_closed_with_the_text_of_its_chunks(adapter) -> None:
+async def test_a_section_the_run_leaves_open_is_closed_with_the_end_mark(adapter) -> None:
     """Guarantees 11 and 12. The run ends mid-section: the section still ends,
-    with what its chunks said, and still as the artifact rather than a message."""
+    and its text stays the artifact rather than a message."""
     events = await adapter.run_events(Chunk("It "), Chunk("is sunny."))
 
     assert _stream_deltas(events) == [
         ("It ", False, False),
         ("is sunny.", True, False),
-        ("It is sunny.", False, True),
+        ("", True, True),
     ]
     assert _status_messages(events) == []
 
@@ -336,9 +336,9 @@ async def test_the_next_section_starts_the_artifact_over(adapter) -> None:
 
     assert _stream_deltas(events) == [
         ("Checking.", False, False),
-        ("Checking.", False, True),
+        ("", True, True),
         ("Sunny.", False, False),
-        ("Sunny.", False, True),
+        ("", True, True),
     ]
 
 
@@ -362,7 +362,7 @@ async def test_a_thought_does_not_end_the_streaming_section(adapter) -> None:
     assert _stream_deltas(events) == [
         ("It ", False, False),
         ("is sunny.", True, False),
-        ("It is sunny.", False, True),
+        ("", True, True),
     ]
     artifact_ids = [event.artifact.artifact_id for event in events if isinstance(event, TaskArtifactUpdateEvent)]
     assert artifact_ids == [

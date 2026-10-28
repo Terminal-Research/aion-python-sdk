@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from a2a.types import Part, TaskArtifactUpdateEvent, TaskState, TaskStatus, TaskStatusUpdateEvent
+from a2a.types import Artifact, Part, TaskArtifactUpdateEvent
 from google.protobuf.json_format import MessageToDict
 
-from aion.core.a2a.deltas import is_stream_delta_chunk, stream_delta_chunk, stream_delta_final, thinking_delta
+from aion.core.a2a.deltas import join_stream_delta, stream_delta_chunk, stream_delta_end, thinking_delta
 from aion.core.a2a.enums import ArtifactId, ArtifactName
 from aion.core.a2a.extensions.messaging import MessageActionPayload
 from aion.core.constants.a2a import MESSAGING_EXTENSION_URI_V1, STREAM_DELTA_PAYLOAD_SCHEMA_V1
@@ -13,6 +13,7 @@ from aion.core.constants.a2a import MESSAGING_EXTENSION_URI_V1, STREAM_DELTA_PAY
 TASK_ID = "task-1"
 CONTEXT_ID = "ctx-1"
 SCHEMA_MARKER = {MESSAGING_EXTENSION_URI_V1: {"schema": STREAM_DELTA_PAYLOAD_SCHEMA_V1}}
+ROUTING = MessageActionPayload(trajectory="reply", context_id="C1", reply_to_message_id="m-1")
 
 
 def _chunk(*texts: str, append: bool = True, metadata=None) -> TaskArtifactUpdateEvent:
@@ -39,28 +40,44 @@ class TestStreamDeltaChunk:
     def test_append_is_what_the_caller_says(self):
         assert _chunk("lo").append is True
 
-    def test_a_chunk_says_it_is_streaming(self):
-        assert MessageToDict(_chunk("Hel").artifact.metadata) == {
-            "status": "active",
-            "status_reason": "chunk_streaming",
-        }
+    def test_a_chunk_the_framework_marks_last_ends_the_section(self):
+        event = stream_delta_chunk(
+            task_id=TASK_ID, context_id=CONTEXT_ID, parts=[Part(text="lo")], append=True, last_chunk=True
+        )
 
-    def test_the_agents_metadata_joins_the_artifacts(self):
-        metadata = MessageToDict(_chunk("Hel", metadata={"model": "m-1"}).artifact.metadata)
+        assert event.last_chunk is True
 
-        assert metadata["model"] == "m-1"
-        assert metadata["status"] == "active"
+    def test_a_chunk_carries_only_the_agents_metadata(self):
+        assert not _chunk("Hel").artifact.HasField("metadata")
+        assert MessageToDict(_chunk("Hel", metadata={"model": "m-1"}).artifact.metadata) == {"model": "m-1"}
 
     def test_the_event_carries_the_payload_schema_marker(self):
         assert MessageToDict(_chunk("Hel").metadata) == SCHEMA_MARKER
 
 
-class TestRoutedSection:
-    ROUTING = MessageActionPayload(trajectory="reply", context_id="C1", reply_to_message_id="m-1")
+class TestStreamDeltaEnd:
+    def test_the_end_mark_is_one_empty_text_part_appended_as_the_last_chunk(self):
+        event = stream_delta_end(task_id=TASK_ID, context_id=CONTEXT_ID)
 
+        assert (event.task_id, event.context_id) == (TASK_ID, CONTEXT_ID)
+        assert event.artifact.artifact_id == ArtifactId.STREAM_DELTA.value
+        assert [part.WhichOneof("content") for part in event.artifact.parts] == ["text"]
+        assert event.artifact.parts[0].text == ""
+        assert (event.append, event.last_chunk) == (True, True)
+        assert not event.artifact.HasField("metadata")
+        assert MessageToDict(event.metadata) == SCHEMA_MARKER
+
+    def test_the_empty_part_survives_the_wire(self):
+        """An empty text part is still a text part in JSON, so the update is never partless."""
+        wire = MessageToDict(stream_delta_end(task_id=TASK_ID, context_id=CONTEXT_ID))
+
+        assert wire["artifact"]["parts"] == [{"text": ""}]
+
+
+class TestRoutedSection:
     def test_a_routed_chunk_carries_the_target_after_its_content(self):
         event = stream_delta_chunk(
-            task_id=TASK_ID, context_id=CONTEXT_ID, parts=[Part(text="Hel")], append=False, routing=self.ROUTING
+            task_id=TASK_ID, context_id=CONTEXT_ID, parts=[Part(text="Hel")], append=False, routing=ROUTING
         )
 
         assert event.artifact.parts[0].text == "Hel"
@@ -68,35 +85,34 @@ class TestRoutedSection:
         assert list(event.artifact.extensions) == [MESSAGING_EXTENSION_URI_V1]
         assert MessageToDict(event.metadata) == SCHEMA_MARKER
 
-    def test_a_routed_whole_text_is_the_text_and_the_target(self):
-        event = stream_delta_final(task_id=TASK_ID, context_id=CONTEXT_ID, text="Hello", routing=self.ROUTING)
-
-        assert event.artifact.parts[0].text == "Hello"
-        assert [MessageActionPayload.is_part(part) for part in event.artifact.parts] == [False, True]
-        assert list(event.artifact.extensions) == [MESSAGING_EXTENSION_URI_V1]
-
     def test_without_a_target_a_section_declares_no_extension(self):
         assert list(_chunk("Hel", append=False).artifact.extensions) == []
-        assert list(stream_delta_final(task_id=TASK_ID, context_id=CONTEXT_ID, text="Hello").artifact.extensions) == []
 
 
-class TestStreamDeltaFinal:
-    def test_a_final_is_the_whole_section_in_one_text_part_that_replaces_the_chunks(self):
-        event = stream_delta_final(task_id=TASK_ID, context_id=CONTEXT_ID, text="Hello, world")
+class TestJoinStreamDelta:
+    def test_the_text_of_every_chunk_becomes_one_part(self):
+        artifact = Artifact(parts=[Part(text="Hel"), Part(text="lo, "), Part(text="world"), Part(text="")])
 
-        assert event.artifact.artifact_id == ArtifactId.STREAM_DELTA.value
-        assert event.artifact.name == ArtifactName.STREAM_DELTA.value
-        assert [part.text for part in event.artifact.parts] == ["Hello, world"]
-        assert event.append is False
-        assert event.last_chunk is True
+        join_stream_delta(artifact)
 
-    def test_a_final_says_the_section_is_finalized(self):
-        event = stream_delta_final(
-            task_id=TASK_ID, context_id=CONTEXT_ID, text="Hello", metadata={"model": "m-1"}
-        )
+        assert [part.text for part in artifact.parts] == ["Hello, world"]
 
-        assert MessageToDict(event.artifact.metadata) == {"status": "finalized", "model": "m-1"}
-        assert MessageToDict(event.metadata) == SCHEMA_MARKER
+    def test_the_routing_target_follows_the_joined_text(self):
+        artifact = Artifact(parts=[Part(text="Hel"), ROUTING.to_part(), Part(text="lo"), Part(text="")])
+
+        join_stream_delta(artifact)
+
+        assert artifact.parts[0].text == "Hello"
+        assert [MessageActionPayload.is_part(part) for part in artifact.parts] == [False, True]
+
+    def test_an_artifact_already_in_one_part_is_left_as_it_is(self):
+        artifact = Artifact(parts=[Part(text="Hello"), ROUTING.to_part()])
+        before = Artifact()
+        before.CopyFrom(artifact)
+
+        join_stream_delta(artifact)
+
+        assert artifact == before
 
 
 class TestThinkingDelta:
@@ -117,22 +133,3 @@ class TestThinkingDelta:
         assert not bare.artifact.HasField("metadata")
         assert not bare.HasField("metadata")
         assert MessageToDict(with_metadata.artifact.metadata) == {"step": 2.0}
-
-
-class TestIsStreamDeltaChunk:
-    def test_a_chunk_is_one(self):
-        assert is_stream_delta_chunk(_chunk("Hel", append=False))
-        assert is_stream_delta_chunk(_chunk("lo"))
-
-    def test_a_whole_section_is_not(self):
-        assert not is_stream_delta_chunk(stream_delta_final(task_id=TASK_ID, context_id=CONTEXT_ID, text="Hello"))
-
-    def test_another_artifact_or_event_is_not(self):
-        thought = thinking_delta(task_id=TASK_ID, context_id=CONTEXT_ID, text="hm")
-        status = TaskStatusUpdateEvent(
-            task_id=TASK_ID, context_id=CONTEXT_ID, status=TaskStatus(state=TaskState.TASK_STATE_WORKING)
-        )
-
-        assert not is_stream_delta_chunk(thought)
-        assert not is_stream_delta_chunk(status)
-        assert not is_stream_delta_chunk(None)

@@ -3,7 +3,7 @@
 Focus areas:
   Enums (aion.shared.types.a2a.enums):
     - MessageType, ArtifactId, ArtifactName values
-    - A2AEventType, A2AMetadataKey, ArtifactStreamingStatus values
+    - A2AEventType, A2AMetadataKey values
 
   A2A Models (aion.shared.types.a2a.models):
     - A2AInbox: construction, frozen immutability, from_request_context
@@ -44,8 +44,6 @@ from aion.core.a2a.enums import (
     A2AMetadataKey,
     ArtifactId,
     ArtifactName,
-    ArtifactStreamingStatus,
-    ArtifactStreamingStatusReason,
     MessageType,
 )
 from aion.core.a2a.extensions.cards import CardActionEventPayload
@@ -123,17 +121,6 @@ class TestEnums:
         assert A2AMetadataKey.MESSAGE_TYPE == "aion:messageType"
         assert A2AMetadataKey.NETWORK == "aion:network"
         assert A2AMetadataKey.DISTRIBUTION == "aion:distribution"
-
-    def test_artifact_streaming_status_values(self):
-        """ArtifactStreamingStatus enum has correct finalized and active values."""
-        assert ArtifactStreamingStatus.FINALIZED == "finalized"
-        assert ArtifactStreamingStatus.ACTIVE == "active"
-
-    def test_artifact_streaming_status_reason_values(self):
-        """ArtifactStreamingStatusReason enum members match their string values."""
-        assert ArtifactStreamingStatusReason.INTERRUPTED == "interrupted"
-        assert ArtifactStreamingStatusReason.COMPLETE_MESSAGE == "complete_message"
-        assert ArtifactStreamingStatusReason.CHUNK_STREAMING == "chunk_streaming"
 
 
 class TestA2AInbox:

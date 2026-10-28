@@ -185,11 +185,11 @@ def answer(*, text: Optional[str] = None) -> Matcher:
 
 
 def section_end(*, text: Optional[str] = None) -> Matcher:
-    """The stream-delta update that ends a section: its whole text, ``append`` unset, ``lastChunk`` set."""
+    """The stream-delta update that ends a section: ``lastChunk`` set, ``text`` its own text when given."""
     text_check = _text_check(text, None)
 
     def check(event: Ev) -> bool:
-        return is_section_end(event) and not event.append and text_check(event)
+        return is_section_end(event) and text_check(event)
 
     return Matcher(label=f"section_end(text={text!r})", check=check)
 

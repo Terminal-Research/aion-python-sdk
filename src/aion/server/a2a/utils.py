@@ -11,6 +11,7 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
+from aion.core.a2a.deltas import join_stream_delta
 from aion.core.a2a.enums import A2AMetadataKey, ArtifactId
 from aion.server.a2a.constants import (
     INTERRUPT_TASK_STATES,
@@ -25,6 +26,7 @@ __all__ = [
     "is_same_message",
     "is_message_recorded",
     "record_closing_message",
+    "join_streamed_answer",
     "extract_input_preview",
     "extract_event_preview",
     "empty_input_warning",
@@ -363,3 +365,24 @@ def record_closing_message(task: Task) -> None:
     if is_message_recorded(task, task.status.message):
         return
     task.history.append(task.status.message)
+
+
+def join_streamed_answer(task: Task) -> None:
+    """Join the streamed answer of a task that stops into one text part, in place.
+
+    The chunks of ``aion:stream-delta`` reach the client and the task one by
+    one, and nothing sends their text again. A task that stops - with an
+    outcome, or interrupted to wait for input or authorization - keeps the
+    text joined (``join_stream_delta``), so the closing Task, ``GetTask`` and
+    ``GetContext`` give the answer in one part, its routing target beside it.
+    A running task is left alone: its next section replaces the artifact.
+
+    Raises:
+        TypeError: If task is not a Task instance.
+    """
+    _require_task(task)
+    if task.status.state not in NON_ACTIVE_TASK_STATES:
+        return
+    for artifact in task.artifacts:
+        if artifact.artifact_id == ArtifactId.STREAM_DELTA.value:
+            join_stream_delta(artifact)

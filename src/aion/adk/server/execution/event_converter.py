@@ -20,8 +20,8 @@ from aion.adk.authoring.invocation.event_metadata import (
 )
 from aion.adk.server.transformers import A2ATransformer
 from aion.core.a2a import ArtifactId, ArtifactName
-from aion.core.a2a.deltas import stream_delta_chunk, stream_delta_final, thinking_delta
-from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
+from aion.core.a2a.deltas import stream_delta_chunk, stream_delta_end, thinking_delta
+from aion.core.a2a.extensions.messaging import ReactionActionPayload
 from aion.core.agent.invocation.card import Card
 from aion.core.agent.invocation.card.utils import build_card_a2a_part
 from aion.core.constants import CARDS_EXTENSION_URI_V1, MESSAGING_EXTENSION_URI_V1, REACTION_ACTION_PAYLOAD_SCHEMA_V1
@@ -40,9 +40,10 @@ class ADKToA2AEventConverter:
 
     Partial ADK events are the chunks of a section of ``aion:stream-delta``.
     The non-partial event ADK sends after them carries the section's whole
-    text: it ends the section as the artifact's final event, and becomes no
-    message. A non-partial event that ends no section is a message, a
-    ``WORKING`` status update the task keeps in its history.
+    text again: it ends the section with the end mark, and its text is
+    neither sent again nor made a message. A non-partial event that ends no
+    section is a message, a ``WORKING`` status update the task keeps in its
+    history.
     """
 
     def __init__(
@@ -54,12 +55,8 @@ class ADKToA2AEventConverter:
         self._task_id = task_id
         self._context_id = context_id
         self._ctx = ctx
-        # The open section of `aion:stream-delta`: its text so far, the
-        # agent's metadata for it and where the thread sends it.
+        # Whether a section of `aion:stream-delta` is open.
         self._section_open = False
-        self._section_text = ""
-        self._section_metadata: dict | None = None
-        self._section_routing: MessageActionPayload | None = None
 
     async def convert(self, adk_event: Event) -> list[AgentEvent]:
         """Convert an ADK event to zero or more A2A events.
@@ -91,11 +88,11 @@ class ADKToA2AEventConverter:
         rather than a missing feature: intermediate responses are partial=True
         and the section ends with a separate partial=False response carrying
         the aggregated content, so at the moment a partial is converted
-        nothing says it was the last one. The section's final event follows
+        nothing says it was the last one. The section's end mark follows
         with that response.
 
         A routing target ``Thread.reply`` gives the chunks goes out on the
-        section's first chunk and on its whole text.
+        section's first chunk.
         """
         parts = A2ATransformer.transform_content(adk_event.content)
         if not parts:
@@ -103,45 +100,25 @@ class ADKToA2AEventConverter:
 
         append = self._section_open
         self._section_open = True
-        self._section_text += "".join(part.text for part in parts if part.WhichOneof("content") == "text")
-        self._section_metadata = get_aion_user_metadata(adk_event)
-        routing = get_aion_routing(adk_event)
-        if routing is not None:
-            self._section_routing = routing
         return [stream_delta_chunk(
             task_id=self._task_id,
             context_id=self._context_id,
             parts=parts,
             append=append,
-            metadata=self._section_metadata,
-            routing=None if append else routing,
+            metadata=get_aion_user_metadata(adk_event),
+            routing=None if append else get_aion_routing(adk_event),
         )]
 
-    def _close_section(self, text: str | None = None) -> list[AgentEvent]:
-        """End the open section of ``aion:stream-delta`` with its whole text, if one is open.
+    def _close_section(self) -> list[AgentEvent]:
+        """End the open section of ``aion:stream-delta`` with the end mark, if one is open.
 
-        Args:
-            text: The section's whole text as the framework reports it; the
-                text of its chunks when it reports none.
+        No ADK chunk says it is the last, so every section gets the mark
+        (``stream_delta_end``); its text is not sent again.
         """
         if not self._section_open:
             return []
-        final_text = self._section_text if text is None else text
-        metadata = self._section_metadata
-        routing = self._section_routing
         self._section_open = False
-        self._section_text = ""
-        self._section_metadata = None
-        self._section_routing = None
-        if not final_text:
-            return []
-        return [stream_delta_final(
-            task_id=self._task_id,
-            context_id=self._context_id,
-            text=final_text,
-            metadata=metadata,
-            routing=routing,
-        )]
+        return [stream_delta_end(task_id=self._task_id, context_id=self._context_id)]
 
     def _build_reaction_event(self, reaction: ReactionActionPayload) -> AgentEvent:
         proto_value = struct_pb2.Value()
@@ -166,8 +143,8 @@ class ADKToA2AEventConverter:
         output - a reaction, a thought, a card - instead of the default path.
 
         An event that follows the chunks of a section carries the section's
-        whole text: its text becomes the final event of ``aion:stream-delta``,
-        and the rest of its content, if any, a message. Any other event's
+        whole text, which the chunks carried already: it ends the section,
+        and the rest of its content, if any, becomes a message. Any other event's
         content becomes a message: a TaskStatusUpdateEvent (state=working)
         the client receives while the task is still running and the task
         keeps in its history. Finally, artifacts from artifact_delta are
@@ -218,10 +195,7 @@ class ADKToA2AEventConverter:
         content_parts = A2ATransformer.transform_content(adk_event.content) if adk_event.content else []
         routing = get_aion_routing(adk_event)
         if self._section_open:
-            if routing is not None:
-                self._section_routing = routing
-            text_parts = [part for part in content_parts if part.WhichOneof("content") == "text"]
-            results.extend(self._close_section("".join(part.text for part in text_parts) if text_parts else None))
+            results.extend(self._close_section())
             content_parts = [part for part in content_parts if part.WhichOneof("content") != "text"]
 
         if content_parts:
@@ -332,11 +306,11 @@ class ADKToA2AEventConverter:
         return results
 
     def finalize_stream(self) -> list[AgentEvent]:
-        """End a section the agent's run left open, with the text of its chunks.
+        """End a section the agent's run left open.
 
         Called when the run is over: partial events arrived and no
-        non-partial event followed them, so the section's final event is
-        built from what its chunks said.
+        non-partial event followed them, so the section gets its end mark
+        here.
         """
         return self._close_section()
 

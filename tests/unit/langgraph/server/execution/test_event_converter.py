@@ -73,32 +73,44 @@ class TestConvertStreamingChunk:
             events = converter._convert_streaming_chunk(chunk)
         assert events == []
 
-    def test_empty_last_chunk_produces_no_event(self, converter):
-        """A chunk_position='last' chunk without content yields nothing: every update carries a Part."""
+    def test_an_empty_last_chunk_without_an_open_section_produces_nothing(self, converter):
+        """A chunk_position='last' chunk without content ends nothing when nothing streamed."""
         chunk = make_mock_chunk(chunk_position="last")
         with patch(LC_CONVERTER_PATH, return_value=[]):
             events = converter._convert_streaming_chunk(chunk)
         assert events == []
 
-    def test_content_last_chunk_is_not_the_sections_last_chunk(self, converter):
-        """A content-bearing chunk the provider marked as last is still a chunk: the section ends with its own event."""
-        chunk = make_mock_chunk(chunk_position="last")
-        with patch(LC_CONVERTER_PATH, return_value=[Part(text="World!")]):
-            events = converter._convert_streaming_chunk(chunk)
-        assert len(events) == 1
-        assert events[0].last_chunk is False
-        assert [p.text for p in events[0].artifact.parts] == ["World!"]
+    def test_an_empty_last_chunk_is_the_sections_end_mark(self, converter):
+        """langchain-core usually ends a stream with an empty chunk marked last: it ends the section."""
+        with patch(LC_CONVERTER_PATH, return_value=[Part(text="Hello")]):
+            converter._convert_streaming_chunk(make_mock_chunk())
+        with patch(LC_CONVERTER_PATH, return_value=[]):
+            events = converter._convert_streaming_chunk(make_mock_chunk(chunk_position="last"))
+        assert [([p.text for p in e.artifact.parts], e.append, e.last_chunk) for e in events] == [([""], True, True)]
+        assert converter.close_stream() == []
 
-    def test_chunk_carries_active_status_and_agent_metadata(self, converter):
-        """A chunk's artifact says the section is streaming, beside the agent's own metadata."""
+    def test_a_content_last_chunk_ends_the_section_itself(self, converter):
+        """A content-bearing chunk the provider marked as last carries lastChunk; no end mark follows."""
+        with patch(LC_CONVERTER_PATH, return_value=[Part(text="Hello, ")]):
+            converter._convert_streaming_chunk(make_mock_chunk())
+        with patch(LC_CONVERTER_PATH, return_value=[Part(text="World!")]):
+            events = converter._convert_streaming_chunk(make_mock_chunk(chunk_position="last"))
+        assert [(e.append, e.last_chunk) for e in events] == [(True, True)]
+        assert [p.text for p in events[0].artifact.parts] == ["World!"]
+        assert converter.close_stream() == []
+
+    def test_a_single_chunk_marked_last_starts_and_ends_its_section(self, converter):
+        """append=False starts the artifact over whatever lastChunk says."""
+        with patch(LC_CONVERTER_PATH, return_value=[Part(text="Hi")]):
+            events = converter._convert_streaming_chunk(make_mock_chunk(chunk_position="last"))
+        assert [(e.append, e.last_chunk) for e in events] == [(False, True)]
+
+    def test_chunk_carries_only_the_agents_metadata(self, converter):
+        """A chunk's artifact carries the agent's metadata, without platform keys or a streaming status."""
         chunk = make_mock_chunk()
         with patch(LC_CONVERTER_PATH, return_value=[Part(text="a")]):
             events = converter._convert_streaming_chunk(chunk, metadata={"lane": "weather", "aion:network": "x"})
-        metadata = events[0].artifact.metadata
-        assert metadata["status"] == "active"
-        assert metadata["status_reason"] == "chunk_streaming"
-        assert metadata["lane"] == "weather"
-        assert "aion:network" not in metadata
+        assert dict(events[0].artifact.metadata) == {"lane": "weather"}
 
 
 class TestConvertFullMessage:
@@ -255,7 +267,7 @@ class TestRouting:
         assert MESSAGING_EXTENSION_URI_V1 not in event.metadata
         assert len(artifact.parts) == 1
 
-    def test_a_routed_section_carries_its_target_on_the_first_chunk_and_the_whole_text(self, converter):
+    def test_a_routed_section_carries_its_target_on_its_first_chunk_only(self, converter):
         events = []
         for text in ("one ", "two"):
             events += converter.convert(
@@ -269,15 +281,16 @@ class TestRouting:
         assert (self._contents(first), self._routed(first)) == (["one "], True)
         assert list(first.artifact.extensions) == [MESSAGING_EXTENSION_URI_V1]
         assert (self._contents(second), self._routed(second)) == (["two"], False)
-        assert (self._contents(final), self._routed(final)) == (["one two"], True)
-        assert (final.append, final.last_chunk) == (False, True)
+        assert (self._contents(final), self._routed(final)) == ([""], False)
+        assert (final.append, final.last_chunk) == (True, True)
 
-    def test_a_routed_section_the_run_left_open_ends_with_its_target(self, converter):
+    def test_a_routed_section_the_run_left_open_ends_with_the_end_mark(self, converter):
         converter.convert("custom", MessageCustomEvent(message=AIMessageChunk(content="one"), routing=self.ROUTING))
 
         [final] = converter.close_stream()
 
-        assert (self._contents(final), self._routed(final)) == (["one"], True)
+        assert (self._contents(final), self._routed(final)) == ([""], False)
+        assert final.last_chunk is True
 
     def test_the_next_section_starts_without_the_last_ones_target(self, converter):
         converter.convert("custom", MessageCustomEvent(message=AIMessageChunk(content="one"), routing=self.ROUTING))
@@ -293,27 +306,26 @@ class TestRouting:
 class TestCloseStream:
     """close_stream() ends a section the run left open, with the text of its chunks."""
 
-    def test_open_graph_section_ends_with_the_text_of_its_chunks(self, converter):
+    def test_open_graph_section_ends_with_the_end_mark(self, converter):
         converter.convert("messages", AIMessageChunk(content="It is ", id="run-1"))
         converter.convert("messages", AIMessageChunk(content="sunny.", id="run-1"))
 
         events = converter.close_stream()
 
         assert len(events) == 1
-        final = events[0]
-        assert final.artifact.artifact_id == ArtifactId.STREAM_DELTA.value
-        assert [part.text for part in final.artifact.parts] == ["It is sunny."]
-        assert (final.append, final.last_chunk) == (False, True)
-        assert final.artifact.metadata["status"] == "finalized"
+        end = events[0]
+        assert end.artifact.artifact_id == ArtifactId.STREAM_DELTA.value
+        assert [part.text for part in end.artifact.parts] == [""]
+        assert (end.append, end.last_chunk) == (True, True)
+        assert not end.artifact.HasField("metadata")
 
-    def test_open_thread_section_ends_with_the_text_of_its_chunks(self, converter):
+    def test_open_thread_section_ends_with_the_end_mark(self, converter):
         converter.convert("custom", MessageCustomEvent(message=AIMessageChunk(content="one "), metadata={"lane": "a"}))
         converter.convert("custom", MessageCustomEvent(message=AIMessageChunk(content="two"), metadata={"lane": "a"}))
 
         events = converter.close_stream()
 
-        assert [part.text for part in events[0].artifact.parts] == ["one two"]
-        assert events[0].artifact.metadata["lane"] == "a"
+        assert [([part.text for part in e.artifact.parts], e.last_chunk) for e in events] == [([""], True)]
 
     def test_nothing_open_produces_nothing(self, converter):
         assert converter.close_stream() == []

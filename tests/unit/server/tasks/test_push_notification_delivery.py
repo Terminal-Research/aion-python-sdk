@@ -47,7 +47,7 @@ from a2a.types import (
 from a2a.types.a2a_pb2 import AuthenticationInfo, TaskPushNotificationConfig
 from unittest.mock import AsyncMock, Mock
 
-from aion.core.a2a.deltas import stream_delta_chunk, stream_delta_final, thinking_delta
+from aion.core.a2a.deltas import stream_delta_chunk, stream_delta_end, thinking_delta
 from aion.core.a2a.enums import ArtifactId
 from aion.server.agent.execution import AionActiveTaskRegistry
 from aion.server.agent.execution.scope import clear_execution_scope, init_execution_scope
@@ -359,12 +359,13 @@ class TestPushCarriesWhatTheTaskStores:
         thought = thinking_delta(task_id=TASK_ID, context_id=CONTEXT_ID, text="checking the logs")
         thought.append = False
         chunk = stream_delta_chunk(task_id=TASK_ID, context_id=CONTEXT_ID, parts=[Part(text="parti")], append=False)
-        section = stream_delta_final(task_id=TASK_ID, context_id=CONTEXT_ID, text="partial")
+        rest = stream_delta_chunk(task_id=TASK_ID, context_id=CONTEXT_ID, parts=[Part(text="al")], append=True)
+        section = stream_delta_end(task_id=TASK_ID, context_id=CONTEXT_ID)
         report = TaskArtifactUpdateEvent(
             task_id=TASK_ID, context_id=CONTEXT_ID,
             artifact=Artifact(artifact_id="report", parts=[Part(text="result")]),
         )
-        produced = [progress, thought, chunk, section, report]
+        produced = [progress, thought, chunk, rest, section, report]
         events = [_submitted(), *produced, _terminal_status(TaskState.TASK_STATE_COMPLETED)]
 
         raw_push, stream_events = await _run_task_to_completion(

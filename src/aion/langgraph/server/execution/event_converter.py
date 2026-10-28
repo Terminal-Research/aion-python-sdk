@@ -13,7 +13,7 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 from aion.core.a2a import ArtifactId, ArtifactName
-from aion.core.a2a.deltas import stream_delta_chunk, stream_delta_final, thinking_delta
+from aion.core.a2a.deltas import stream_delta_chunk, stream_delta_end, thinking_delta
 from aion.core.a2a.metadata import agent_metadata
 from aion.core.a2a.extensions.messaging import MessageActionPayload
 from aion.core.agent.invocation.card import Card
@@ -60,15 +60,12 @@ class LangGraphA2AConverter:
     def __init__(self, task_id: str, context_id: str):
         self._task_id = task_id
         self._context_id = context_id
-        # The open section of `aion:stream-delta`: its text so far, the
-        # agent's metadata for it and where the thread sends it. The section
-        # comes from the graph's "messages" stream, a model call identified
-        # by `_graph_stream_id`, or from the thread, when `_graph_stream_id`
-        # is None.
+        # The open section of `aion:stream-delta`, and whether its last chunk
+        # already said so. The section comes from the graph's "messages"
+        # stream, a model call identified by `_graph_stream_id`, or from the
+        # thread, when `_graph_stream_id` is None.
         self._section_open = False
-        self._section_text = ""
-        self._section_metadata: dict | None = None
-        self._section_routing: Optional[MessageActionPayload] = None
+        self._section_ended = False
         self._graph_stream_id: Optional[str] = None
 
     def convert(self, event_type: str, event_data: Any) -> list[A2AAgentEvent]:
@@ -92,7 +89,7 @@ class LangGraphA2AConverter:
             return []
 
     def close_stream(self) -> list[A2AAgentEvent]:
-        """End a section of the streamed answer the run left open, with the text of its chunks."""
+        """End a section of the streamed answer the run left open."""
         return self._close_section()
 
     def _convert_graph_message(self, message: Any) -> list[A2AAgentEvent]:
@@ -109,10 +106,11 @@ class LangGraphA2AConverter:
         Every call to a model streams under its own message id, and LangGraph
         does not repeat the finished message once its chunks went out. So a
         chunk under a new id is where the previous model call ended: its
-        section ends with the text of its chunks, and the new call opens a
-        new one. A finished message under the open section's id is that
-        call's own closing message: its text ends the section. A finished
-        message of a call that did not stream is a message.
+        section ends, and the new call opens a new one. A finished message
+        under the open section's id is that call's own closing message: it
+        ends the section, and its text, which the chunks carried already, is
+        not sent again. A finished message of a call that did not stream is
+        a message.
         """
         if not isinstance(message, AIMessage):
             return []
@@ -155,74 +153,63 @@ class LangGraphA2AConverter:
     ) -> list[A2AAgentEvent]:
         """Emit a chunk of ``aion:stream-delta`` for a single AIMessageChunk.
 
-        Chunks without content produce no event, so every emitted update carries
-        at least one Part (langchain-core ends a stream with an empty
-        chunk_position="last" chunk). The first chunk of a section starts the
-        artifact over (append=False); the rest extend it. No chunk is the
-        section's last: the section ends with an event of its own. A routing
-        target goes out on the section's first chunk and on its whole text.
+        The first chunk of a section starts the artifact over (append=False);
+        the rest extend it. A routing target goes out on the section's first
+        chunk only. langchain-core marks a model call's last chunk with
+        ``chunk_position="last"``: a last chunk with content ends the section
+        with ``lastChunk`` set, and an empty one - the usual end of a
+        langchain-core stream - is the section's end mark. Any other chunk
+        without content produces no event.
         """
+        is_last = getattr(message, "chunk_position", None) == "last"
         parts = LcToA2AConverter.from_message(message)
         if not parts:
+            if is_last and self._section_open and not self._section_ended:
+                self._section_ended = True
+                return [stream_delta_end(task_id=self._task_id, context_id=self._context_id)]
             return []
 
         append = self._section_open
         self._section_open = True
-        self._section_text += "".join(part.text for part in parts if part.WhichOneof("content") == "text")
-        self._section_metadata = agent_metadata(metadata) or None
-        if routing is not None:
-            self._section_routing = routing
+        self._section_ended = is_last
         return [stream_delta_chunk(
             task_id=self._task_id,
             context_id=self._context_id,
             parts=parts,
             append=append,
-            metadata=self._section_metadata,
+            last_chunk=is_last,
+            metadata=agent_metadata(metadata) or None,
             routing=None if append else routing,
         )]
 
-    def _close_section(self, text: str | None = None) -> list[A2AAgentEvent]:
-        """End the open section of ``aion:stream-delta`` with its whole text, if one is open.
+    def _close_section(self) -> list[A2AAgentEvent]:
+        """End the open section of ``aion:stream-delta``, if one is open.
 
-        Args:
-            text: The section's whole text from the message that closes it;
-                the text of its chunks when there is no such message.
+        A section whose last chunk did not say so gets the end mark
+        (``stream_delta_end``); its text is not sent again.
         """
         if not self._section_open:
             self._graph_stream_id = None
             return []
-        final_text = self._section_text if text is None else text
-        metadata = self._section_metadata
-        routing = self._section_routing
+        owes_end = not self._section_ended
         self._section_open = False
-        self._section_text = ""
-        self._section_metadata = None
-        self._section_routing = None
+        self._section_ended = False
         self._graph_stream_id = None
-        if not final_text:
+        if not owes_end:
             return []
-        return [stream_delta_final(
-            task_id=self._task_id,
-            context_id=self._context_id,
-            text=final_text,
-            metadata=metadata,
-            routing=routing,
-        )]
+        return [stream_delta_end(task_id=self._task_id, context_id=self._context_id)]
 
     def _close_section_with(
             self, message: AIMessage, routing: MessageActionPayload | None = None
     ) -> list[A2AAgentEvent]:
         """End the open section with the message that closes it.
 
-        The message's text is the section's whole text; anything else it
-        carries, a file say, goes out as a message. Both go where the
-        message's routing target says, when it has one.
+        The message's text is the section's text, which its chunks carried
+        already; anything else it carries, a file say, goes out as a message,
+        where the message's routing target says when it has one.
         """
-        if routing is not None:
-            self._section_routing = routing
+        events = self._close_section()
         parts = LcToA2AConverter.from_message(message)
-        text_parts = [part for part in parts if part.WhichOneof("content") == "text"]
-        events = self._close_section("".join(part.text for part in text_parts) if text_parts else None)
         rest = [part for part in parts if part.WhichOneof("content") != "text"]
         if rest:
             events.extend(self._message_event(

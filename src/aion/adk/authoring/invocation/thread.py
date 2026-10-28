@@ -127,11 +127,11 @@ class Thread(BaseThread):
         """Stream chunks as partial ADK Events, then the whole text as a complete one.
 
         The partial events are the chunks of a section of
-        ``aion:stream-delta``, and the complete event ends the section with
-        its whole text, as ADK's own streaming does. The streamed text is the
-        task's answer, not a message. The ADK session keeps it as what the
-        agent said. Every event carries ``routing``; the section takes it on
-        its first chunk and its whole text.
+        ``aion:stream-delta``, and the complete event ends the section, as
+        ADK's own streaming does; its text is not sent again. The streamed
+        text is the task's answer, not a message. The ADK session keeps it as
+        what the agent said. Every event carries ``routing``; the section
+        takes it on its first chunk.
         """
         accumulated = ""
         try:

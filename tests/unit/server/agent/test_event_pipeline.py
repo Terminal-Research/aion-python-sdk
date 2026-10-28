@@ -36,7 +36,7 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
-from aion.core.a2a.deltas import stream_delta_chunk, stream_delta_final, thinking_delta
+from aion.core.a2a.deltas import stream_delta_chunk, stream_delta_end, thinking_delta
 from aion.core.a2a.enums import ArtifactId
 from aion.server.a2a.outbox import outbox_task
 from aion.server.a2a.response_extensions import ResponseServiceParameters
@@ -434,8 +434,8 @@ def _chunk(text: str, *, append: bool = True) -> TaskArtifactUpdateEvent:
     return stream_delta_chunk(task_id=TASK_ID, context_id=CONTEXT_ID, parts=[Part(text=text)], append=append)
 
 
-def _section(text: str) -> TaskArtifactUpdateEvent:
-    return stream_delta_final(task_id=TASK_ID, context_id=CONTEXT_ID, text=text)
+def _end() -> TaskArtifactUpdateEvent:
+    return stream_delta_end(task_id=TASK_ID, context_id=CONTEXT_ID)
 
 
 async def test_every_chunk_goes_out_as_the_agent_produced_it(manager, queue) -> None:
@@ -460,17 +460,18 @@ async def test_the_task_keeps_every_chunk_until_the_section_ends(manager, queue,
     assert _texts(_stored_artifact(stored, ArtifactId.STREAM_DELTA.value)) == ["Hel", "lo, ", "world"]
 
 
-async def test_a_whole_section_replaces_its_chunks(manager, queue, store, call_context) -> None:
+async def test_a_section_ends_with_the_end_mark_and_its_text_is_not_sent_again(manager, queue, store, call_context) -> None:
     pipeline = _pipeline(queue, task_started=True)
 
     await pipeline.process(_chunk("Hel", append=False))
     await pipeline.process(_chunk("lo"))
-    await pipeline.process(_section("Hello"))
+    await pipeline.process(_end())
+    await pipeline.process(_status("done", state=TaskState.TASK_STATE_COMPLETED))
     await _consume(manager, queue)
 
     delivered = _artifact_events(queue, ArtifactId.STREAM_DELTA.value)
-    assert [(_texts(e.artifact), e.last_chunk) for e in delivered] == [
-        (["Hel"], False), (["lo"], False), (["Hello"], True),
+    assert [(_texts(e.artifact), e.append, e.last_chunk) for e in delivered] == [
+        (["Hel"], False, False), (["lo"], True, False), ([""], True, True),
     ]
     stored = await store.get(TASK_ID, call_context)
     assert _texts(_stored_artifact(stored, ArtifactId.STREAM_DELTA.value)) == ["Hello"]
@@ -629,7 +630,7 @@ async def test_a_reply_repeated_on_the_completed_status_is_answered_once(manager
 async def test_a_task_with_a_result_gets_no_answer(manager, queue, result) -> None:
     pipeline = _pipeline(queue, task_started=True)
 
-    await pipeline.process(_result() if result == "artifact" else _section("Hello"))
+    await pipeline.process(_result() if result == "artifact" else _chunk("Hello", append=False))
     await pipeline.process(_status("done", state=TaskState.TASK_STATE_COMPLETED))
 
     assert _answers(queue) == []

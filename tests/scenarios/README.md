@@ -168,9 +168,10 @@ names (`STREAM_DELTA_ARTIFACT_ID` and the rest):
 
 - `aion:stream-delta` is the answer the model streamed. A section arrives as
   chunks - the first with `append=False`, the rest with `append=True` - and
-  ends with one more update carrying its whole text in one part,
-  `append=False` and `lastChunk=True`. The streamed text never becomes a
-  message, and every chunk arrives as the agent produced it
+  ends with `lastChunk=True`: on its last chunk when the framework marks it,
+  or else on an empty end mark after it. The text is never sent twice; the
+  task joins it into one part when it stops. The streamed text never becomes
+  a message, and every chunk arrives as the agent produced it
   ([core/test_streaming.py](core/test_streaming.py)).
 - `aion:thinking-delta` holds the agent's thoughts, from `Thread.thinking()`:
   one update and one text part per thought, the task's first with

@@ -204,7 +204,7 @@ class TestGraphStateAndFinalize:
         assert events[-1].status.message.metadata["interruptId"] == "i-1"
 
     async def test_finalize_closes_an_open_section_before_the_result_and_the_completion(self):
-        """The section a model call left open ends with its text, then the outbox answer, then COMPLETED."""
+        """The section a model call left open ends with the end mark, then the outbox answer, then COMPLETED."""
         executor = LangGraphExecutor(compiled_graph=Mock(), config=Mock())
         converter = LangGraphA2AConverter(task_id="task-1", context_id="ctx-1")
         converter.convert("messages", AIMessageChunk(content="It is ", id="run-1"))
@@ -221,13 +221,13 @@ class TestGraphStateAndFinalize:
 
         final, result, terminal = events
         assert final.artifact.artifact_id == ArtifactId.STREAM_DELTA.value
-        assert [part.text for part in final.artifact.parts] == ["It is sunny."]
-        assert (final.append, final.last_chunk) == (False, True)
+        assert [part.text for part in final.artifact.parts] == [""]
+        assert (final.append, final.last_chunk) == (True, True)
         assert isinstance(result, Message)
         assert terminal.status.state == TaskState.TASK_STATE_COMPLETED
 
     async def test_finalize_closes_an_open_section_before_an_interrupt(self):
-        """What the graph streamed before stopping for input ends as the section's text, not a message."""
+        """What the graph streamed before stopping for input stays the section's text, not a message: the section just ends."""
         executor = LangGraphExecutor(compiled_graph=Mock(), config=Mock())
         converter = LangGraphA2AConverter(task_id="task-1", context_id="ctx-1")
         converter.convert("messages", AIMessageChunk(content="I need to know whether ", id="run-1"))
@@ -239,7 +239,7 @@ class TestGraphStateAndFinalize:
             ]
 
         final, terminal = events
-        assert [part.text for part in final.artifact.parts] == ["I need to know whether "]
+        assert [part.text for part in final.artifact.parts] == [""]
         assert final.last_chunk is True
         assert terminal.status.state == TaskState.TASK_STATE_INPUT_REQUIRED
         assert terminal.status.message.parts[0].text == "Need input"

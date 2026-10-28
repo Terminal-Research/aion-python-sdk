@@ -3,8 +3,8 @@
 That stream carries every message a node produced, not only the model's
 answer, and a graph that calls a model twice in one turn streams twice. The
 chunks of a model call are a section of ``aion:stream-delta``; the section
-ends with its whole text in one event of its own, and the streamed text is
-never a message. The inputs here are the real LangChain message types a
+ends with ``lastChunk`` - on the chunk langchain-core marks last, or on an
+empty end mark - and its text is never sent again, nor made a message. The inputs here are the real LangChain message types a
 tool-calling agent produces, not mocks: what matters is how the converter
 treats each of them.
 """
@@ -118,17 +118,16 @@ def test_one_model_call_streams_as_one_section() -> None:
         ("It ", False, False),
         ("is ", True, False),
         ("sunny.", True, False),
-        ("It is sunny.", False, True),
+        ("", True, True),
     ]
     assert _messages(events) == []
 
 
-def test_a_chunk_under_a_new_id_ends_the_previous_section_with_its_text() -> None:
+def test_a_chunk_under_a_new_id_ends_the_previous_section() -> None:
     """Two calls in one turn - before and after a tool - are two sections.
 
     LangGraph does not repeat a message whose chunks went out, so the first
-    call's section ends where the second call's chunks begin, with the text
-    of its own chunks.
+    call's section ends where the second call's chunks begin.
     """
     converter = _converter()
 
@@ -144,14 +143,14 @@ def test_a_chunk_under_a_new_id_ends_the_previous_section_with_its_text() -> Non
     assert _deltas(events) == [
         ("Let me ", False, False),
         ("check.", True, False),
-        ("Let me check.", False, True),
+        ("", True, True),
         ("It is ", False, False),
         ("72F.", True, False),
     ]
     assert _messages(events) == []
 
 
-def test_the_closing_message_of_a_model_call_ends_its_section_with_its_text() -> None:
+def test_the_closing_message_of_a_model_call_ends_its_section_without_sending_its_text() -> None:
     converter = _converter()
 
     events = []
@@ -163,20 +162,20 @@ def test_the_closing_message_of_a_model_call_ends_its_section_with_its_text() ->
     assert _deltas(events) == [
         ("It ", False, False),
         ("is sunny.", True, False),
-        ("It is sunny!", False, True),
+        ("", True, True),
     ]
     assert _messages(events) == []
 
 
 def test_a_finished_message_of_another_call_ends_the_section_and_is_a_message() -> None:
-    """The section ends with its chunks' text; the call that did not stream is a message."""
+    """The section ends; the call that did not stream is a message."""
     converter = _converter()
 
     events = []
     events += converter.convert("messages", _chunk("Checking.", "run-1"))
     events += converter.convert("messages", AIMessage(content="It is sunny.", id="run-2"))
 
-    assert _deltas(events) == [("Checking.", False, False), ("Checking.", False, True)]
+    assert _deltas(events) == [("Checking.", False, False), ("", True, True)]
     assert _messages(events) == ["It is sunny."]
 
 
@@ -207,7 +206,7 @@ def test_a_thought_does_not_end_the_graph_section() -> None:
     assert _deltas(events) == [
         ("It ", False, False),
         ("is sunny.", True, False),
-        ("It is sunny.", False, True),
+        ("", True, True),
     ]
     assert _artifact_ids(events)[1] == ArtifactId.THINKING_DELTA.value
 
@@ -237,7 +236,7 @@ def test_a_nodes_message_ends_the_graph_section_and_stays_a_message() -> None:
     events += converter.convert("messages", _chunk("Checking.", "run-1"))
     events += converter.convert("custom", MessageCustomEvent(message=AIMessage(content="Done.", id="m-1")))
 
-    assert _deltas(events) == [("Checking.", False, False), ("Checking.", False, True)]
+    assert _deltas(events) == [("Checking.", False, False), ("", True, True)]
     assert _messages(events) == ["Done."]
 
 
@@ -250,7 +249,7 @@ def test_a_nodes_artifact_ends_the_graph_section() -> None:
     events += converter.convert("custom", ArtifactCustomEvent(artifact=artifact))
 
     assert _artifact_ids(events) == [ArtifactId.STREAM_DELTA.value, ArtifactId.STREAM_DELTA.value, "report"]
-    assert _deltas(events)[-1] == ("Checking.", False, True)
+    assert _deltas(events)[-1] == ("", True, True)
 
 
 def test_a_thread_stream_after_a_thread_reply_opens_a_new_section() -> None:
@@ -262,11 +261,11 @@ def test_a_thread_stream_after_a_thread_reply_opens_a_new_section() -> None:
     events += converter.convert("custom", MessageCustomEvent(message=AIMessage(content="one", id="m-1")))
     events += converter.convert("custom", MessageCustomEvent(message=AIMessageChunk(content="two")))
 
-    assert _deltas(events) == [("one", False, False), ("one", False, True), ("two", False, False)]
+    assert _deltas(events) == [("one", False, False), ("", True, True), ("two", False, False)]
     assert _messages(events) == []
 
 
-async def test_a_thread_streaming_an_iterator_ends_with_the_whole_text_and_no_message() -> None:
+async def test_a_thread_streaming_an_iterator_ends_with_the_end_mark_and_no_message() -> None:
     """Thread.reply() with an async iterator, through the converter as the graph would carry it."""
     converter = _converter()
     events: list = []
@@ -292,7 +291,7 @@ async def test_a_thread_streaming_an_iterator_ends_with_the_whole_text_and_no_me
     assert _deltas(events) == [
         ("It ", False, False),
         ("is sunny.", True, False),
-        ("It is sunny.", False, True),
+        ("", True, True),
     ]
     assert _messages(events) == []
     assert converter.close_stream() == []
@@ -357,9 +356,10 @@ async def test_nostream_alone_still_sends_the_returned_message() -> None:
     assert _messages(events) == ["internal plan"]
 
 
-async def test_a_streaming_model_in_a_node_ends_as_one_final_event() -> None:
-    """A real graph: LangGraph sends the chunks and not the finished message, so
-    the run's end closes the section with the text of its chunks."""
+async def test_a_streaming_model_in_a_node_ends_on_its_marked_last_chunk() -> None:
+    """A real graph: LangGraph sends the chunks and not the finished message.
+    langchain-core marks the model's last chunk, so that chunk ends the section
+    and no end mark follows; the chunks say the whole answer."""
     from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 
     model = GenericFakeChatModel(messages=iter([AIMessage(content="It is sunny.")]))
@@ -378,5 +378,7 @@ async def test_a_streaming_model_in_a_node_ends_as_one_final_event() -> None:
     deltas = _deltas(events)
     assert len(deltas) > 2
     assert all(last_chunk is False for _, _, last_chunk in deltas[:-1])
-    assert deltas[-1] == ("It is sunny.", False, True)
+    assert deltas[-1][1:] == (True, True)
+    assert deltas[-1][0] != ""
+    assert "".join(text for text, _, _ in deltas) == "It is sunny."
     assert _messages(events) == []

@@ -3,16 +3,17 @@
 Two artifacts carry what happens while a task runs, one of each per task:
 
 ``aion:stream-delta``
-    The answer as the model streams it. While a section streams, its chunks
-    arrive with ``append`` set (the first one of a section without it, which
-    starts the section over). When the section ends, its whole text arrives
-    as one text part with ``append`` unset and ``lastChunk`` set: it replaces
-    the chunks, and a later section replaces it in turn. The task keeps the
-    last section; the streamed text never becomes a message. A section the
-    agent sends somewhere in particular (``Thread.reply`` to a distribution)
-    carries its routing target as one more part on its first chunk and on
-    its whole text, so the target is there from the start and stays in the
-    task.
+    The answer as the model streams it. A section's first chunk arrives with
+    ``append`` unset, which starts the artifact over; the rest arrive with it
+    set. The section ends with ``lastChunk`` set: on its last chunk, when the
+    framework marks it as the last, or else on an empty chunk sent after it.
+    The text is never sent a second time. When the task stops, the server
+    joins the text the task holds into one part (:func:`join_stream_delta`),
+    so a later section replaces the earlier one and the task keeps the last.
+    The streamed text never becomes a message. A section the agent sends
+    somewhere in particular (``Thread.reply`` to a distribution) carries its
+    routing target as one more part on its first chunk, and the target stays
+    beside the joined text.
 
 ``aion:thinking-delta``
     The agent's thoughts, which only the agent's own code sends. Every thought
@@ -30,14 +31,14 @@ from typing import Any, Mapping, Optional, Sequence
 
 from a2a.types import Artifact, Part, TaskArtifactUpdateEvent
 
-from aion.core.a2a.enums import ArtifactId, ArtifactName, ArtifactStreamingStatus, ArtifactStreamingStatusReason
+from aion.core.a2a.enums import ArtifactId, ArtifactName
 from aion.core.a2a.extensions.messaging import MessageActionPayload
 from aion.core.constants.a2a import MESSAGING_EXTENSION_URI_V1, STREAM_DELTA_PAYLOAD_SCHEMA_V1
 
 __all__ = [
-    "is_stream_delta_chunk",
+    "join_stream_delta",
     "stream_delta_chunk",
-    "stream_delta_final",
+    "stream_delta_end",
     "thinking_delta",
 ]
 
@@ -57,6 +58,7 @@ def stream_delta_chunk(
     context_id: str,
     parts: Sequence[Part],
     append: bool,
+    last_chunk: bool = False,
     metadata: Optional[Mapping[str, Any]] = None,
     routing: Optional[MessageActionPayload] = None,
 ) -> TaskArtifactUpdateEvent:
@@ -68,22 +70,18 @@ def stream_delta_chunk(
         parts: The chunk's content.
         append: False for the first chunk of a section, which starts the
             artifact over; True for the rest.
+        last_chunk: True when the framework marks this chunk as the
+            section's last, which then needs no :func:`stream_delta_end`.
         metadata: The agent's own metadata for the artifact.
         routing: The section's routing target, for its first chunk only:
             the parts of a later chunk are added to the artifact, so a
             target there would repeat in the task.
     """
-    artifact_metadata: dict[str, Any] = {
-        "status": ArtifactStreamingStatus.ACTIVE.value,
-        "status_reason": ArtifactStreamingStatusReason.CHUNK_STREAMING.value,
-    }
-    if metadata:
-        artifact_metadata.update(metadata)
     artifact = Artifact(
         artifact_id=ArtifactId.STREAM_DELTA.value,
         name=ArtifactName.STREAM_DELTA.value,
         parts=list(parts),
-        metadata=artifact_metadata,
+        metadata=dict(metadata) if metadata else None,
     )
     return TaskArtifactUpdateEvent(
         task_id=task_id,
@@ -91,44 +89,52 @@ def stream_delta_chunk(
         metadata=_STREAM_DELTA_EVENT_METADATA,
         artifact=routing.route(artifact) if routing is not None else artifact,
         append=append,
-        last_chunk=False,
+        last_chunk=last_chunk,
     )
 
 
-def stream_delta_final(
-    *,
-    task_id: str,
-    context_id: str,
-    text: str,
-    metadata: Optional[Mapping[str, Any]] = None,
-    routing: Optional[MessageActionPayload] = None,
-) -> TaskArtifactUpdateEvent:
-    """The whole text of a section that has ended: one text part that replaces its chunks.
+def stream_delta_end(*, task_id: str, context_id: str) -> TaskArtifactUpdateEvent:
+    """The mark that ends a section whose last chunk went out without saying so.
+
+    One empty text part with ``append`` and ``lastChunk`` set: a reader that
+    adds every chunk to what it shows adds nothing, and learns the section is
+    over.
 
     Args:
         task_id: The task being served.
         context_id: The task's context.
-        text: Everything the section said.
-        metadata: The agent's own metadata for the artifact.
-        routing: The section's routing target, added as a second part.
     """
-    artifact_metadata: dict[str, Any] = {"status": ArtifactStreamingStatus.FINALIZED.value}
-    if metadata:
-        artifact_metadata.update(metadata)
-    artifact = Artifact(
-        artifact_id=ArtifactId.STREAM_DELTA.value,
-        name=ArtifactName.STREAM_DELTA.value,
-        parts=[Part(text=text)],
-        metadata=artifact_metadata,
-    )
     return TaskArtifactUpdateEvent(
         task_id=task_id,
         context_id=context_id,
         metadata=_STREAM_DELTA_EVENT_METADATA,
-        artifact=routing.route(artifact) if routing is not None else artifact,
-        append=False,
+        artifact=Artifact(
+            artifact_id=ArtifactId.STREAM_DELTA.value,
+            name=ArtifactName.STREAM_DELTA.value,
+            parts=[Part(text="")],
+        ),
+        append=True,
         last_chunk=True,
     )
+
+
+def join_stream_delta(artifact: Artifact) -> None:
+    """Join the text parts of a stream-delta artifact into one, in place.
+
+    The joined text comes first; any other part - a routing target - follows
+    it, in the order it had.
+    """
+    texts = [part.text for part in artifact.parts if part.WhichOneof("content") == "text"]
+    if len(texts) < 2 and (not texts or artifact.parts[0].WhichOneof("content") == "text"):
+        return
+    others = [part for part in artifact.parts if part.WhichOneof("content") != "text"]
+    joined: list[Part] = [Part(text="".join(texts))]
+    for part in others:
+        kept = Part()
+        kept.CopyFrom(part)
+        joined.append(kept)
+    del artifact.parts[:]
+    artifact.parts.extend(joined)
 
 
 def thinking_delta(
@@ -160,13 +166,4 @@ def thinking_delta(
         ),
         append=True,
         last_chunk=False,
-    )
-
-
-def is_stream_delta_chunk(event: object) -> bool:
-    """Whether ``event`` is a chunk of a streaming section rather than a section's whole text."""
-    return (
-        isinstance(event, TaskArtifactUpdateEvent)
-        and event.artifact.artifact_id == ArtifactId.STREAM_DELTA.value
-        and not event.last_chunk
     )

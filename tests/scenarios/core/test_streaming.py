@@ -1,11 +1,12 @@
-"""A streamed answer: chunks of a section, then the section's whole text.
+"""A streamed answer: chunks of a section, then the mark that ends it.
 
 The model's streamed answer is the task's ``aion:stream-delta`` artifact. A
 client sees it grow chunk by chunk - the first chunk of a section with
-``append`` unset, the rest with it set - and then receives the whole text of
-the section in one part, ``append`` unset and ``lastChunk`` set, which
-replaces the chunks. The streamed text never becomes a message: the task
-keeps it as that artifact. Every chunk goes out as the agent produced it.
+``append`` unset, the rest with it set - and the section ends with
+``lastChunk`` set, here on an empty end mark, since the agent's iterator
+does not say which chunk is its last. The text is never sent twice: the
+task joins it into one part when it stops. The streamed text never becomes
+a message. Every chunk goes out as the agent produced it.
 """
 
 from __future__ import annotations
@@ -41,16 +42,17 @@ pytestmark = pytest.mark.streaming
 async def test_a_streamed_answer_arrives_as_chunks_then_its_whole_text(
     client: ScenarioClient,
 ) -> None:
-    """Chunks arrive as stream-delta updates, then the section's whole text as one more."""
+    """Chunks arrive as stream-delta updates, then the empty end mark."""
     events = await client.send("stream 5")
 
     assert_shape(events, [
         task("SUBMITTED"),
         status("WORKING", text=""),
         chunks(5),
-        section_end(text=stream_text(5)),
+        section_end(text=""),
         task("COMPLETED"),
     ])
+    assert section_texts(events) == [stream_text(5)]
 
 
 @pytest.mark.command("stream")
@@ -66,7 +68,7 @@ async def test_the_chunks_are_the_answer_broken_up(client: ScenarioClient) -> No
 async def test_the_first_chunk_opens_the_section_and_the_rest_append(
     client: ScenarioClient,
 ) -> None:
-    """One artifact: the first chunk opens it, the rest append, the whole text replaces them."""
+    """One artifact: the first chunk opens it, the rest append, the end mark appends nothing and ends it."""
     events = await client.send("stream 3")
 
     updates = [event for event in events if event.kind == "artifact"]
@@ -74,23 +76,24 @@ async def test_the_first_chunk_opens_the_section_and_the_rest_append(
         (False, False),
         (True, False),
         (True, False),
-        (False, True),
+        (True, True),
     ]
     assert {event.artifact_id for event in updates} == {STREAM_DELTA_ARTIFACT_ID}
 
 
 @pytest.mark.command("stream")
 async def test_one_chunk_is_still_a_section(client: ScenarioClient) -> None:
-    """`stream 1` keeps the same shape: one chunk, then the whole text."""
+    """`stream 1` keeps the same shape: one chunk, then the end mark."""
     events = await client.send("stream 1")
 
     assert_shape(events, [
         task("SUBMITTED"),
         status("WORKING", text=""),
         chunks(1),
-        section_end(text=stream_text(1)),
+        section_end(text=""),
         task("COMPLETED"),
     ])
+    assert section_texts(events) == [stream_text(1)]
 
 
 # --------------------------------------------------------------------------
@@ -111,7 +114,7 @@ async def test_the_streamed_answer_is_not_a_message(client: ScenarioClient) -> N
 
 @pytest.mark.command("stream")
 async def test_the_task_keeps_the_whole_text_of_the_section(client: ScenarioClient) -> None:
-    """The stored stream-delta artifact is the section's whole text in one part, and it is the task's result.
+    """The stored stream-delta artifact is the section's whole text joined into one part, and it is the task's result.
 
     A streamed answer is a result of the task, so the task gets no
     ``aion:assistant-answer`` beside it.

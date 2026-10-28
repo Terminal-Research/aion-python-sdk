@@ -34,7 +34,7 @@ from a2a.types import Task, TaskState
 
 from aion.core.a2a.enums import A2AMetadataKey, TaskSettlementReason
 from aion.server.a2a.constants import NON_ACTIVE_TASK_STATES
-from aion.server.a2a.utils import record_closing_message
+from aion.server.a2a.utils import join_streamed_answer, record_closing_message
 
 __all__ = ["settled_task"]
 
@@ -52,9 +52,10 @@ def settled_task(task: Task, reason: TaskSettlementReason) -> Optional[Task]:
         reason: Why the server, and not the agent, is deciding the state.
 
     The message the task last showed stays in ``status`` and is added to the
-    end of its history, as for any outcome (``record_closing_message``). A caller
-    that replaces the status message afterwards records the new one the same
-    way.
+    end of its history, as for any outcome (``record_closing_message``), and
+    its streamed answer is joined into one part (``join_streamed_answer``). A
+    caller that replaces the status message afterwards records the new one
+    the same way.
 
     Returns:
         A copy of ``task`` in ``FAILED`` with the reason in metadata, or
@@ -68,4 +69,5 @@ def settled_task(task: Task, reason: TaskSettlementReason) -> Optional[Task]:
     settled.status.state = TaskState.TASK_STATE_FAILED
     settled.metadata[A2AMetadataKey.SETTLED_REASON.value] = reason.value
     record_closing_message(settled)
+    join_streamed_answer(settled)
     return settled

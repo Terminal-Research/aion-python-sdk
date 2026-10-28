@@ -71,9 +71,9 @@ The run, what the adapter emits while the agent works and as it ends (see
 `aion.core.a2a.deltas` for the artifacts):
 
 10. A streamed section reaches the client as chunks of `aion:stream-delta`:
-    the first with `append` unset, the rest with it set, none of them the last
-    chunk. The section ends with one more event: its whole text as one text
-    part, `append` unset, `lastChunk` set, status "finalized".
+    the first with `append` unset, the rest with it set. A section whose last
+    chunk does not say so ends with the end mark: one empty text part,
+    `append` and `lastChunk` set. The text is not sent again.
 11. The streamed text never becomes a message, whether the framework closes
     the section with a message of its own or the run ends with it open.
 12. A section the run leaves open is closed when the run is over, before the
@@ -357,7 +357,9 @@ DIFFERENCES: dict[str, str] = {
         "text. LangGraph's messages stream does not repeat a finished message, so "
         "the LangGraph adapter also ends a section at a chunk under another "
         "message id, and at a node's next custom event other than a thought or a "
-        "reaction. Both then emit the same final event of the section"
+        "reaction. Both then emit the same end mark. LangGraph also takes "
+        "langchain-core's chunk_position=\"last\": a last chunk with content "
+        "carries lastChunk itself and needs no end mark"
     ),
 }
 

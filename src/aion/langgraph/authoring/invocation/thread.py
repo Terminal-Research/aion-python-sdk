@@ -110,13 +110,13 @@ class Thread(BaseThread):
             metadata: dict | None = None,
             routing: Optional[MessageActionPayload] = None,
     ) -> Optional[AIMessage]:
-        """Stream chunks of the answer, then its whole text.
+        """Stream chunks of the answer, then the full message that ends them.
 
         The chunks are a section of ``aion:stream-delta``, and the full
-        message after them ends the section with its whole text, as a
-        model's streaming does. The streamed text is the task's answer, not
-        a message. Every chunk carries ``routing``; the section takes it on
-        its first chunk and its whole text.
+        message after them ends the section, as a model's streaming does;
+        its text is not sent again. The streamed text is the task's answer,
+        not a message. Every chunk carries ``routing``; the section takes it
+        on its first chunk.
         """
         accumulated = ""
         try:

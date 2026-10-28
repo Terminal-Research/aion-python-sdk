@@ -3,8 +3,9 @@
 Under ``StreamingMode.SSE`` a model call yields partial events, one per
 chunk, and then one non-partial event with the whole answer. The partial
 ones are the chunks of a section of ``aion:stream-delta`` the client renders
-as they come; the non-partial one ends the section with its whole text, and
-the next model call opens a section of its own. The streamed text is the
+as they come; the non-partial one ends the section with the end mark - one
+empty part with ``lastChunk`` - and its text is not sent again. The next
+model call opens a section of its own. The streamed text is the
 artifact, never a message. A thought goes to ``aion:thinking-delta`` and
 leaves the section open.
 """
@@ -85,52 +86,51 @@ def _messages(events) -> list[str]:
 async def test_partial_events_stream_and_the_aggregate_event_ends_the_section() -> None:
     events = await _convert(_text("It "), _text("is sunny."), _text("It is sunny.", partial=False))
 
-    assert _deltas(events) == [("It ", False, False), ("is sunny.", True, False), ("It is sunny.", False, True)]
+    assert _deltas(events) == [("It ", False, False), ("is sunny.", True, False), ("", True, True)]
     assert _messages(events) == []
 
 
-async def test_the_final_event_is_one_text_part_marked_finalized() -> None:
+async def test_the_end_mark_is_one_empty_part_without_metadata() -> None:
     events = await _convert(_text("It "), _text("is sunny."), _text("It is sunny.", partial=False))
 
-    final = events[-1]
-    assert [part.text for part in final.artifact.parts] == ["It is sunny."]
-    assert final.artifact.metadata["status"] == "finalized"
-    assert final.artifact.name == "Stream Delta"
+    end = events[-1]
+    assert [part.text for part in end.artifact.parts] == [""]
+    assert not end.artifact.HasField("metadata")
+    assert end.artifact.name == "Stream Delta"
 
 
-async def test_the_aggregate_text_is_the_sections_whole_text() -> None:
-    """The framework's aggregate is the section's text, even where the chunks said less."""
+async def test_the_aggregate_text_is_not_sent_again() -> None:
+    """What the chunks said is the section; the framework's aggregate only ends it."""
     events = await _convert(_text("It "), _text("It is sunny.", partial=False))
 
-    assert _deltas(events)[-1] == ("It is sunny.", False, True)
+    assert _deltas(events) == [("It ", False, False), ("", True, True)]
 
 
-async def test_the_final_event_carries_the_sections_agent_metadata() -> None:
+async def test_every_chunk_carries_the_agents_metadata() -> None:
     events = await _convert(
         _text("It ", custom_metadata={"lane": "weather"}),
         _text("is sunny.", custom_metadata={"lane": "weather"}),
         _text("It is sunny.", partial=False),
     )
 
-    assert events[-1].artifact.metadata["lane"] == "weather"
-    assert events[-1].artifact.metadata["status"] == "finalized"
+    assert [dict(event.artifact.metadata) for event in events[:2]] == [{"lane": "weather"}] * 2
 
 
 async def test_a_non_text_part_of_the_aggregate_event_is_still_a_message() -> None:
     image = types.Part(inline_data=types.Blob(data=b"png-bytes", mime_type="image/png"))
     events = await _convert(_text("Here it is."), _event(types.Part(text="Here it is."), image, partial=False))
 
-    assert _deltas(events) == [("Here it is.", False, False), ("Here it is.", False, True)]
+    assert _deltas(events) == [("Here it is.", False, False), ("", True, True)]
     status = [event for event in events if isinstance(event, TaskStatusUpdateEvent)]
     assert len(status) == 1
     assert [part.WhichOneof("content") for part in status[0].status.message.parts] == ["raw"]
 
 
-async def test_an_aggregate_event_without_text_ends_the_section_with_its_chunks() -> None:
+async def test_an_aggregate_event_without_text_ends_the_section() -> None:
     call = types.Part(function_call=types.FunctionCall(name="get_weather", args={}))
     events = await _convert(_text("Checking"), _text("..."), _event(call, partial=False))
 
-    assert _deltas(events)[-1] == ("Checking...", False, True)
+    assert _deltas(events)[-1] == ("", True, True)
     assert _messages(events) == []
 
 
@@ -145,7 +145,7 @@ async def test_the_next_model_call_opens_a_new_section() -> None:
         _text("Sunny."),
     )
 
-    assert _deltas(events) == [("Checking.", False, False), ("Checking.", False, True), ("Sunny.", False, False)]
+    assert _deltas(events) == [("Checking.", False, False), ("", True, True), ("Sunny.", False, False)]
     assert _messages(events) == []
 
 
@@ -164,7 +164,7 @@ async def test_a_reply_after_a_closed_section_is_a_message() -> None:
         _text("Anything else?", partial=False),
     )
 
-    assert _deltas(events) == [("It is sunny.", False, False), ("It is sunny.", False, True)]
+    assert _deltas(events) == [("It is sunny.", False, False), ("", True, True)]
     assert _messages(events) == ["Anything else?"]
 
 
@@ -192,20 +192,19 @@ async def test_a_thought_does_not_end_the_open_section() -> None:
         _text("It is sunny.", partial=False),
     )
 
-    assert _deltas(events) == [("It ", False, False), ("is sunny.", True, False), ("It is sunny.", False, True)]
+    assert _deltas(events) == [("It ", False, False), ("is sunny.", True, False), ("", True, True)]
     assert len(_thoughts(events)) == 1
     assert events[1].artifact.artifact_id == ArtifactId.THINKING_DELTA.value
     assert _messages(events) == []
 
 
-async def test_finalize_stream_closes_an_open_section_with_the_text_of_its_chunks() -> None:
+async def test_finalize_stream_closes_an_open_section_with_the_end_mark() -> None:
     converter = _converter()
     await _convert(_text("It ", custom_metadata={"lane": "weather"}), _text("is sunny."), converter=converter)
 
     events = converter.finalize_stream()
 
-    assert _deltas(events) == [("It is sunny.", False, True)]
-    assert events[0].artifact.metadata["status"] == "finalized"
+    assert _deltas(events) == [("", True, True)]
     assert _messages(events) == []
 
 
@@ -231,13 +230,13 @@ async def test_the_executor_closes_the_section_before_the_terminal_status() -> N
         )
     ]
 
-    assert _deltas(events) == [("It is sunny.", False, True)]
+    assert _deltas(events) == [("", True, True)]
     assert events[-1].status.state == TaskState.TASK_STATE_COMPLETED
     assert not events[-1].status.HasField("message")
     assert len(events) == 2
 
 
-async def test_a_thread_streaming_an_iterator_ends_with_the_whole_text_and_no_message() -> None:
+async def test_a_thread_streaming_an_iterator_ends_with_the_end_mark_and_no_message() -> None:
     """Thread.post() with an async iterator, through the converter as the executor would carry it."""
     from aion.adk.authoring.invocation.thread import Thread
     from aion.core.a2a.extensions.messaging import MessageActionPayload
@@ -261,7 +260,7 @@ async def test_a_thread_streaming_an_iterator_ends_with_the_whole_text_and_no_me
     converter = _converter()
     events = await _convert(*emitted, converter=converter)
 
-    assert _deltas(events) == [("It ", False, False), ("is sunny.", True, False), ("It is sunny.", False, True)]
+    assert _deltas(events) == [("It ", False, False), ("is sunny.", True, False), ("", True, True)]
     assert _messages(events) == []
     assert converter.finalize_stream() == []
 

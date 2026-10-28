@@ -11,8 +11,6 @@ __all__ = [
     "ArtifactName",
     "A2AEventType",
     "A2AMetadataKey",
-    "ArtifactStreamingStatus",
-    "ArtifactStreamingStatusReason",
     "TaskSettlementReason",
 ]
 
@@ -145,29 +143,3 @@ _SETTLEMENT_DESCRIPTIONS = {
         "stopped responding - so it was ended without finishing."
     ),
 }
-
-
-class ArtifactStreamingStatus(str, Enum):
-    """Enumeration representing the current status of artifact streaming."""
-
-    FINALIZED = "finalized"
-    """Artifact streaming has been completed and finalized."""
-
-    ACTIVE = "active"
-    """Artifact streaming is currently in progress."""
-
-
-class ArtifactStreamingStatusReason(str, Enum):
-    """Enumeration representing the reason for the current artifact streaming status."""
-
-    INTERRUPTED = "interrupted"
-    """Streaming was interrupted before completion."""
-
-    COMPLETE_MESSAGE = "complete_message"
-    """Streaming completed with a AIMessage."""
-
-    COMPLETE_TASK = "complete_task"
-    """Streaming completed with a Task status update."""
-
-    CHUNK_STREAMING = "chunk_streaming"
-    """Currently streaming data in chunks."""

@@ -233,7 +233,7 @@ def my_node(state: dict, writer: StreamWriter):
 
 ### Streaming chunks
 
-`AIMessageChunk` emitted via `emit_message` produces chunks of the `aion:stream-delta` artifact, as LangGraph's automatic `messages` stream mode does. The chunks of one section are followed by the section's whole text in one part (`append=false`, `last_chunk=true`), which replaces them; a full `AIMessage` emitted after the chunks provides that text. The task keeps the last section, and the streamed text never becomes a message:
+`AIMessageChunk` emitted via `emit_message` produces chunks of the `aion:stream-delta` artifact, as LangGraph's automatic `messages` stream mode does. A section ends with `last_chunk=true`: on its last chunk when langchain-core marks it (`chunk_position="last"`), or else on an empty chunk after it, sent when a full `AIMessage` follows the chunks or the run ends. The text is never sent again; when the task stops, the server joins it into one part. The task keeps the last section, and the streamed text never becomes a message:
 
 ```python
 def streaming_node(state: dict, writer: StreamWriter):
@@ -265,8 +265,8 @@ async def my_node(state: dict):
 
 | Trigger | Client receives |
 |---|---|
-| LLM output chunk (automatic via `messages` stream) | `TaskArtifactUpdateEvent(aion:stream-delta, last_chunk=false)` |
-| End of a streamed section | `TaskArtifactUpdateEvent(aion:stream-delta, append=false, last_chunk=true)` with the whole text |
+| LLM output chunk (automatic via `messages` stream) | `TaskArtifactUpdateEvent(aion:stream-delta)`, `last_chunk=true` on the chunk langchain-core marks last |
+| End of a streamed section whose last chunk was not marked | `TaskArtifactUpdateEvent(aion:stream-delta, append=true, last_chunk=true)` with one empty text part |
 | `emit_message(AIMessage)` | `TaskStatusUpdateEvent(working, message=...)` |
 | `emit_message(AIMessageChunk)` | `TaskArtifactUpdateEvent(aion:stream-delta)` |
 | `emit_thinking(text)` / `thread.thinking(text)` | `TaskArtifactUpdateEvent(aion:thinking-delta)`, one part per thought |

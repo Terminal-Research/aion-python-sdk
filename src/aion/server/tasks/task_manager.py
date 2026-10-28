@@ -20,6 +20,7 @@ from aion.server.a2a.constants import (
 from aion.server.a2a.utils import (
     is_message_recorded,
     is_task_interrupted,
+    join_streamed_answer,
     record_closing_message,
 )
 from aion.server.agent.execution.scope import set_task_status
@@ -155,7 +156,8 @@ class AionTaskManager(TaskManager):
         Every write passes through here, whichever path built the task, so
         this is also where a task that stops - with an outcome or on an
         interrupt - gets the message it stops on added to its history
-        (``record_closing_message``).
+        (``record_closing_message``) and its streamed answer joined into one
+        part (``join_streamed_answer``).
 
         A task the store holds as terminal is final. The version check alone
         does not ensure that: the SDK consumer rereads the task when another
@@ -195,6 +197,7 @@ class AionTaskManager(TaskManager):
             if not task.status.HasField("timestamp"):
                 task.status.timestamp.GetCurrentTime()
             record_closing_message(task)
+            join_streamed_answer(task)
             await super()._save_task(task)
 
             state = task.status.state

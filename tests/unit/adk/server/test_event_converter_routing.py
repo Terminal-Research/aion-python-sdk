@@ -232,7 +232,7 @@ class TestArtifactOutput:
         assert results[0].append is False
 
     async def test_artifact_event_ends_open_stream_delta(self):
-        """An artifact event during streaming ends the open section with the text of its chunks, then emits the artifact."""
+        """An artifact event during streaming ends the open section with the end mark, then emits the artifact."""
         artifact = url_artifact("https://example.com/f.pdf", mime_type="application/pdf", name="doc")
         loaded_part = types.Part(file_data=types.FileData(file_uri="https://example.com/f.pdf", mime_type="application/pdf"))
         event, svc = make_artifact_delta_event(artifact, loaded_part)
@@ -244,8 +244,8 @@ class TestArtifactOutput:
         assert len(results) == 2
         final, artifact_event = results
         assert final.artifact.artifact_id == ArtifactId.STREAM_DELTA.value
-        assert final.artifact.parts[0].text == "chunk"
-        assert (final.append, final.last_chunk) == (False, True)
+        assert final.artifact.parts[0].text == ""
+        assert (final.append, final.last_chunk) == (True, True)
         assert isinstance(artifact_event, TaskArtifactUpdateEvent)
         assert artifact_event.artifact.name == "doc"
 
@@ -349,27 +349,28 @@ class TestArtifactRouting:
 
 
 class TestStreamRouting:
-    async def test_a_routed_section_carries_its_target_on_the_first_chunk_and_the_whole_text(self):
+    async def test_a_routed_section_carries_its_target_on_its_first_chunk_only(self):
         converter = make_converter()
         routing = make_routing()
 
         [first] = await converter.convert(make_routed_partial_event("one ", routing))
         [second] = await converter.convert(make_routed_partial_event("two", routing))
-        [final] = await converter.convert(make_text_event("one two", routing))
+        [end] = await converter.convert(make_text_event("one two", routing))
 
         assert (_contents(first), _routed(first)) == (["one "], True)
         assert list(first.artifact.extensions) == [MESSAGING_EXTENSION_URI_V1]
         assert (_contents(second), _routed(second)) == (["two"], False)
-        assert (_contents(final), _routed(final)) == (["one two"], True)
-        assert (final.append, final.last_chunk) == (False, True)
+        assert (_contents(end), _routed(end)) == ([""], False)
+        assert (end.append, end.last_chunk) == (True, True)
 
-    async def test_a_routed_section_the_run_left_open_ends_with_its_target(self):
+    async def test_a_routed_section_the_run_left_open_ends_with_the_end_mark(self):
         converter = make_converter()
         await converter.convert(make_routed_partial_event("one", make_routing()))
 
-        [final] = converter.finalize_stream()
+        [end] = converter.finalize_stream()
 
-        assert (_contents(final), _routed(final)) == (["one"], True)
+        assert (_contents(end), _routed(end)) == ([""], False)
+        assert end.last_chunk is True
 
     async def test_the_models_own_stream_carries_no_target(self):
         converter = make_converter()

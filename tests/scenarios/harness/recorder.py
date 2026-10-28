@@ -80,8 +80,8 @@ def text_of_parts(parts: Iterable[Any]) -> str:
 
 
 def texts_of_parts(parts: Iterable[Any]) -> tuple[str, ...]:
-    """The text of each text part of a message or artifact, in order."""
-    return tuple(part.text for part in parts if part.text)
+    """The text of each text part of a message or artifact, in order, an empty one included."""
+    return tuple(part.text for part in parts if part.WhichOneof("content") == "text")
 
 
 def data_of_parts(parts: Iterable[Any]) -> list[Any]:
@@ -251,22 +251,36 @@ def artifact_updates(events: Sequence[Ev], artifact_id: str) -> list[Ev]:
 
 
 def is_chunk(event: Ev) -> bool:
-    """True for one chunk of a streamed section: a stream-delta update without ``lastChunk``."""
-    return event.kind == "artifact" and event.artifact_id == STREAM_DELTA_ARTIFACT_ID and not event.last_chunk
+    """True for one chunk of a streamed section: a stream-delta update that carries text."""
+    return event.kind == "artifact" and event.artifact_id == STREAM_DELTA_ARTIFACT_ID and bool(event.text)
 
 
 def is_section_end(event: Ev) -> bool:
-    """True for the stream-delta update that ends a section with its whole text (``lastChunk`` set)."""
+    """True for the stream-delta update that ends a section (``lastChunk`` set).
+
+    That is the section's last chunk when the framework marks it, or else
+    the end mark after it: one empty text part.
+    """
     return event.kind == "artifact" and event.artifact_id == STREAM_DELTA_ARTIFACT_ID and event.last_chunk
 
 
 def section_texts(events: Sequence[Ev]) -> list[str]:
     """The whole text of each streamed section that ended this turn, in order.
 
-    This is what the model said by streaming: a section's chunks show it
-    growing, and the update that ends the section carries all of it.
+    This is what the model said by streaming: the text is never sent twice,
+    so a section's text is what its chunks said, from the one that starts it
+    (``append`` unset) to the one that ends it.
     """
-    return [event.text for event in events if is_section_end(event)]
+    texts: list[str] = []
+    current: Optional[list[str]] = None
+    for event in artifact_updates(events, STREAM_DELTA_ARTIFACT_ID):
+        if not event.append or current is None:
+            current = []
+        current.append(event.text)
+        if event.last_chunk:
+            texts.append("".join(current))
+            current = None
+    return texts
 
 
 def thought_texts(events: Sequence[Ev]) -> list[str]:

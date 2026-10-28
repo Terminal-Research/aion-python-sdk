@@ -107,8 +107,8 @@ def emit_message(
     Supports both full messages and streaming chunks:
     - AIMessage > TaskStatusUpdateEvent(working, message=...), kept in the task's history
     - AIMessageChunk > TaskArtifactUpdateEvent(STREAM_DELTA), a chunk of the streamed answer;
-      a full AIMessage that follows the chunks ends their section with its text instead of
-      becoming a message
+      a full AIMessage that follows the chunks ends their section instead of becoming a
+      message, and its text is not sent again
 
     Args:
         writer: LangGraph StreamWriter from node signature
