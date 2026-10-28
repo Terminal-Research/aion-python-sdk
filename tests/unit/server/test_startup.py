@@ -97,8 +97,12 @@ async def test_lifespan_failure_logs_its_cause_in_the_startup_trace(
     enrichment = ServerAionContextFilter()
     caplog.handler.addFilter(enrichment)
     try:
-        # Real Uvicorn catches the ASGI failure; no socket is opened.
-        await server.serve()
+        # Real Uvicorn catches the ASGI failure; no socket is opened. Older
+        # releases return unstarted, newer ones exit with STARTUP_FAILURE.
+        try:
+            await server.serve()
+        except SystemExit as exit_:
+            assert exit_.code == 3
     finally:
         caplog.handler.removeFilter(enrichment)
 
@@ -106,6 +110,8 @@ async def test_lifespan_failure_logs_its_cause_in_the_startup_trace(
     assert cause.trace_id == f"{startup.span.get_span_context().trace_id:032x}"
     assert cause.trace_parent_span_id == f"{startup.span.get_span_context().span_id:016x}"
     assert cause.trace_span_name == phase
+    assert f"{role} server startup failed; application did not become ready" in caplog.messages
+    assert not [record for record in caplog.records if record.exc_info and isinstance(record.exc_info[1], SystemExit)]
     ready.assert_not_called()
     assert not server.started
     assert startup.finished
