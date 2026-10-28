@@ -3,15 +3,17 @@
 import asyncio
 import logging
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 import uvicorn
+from fastapi import FastAPI
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 
 from aion.server.opentelemetry.startup import StartupSpan
 from aion.server.core.app.lifespan import AppLifespan
+from aion.server.logging.filters import ServerAionContextFilter
 from aion.server.startup import StartupServer
 
 
@@ -64,6 +66,48 @@ async def test_failed_startup_never_notifies_ready(monkeypatch, startup, error):
         with pytest.raises(type(error)):
             await server.startup()
     callback.assert_not_called()
+    assert startup.finished
+    assert startup.span.status.status_code == trace.StatusCode.ERROR
+    assert not trace.get_current_span().get_span_context().is_valid
+
+
+@pytest.mark.parametrize("role,phase", [("Agent", "server.lifespan"), ("Proxy", "proxy.initialize")])
+async def test_lifespan_failure_logs_its_cause_in_the_startup_trace(
+    monkeypatch, caplog, startup, role, phase,
+):
+    failure = RuntimeError("lifespan initialization probe")
+    if role == "Agent":
+        factory = SimpleNamespace(
+            startup_context=startup.context, startup_callback=None, shutdown=AsyncMock(),
+        )
+        lifespan = AppLifespan(factory)
+        monkeypatch.setattr(lifespan, "startup", AsyncMock(side_effect=failure))
+        app = FastAPI(lifespan=lifespan.executor)
+    else:
+        from aion.proxy.server import AionAgentProxyServer, ProxyRouter
+
+        monkeypatch.setattr(ProxyRouter, "register_routes", Mock(side_effect=failure))
+        app = AionAgentProxyServer({}, startup_span=startup).app
+
+    ready = Mock()
+    server = StartupServer(
+        uvicorn.Config(app, log_config=None, lifespan="on"), startup, role,
+        logging.getLogger(__name__), ready,
+    )
+    enrichment = ServerAionContextFilter()
+    caplog.handler.addFilter(enrichment)
+    try:
+        # Real Uvicorn catches the ASGI failure; no socket is opened.
+        await server.serve()
+    finally:
+        caplog.handler.removeFilter(enrichment)
+
+    cause, = [record for record in caplog.records if record.exc_info and record.exc_info[1] is failure]
+    assert cause.trace_id == f"{startup.span.get_span_context().trace_id:032x}"
+    assert cause.trace_parent_span_id == f"{startup.span.get_span_context().span_id:016x}"
+    assert cause.trace_span_name == phase
+    ready.assert_not_called()
+    assert not server.started
     assert startup.finished
     assert startup.span.status.status_code == trace.StatusCode.ERROR
     assert not trace.get_current_span().get_span_context().is_valid

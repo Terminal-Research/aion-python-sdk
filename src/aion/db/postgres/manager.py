@@ -3,6 +3,7 @@ from typing import Optional, override
 from aion.core.db import DbManagerProtocol
 import logging
 from aion.core.metaclasses import SingletonABCMeta
+from opentelemetry import context as otel_context
 from psycopg_pool import AsyncConnectionPool
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
@@ -70,7 +71,14 @@ class DbManager(DbManagerProtocol, metaclass=SingletonABCMeta):
             kwargs={"options": f"-csearch_path={AION_SCHEMA}"},
         )
 
-        await self._pool.open()
+        # Pool workers copy the current context and live beyond initialization.
+        # Detach tracing only while creating them; readiness and its failures
+        # still belong to the caller's initialization span.
+        token = otel_context.attach(otel_context.Context())
+        try:
+            await self._pool.open()
+        finally:
+            otel_context.detach(token)
         await self._pool.wait()
 
         # Initialize SQLAlchemy engine and session factory

@@ -639,7 +639,10 @@ child still records its own eventual outcome. A later managed-process restart
 captures fresh launch context instead of replaying the original carrier.
 
 Requests, the platform connection, and ongoing background maintenance do not
-inherit startup tracing. Code that launches long-lived background tasks during
+inherit startup tracing. Database pool workers start without tracing context;
+the awaited pool readiness check retains the initialization span. Agent and
+proxy lifespan failures log their cause before leaving their startup span.
+Code that launches long-lived background tasks during
 initialization should also detach the startup context for those tasks; ending
 a span alone does not clear the context a task inherited. Tracing initialization
 preserves an application-configured OpenTelemetry provider. The SDK supplies
