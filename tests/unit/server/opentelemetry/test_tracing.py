@@ -280,11 +280,21 @@ class TestGenerateRequestSpanContext:
 
 
 class TestInitTracing:
-    def test_sets_tracer_provider(self):
-        """Verify that sets tracer provider."""
-        with patch("aion.server.opentelemetry.tracing.trace") as mock_trace:
+    def test_initializes_an_unconfigured_process(self):
+        """Bootstrap installs the provider before any startup spans are opened."""
+        with patch("aion.server.opentelemetry.tracing.trace.get_tracer_provider",
+                   return_value=otel_trace.ProxyTracerProvider()), \
+             patch("aion.server.opentelemetry.tracing.trace.set_tracer_provider") as install:
             init_tracing()
-            mock_trace.set_tracer_provider.assert_called_once()
-            # Argument should be a TracerProvider instance
-            args = mock_trace.set_tracer_provider.call_args[0]
+            install.assert_called_once()
+            args = install.call_args[0]
             assert isinstance(args[0], TracerProvider)
+
+    def test_preserves_an_application_provider(self):
+        """Later lifespans must not replace a provider or its exporters."""
+        with patch("aion.server.opentelemetry.tracing.trace.get_tracer_provider",
+                   return_value=TracerProvider()), \
+             patch("aion.server.opentelemetry.tracing.trace.set_tracer_provider") as install:
+            init_tracing()
+            init_tracing()
+            install.assert_not_called()

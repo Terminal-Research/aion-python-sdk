@@ -14,6 +14,8 @@ from aion.server.auth import AuthConfigurationError, TokenVerifier, build_token_
 from aion.server.files.a2a import A2AFileTransformer
 from aion.server.files.storage.manager import FileUploadManager
 from fastapi import FastAPI
+from opentelemetry.context import Context
+from aion.server.opentelemetry.startup import startup_phase
 from starlette.routing import BaseRoute, Route
 from typing import Optional
 
@@ -61,6 +63,7 @@ class AppFactory:
             upload_manager: Optional[FileUploadManager] = None,
             startup_callback=None,
             token_verifier: Optional[TokenVerifier] = None,
+            startup_context: Context | None = None,
     ):
         """Initialize factory with all dependencies via dependency injection.
 
@@ -74,7 +77,8 @@ class AppFactory:
                 created automatically from FILE_STORAGE_BACKEND env var. If the
                 env var is not set, file uploading is disabled and inline parts pass
                 through unchanged.
-            startup_callback: Optional callback to call after initialization
+            startup_callback: Optional callback to call after lifespan initialization
+            startup_context: Parent trace for initialization in the lifespan task.
             token_verifier: Optional pre-built verifier for request tokens. If
                 None, ``aion.server.auth.build_token_verifier`` builds the one
                 for the mode the server runs in at initialization.
@@ -85,6 +89,7 @@ class AppFactory:
         self.plugin_factory = plugin_factory
         self.store_manager = store_manager
         self.startup_callback = startup_callback
+        self.startup_context = startup_context
         self.token_verifier = token_verifier
         self.upload_manager = upload_manager or FileUploadManager.from_settings()
         self.file_transformer = A2AFileTransformer(self.upload_manager)
@@ -123,35 +128,41 @@ class AppFactory:
         """Initialize all application components in sequence."""
         logger.debug("Initializing application for agent '%s'", self.aion_agent.id)
 
-        # 0. Get the keys request tokens are verified with ready
-        if self.token_verifier is None:
-            self.token_verifier = build_token_verifier()
-        await self.token_verifier.load()
+        with startup_phase("auth.initialize"):
+            # 0. Get the keys request tokens are verified with ready
+            if self.token_verifier is None:
+                self.token_verifier = build_token_verifier()
+            await self.token_verifier.load()
 
-        # 1. Initialize database, then migrate or check it as
-        #    DB_MIGRATE_ON_START says
-        if await self.db_factory.initialize():
-            await prepare_database(self.db_factory.db_manager)
+        with startup_phase("database.prepare"):
+            # 1. Initialize database, then migrate or check it as
+            #    DB_MIGRATE_ON_START says
+            if await self.db_factory.initialize():
+                await prepare_database(self.db_factory.db_manager)
 
-        # 2. Register the extensions and activate what aion.yaml enables,
-        #    before the card lists them
-        self._enabled_extensions = register_extensions(self.aion_agent.config)
+        with startup_phase("extensions.initialize"):
+            # 2. Register the extensions and activate what aion.yaml enables,
+            #    before the card lists them
+            self._enabled_extensions = register_extensions(self.aion_agent.config)
 
-        # 3. Initialize plugins - Phase 1: infrastructure setup
-        await self.plugin_factory.initialize()
+        with startup_phase("plugins.initialize"):
+            # 3. Initialize plugins - Phase 1: infrastructure setup
+            await self.plugin_factory.initialize()
 
-        # 4. Build agent: its framework executor exists from here on
-        await self.agent_factory.build()
+        with startup_phase("agent.build"):
+            # 4. Build agent: its framework executor exists from here on
+            await self.agent_factory.build()
 
-        # 5. Build FastAPI application, with the executors of the agent and of
-        #    its executable extensions
-        await self._build_app()
+        with startup_phase("application.build"):
+            # 5. Build FastAPI application, with the executors of the agent and of
+            #    its executable extensions
+            await self._build_app()
 
-        # 6. Configure app - Phase 2: integrate plugins with built app and agent
-        await self.plugin_factory.configure_app(self.fastapi_app, self.aion_agent)
+            # 6. Configure app - Phase 2: integrate plugins with built app and agent
+            await self.plugin_factory.configure_app(self.fastapi_app, self.aion_agent)
 
-        # 7. Apply custom app extensions from AppRegistry
-        self._application_routes.extend(app_registry.apply_to_app(self.fastapi_app))
+            # 7. Apply custom app extensions from AppRegistry
+            self._application_routes.extend(app_registry.apply_to_app(self.fastapi_app))
 
         logger.info("Agent '%s' initialized at http://%s:%s",
                     self.aion_agent.id, self.aion_agent.host, self.aion_agent.port)

@@ -14,11 +14,13 @@ def init_tracing():
     """
     Initialize global tracing provider.
 
-    Sets up the base tracer provider for the application.
-    Call once at application startup. For multiprocessing, call in each process.
+    Sets up the base provider if the application has not installed one.
+    Safe to call from bootstrap and lifespan initialization in each process.
     """
-    provider = TracerProvider()
-    trace.set_tracer_provider(provider)
+    # Bootstrap can be reached through the CLI, an agent, or a lifespan.
+    # Preserve an application-installed provider and initialize only once.
+    if isinstance(trace.get_tracer_provider(), trace.ProxyTracerProvider):
+        trace.set_tracer_provider(TracerProvider())
 
 
 def generate_request_span_context(

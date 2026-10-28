@@ -3,10 +3,10 @@ import logging
 import asyncio
 import os
 
-from aion.server import run_server
 from aion.core.config import AionConfig, AgentConfig
 from aion.server.services import BaseExecuteService
 from aion.server.utils.processes import ProcessManager
+from aion.server.opentelemetry.startup import StartupSpan
 
 from aion.cli.utils.port_manager import AionPortManager
 
@@ -112,7 +112,8 @@ class ServeAgentStartupService(BaseExecuteService):
                 "port": agent_port,
                 "serialized_socket": serialized_socket,
             },
-            use_pipe=True
+            use_pipe=True,
+            propagate_trace=True,
         )
 
         if not success:
@@ -153,7 +154,10 @@ class ServeAgentStartupService(BaseExecuteService):
                 logger.warning(f"Failed to send startup confirmation for agent '{agent_id}': {str(ex)}")
 
     @staticmethod
-    def _agent_wrapper(agent_id: str, agent_config: AgentConfig, port: int, serialized_socket: tuple, conn=None):
+    def _agent_wrapper(
+        agent_id: str, agent_config: AgentConfig, port: int,
+        serialized_socket: tuple, conn=None, startup_context=None,
+    ):
         """
         Wrapper function to run agent server in subprocess.
 
@@ -163,8 +167,18 @@ class ServeAgentStartupService(BaseExecuteService):
             port: Port number for this agent
             serialized_socket: Serialized socket from parent process
             conn: Pipe connection to parent process (optional)
+            startup_context: Serialized parent trace supplied for this launch.
         """
+        startup = StartupSpan("agent.startup", startup_context)
         try:
+            from aion.core.logging import set_process_role
+            from aion.server.logging import setup_root_logger
+
+            set_process_role("Agent")
+            setup_root_logger()
+            with startup.activate():
+                from aion.server import run_server
+
             # Reset signal handlers to default in child process
             # This prevents inherited signal handlers from parent process from running
             # which would cause issues with process management (AssertionError in is_alive)
@@ -184,14 +198,23 @@ class ServeAgentStartupService(BaseExecuteService):
                         agent_config=agent_config,
                         port=port,
                         serialized_socket=serialized_socket,
-                        startup_callback=lambda: ServeAgentStartupService._send_startup_event(agent_id, conn)
+                        startup_callback=lambda: ServeAgentStartupService._send_startup_event(agent_id, conn),
+                        startup_span=startup,
                     )
                 )
             finally:
                 loop.close()
 
         except Exception as e:
-            logger.error(f"Agent '{agent_id}' crashed: {str(e)}")
+            if not startup.finished:
+                with startup.activate():
+                    logger.error(f"Agent '{agent_id}' crashed: {str(e)}")
+                startup.finish("failed", e)
+            else:
+                logger.error(f"Agent '{agent_id}' crashed: {str(e)}")
+            # The launcher may terminate us as soon as it sees failure.
+            # Drain the failure logs before handing it that permission.
+            logging.shutdown()
             # Send error status to parent process if connection exists
             if conn is not None:
                 try:
@@ -199,3 +222,6 @@ class ServeAgentStartupService(BaseExecuteService):
                 except Exception:
                     pass
             raise
+        finally:
+            if not startup.finished:
+                startup.finish("failed")
