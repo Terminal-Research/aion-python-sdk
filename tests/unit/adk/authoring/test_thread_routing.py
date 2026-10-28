@@ -87,7 +87,8 @@ class TestPostWithRouting:
         assert AION_ROUTING_KEY in final_event.custom_metadata
         assert final_event.custom_metadata[AION_ROUTING_KEY]["contextId"] == "D06DM456"
 
-    def test_async_iterator_partial_chunks_have_no_routing(self):
+    def test_async_iterator_partial_chunks_carry_the_routing(self):
+        """The converter puts the target on the section's first chunk, so every chunk hands it on."""
         emitter = MagicMock()
         routing = make_routing()
         thread = make_thread()
@@ -99,8 +100,7 @@ class TestPostWithRouting:
         with patch(EMITTER_PATH, return_value=emitter):
             asyncio.run(thread.post(chunks(), target=routing))
 
-        # partial events (all but last) must not carry routing
         for call in emitter.call_args_list[:-1]:
             partial_event = call[0][0]
             assert partial_event.partial is True
-            assert AION_ROUTING_KEY not in (partial_event.custom_metadata or {})
+            assert partial_event.custom_metadata[AION_ROUTING_KEY]["contextId"] == "D06DM456"

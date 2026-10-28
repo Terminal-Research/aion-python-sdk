@@ -2,10 +2,10 @@
 
 A client reads what a task produced from its artifacts. A task that
 completes without any result - no artifact of its own, no streamed answer -
-gets ``aion:assistant-answer`` right before ``COMPLETED``: every part of the
+gets ``aion:assistant-answer`` right before ``COMPLETED``: the content of the
 last message the agent sent in the completing turn, in one update with
 ``append`` unset and ``lastChunk`` set. The message stays in the history as
-well. The agent's thoughts and reactions are not results, so a task with
+well, and the answer names it in ``aion:sourceMessageId``. The agent's thoughts and reactions are not results, so a task with
 only those still gets it; a task that fails or is cancelled never does.
 """
 
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import pytest
 
+from aion.core.a2a.enums import A2AMetadataKey
 from tests.scenarios.commands import (
     FAIL_REPLY_TEXT,
     SEND_FILE_BYTES,
@@ -39,6 +40,8 @@ from tests.scenarios.harness import (
 )
 
 pytestmark = pytest.mark.artifacts
+
+SOURCE_MESSAGE_ID = A2AMetadataKey.SOURCE_MESSAGE_ID.value
 
 
 @pytest.mark.command("steps")
@@ -67,6 +70,20 @@ async def test_the_task_keeps_the_answer_and_the_message(client: ScenarioClient)
         kept = stored_artifact(holder, ASSISTANT_ANSWER_ARTIFACT_ID)
         assert kept is not None, f"{where}: no answer among {list(holder.artifacts)}"
         assert [part.text for part in kept.parts] == [echo_text("kept twice")], where
+
+
+@pytest.mark.command("steps")
+async def test_the_answer_names_the_message_it_was_copied_from(client: ScenarioClient) -> None:
+    """``aion:sourceMessageId`` is the id of the last reply, so a client can show one of the two."""
+    events = await client.send("steps 2")
+    closing = final_task(events)
+
+    *_, reply = replies(events)
+    (update,) = artifact_updates(events, ASSISTANT_ANSWER_ARTIFACT_ID)
+    source = reply.raw.status.message.message_id
+    assert update.raw.artifact.metadata[SOURCE_MESSAGE_ID] == source
+    stored = await client.get_task(closing.task_id)
+    assert stored_artifact(stored, ASSISTANT_ANSWER_ARTIFACT_ID).metadata[SOURCE_MESSAGE_ID] == source
 
 
 @pytest.mark.command("send-file")

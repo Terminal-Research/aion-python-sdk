@@ -5,11 +5,13 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from a2a.types import Artifact, Message, Role, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
+from a2a.types import Artifact, Message, Part, Role, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from google.protobuf.json_format import MessageToDict
 
-from aion.core.a2a.enums import ArtifactId, ArtifactName
+from aion.core.a2a.enums import A2AMetadataKey, ArtifactId, ArtifactName
+from aion.core.a2a.extensions.messaging import MessageActionPayload
 from aion.core.a2a.metadata import agent_metadata
+from aion.core.constants.a2a import MESSAGING_EXTENSION_URI_V1
 from aion.server.a2a.constants import NON_RESULT_ARTIFACT_IDS
 from aion.server.tasks.contexts.catalog import is_conversation_message
 
@@ -32,12 +34,15 @@ class AssistantAnswer:
 
     A client reads what a task produced from its artifacts. A task that only
     talked - no file, no streamed answer, no artifact of its own in any turn
-    - gets ``aion:assistant-answer`` when it completes: every part of the last
-    message the agent sent in that turn, the one on the ``COMPLETED`` status
-    included. The message stays in the history as well. A completed task
-    that produced neither gets no answer, and the server says so in its log.
-    A task that ends any other way gets none: the last message of a failed
-    or cancelled turn is not its answer.
+    - gets ``aion:assistant-answer`` when it completes: the content of the
+    last message the agent sent in that turn, the one on the ``COMPLETED``
+    status included. The message stays in the history as well, and the
+    answer names it in ``aion:sourceMessageId``, so a client can show one of
+    the two. The message's routing target is left out: the message was
+    delivered by it already, and a copy that carried it would be delivered
+    again. A completed task that produced neither gets no answer, and the
+    server says so in its log. A task that ends any other way gets none: the
+    last message of a failed or cancelled turn is not its answer.
     """
 
     def __init__(self) -> None:
@@ -87,15 +92,20 @@ class AssistantAnswer:
             )
             return None
         message = self._last_message
+        parts = [part for part in message.parts if not MessageActionPayload.is_part(part)]
+        extensions = list(message.extensions)
+        if MESSAGING_EXTENSION_URI_V1 in extensions and not any(_uses_messaging(part) for part in parts):
+            extensions.remove(MESSAGING_EXTENSION_URI_V1)
         artifact = Artifact(
             artifact_id=ArtifactId.ASSISTANT_ANSWER.value,
             name=ArtifactName.ASSISTANT_ANSWER.value,
-            parts=list(message.parts),
-            extensions=list(message.extensions),
+            parts=parts,
+            extensions=extensions,
         )
         metadata = agent_metadata(MessageToDict(message.metadata)) if message.HasField("metadata") else None
         if metadata:
             artifact.metadata.update(metadata)
+        artifact.metadata.update({A2AMetadataKey.SOURCE_MESSAGE_ID.value: message.message_id})
         self._result_seen = True
         return TaskArtifactUpdateEvent(
             task_id=task_id,
@@ -108,3 +118,8 @@ class AssistantAnswer:
     def _note(self, message: Message) -> None:
         if message.role == Role.ROLE_AGENT and len(message.parts) and is_conversation_message(message):
             self._last_message = message
+
+
+def _uses_messaging(part: Part) -> bool:
+    """Whether a part carries a payload of the messaging extension, a file's retention say."""
+    return part.HasField("metadata") and MESSAGING_EXTENSION_URI_V1 in part.metadata

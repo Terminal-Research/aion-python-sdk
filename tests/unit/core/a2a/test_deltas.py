@@ -7,6 +7,7 @@ from google.protobuf.json_format import MessageToDict
 
 from aion.core.a2a.deltas import is_stream_delta_chunk, stream_delta_chunk, stream_delta_final, thinking_delta
 from aion.core.a2a.enums import ArtifactId, ArtifactName
+from aion.core.a2a.extensions.messaging import MessageActionPayload
 from aion.core.constants.a2a import MESSAGING_EXTENSION_URI_V1, STREAM_DELTA_PAYLOAD_SCHEMA_V1
 
 TASK_ID = "task-1"
@@ -52,6 +53,31 @@ class TestStreamDeltaChunk:
 
     def test_the_event_carries_the_payload_schema_marker(self):
         assert MessageToDict(_chunk("Hel").metadata) == SCHEMA_MARKER
+
+
+class TestRoutedSection:
+    ROUTING = MessageActionPayload(trajectory="reply", context_id="C1", reply_to_message_id="m-1")
+
+    def test_a_routed_chunk_carries_the_target_after_its_content(self):
+        event = stream_delta_chunk(
+            task_id=TASK_ID, context_id=CONTEXT_ID, parts=[Part(text="Hel")], append=False, routing=self.ROUTING
+        )
+
+        assert event.artifact.parts[0].text == "Hel"
+        assert MessageActionPayload.is_part(event.artifact.parts[1])
+        assert list(event.artifact.extensions) == [MESSAGING_EXTENSION_URI_V1]
+        assert MessageToDict(event.metadata) == SCHEMA_MARKER
+
+    def test_a_routed_whole_text_is_the_text_and_the_target(self):
+        event = stream_delta_final(task_id=TASK_ID, context_id=CONTEXT_ID, text="Hello", routing=self.ROUTING)
+
+        assert event.artifact.parts[0].text == "Hello"
+        assert [MessageActionPayload.is_part(part) for part in event.artifact.parts] == [False, True]
+        assert list(event.artifact.extensions) == [MESSAGING_EXTENSION_URI_V1]
+
+    def test_without_a_target_a_section_declares_no_extension(self):
+        assert list(_chunk("Hel", append=False).artifact.extensions) == []
+        assert list(stream_delta_final(task_id=TASK_ID, context_id=CONTEXT_ID, text="Hello").artifact.extensions) == []
 
 
 class TestStreamDeltaFinal:

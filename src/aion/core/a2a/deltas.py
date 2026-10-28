@@ -8,7 +8,11 @@ Two artifacts carry what happens while a task runs, one of each per task:
     starts the section over). When the section ends, its whole text arrives
     as one text part with ``append`` unset and ``lastChunk`` set: it replaces
     the chunks, and a later section replaces it in turn. The task keeps the
-    last section; the streamed text never becomes a message.
+    last section; the streamed text never becomes a message. A section the
+    agent sends somewhere in particular (``Thread.reply`` to a distribution)
+    carries its routing target as one more part on its first chunk and on
+    its whole text, so the target is there from the start and stays in the
+    task.
 
 ``aion:thinking-delta``
     The agent's thoughts, which only the agent's own code sends. Every thought
@@ -27,6 +31,7 @@ from typing import Any, Mapping, Optional, Sequence
 from a2a.types import Artifact, Part, TaskArtifactUpdateEvent
 
 from aion.core.a2a.enums import ArtifactId, ArtifactName, ArtifactStreamingStatus, ArtifactStreamingStatusReason
+from aion.core.a2a.extensions.messaging import MessageActionPayload
 from aion.core.constants.a2a import MESSAGING_EXTENSION_URI_V1, STREAM_DELTA_PAYLOAD_SCHEMA_V1
 
 __all__ = [
@@ -53,6 +58,7 @@ def stream_delta_chunk(
     parts: Sequence[Part],
     append: bool,
     metadata: Optional[Mapping[str, Any]] = None,
+    routing: Optional[MessageActionPayload] = None,
 ) -> TaskArtifactUpdateEvent:
     """One chunk of a streaming section of the answer.
 
@@ -63,6 +69,9 @@ def stream_delta_chunk(
         append: False for the first chunk of a section, which starts the
             artifact over; True for the rest.
         metadata: The agent's own metadata for the artifact.
+        routing: The section's routing target, for its first chunk only:
+            the parts of a later chunk are added to the artifact, so a
+            target there would repeat in the task.
     """
     artifact_metadata: dict[str, Any] = {
         "status": ArtifactStreamingStatus.ACTIVE.value,
@@ -70,16 +79,17 @@ def stream_delta_chunk(
     }
     if metadata:
         artifact_metadata.update(metadata)
+    artifact = Artifact(
+        artifact_id=ArtifactId.STREAM_DELTA.value,
+        name=ArtifactName.STREAM_DELTA.value,
+        parts=list(parts),
+        metadata=artifact_metadata,
+    )
     return TaskArtifactUpdateEvent(
         task_id=task_id,
         context_id=context_id,
         metadata=_STREAM_DELTA_EVENT_METADATA,
-        artifact=Artifact(
-            artifact_id=ArtifactId.STREAM_DELTA.value,
-            name=ArtifactName.STREAM_DELTA.value,
-            parts=list(parts),
-            metadata=artifact_metadata,
-        ),
+        artifact=routing.route(artifact) if routing is not None else artifact,
         append=append,
         last_chunk=False,
     )
@@ -91,6 +101,7 @@ def stream_delta_final(
     context_id: str,
     text: str,
     metadata: Optional[Mapping[str, Any]] = None,
+    routing: Optional[MessageActionPayload] = None,
 ) -> TaskArtifactUpdateEvent:
     """The whole text of a section that has ended: one text part that replaces its chunks.
 
@@ -99,20 +110,22 @@ def stream_delta_final(
         context_id: The task's context.
         text: Everything the section said.
         metadata: The agent's own metadata for the artifact.
+        routing: The section's routing target, added as a second part.
     """
     artifact_metadata: dict[str, Any] = {"status": ArtifactStreamingStatus.FINALIZED.value}
     if metadata:
         artifact_metadata.update(metadata)
+    artifact = Artifact(
+        artifact_id=ArtifactId.STREAM_DELTA.value,
+        name=ArtifactName.STREAM_DELTA.value,
+        parts=[Part(text=text)],
+        metadata=artifact_metadata,
+    )
     return TaskArtifactUpdateEvent(
         task_id=task_id,
         context_id=context_id,
         metadata=_STREAM_DELTA_EVENT_METADATA,
-        artifact=Artifact(
-            artifact_id=ArtifactId.STREAM_DELTA.value,
-            name=ArtifactName.STREAM_DELTA.value,
-            parts=[Part(text=text)],
-            metadata=artifact_metadata,
-        ),
+        artifact=routing.route(artifact) if routing is not None else artifact,
         append=False,
         last_chunk=True,
     )

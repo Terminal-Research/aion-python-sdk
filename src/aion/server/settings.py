@@ -103,22 +103,6 @@ class AppSettings(BaseEnvSettings):
         ),
     )
 
-    stream_delta_interval: float = Field(
-        default=0.1,
-        ge=0,
-        allow_inf_nan=False,
-        alias="AION_STREAM_DELTA_INTERVAL",
-        description=(
-            "The shortest time, in seconds, between two chunks of the streamed "
-            "answer (`aion:stream-delta`). The chunks a model produces faster are "
-            "joined into one, so the stream, the task record and push "
-            "subscribers get one event per interval rather than one per token. "
-            "The first chunk of a section goes out at once, and whatever is "
-            "waiting goes out before any other event of the task. 0 sends every "
-            "chunk as it comes. Default: 0.1."
-        ),
-    )
-
     require_invocation_auth: bool = Field(
         default=False,
         alias="AION_REQUIRE_INVOCATION_AUTH",

@@ -170,10 +170,7 @@ names (`STREAM_DELTA_ARTIFACT_ID` and the rest):
   chunks - the first with `append=False`, the rest with `append=True` - and
   ends with one more update carrying its whole text in one part,
   `append=False` and `lastChunk=True`. The streamed text never becomes a
-  message. The server joins the chunks that follow the last one it sent by
-  less than `AION_STREAM_DELTA_INTERVAL`, so how many arrive depends on how
-  fast the agent produced them; a scenario that counts chunks runs on the
-  `every-chunk` deployment, where the interval is zero
+  message, and every chunk arrives as the agent produced it
   ([core/test_streaming.py](core/test_streaming.py)).
 - `aion:thinking-delta` holds the agent's thoughts, from `Thread.thinking()`:
   one update and one text part per thought, the task's first with
@@ -183,8 +180,9 @@ names (`STREAM_DELTA_ARTIFACT_ID` and the rest):
   named ([core/test_reactions.py](core/test_reactions.py)).
 - `aion:assistant-answer` comes right before `COMPLETED` when the task
   produced no result - no artifact of its own and no streamed answer; the
-  thoughts and a reaction do not count. It carries every part of the last
-  message of the completing turn. A failed or cancelled task gets none
+  thoughts and a reaction do not count. It carries the content of the last
+  message of the completing turn and names that message in
+  `aion:sourceMessageId`. A failed or cancelled task gets none
   ([core/test_assistant_answer.py](core/test_assistant_answer.py)).
 
 `section_texts`, `thought_texts` and `reply_texts` in the recorder read what a

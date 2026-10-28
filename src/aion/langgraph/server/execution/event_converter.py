@@ -20,7 +20,6 @@ from aion.core.agent.invocation.card import Card
 from aion.core.agent.invocation.card.utils import build_card_a2a_part
 from aion.core.constants import (
     CARDS_EXTENSION_URI_V1,
-    MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
     MESSAGING_EXTENSION_URI_V1,
     REACTION_ACTION_PAYLOAD_SCHEMA_V1,
 )
@@ -61,13 +60,15 @@ class LangGraphA2AConverter:
     def __init__(self, task_id: str, context_id: str):
         self._task_id = task_id
         self._context_id = context_id
-        # The open section of `aion:stream-delta`: its text so far and the
-        # agent's metadata for it. The section comes from the graph's
-        # "messages" stream, a model call identified by `_graph_stream_id`,
-        # or from the thread, when `_graph_stream_id` is None.
+        # The open section of `aion:stream-delta`: its text so far, the
+        # agent's metadata for it and where the thread sends it. The section
+        # comes from the graph's "messages" stream, a model call identified
+        # by `_graph_stream_id`, or from the thread, when `_graph_stream_id`
+        # is None.
         self._section_open = False
         self._section_text = ""
         self._section_metadata: dict | None = None
+        self._section_routing: Optional[MessageActionPayload] = None
         self._graph_stream_id: Optional[str] = None
 
     def convert(self, event_type: str, event_data: Any) -> list[A2AAgentEvent]:
@@ -133,23 +134,33 @@ class LangGraphA2AConverter:
             events.extend(self._convert_full_message(message))
         return events
 
-    def _convert_message(self, message: AIMessage | AIMessageChunk, metadata: dict | None = None) -> list[
-        A2AAgentEvent]:
+    def _convert_message(
+            self,
+            message: AIMessage | AIMessageChunk,
+            metadata: dict | None = None,
+            routing: MessageActionPayload | None = None,
+    ) -> list[A2AAgentEvent]:
         """Convert an AIMessage or AIMessageChunk the thread or a node emitted to A2A events."""
         if isinstance(message, AIMessageChunk):
-            return self._convert_streaming_chunk(message, metadata=metadata)
+            return self._convert_streaming_chunk(message, metadata=metadata, routing=routing)
         if self._section_open:
-            return self._close_section_with(message)
+            return self._close_section_with(message, routing=routing)
         return self._convert_full_message(message, metadata=metadata)
 
-    def _convert_streaming_chunk(self, message: AIMessageChunk, metadata: dict | None = None) -> list[A2AAgentEvent]:
+    def _convert_streaming_chunk(
+            self,
+            message: AIMessageChunk,
+            metadata: dict | None = None,
+            routing: MessageActionPayload | None = None,
+    ) -> list[A2AAgentEvent]:
         """Emit a chunk of ``aion:stream-delta`` for a single AIMessageChunk.
 
         Chunks without content produce no event, so every emitted update carries
         at least one Part (langchain-core ends a stream with an empty
         chunk_position="last" chunk). The first chunk of a section starts the
         artifact over (append=False); the rest extend it. No chunk is the
-        section's last: the section ends with an event of its own.
+        section's last: the section ends with an event of its own. A routing
+        target goes out on the section's first chunk and on its whole text.
         """
         parts = LcToA2AConverter.from_message(message)
         if not parts:
@@ -159,12 +170,15 @@ class LangGraphA2AConverter:
         self._section_open = True
         self._section_text += "".join(part.text for part in parts if part.WhichOneof("content") == "text")
         self._section_metadata = agent_metadata(metadata) or None
+        if routing is not None:
+            self._section_routing = routing
         return [stream_delta_chunk(
             task_id=self._task_id,
             context_id=self._context_id,
             parts=parts,
             append=append,
             metadata=self._section_metadata,
+            routing=None if append else routing,
         )]
 
     def _close_section(self, text: str | None = None) -> list[A2AAgentEvent]:
@@ -179,9 +193,11 @@ class LangGraphA2AConverter:
             return []
         final_text = self._section_text if text is None else text
         metadata = self._section_metadata
+        routing = self._section_routing
         self._section_open = False
         self._section_text = ""
         self._section_metadata = None
+        self._section_routing = None
         self._graph_stream_id = None
         if not final_text:
             return []
@@ -190,20 +206,28 @@ class LangGraphA2AConverter:
             context_id=self._context_id,
             text=final_text,
             metadata=metadata,
+            routing=routing,
         )]
 
-    def _close_section_with(self, message: AIMessage) -> list[A2AAgentEvent]:
+    def _close_section_with(
+            self, message: AIMessage, routing: MessageActionPayload | None = None
+    ) -> list[A2AAgentEvent]:
         """End the open section with the message that closes it.
 
         The message's text is the section's whole text; anything else it
-        carries, a file say, goes out as a message.
+        carries, a file say, goes out as a message. Both go where the
+        message's routing target says, when it has one.
         """
+        if routing is not None:
+            self._section_routing = routing
         parts = LcToA2AConverter.from_message(message)
         text_parts = [part for part in parts if part.WhichOneof("content") == "text"]
         events = self._close_section("".join(part.text for part in text_parts) if text_parts else None)
         rest = [part for part in parts if part.WhichOneof("content") != "text"]
         if rest:
-            events.extend(self._message_event(rest, message_id=message.id, role=self._detect_role(message)))
+            events.extend(self._message_event(
+                rest, message_id=message.id, role=self._detect_role(message), routing=routing
+            ))
         return events
 
     def _convert_full_message(self, message: AIMessage, metadata: dict | None = None) -> list[A2AAgentEvent]:
@@ -234,13 +258,16 @@ class LangGraphA2AConverter:
             message_id: str | None,
             role: Role,
             metadata: dict | None = None,
+            routing: MessageActionPayload | None = None,
     ) -> list[A2AAgentEvent]:
+        """A message of the agent's, with its routing target beside its content when it has one."""
         msg = Message(
             context_id=self._context_id,
             task_id=self._task_id,
             message_id=message_id or str(uuid.uuid4()),
             role=role,
-            parts=parts,
+            parts=[*parts, routing.to_part()] if routing is not None else parts,
+            extensions=[MESSAGING_EXTENSION_URI_V1] if routing is not None else None,
             metadata=metadata,
         )
         return [TaskStatusUpdateEvent(
@@ -260,10 +287,7 @@ class LangGraphA2AConverter:
         parts = [build_card_a2a_part(card)]
         extensions = [CARDS_EXTENSION_URI_V1]
         if routing is not None:
-            parts.append(self._build_extension_part(
-                routing.model_dump(by_alias=True, exclude_none=True),
-                MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
-            ))
+            parts.append(routing.to_part())
             extensions.append(MESSAGING_EXTENSION_URI_V1)
         user_meta = agent_metadata(metadata) or None
         msg = Message(
@@ -306,19 +330,18 @@ class LangGraphA2AConverter:
 
     def _convert_node_event(self, event_data: SupportedCustomEvents) -> list[A2AAgentEvent]:
         if isinstance(event_data, ArtifactCustomEvent):
-            event_metadata: dict = {}
+            # A routing target travels in the artifact, as a data part beside
+            # its content, the way a message carries one.
+            artifact = event_data.artifact
             if event_data.routing is not None:
-                event_metadata[MESSAGING_EXTENSION_URI_V1] = event_data.routing.model_dump(by_alias=True, exclude_none=True)
-            if event_data.metadata:
-                user_meta = agent_metadata(event_data.metadata)
-                event_metadata.update(user_meta)
+                artifact = event_data.routing.route(artifact)
             return [TaskArtifactUpdateEvent(
                 task_id=self._task_id,
                 context_id=self._context_id,
-                artifact=event_data.artifact,
+                artifact=artifact,
                 append=event_data.append,
                 last_chunk=event_data.is_last_chunk,
-                metadata=event_metadata or None,
+                metadata=agent_metadata(event_data.metadata) or None,
             )]
 
         if isinstance(event_data, CardCustomEvent):
@@ -332,15 +355,6 @@ class LangGraphA2AConverter:
 
         logger.warning(f"Ignoring unknown custom event type: {type(event_data)}")
         return []
-
-    @staticmethod
-    def _build_extension_part(data: dict, schema_uri: str) -> Part:
-        proto_value = struct_pb2.Value()
-        json_format.ParseDict(data, proto_value)
-        return Part(
-            data=proto_value,
-            metadata={MESSAGING_EXTENSION_URI_V1: {"schema": schema_uri}},
-        )
 
     def _convert_message_with_routing(
             self,
@@ -358,39 +372,22 @@ class LangGraphA2AConverter:
         of a plain JSX string — plain strings are always treated as regular text.
 
         A chunk is a chunk of the streamed answer, and a message that closes
-        an open section ends it, as without a target: the streamed text is
-        the answer, not a message to deliver.
+        an open section ends it: the streamed text is the answer, not a
+        message, and the section carries the target instead.
         """
         if isinstance(message, AIMessageChunk) or self._section_open:
-            return self._convert_message(message, metadata=metadata)
+            return self._convert_message(message, metadata=metadata, routing=routing)
 
         a2a_parts = LcToA2AConverter.from_message(message)
         if not a2a_parts:
             return []
-
-        a2a_parts.append(self._build_extension_part(
-            routing.model_dump(by_alias=True, exclude_none=True),
-            MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
-        ))
-
-        extensions = [MESSAGING_EXTENSION_URI_V1]
-
-        message_id = message.id or str(uuid.uuid4())
-        user_meta = agent_metadata(metadata) or None
-        msg = Message(
-            context_id=self._context_id,
-            task_id=self._task_id,
-            message_id=message_id,
+        return self._message_event(
+            a2a_parts,
+            message_id=message.id,
             role=Role.ROLE_AGENT,
-            parts=a2a_parts,
-            extensions=extensions,
-            metadata=user_meta,
+            metadata=agent_metadata(metadata) or None,
+            routing=routing,
         )
-        return [TaskStatusUpdateEvent(
-            task_id=self._task_id,
-            context_id=self._context_id,
-            status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
-        )]
 
     def _convert_thinking(self, event: ThinkingCustomEvent) -> list[A2AAgentEvent]:
         """Carry a thought as one more part of ``aion:thinking-delta``."""

@@ -333,7 +333,7 @@ executor runs it, and keeps a record of the turns running in this process.
 ### Outcome
 
 A turn's events go to the pipeline, which stores files given as bytes,
-joins the chunks of the streamed answer, adds each thought to the task's
+adds each thought to the task's
 thoughts, gives a completed task that produced only messages its answer
 (`aion:assistant-answer`), and moves the task to `WORKING`. A turn ends where its executor ends it; what the server writes:
 

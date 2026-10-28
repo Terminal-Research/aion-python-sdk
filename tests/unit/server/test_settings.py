@@ -27,28 +27,6 @@ class TestAppSettings:
         assert s.is_logstash_configured is True
 
 
-class TestStreamDeltaInterval:
-    def test_the_default_is_a_tenth_of_a_second(self):
-        assert AppSettings().stream_delta_interval == 0.1
-
-    def test_it_is_read_from_the_environment(self, monkeypatch):
-        monkeypatch.setenv("AION_STREAM_DELTA_INTERVAL", "0.25")
-
-        assert AppSettings().stream_delta_interval == 0.25
-
-    def test_zero_sends_every_chunk(self, monkeypatch):
-        monkeypatch.setenv("AION_STREAM_DELTA_INTERVAL", "0")
-
-        assert AppSettings().stream_delta_interval == 0
-
-    @pytest.mark.parametrize("value", ["-0.1", "inf", "nan"])
-    def test_a_negative_or_unbounded_interval_is_refused(self, monkeypatch, value):
-        monkeypatch.setenv("AION_STREAM_DELTA_INTERVAL", value)
-
-        with pytest.raises(ValueError):
-            AppSettings()
-
-
 def test_encryption_key_without_cryptography_names_the_server_extras(
     run_python_without,
 ) -> None:

@@ -65,6 +65,8 @@ class A2AMetadataKey(str, Enum):
     DISTRIBUTION = "aion:distribution"
     SETTLED_REASON = "aion:settledReason"
     ROUTED_EXTENSION = "aion:routedExtension"
+    SOURCE_MESSAGE_ID = "aion:sourceMessageId"
+    """On ``aion:assistant-answer``: the id of the message the answer was copied from."""
 
 
 class TaskSettlementReason(str, Enum):

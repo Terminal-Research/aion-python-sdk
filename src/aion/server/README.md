@@ -595,22 +595,27 @@ and push subscribers all get them:
   arrive with `append` set (the first without it); when the section ends,
   its whole text arrives as one text part with `append` unset and
   `lastChunk` set, replacing them. A later section of the task replaces it
-  in turn. The streamed text never becomes a message. `AionEventPipeline`
-  joins chunks that come faster than `AION_STREAM_DELTA_INTERVAL` (default
-  0.1 s), the same for every executor.
+  in turn. The streamed text never becomes a message. Every chunk is
+  stored and delivered as the agent produced it. A section `Thread.reply`
+  streams to a distribution carries its routing target as one more part on
+  its first chunk and on its whole text.
 - `aion:thinking-delta` holds the agent's thoughts, which only its own code
   sends (`emit_thinking`, `Thread.thinking`): one text part per thought, for
   the whole task. The pipeline makes the task's first thought create the
   artifact and every later one extend it.
 - `aion:reaction` is the agent's latest reaction to a message.
 - `aion:assistant-answer` is given to a task that completes having produced
-  no other artifact in any of its turns: every part of the last message the
-  agent sent in the completing turn. A completed task without such a
-  message gets none, and the server logs a warning. A failed or cancelled
-  task never gets one.
+  no other artifact in any of its turns: the content of the last message
+  the agent sent in the completing turn, without the message's routing
+  target, and that message's id in `aion:sourceMessageId`. A completed task
+  without such a message gets none, and the server logs a warning. A failed
+  or cancelled task never gets one.
 
 Any other artifact is a result of the task, and so is `aion:stream-delta`;
-the thoughts, the reaction and the copied answer are not.
+the thoughts, the reaction and the copied answer are not. An artifact the
+agent sends somewhere in particular carries its routing target the way a
+message does: a `MessageActionPayload` data part beside its content, and the
+messaging extension in its `extensions`.
 
 
 ## Server and background logging

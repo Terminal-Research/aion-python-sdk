@@ -115,16 +115,17 @@ class Thread(BaseThread):
         The chunks are a section of ``aion:stream-delta``, and the full
         message after them ends the section with its whole text, as a
         model's streaming does. The streamed text is the task's answer, not
-        a message.
+        a message. Every chunk carries ``routing``; the section takes it on
+        its first chunk and its whole text.
         """
         accumulated = ""
         try:
             async for chunk in iterator:
                 if isinstance(chunk, str):
-                    emit_message(writer, AIMessageChunk(content=chunk), metadata=metadata)
+                    emit_message(writer, AIMessageChunk(content=chunk), routing=routing, metadata=metadata)
                     accumulated += chunk
                 elif isinstance(chunk, AIMessageChunk):
-                    emit_message(writer, chunk, metadata=metadata)
+                    emit_message(writer, chunk, routing=routing, metadata=metadata)
                     if chunk.content:
                         accumulated += chunk.content
                 else:

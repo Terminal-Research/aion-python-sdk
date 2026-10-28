@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 
 from a2a.types import Artifact as A2AArtifact
+from aion.adk.authoring.constants import AION_ROUTING_KEY
 from aion.adk.authoring.invocation import emit_artifact, emit_card, emit_message, emit_thinking
 from aion.core.a2a.extensions.messaging import MessageActionPayload
 from aion.core.agent import BaseThread
@@ -100,13 +101,20 @@ class Thread(BaseThread):
         return None
 
     @staticmethod
-    def _build_partial_text_event(text: str, metadata: dict | None = None) -> Event:
-        """Build a partial (streaming) ADK Event for a text chunk."""
+    def _build_partial_text_event(
+            text: str,
+            metadata: dict | None = None,
+            routing: Optional[MessageActionPayload] = None,
+    ) -> Event:
+        """Build a partial (streaming) ADK Event for a text chunk, with its routing target under aion:routing."""
+        meta = dict(metadata) if metadata else {}
+        if routing is not None:
+            meta[AION_ROUTING_KEY] = routing.model_dump(by_alias=True, exclude_none=True)
         return Event(
             author="agent",
             content=types.Content(parts=[types.Part(text=text)], role="model"),
             partial=True,
-            custom_metadata=metadata or None,
+            custom_metadata=meta or None,
         )
 
     async def _stream_from_async_iterator(
@@ -122,13 +130,14 @@ class Thread(BaseThread):
         ``aion:stream-delta``, and the complete event ends the section with
         its whole text, as ADK's own streaming does. The streamed text is the
         task's answer, not a message. The ADK session keeps it as what the
-        agent said.
+        agent said. Every event carries ``routing``; the section takes it on
+        its first chunk and its whole text.
         """
         accumulated = ""
         try:
             async for chunk in iterator:
                 if isinstance(chunk, str):
-                    emitter(self._build_partial_text_event(chunk, metadata=metadata))
+                    emitter(self._build_partial_text_event(chunk, metadata=metadata, routing=routing))
                     accumulated += chunk
                 else:
                     logger.warning(

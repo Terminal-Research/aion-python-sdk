@@ -62,12 +62,12 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | Suite | What it covers | Scenarios | Run |
 |---|---|---|---|
 | `smoke` | agent answers at all: card, health, help, echo | 8 | `make tests-scenarios TAGS=smoke` |
-| `streaming` | streamed answers, thoughts, unary send | 18 | `make tests-scenarios TAGS=streaming` |
+| `streaming` | streamed answers, thoughts, unary send | 17 | `make tests-scenarios TAGS=streaming` |
 | `events` | event order, ids, outbox, get_task agreement | 24 | `make tests-scenarios TAGS=events` |
 | `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 11 | `make tests-scenarios TAGS=terminal_states` |
 | `interrupts` | INPUT_REQUIRED and resume | 10 | `make tests-scenarios TAGS=interrupts` |
 | `errors` | failures that must stay reported, not crash the server | 10 | `make tests-scenarios TAGS=errors` |
-| `artifacts` | artifact and card emission | 10 | `make tests-scenarios TAGS=artifacts` |
+| `artifacts` | artifact and card emission | 11 | `make tests-scenarios TAGS=artifacts` |
 | `files` | inline file parts: stored, rejected, or passed through | 12 | `make tests-scenarios TAGS=files` |
 | `extensions` | extension activation and payload delivery | 12 | `make tests-scenarios TAGS=extensions` |
 | `daemon` | daemon extension identity and environment | 7 | `make tests-scenarios TAGS=daemon` |
@@ -88,12 +88,13 @@ The answer of a task that only talked: the ``aion:assistant-answer`` artifact.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [Three messages, one answer: the last of them, right before COMPLETED.](core/test_assistant_answer.py#L44 "test_the_last_message_of_the_turn_is_the_answer") | `artifacts` | `steps` | `default` | ✓ | ✓ |
-| [The stored task holds the answer as its artifact and the reply in its history.](core/test_assistant_answer.py#L58 "test_the_task_keeps_the_answer_and_the_message") | `artifacts` | `echo` | `default` | ✓ | ✓ |
-| [A reply of text and a file becomes an answer of the same two parts.](core/test_assistant_answer.py#L72 "test_the_answer_carries_every_part_of_the_message") | `artifacts` | `send-file` | `default` | ✓ | ✓ |
-| [The artifacts the agent emitted are the task's result, so its reply stays a message only.](core/test_assistant_answer.py#L85 "test_a_task_with_an_artifact_of_its_own_gets_no_answer") | `artifacts` | `artifacts` | `default` | ✓ | [skip](#frameworks) |
-| [What the agent said before failing is a message of a failed turn, not its answer.](core/test_assistant_answer.py#L96 "test_a_failed_task_gets_no_answer") | `artifacts` | `fail` | `default` | ✓ | ✓ |
-| [A question that pauses the task is not its answer; the reply of the completing turn is.](core/test_assistant_answer.py#L108 "test_the_answer_comes_from_the_turn_that_completes") | `artifacts` | `ask` | `default` | ✓ | [skip](#frameworks) |
+| [Three messages, one answer: the last of them, right before COMPLETED.](core/test_assistant_answer.py#L47 "test_the_last_message_of_the_turn_is_the_answer") | `artifacts` | `steps` | `default` | ✓ | ✓ |
+| [The stored task holds the answer as its artifact and the reply in its history.](core/test_assistant_answer.py#L61 "test_the_task_keeps_the_answer_and_the_message") | `artifacts` | `echo` | `default` | ✓ | ✓ |
+| [``aion:sourceMessageId`` is the id of the last reply, so a client can show one of the two.](core/test_assistant_answer.py#L75 "test_the_answer_names_the_message_it_was_copied_from") | `artifacts` | `steps` | `default` | ✓ | ✓ |
+| [A reply of text and a file becomes an answer of the same two parts.](core/test_assistant_answer.py#L89 "test_the_answer_carries_every_part_of_the_message") | `artifacts` | `send-file` | `default` | ✓ | ✓ |
+| [The artifacts the agent emitted are the task's result, so its reply stays a message only.](core/test_assistant_answer.py#L102 "test_a_task_with_an_artifact_of_its_own_gets_no_answer") | `artifacts` | `artifacts` | `default` | ✓ | [skip](#frameworks) |
+| [What the agent said before failing is a message of a failed turn, not its answer.](core/test_assistant_answer.py#L113 "test_a_failed_task_gets_no_answer") | `artifacts` | `fail` | `default` | ✓ | ✓ |
+| [A question that pauses the task is not its answer; the reply of the completing turn is.](core/test_assistant_answer.py#L125 "test_the_answer_comes_from_the_turn_that_completes") | `artifacts` | `ask` | `default` | ✓ | [skip](#frameworks) |
 
 ### `tests/scenarios/core/test_authentication.py`
 
@@ -379,12 +380,12 @@ The stream-delta channel has the shape the messaging extension specifies.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The reserved id is what makes an update recognisable as the streamed answer.](core/test_stream_delta_shape.py#L38 "test_every_update_names_the_channel_by_artifact_id") | `streaming` | `stream` | `every-chunk` | ✓ | ✓ |
-| [The marker sits on the artifact update, which is where the spec puts it.](core/test_stream_delta_shape.py#L49 "test_every_update_carries_the_schema_marker_on_the_event") | `streaming` | `stream` | `default` | ✓ | ✓ |
-| [Artifact metadata describes the artifact - streaming, then finalized; the schema belongs to the event.](core/test_stream_delta_shape.py#L67 "test_the_artifact_carries_its_own_status_not_the_schema") | `streaming` | `stream` | `default` | ✓ | ✓ |
-| [Only the update that ends the section has `lastChunk`, and it carries the whole text in one part.](core/test_stream_delta_shape.py#L81 "test_the_section_is_closed_by_its_whole_text") | `streaming` | `stream` | `every-chunk` | ✓ | ✓ |
-| [A reader appends from the second chunk on, and never receives an empty one.](core/test_stream_delta_shape.py#L102 "test_the_first_chunk_opens_a_section_and_every_chunk_carries_content") | `streaming` | `stream` | `every-chunk` | ✓ | ✓ |
-| [The one-chunk answer is the edge case the append rule is easiest to lose on.](core/test_stream_delta_shape.py#L122 "test_a_single_chunk_is_still_the_opening_of_a_section") | `streaming` | `stream` | `every-chunk` | ✓ | ✓ |
+| [The reserved id is what makes an update recognisable as the streamed answer.](core/test_stream_delta_shape.py#L37 "test_every_update_names_the_channel_by_artifact_id") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [The marker sits on the artifact update, which is where the spec puts it.](core/test_stream_delta_shape.py#L47 "test_every_update_carries_the_schema_marker_on_the_event") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [Artifact metadata describes the artifact - streaming, then finalized; the schema belongs to the event.](core/test_stream_delta_shape.py#L65 "test_the_artifact_carries_its_own_status_not_the_schema") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [Only the update that ends the section has `lastChunk`, and it carries the whole text in one part.](core/test_stream_delta_shape.py#L79 "test_the_section_is_closed_by_its_whole_text") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [A reader appends from the second chunk on, and never receives an empty one.](core/test_stream_delta_shape.py#L99 "test_the_first_chunk_opens_a_section_and_every_chunk_carries_content") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [The one-chunk answer is the edge case the append rule is easiest to lose on.](core/test_stream_delta_shape.py#L118 "test_a_single_chunk_is_still_the_opening_of_a_section") | `streaming` | `stream` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_streaming.py`
 
@@ -392,14 +393,13 @@ A streamed answer: chunks of a section, then the section's whole text.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [Chunks arrive as stream-delta updates, then the section's whole text as one more.](core/test_streaming.py#L45 "test_a_streamed_answer_arrives_as_chunks_then_its_whole_text") | `streaming` | `stream` | `every-chunk` | ✓ | ✓ |
-| [Every chunk arrives once, in order, and they add up to the section's whole text.](core/test_streaming.py#L62 "test_the_chunks_are_the_answer_broken_up") | `streaming` | `stream` | `every-chunk` | ✓ | ✓ |
-| [One artifact: the first chunk opens it, the rest append, the whole text replaces them.](core/test_streaming.py#L72 "test_the_first_chunk_opens_the_section_and_the_rest_append") | `streaming` | `stream` | `every-chunk` | ✓ | ✓ |
-| [`stream 1` keeps the same shape: one chunk, then the whole text.](core/test_streaming.py#L90 "test_one_chunk_is_still_a_section") | `streaming` | `stream` | `every-chunk` | ✓ | ✓ |
-| [The agent streams twenty chunks at once; fewer arrive, and none is lost from the whole text.](core/test_streaming.py#L109 "test_chunks_that_come_faster_than_the_interval_are_joined") | `streaming` | `stream` | `default` | ✓ | ✓ |
-| [No status carries the streamed text, and the task's history holds only the caller's message.](core/test_streaming.py#L129 "test_the_streamed_answer_is_not_a_message") | `streaming` | `stream` | `default` | ✓ | ✓ |
-| [The stored stream-delta artifact is the section's whole text in one part, and it is the task's result.](core/test_streaming.py#L141 "test_the_task_keeps_the_whole_text_of_the_section") | `streaming` | `stream` | `default` | ✓ | ✓ |
-| [`SendMessage` without a stream answers once: the task, completed, the reply on its status.](core/test_streaming.py#L164 "test_a_unary_send_answers_with_the_completed_task") | `streaming` | `echo` | `default` | ✓ | ✓ |
+| [Chunks arrive as stream-delta updates, then the section's whole text as one more.](core/test_streaming.py#L40 "test_a_streamed_answer_arrives_as_chunks_then_its_whole_text") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [Every chunk arrives once, in order, and they add up to the section's whole text.](core/test_streaming.py#L56 "test_the_chunks_are_the_answer_broken_up") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [One artifact: the first chunk opens it, the rest append, the whole text replaces them.](core/test_streaming.py#L65 "test_the_first_chunk_opens_the_section_and_the_rest_append") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [`stream 1` keeps the same shape: one chunk, then the whole text.](core/test_streaming.py#L82 "test_one_chunk_is_still_a_section") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [No status carries the streamed text, and the task's history holds only the caller's message.](core/test_streaming.py#L100 "test_the_streamed_answer_is_not_a_message") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [The stored stream-delta artifact is the section's whole text in one part, and it is the task's result.](core/test_streaming.py#L112 "test_the_task_keeps_the_whole_text_of_the_section") | `streaming` | `stream` | `default` | ✓ | ✓ |
+| [`SendMessage` without a stream answers once: the task, completed, the reply on its status.](core/test_streaming.py#L135 "test_a_unary_send_answers_with_the_completed_task") | `streaming` | `echo` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_thoughts.py`
 
@@ -602,10 +602,10 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 |---|---|---|---|---|---|
 | `help` | Show this menu | `smoke` | 1 | ✓ | ✓ |
 | `echo <text>` | Reply with the argument, unchanged | `smoke`, `events` | 24 | ✓ | ✓ |
-| `stream <n>` | Stream an answer in n chunks | `streaming` | 14 | ✓ | ✓ |
+| `stream <n>` | Stream an answer in n chunks | `streaming` | 13 | ✓ | ✓ |
 | `think <n>` | Think n thoughts, then reply | `streaming` | 6 | ✓ | ✓ |
 | `react` | React to the inbound message, then reply | `events` | 4 | ✓ | ✓ |
-| `steps <n>` | Emit n working statuses, then complete | `events` | 5 | ✓ | ✓ |
+| `steps <n>` | Emit n working statuses, then complete | `events` | 6 | ✓ | ✓ |
 | `slow <sec>` | Reply after n seconds | `lifecycle` | 20 | ✓ | ✓ |
 | `artifacts` | Emit a two-part data artifact, an inline file and a url | `artifacts`, `files` | 3 | ✓ | [skip](#frameworks) |
 | `send-file <route>` | Send one inline file: artifact \| reply \| outbox-message \| outbox-task | `files` | 3 | ✓ | ✓ |

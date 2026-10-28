@@ -231,6 +231,65 @@ class TestConvertCustom:
         assert converter._convert_custom(object()) == []
 
 
+class TestRouting:
+    """A routing target travels as a data part beside the content it routes, in a message or an artifact."""
+
+    ROUTING = MessageActionPayload(trajectory="reply", context_id="C1", reply_to_message_id="m-1")
+
+    @staticmethod
+    def _contents(event) -> list:
+        return [part.text for part in event.artifact.parts if not MessageActionPayload.is_part(part)]
+
+    @staticmethod
+    def _routed(event) -> bool:
+        return any(MessageActionPayload.is_part(part) for part in event.artifact.parts)
+
+    def test_a_routed_artifact_carries_its_target_as_a_part(self, converter):
+        artifact = Artifact(artifact_id="report", name="Report", parts=[Part(text="all good")])
+
+        [event] = converter._convert_custom(ArtifactCustomEvent(artifact=artifact, routing=self.ROUTING))
+
+        assert self._contents(event) == ["all good"]
+        assert MessageActionPayload.is_part(event.artifact.parts[-1])
+        assert list(event.artifact.extensions) == [MESSAGING_EXTENSION_URI_V1]
+        assert MESSAGING_EXTENSION_URI_V1 not in event.metadata
+        assert len(artifact.parts) == 1
+
+    def test_a_routed_section_carries_its_target_on_the_first_chunk_and_the_whole_text(self, converter):
+        events = []
+        for text in ("one ", "two"):
+            events += converter.convert(
+                "custom", MessageCustomEvent(message=AIMessageChunk(content=text), routing=self.ROUTING)
+            )
+        events += converter.convert(
+            "custom", MessageCustomEvent(message=AIMessage(content="one two", id="reply-1"), routing=self.ROUTING)
+        )
+
+        first, second, final = events
+        assert (self._contents(first), self._routed(first)) == (["one "], True)
+        assert list(first.artifact.extensions) == [MESSAGING_EXTENSION_URI_V1]
+        assert (self._contents(second), self._routed(second)) == (["two"], False)
+        assert (self._contents(final), self._routed(final)) == (["one two"], True)
+        assert (final.append, final.last_chunk) == (False, True)
+
+    def test_a_routed_section_the_run_left_open_ends_with_its_target(self, converter):
+        converter.convert("custom", MessageCustomEvent(message=AIMessageChunk(content="one"), routing=self.ROUTING))
+
+        [final] = converter.close_stream()
+
+        assert (self._contents(final), self._routed(final)) == (["one"], True)
+
+    def test_the_next_section_starts_without_the_last_ones_target(self, converter):
+        converter.convert("custom", MessageCustomEvent(message=AIMessageChunk(content="one"), routing=self.ROUTING))
+        converter.close_stream()
+
+        [chunk] = converter.convert("messages", AIMessageChunk(content="model text", id="run-2"))
+        [final] = converter.close_stream()
+
+        assert not self._routed(chunk)
+        assert not self._routed(final)
+
+
 class TestCloseStream:
     """close_stream() ends a section the run left open, with the text of its chunks."""
 

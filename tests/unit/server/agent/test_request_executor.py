@@ -35,7 +35,6 @@ from aion.server.agent.execution.scope import init_execution_scope
 from aion.core.runtime.context.models import AionRuntimeContext
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.agent.execution.context.providers import RequestScopeRuntimeContextProvider
-from aion.server.settings import app_settings
 from aion.server.tasks.task_manager import AionTaskManager
 from tests.support.scripted_executor.executor import ScriptedExecutor
 from tests.support.scripted_executor.script import Script
@@ -739,8 +738,8 @@ class TestStatusTimesFollowTheTurn:
         assert times == sorted(times)
 
 
-class TestHeldBackChunks:
-    """Chunks of the streamed answer the pipeline holds back reach the task before the server closes it."""
+class TestInterruptedStream:
+    """A streamed answer cut short stays as far as it got: no event closes its section."""
 
     @staticmethod
     def _streaming(*texts: str, then: Optional[BaseException] = None):
@@ -764,8 +763,7 @@ class TestHeldBackChunks:
         ]
 
     @pytest.mark.anyio
-    async def test_a_waiting_chunk_goes_out_before_the_failed_of_a_crash(self, monkeypatch):
-        monkeypatch.setattr(app_settings, "stream_delta_interval", 3600.0)
+    async def test_a_crash_mid_section_leaves_every_chunk_sent_and_fails_the_task(self):
         stream = self._streaming("Hel", "lo", "!", then=RuntimeError("producer exploded"))
         executor = request_executor(FakeFrameworkExecutor(stream=stream))
         queue = RecordingQueue()
@@ -773,18 +771,9 @@ class TestHeldBackChunks:
 
         await executor.execute(_request_context({}), queue)
 
-        assert self._chunk_texts(queue) == [["Hel"], ["lo!"]]
+        assert self._chunk_texts(queue) == [["Hel"], ["lo"], ["!"]]
+        assert not any(
+            event.last_chunk for event in queue.events if isinstance(event, TaskArtifactUpdateEvent)
+        )
         assert isinstance(queue.events[-2], TaskArtifactUpdateEvent)
         assert queue.events[-1].status.state == TaskState.TASK_STATE_FAILED
-
-    @pytest.mark.anyio
-    async def test_a_waiting_chunk_goes_out_when_the_turn_ends(self, monkeypatch):
-        """Nothing goes out on a timer, so the end of the turn is what sends the last chunk."""
-        monkeypatch.setattr(app_settings, "stream_delta_interval", 3600.0)
-        executor = request_executor(FakeFrameworkExecutor(stream=self._streaming("Hel", "lo", "!")))
-        queue = RecordingQueue()
-        init_execution_scope()
-
-        await executor.execute(_request_context({}), queue)
-
-        assert self._chunk_texts(queue) == [["Hel"], ["lo!"]]

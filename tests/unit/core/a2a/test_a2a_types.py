@@ -35,7 +35,8 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from a2a.types import Artifact, Message, Role, Task, TaskState, TaskStatus
+from a2a.types import Artifact, Message, Part, Role, Task, TaskState, TaskStatus
+from google.protobuf.json_format import MessageToDict
 from pydantic import ValidationError
 
 from aion.core.a2a.enums import (
@@ -66,6 +67,11 @@ from aion.core.a2a.extensions.messaging import (
     SourceSystemEventPayload,
 )
 from aion.core.a2a.extensions.traceability import TraceabilityExtensionV1, TraceStateEntry
+from aion.core.constants.a2a import (
+    FILE_ACTION_PAYLOAD_SCHEMA_V1,
+    MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
+    MESSAGING_EXTENSION_URI_V1,
+)
 from aion.core.a2a.models import (
     A2AInbox,
     A2AManifest,
@@ -451,6 +457,34 @@ class TestMessagingModels:
         )
         assert a.user_id == "u1"
         assert a.reply_to_message_id == "msg-old"
+
+    def test_message_action_payload_travels_as_a_marked_data_part(self):
+        """to_part() puts the target, camelCase, in a data part marked with its schema."""
+        part = MessageActionPayload(trajectory="reply", context_id="C1", reply_to_message_id="m-1").to_part()
+
+        assert MessageToDict(part.data) == {"trajectory": "reply", "contextId": "C1", "replyToMessageId": "m-1"}
+        assert MessageToDict(part.metadata) == {
+            MESSAGING_EXTENSION_URI_V1: {"schema": MESSAGE_ACTION_PAYLOAD_SCHEMA_V1}
+        }
+        assert MessageActionPayload.is_part(part)
+
+    def test_message_action_payload_is_part_tells_a_target_from_content(self):
+        other = Part(text="file")
+        other.metadata.update({MESSAGING_EXTENSION_URI_V1: {"schema": FILE_ACTION_PAYLOAD_SCHEMA_V1}})
+
+        assert not MessageActionPayload.is_part(Part(text="hello"))
+        assert not MessageActionPayload.is_part(other)
+
+    def test_message_action_payload_routes_a_copy_of_an_artifact(self):
+        """route() adds the target and declares the extension once, leaving the original untouched."""
+        target = MessageActionPayload(trajectory="conversation", context_id="C1")
+        artifact = Artifact(artifact_id="a", parts=[Part(text="hi")], extensions=[MESSAGING_EXTENSION_URI_V1])
+
+        routed = target.route(artifact)
+
+        assert [MessageActionPayload.is_part(part) for part in routed.parts] == [False, True]
+        assert list(routed.extensions) == [MESSAGING_EXTENSION_URI_V1]
+        assert len(artifact.parts) == 1
 
     def test_reaction_action_payload_add(self):
         """ReactionActionPayload stores 'add' as the operation."""

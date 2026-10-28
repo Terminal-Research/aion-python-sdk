@@ -170,7 +170,9 @@ async def emit_artifact(
         emitter: ADK event emitter callable from the invocation ContextVar
         ctx: ADK InvocationContext from the invocation ContextVar
         artifact: Pre-built a2a.types.Artifact to emit
-        routing: Optional delivery routing target (MessageActionPayload)
+        routing: Optional delivery routing target (MessageActionPayload); the
+                 converter adds it to the A2A artifact as a data part beside
+                 its content. It never reaches artifact_service.
         metadata: Optional user-defined metadata merged into A2A Artifact.metadata.
                   Keys must not start with "aion:" (reserved for service use).
 

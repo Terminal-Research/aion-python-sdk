@@ -5,12 +5,7 @@ client sees it grow chunk by chunk - the first chunk of a section with
 ``append`` unset, the rest with it set - and then receives the whole text of
 the section in one part, ``append`` unset and ``lastChunk`` set, which
 replaces the chunks. The streamed text never becomes a message: the task
-keeps it as that artifact.
-
-The server joins the chunks that follow the last one it sent by less than
-``AION_STREAM_DELTA_INTERVAL``. The default deployment shows the joining; the
-scenarios that count chunks run where the interval is zero and every chunk
-goes out as the agent produced it.
+keeps it as that artifact. Every chunk goes out as the agent produced it.
 """
 
 from __future__ import annotations
@@ -42,13 +37,12 @@ pytestmark = pytest.mark.streaming
 # Every chunk, as the agent produced it
 # --------------------------------------------------------------------------
 
-@pytest.mark.variant("every-chunk")
 @pytest.mark.command("stream")
 async def test_a_streamed_answer_arrives_as_chunks_then_its_whole_text(
-    every_chunk_client: ScenarioClient,
+    client: ScenarioClient,
 ) -> None:
     """Chunks arrive as stream-delta updates, then the section's whole text as one more."""
-    events = await every_chunk_client.send("stream 5")
+    events = await client.send("stream 5")
 
     assert_shape(events, [
         task("SUBMITTED"),
@@ -59,23 +53,21 @@ async def test_a_streamed_answer_arrives_as_chunks_then_its_whole_text(
     ])
 
 
-@pytest.mark.variant("every-chunk")
 @pytest.mark.command("stream")
-async def test_the_chunks_are_the_answer_broken_up(every_chunk_client: ScenarioClient) -> None:
+async def test_the_chunks_are_the_answer_broken_up(client: ScenarioClient) -> None:
     """Every chunk arrives once, in order, and they add up to the section's whole text."""
-    events = await every_chunk_client.send("stream 4")
+    events = await client.send("stream 4")
 
     assert [event.text for event in events if is_chunk(event)] == list(stream_chunks(4))
     assert section_texts(events) == [stream_text(4)]
 
 
-@pytest.mark.variant("every-chunk")
 @pytest.mark.command("stream")
 async def test_the_first_chunk_opens_the_section_and_the_rest_append(
-    every_chunk_client: ScenarioClient,
+    client: ScenarioClient,
 ) -> None:
     """One artifact: the first chunk opens it, the rest append, the whole text replaces them."""
-    events = await every_chunk_client.send("stream 3")
+    events = await client.send("stream 3")
 
     updates = [event for event in events if event.kind == "artifact"]
     assert [(event.append, event.last_chunk) for event in updates] == [
@@ -87,11 +79,10 @@ async def test_the_first_chunk_opens_the_section_and_the_rest_append(
     assert {event.artifact_id for event in updates} == {STREAM_DELTA_ARTIFACT_ID}
 
 
-@pytest.mark.variant("every-chunk")
 @pytest.mark.command("stream")
-async def test_one_chunk_is_still_a_section(every_chunk_client: ScenarioClient) -> None:
+async def test_one_chunk_is_still_a_section(client: ScenarioClient) -> None:
     """`stream 1` keeps the same shape: one chunk, then the whole text."""
-    events = await every_chunk_client.send("stream 1")
+    events = await client.send("stream 1")
 
     assert_shape(events, [
         task("SUBMITTED"),
@@ -103,28 +94,8 @@ async def test_one_chunk_is_still_a_section(every_chunk_client: ScenarioClient) 
 
 
 # --------------------------------------------------------------------------
-# The default deployment
+# What the task keeps
 # --------------------------------------------------------------------------
-
-@pytest.mark.command("stream")
-async def test_chunks_that_come_faster_than_the_interval_are_joined(client: ScenarioClient) -> None:
-    """The agent streams twenty chunks at once; fewer arrive, and none is lost from the whole text.
-
-    The first chunk goes out as it comes. The ones right behind it wait and
-    are joined, text onto text, until the interval has passed or another
-    event of the turn comes; the section's whole text replaces whatever is
-    still waiting.
-    """
-    events = await client.send("stream 20")
-
-    delivered = [event for event in events if is_chunk(event)]
-    assert 1 <= len(delivered) < 20
-    assert delivered[0].text == stream_chunks(20)[0]
-    assert delivered[0].append is False
-    assert all(event.append for event in delivered[1:])
-    assert stream_text(20).startswith("".join(event.text for event in delivered))
-    assert section_texts(events) == [stream_text(20)]
-
 
 @pytest.mark.command("stream")
 async def test_the_streamed_answer_is_not_a_message(client: ScenarioClient) -> None:

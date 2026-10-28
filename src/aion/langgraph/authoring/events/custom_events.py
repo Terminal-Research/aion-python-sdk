@@ -33,7 +33,7 @@ class ArtifactCustomEvent(AionCustomEvent):
     artifact: Protobuf[Artifact] = Field(description="Artifact to emit")
     append: bool = Field(default=False, description="Append to previous artifact")
     is_last_chunk: bool = Field(default=True, description="Final chunk indicator")
-    routing: Optional[MessageActionPayload] = Field(default=None, description="Outbound routing target; forwarded to the distribution layer")
+    routing: Optional[MessageActionPayload] = Field(default=None, description="Outbound routing target; added to the artifact as a data part")
     metadata: Optional[dict[str, Any]] = Field(default=None, description="User-defined metadata merged into A2A Artifact.metadata")
 
 

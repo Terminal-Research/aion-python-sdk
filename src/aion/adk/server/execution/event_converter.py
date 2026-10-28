@@ -21,11 +21,10 @@ from aion.adk.authoring.invocation.event_metadata import (
 from aion.adk.server.transformers import A2ATransformer
 from aion.core.a2a import ArtifactId, ArtifactName
 from aion.core.a2a.deltas import stream_delta_chunk, stream_delta_final, thinking_delta
-from aion.core.a2a.extensions.messaging import ReactionActionPayload
+from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 from aion.core.agent.invocation.card import Card
 from aion.core.agent.invocation.card.utils import build_card_a2a_part
-from aion.core.constants import CARDS_EXTENSION_URI_V1, MESSAGE_ACTION_PAYLOAD_SCHEMA_V1, MESSAGING_EXTENSION_URI_V1, \
-    REACTION_ACTION_PAYLOAD_SCHEMA_V1
+from aion.core.constants import CARDS_EXTENSION_URI_V1, MESSAGING_EXTENSION_URI_V1, REACTION_ACTION_PAYLOAD_SCHEMA_V1
 from google.adk.events import Event
 from google.protobuf import json_format, struct_pb2
 
@@ -55,9 +54,12 @@ class ADKToA2AEventConverter:
         self._task_id = task_id
         self._context_id = context_id
         self._ctx = ctx
+        # The open section of `aion:stream-delta`: its text so far, the
+        # agent's metadata for it and where the thread sends it.
         self._section_open = False
         self._section_text = ""
         self._section_metadata: dict | None = None
+        self._section_routing: MessageActionPayload | None = None
 
     async def convert(self, adk_event: Event) -> list[AgentEvent]:
         """Convert an ADK event to zero or more A2A events.
@@ -91,6 +93,9 @@ class ADKToA2AEventConverter:
         the aggregated content, so at the moment a partial is converted
         nothing says it was the last one. The section's final event follows
         with that response.
+
+        A routing target ``Thread.reply`` gives the chunks goes out on the
+        section's first chunk and on its whole text.
         """
         parts = A2ATransformer.transform_content(adk_event.content)
         if not parts:
@@ -100,12 +105,16 @@ class ADKToA2AEventConverter:
         self._section_open = True
         self._section_text += "".join(part.text for part in parts if part.WhichOneof("content") == "text")
         self._section_metadata = get_aion_user_metadata(adk_event)
+        routing = get_aion_routing(adk_event)
+        if routing is not None:
+            self._section_routing = routing
         return [stream_delta_chunk(
             task_id=self._task_id,
             context_id=self._context_id,
             parts=parts,
             append=append,
             metadata=self._section_metadata,
+            routing=None if append else routing,
         )]
 
     def _close_section(self, text: str | None = None) -> list[AgentEvent]:
@@ -119,9 +128,11 @@ class ADKToA2AEventConverter:
             return []
         final_text = self._section_text if text is None else text
         metadata = self._section_metadata
+        routing = self._section_routing
         self._section_open = False
         self._section_text = ""
         self._section_metadata = None
+        self._section_routing = None
         if not final_text:
             return []
         return [stream_delta_final(
@@ -129,16 +140,8 @@ class ADKToA2AEventConverter:
             context_id=self._context_id,
             text=final_text,
             metadata=metadata,
+            routing=routing,
         )]
-
-    @staticmethod
-    def _build_extension_part(data: dict, schema_uri: str) -> Part:
-        proto_value = struct_pb2.Value()
-        json_format.ParseDict(data, proto_value)
-        return Part(
-            data=proto_value,
-            metadata={MESSAGING_EXTENSION_URI_V1: {"schema": schema_uri}},
-        )
 
     def _build_reaction_event(self, reaction: ReactionActionPayload) -> AgentEvent:
         proto_value = struct_pb2.Value()
@@ -194,10 +197,7 @@ class ADKToA2AEventConverter:
                 parts = [build_card_a2a_part(card)]
                 extensions = [CARDS_EXTENSION_URI_V1]
                 if routing is not None:
-                    parts.append(self._build_extension_part(
-                        routing.model_dump(by_alias=True, exclude_none=True),
-                        MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
-                    ))
+                    parts.append(routing.to_part())
                     extensions.append(MESSAGING_EXTENSION_URI_V1)
                 msg = Message(
                     context_id=self._context_id,
@@ -216,19 +216,18 @@ class ADKToA2AEventConverter:
             return results
 
         content_parts = A2ATransformer.transform_content(adk_event.content) if adk_event.content else []
+        routing = get_aion_routing(adk_event)
         if self._section_open:
+            if routing is not None:
+                self._section_routing = routing
             text_parts = [part for part in content_parts if part.WhichOneof("content") == "text"]
             results.extend(self._close_section("".join(part.text for part in text_parts) if text_parts else None))
             content_parts = [part for part in content_parts if part.WhichOneof("content") != "text"]
 
         if content_parts:
-            routing = get_aion_routing(adk_event)
             extensions = []
             if routing is not None:
-                content_parts.append(self._build_extension_part(
-                    routing.model_dump(by_alias=True, exclude_none=True),
-                    MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
-                ))
+                content_parts.append(routing.to_part())
                 extensions = [MESSAGING_EXTENSION_URI_V1]
             role = Role.ROLE_USER if adk_event.author == "user" else Role.ROLE_AGENT
             msg = Message(
@@ -272,7 +271,9 @@ class ADKToA2AEventConverter:
 
         When aion:output.artifact hint is present (set by emit_artifact()), uses
         the provided artifact_id and name instead of generating a random UUID.
-        This preserves the identity of explicitly emitted artifacts.
+        This preserves the identity of explicitly emitted artifacts. A routing
+        target under aion:routing goes into the artifact as a data part beside
+        its content, the way a message carries one.
         """
         if not adk_event.actions or not adk_event.actions.artifact_delta:
             return []
@@ -281,6 +282,7 @@ class ADKToA2AEventConverter:
 
         output = get_aion_output(adk_event)
         hint = output.artifact if output else None
+        routing = get_aion_routing(adk_event)
 
         results: list[AgentEvent] = []
         for filename, version in adk_event.actions.artifact_delta.items():
@@ -312,16 +314,17 @@ class ADKToA2AEventConverter:
             if user_meta:
                 artifact_metadata.update(user_meta)
 
+            artifact = Artifact(
+                artifact_id=artifact_id,
+                name=name,
+                parts=[a2a_part],
+                metadata=artifact_metadata,
+                extensions=[MESSAGING_EXTENSION_URI_V1] if file_action is not None else [],
+            )
             event = TaskArtifactUpdateEvent(
                 task_id=self._task_id,
                 context_id=self._context_id,
-                artifact=Artifact(
-                    artifact_id=artifact_id,
-                    name=name,
-                    parts=[a2a_part],
-                    metadata=artifact_metadata,
-                    extensions=[MESSAGING_EXTENSION_URI_V1] if file_action is not None else [],
-                ),
+                artifact=routing.route(artifact) if routing is not None else artifact,
                 append=False,
                 last_chunk=True,
             )

@@ -306,3 +306,76 @@ async def test_a_reaction_does_not_end_the_open_section():
 
     assert [event.artifact.artifact_id for event in reaction] == [ArtifactId.REACTION.value]
     assert after[0].append is True
+
+
+def make_routed_partial_event(text: str, routing: MessageActionPayload) -> Event:
+    return Event(
+        author="agent",
+        content=types.Content(parts=[types.Part(text=text)], role="model"),
+        partial=True,
+        custom_metadata={AION_ROUTING_KEY: routing.model_dump(by_alias=True, exclude_none=True)},
+    )
+
+
+def _contents(event: TaskArtifactUpdateEvent) -> list:
+    return [part.text for part in event.artifact.parts if not MessageActionPayload.is_part(part)]
+
+
+def _routed(event: TaskArtifactUpdateEvent) -> bool:
+    return any(MessageActionPayload.is_part(part) for part in event.artifact.parts)
+
+
+class TestArtifactRouting:
+    async def test_a_routed_artifact_carries_its_target_as_a_part(self):
+        artifact = url_artifact("https://example.com/r.pdf", mime_type="application/pdf", name="report")
+        loaded_part = types.Part(file_data=types.FileData(file_uri="https://example.com/r.pdf", mime_type="application/pdf"))
+        event, svc = make_artifact_delta_event(artifact, loaded_part, routing=make_routing())
+
+        [result] = await make_converter_with_ctx(artifact_service=svc).convert(event)
+
+        assert result.artifact.parts[0].url == "https://example.com/r.pdf"
+        assert MessageActionPayload.is_part(result.artifact.parts[-1])
+        assert list(result.artifact.extensions) == [MESSAGING_EXTENSION_URI_V1]
+
+    async def test_an_artifact_without_a_target_has_none(self):
+        artifact = url_artifact("https://example.com/r.pdf", mime_type="application/pdf", name="report")
+        loaded_part = types.Part(file_data=types.FileData(file_uri="https://example.com/r.pdf", mime_type="application/pdf"))
+        event, svc = make_artifact_delta_event(artifact, loaded_part)
+
+        [result] = await make_converter_with_ctx(artifact_service=svc).convert(event)
+
+        assert not _routed(result)
+        assert list(result.artifact.extensions) == []
+
+
+class TestStreamRouting:
+    async def test_a_routed_section_carries_its_target_on_the_first_chunk_and_the_whole_text(self):
+        converter = make_converter()
+        routing = make_routing()
+
+        [first] = await converter.convert(make_routed_partial_event("one ", routing))
+        [second] = await converter.convert(make_routed_partial_event("two", routing))
+        [final] = await converter.convert(make_text_event("one two", routing))
+
+        assert (_contents(first), _routed(first)) == (["one "], True)
+        assert list(first.artifact.extensions) == [MESSAGING_EXTENSION_URI_V1]
+        assert (_contents(second), _routed(second)) == (["two"], False)
+        assert (_contents(final), _routed(final)) == (["one two"], True)
+        assert (final.append, final.last_chunk) == (False, True)
+
+    async def test_a_routed_section_the_run_left_open_ends_with_its_target(self):
+        converter = make_converter()
+        await converter.convert(make_routed_partial_event("one", make_routing()))
+
+        [final] = converter.finalize_stream()
+
+        assert (_contents(final), _routed(final)) == (["one"], True)
+
+    async def test_the_models_own_stream_carries_no_target(self):
+        converter = make_converter()
+
+        [chunk] = await converter.convert(make_partial_event("It is sunny."))
+        [final] = converter.finalize_stream()
+
+        assert not _routed(chunk)
+        assert not _routed(final)

@@ -119,13 +119,10 @@ def _pipeline(
     *,
     task_started: bool = False,
     transformer=None,
-    stream_delta_interval: float | None = None,
 ):
     """A pipeline wired the way `AionRequestExecutor` wires one."""
     updater = TaskUpdater(queue, TASK_ID, CONTEXT_ID)
-    return AionEventPipeline(
-        queue, updater, transformer, task_started=task_started, stream_delta_interval=stream_delta_interval
-    )
+    return AionEventPipeline(queue, updater, transformer, task_started=task_started)
 
 
 def _message(text: str, *, message_id: str | None = None) -> Message:
@@ -441,38 +438,30 @@ def _section(text: str) -> TaskArtifactUpdateEvent:
     return stream_delta_final(task_id=TASK_ID, context_id=CONTEXT_ID, text=text)
 
 
-async def test_chunks_that_come_too_soon_wait_for_the_next_event(manager, queue) -> None:
-    """One chunk per interval leaves the pipeline; the rest go out joined, ahead of what follows them."""
-    pipeline = _pipeline(queue, task_started=True, stream_delta_interval=3600)
-
-    await pipeline.process(_chunk("Hel", append=False))
-    await pipeline.process(_chunk("lo, "))
-    await pipeline.process(_chunk("world"))
-    assert [_texts(e.artifact) for e in queue.events] == [["Hel"]]
-
-    await pipeline.process(_status("still going"))
-
-    first, joined, status = queue.events
-    assert _texts(joined.artifact) == ["lo, world"]
-    assert joined.append is True
-    assert status.status.message.parts[0].text == "still going"
-
-
-async def test_the_task_keeps_the_text_the_joined_chunks_carry(manager, queue, store, call_context) -> None:
-    """Joining changes how many writes the task takes, not what it ends up holding."""
-    pipeline = _pipeline(queue, task_started=True, stream_delta_interval=3600)
+async def test_every_chunk_goes_out_as_the_agent_produced_it(manager, queue) -> None:
+    pipeline = _pipeline(queue, task_started=True)
 
     for chunk in (_chunk("Hel", append=False), _chunk("lo, "), _chunk("world")):
         await pipeline.process(chunk)
-    await pipeline.flush()
+
+    assert [(_texts(e.artifact), e.append) for e in queue.events] == [
+        (["Hel"], False), (["lo, "], True), (["world"], True),
+    ]
+
+
+async def test_the_task_keeps_every_chunk_until_the_section_ends(manager, queue, store, call_context) -> None:
+    pipeline = _pipeline(queue, task_started=True)
+
+    for chunk in (_chunk("Hel", append=False), _chunk("lo, "), _chunk("world")):
+        await pipeline.process(chunk)
     await _consume(manager, queue)
 
     stored = await store.get(TASK_ID, call_context)
-    assert "".join(_texts(_stored_artifact(stored, ArtifactId.STREAM_DELTA.value))) == "Hello, world"
+    assert _texts(_stored_artifact(stored, ArtifactId.STREAM_DELTA.value)) == ["Hel", "lo, ", "world"]
 
 
-async def test_a_whole_section_replaces_the_chunks_still_waiting(manager, queue, store, call_context) -> None:
-    pipeline = _pipeline(queue, task_started=True, stream_delta_interval=3600)
+async def test_a_whole_section_replaces_its_chunks(manager, queue, store, call_context) -> None:
+    pipeline = _pipeline(queue, task_started=True)
 
     await pipeline.process(_chunk("Hel", append=False))
     await pipeline.process(_chunk("lo"))
@@ -480,47 +469,16 @@ async def test_a_whole_section_replaces_the_chunks_still_waiting(manager, queue,
     await _consume(manager, queue)
 
     delivered = _artifact_events(queue, ArtifactId.STREAM_DELTA.value)
-    assert [(_texts(e.artifact), e.last_chunk) for e in delivered] == [(["Hel"], False), (["Hello"], True)]
+    assert [(_texts(e.artifact), e.last_chunk) for e in delivered] == [
+        (["Hel"], False), (["lo"], False), (["Hello"], True),
+    ]
     stored = await store.get(TASK_ID, call_context)
     assert _texts(_stored_artifact(stored, ArtifactId.STREAM_DELTA.value)) == ["Hello"]
 
 
-async def test_flush_delivers_what_waits(manager, queue) -> None:
-    """The executor flushes before it writes an outcome itself, so no waiting text is lost."""
-    pipeline = _pipeline(queue, task_started=True, stream_delta_interval=3600)
-    await pipeline.process(_chunk("Hel", append=False))
-    await pipeline.process(_chunk("lo"))
-
-    await pipeline.flush()
-    await pipeline.flush()
-
-    assert [_texts(e.artifact) for e in queue.events] == [["Hel"], ["lo"]]
-
-
-async def test_with_interval_zero_every_chunk_goes_out(manager, queue) -> None:
-    pipeline = _pipeline(queue, task_started=True, stream_delta_interval=0)
-
-    for chunk in (_chunk("a", append=False), _chunk("b"), _chunk("c")):
-        await pipeline.process(chunk)
-
-    assert [_texts(e.artifact) for e in queue.events] == [["a"], ["b"], ["c"]]
-
-
-async def test_the_interval_comes_from_the_setting_by_default(manager, queue, monkeypatch) -> None:
-    from aion.server.settings import app_settings
-
-    monkeypatch.setattr(app_settings, "stream_delta_interval", 0.0)
-    pipeline = _pipeline(queue, task_started=True)
-
-    for chunk in (_chunk("a", append=False), _chunk("b")):
-        await pipeline.process(chunk)
-
-    assert [_texts(e.artifact) for e in queue.events] == [["a"], ["b"]]
-
-
-async def test_a_waiting_chunk_counts_toward_starting_the_task(submitted, queue) -> None:
-    """A chunk that waits has not reached the client yet; the task moves to WORKING when it does."""
-    pipeline = _pipeline(queue, stream_delta_interval=3600)
+async def test_a_chunk_starts_the_task(submitted, queue) -> None:
+    """The task moves to WORKING right before the first chunk reaches the client."""
+    pipeline = _pipeline(queue)
 
     await pipeline.process(_chunk("Hel", append=False))
 
@@ -738,9 +696,9 @@ async def test_a_task_that_does_not_complete_gets_no_answer(manager, queue, stat
     assert _answers(queue) == []
 
 
-async def test_a_chunk_waiting_at_completion_is_a_result(manager, queue) -> None:
-    """The streamed text held back goes out ahead of the COMPLETED, and the task needs no copied answer."""
-    pipeline = _pipeline(queue, task_started=True, stream_delta_interval=3600)
+async def test_streamed_chunks_are_a_result(manager, queue) -> None:
+    """A task that streamed its answer needs no copied answer, even when the section never ended."""
+    pipeline = _pipeline(queue, task_started=True)
 
     await pipeline.process(_chunk("Hel", append=False))
     await pipeline.process(_chunk("lo"))

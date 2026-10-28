@@ -180,6 +180,11 @@ async def handle_message(thread: Thread):
     await thread.post(token_stream())
 ```
 
+`reply` sends back to where the inbound event came from: a text, a card, a streamed
+answer or an artifact carries that routing target, and the task keeps it with what it
+routes. `post` routes only with an explicit `target`. Output that carries no target goes
+where the distribution's reply mode says.
+
 ### Message
 
 Normalized inbound message. Exposes sender identity and text content. Provides `reply` and `react` shortcuts.

@@ -10,7 +10,6 @@ from aion.core.a2a.enums import ArtifactId
 from aion.core.exceptions import AionError
 from aion.server.agent.execution.assistant_answer import AssistantAnswer
 from aion.server.agent.execution.scope import get_task_manager as exec_scope_get_task_manager
-from aion.server.agent.execution.stream_coalescer import StreamDeltaCoalescer
 from aion.server.files.a2a import A2AFileTransformer
 from aion.server.files.storage import UploadFailure
 from aion.server.tasks import A2ATaskDeduplicator
@@ -21,7 +20,6 @@ from aion.server.a2a.utils import (
     is_same_message,
     task_history_message_ids,
 )
-from aion.server.settings import app_settings
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -85,11 +83,9 @@ class AionEventPipeline:
     with a status of its own gets no status without a message or details in
     front of it.
 
-    Three things of the SDK's own artifacts happen here, the same for every
+    Two things of the SDK's own artifacts happen here, the same for every
     executor:
 
-    - the chunks of the streamed answer are joined to one per
-      ``AION_STREAM_DELTA_INTERVAL`` (``StreamDeltaCoalescer``);
     - every thought is added to the task's thoughts: the first one of the
       task creates the artifact, the rest extend it;
     - a task that completes without having produced anything but messages
@@ -104,7 +100,6 @@ class AionEventPipeline:
             task_started: bool = False,
             response_parameters: ResponseServiceParameters = ResponseServiceParameters(),
             prior_message_ids: frozenset[str] = frozenset(),
-            stream_delta_interval: Optional[float] = None,
     ):
         """
         Args:
@@ -116,8 +111,6 @@ class AionEventPipeline:
                 executor makes a resumed task before its turn runs.
             response_parameters: Verified activation for this invocation only.
             prior_message_ids: Existing history/status messages to preserve.
-            stream_delta_interval: Seconds between two chunks of the streamed
-                answer; ``AION_STREAM_DELTA_INTERVAL`` by default.
         """
         self._queue = event_queue
         self._task_updater = task_updater
@@ -127,9 +120,6 @@ class AionEventPipeline:
         self._response_parameters = response_parameters
         self._prior_message_ids = prior_message_ids
         self._deduplicator: Optional[A2ATaskDeduplicator] = None
-        self._coalescer = StreamDeltaCoalescer(
-            app_settings.stream_delta_interval if stream_delta_interval is None else stream_delta_interval
-        )
         self._answer = AssistantAnswer()
         self._task_has_thoughts: Optional[bool] = None
 
@@ -164,15 +154,9 @@ class AionEventPipeline:
                 # The FAILED that follows is the task's outcome, not the state
                 # this event declared with the file still in it.
                 event.status.state = TaskState.TASK_STATE_WORKING
-            for ready in self._coalescer.take(event):
-                await self._deliver(ready)
+            await self._deliver(event)
         if failures:
             raise OutboundFileNotStoredError(failures, produced)
-
-    async def flush(self) -> None:
-        """Deliver what is still held back: when the turn ends, and before the server writes the task's outcome itself."""
-        for ready in self._coalescer.drain():
-            await self._deliver(ready)
 
     async def _deliver(self, event) -> None:
         event = await self._deduplicate_event(event)

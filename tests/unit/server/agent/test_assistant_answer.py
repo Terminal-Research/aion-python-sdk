@@ -22,6 +22,8 @@ from a2a.types import (
 from google.protobuf.json_format import MessageToDict
 
 from aion.core.a2a.enums import A2AMetadataKey, ArtifactId, ArtifactName, MessageType
+from aion.core.a2a.extensions.messaging import MessageActionPayload
+from aion.core.constants.a2a import MESSAGING_EXTENSION_URI_V1
 from aion.server.agent.execution.assistant_answer import AssistantAnswer, is_result_artifact
 
 TASK_ID = "task-1"
@@ -137,7 +139,42 @@ class TestTheAnswer:
         answer = _answer_after(last)
 
         assert list(answer.artifact.extensions) == ["https://example.invalid/ext"]
-        assert MessageToDict(answer.artifact.metadata) == {"source": "planner"}
+        assert MessageToDict(answer.artifact.metadata) == {
+            "source": "planner",
+            A2AMetadataKey.SOURCE_MESSAGE_ID.value: last.message_id,
+        }
+
+    def test_the_answer_names_the_message_it_was_copied_from(self):
+        last = _message("done")
+
+        answer = _answer_after(_message("looking"), last)
+
+        assert answer.artifact.metadata[A2AMetadataKey.SOURCE_MESSAGE_ID.value] == last.message_id
+
+    def test_the_answer_leaves_out_the_messages_routing_target(self):
+        """The message was delivered where its target says; a copy carrying the target would be delivered again."""
+        routing = MessageActionPayload(trajectory="reply", context_id="C1", reply_to_message_id="m-1")
+        last = _message("done")
+        last.parts.append(routing.to_part())
+        last.extensions.append(MESSAGING_EXTENSION_URI_V1)
+
+        answer = _answer_after(last)
+
+        assert [part.text for part in answer.artifact.parts] == ["done"]
+        assert list(answer.artifact.extensions) == []
+
+    def test_the_answer_keeps_the_extension_another_messaging_payload_needs(self):
+        routing = MessageActionPayload(trajectory="conversation", context_id="C1")
+        file_part = Part(url="https://files.example/report.pdf", media_type="application/pdf")
+        file_part.metadata.update({MESSAGING_EXTENSION_URI_V1: {"schema": "#FileActionPayload"}})
+        last = _message("here", metadata=None)
+        last.parts.extend([file_part, routing.to_part()])
+        last.extensions.append(MESSAGING_EXTENSION_URI_V1)
+
+        answer = _answer_after(last)
+
+        assert len(answer.artifact.parts) == 2
+        assert list(answer.artifact.extensions) == [MESSAGING_EXTENSION_URI_V1]
 
     def test_the_answer_does_not_share_parts_with_the_message(self):
         last = _message("done")

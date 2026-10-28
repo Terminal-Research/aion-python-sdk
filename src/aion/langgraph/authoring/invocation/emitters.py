@@ -40,7 +40,10 @@ def emit_artifact(
     Args:
         writer: LangGraph StreamWriter from node signature
         artifact: Pre-built a2a.types.Artifact to emit
-        routing: Optional delivery routing target (MessageActionPayload)
+        routing: Optional delivery routing target (MessageActionPayload), added
+                 to the artifact as a data part beside its content. With
+                 ``append``, give it on the chunk that starts the artifact only:
+                 every chunk's parts stay in the artifact.
         append: If True, append to previously sent artifact
         is_last_chunk: If True, this is the final chunk
         metadata: Optional user-defined metadata merged into A2A Artifact.metadata.
