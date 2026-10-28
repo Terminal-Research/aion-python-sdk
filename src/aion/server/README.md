@@ -604,6 +604,11 @@ its console and, when `LOGSTASH_HOST` and `LOGSTASH_PORT` are configured, to
 Logstash. `LOG_LEVEL` defaults to `INFO`; Logstash excludes debug records and
 records without a running version, invocation distribution, or trace.
 
+The proxy stays silent for HTTP 200 responses to `/health/` and `/health/system/`.
+Other requests are logged at debug level, or warning for proxy-owned failures,
+with the method, path, status, client address, and supplied `Host`, `User-Agent`,
+`X-Forwarded-For`, and `X-Real-IP` headers.
+
 `VERSION_ID` identifies startup, shutdown, scheduled jobs, and background threads
 without requiring an incoming request. Within a request, its version and tracing
 context take precedence. Logs emitted before a version is supplied or resolved

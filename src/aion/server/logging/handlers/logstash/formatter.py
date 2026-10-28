@@ -113,6 +113,12 @@ class AionLogstashFormatter(LogstashFormatter):
                 "a2a.taskStatus.state": TaskState.Name(record.a2a_task_status) if record.a2a_task_status is not None else None,
             },
         }
+        # Original proxy request details must not collide with the collector's
+        # own HTTP transport fields added during ingestion.
+        proxy_request = getattr(record, "proxy_request", None)
+        if isinstance(proxy_request, dict):
+            message["proxy_request"] = proxy_request
+
         # Add exception information if present
         if record.exc_info:
             exc_type, exc_value, exc_traceback = record.exc_info

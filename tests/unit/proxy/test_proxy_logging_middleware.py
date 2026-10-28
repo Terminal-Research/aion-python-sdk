@@ -31,6 +31,8 @@ class FakeRequest:
         self.method = method
         self.url = FakeUrl(path)
         self.state = FakeState()
+        self.headers = {}
+        self.client = None
         if logged_elsewhere:
             self.state.logged_elsewhere = True
 
@@ -150,3 +152,53 @@ def test_an_unknown_agent_is_one_warning_from_the_proxy(caplog):
 
     assert response.status_code == 404
     assert [r.levelno for r in _proxy_records(caplog)] == [logging.WARNING]
+
+
+@pytest.mark.parametrize("user_agent", ["ELB-HealthChecker/2.0", "kube-probe/1.35"])
+def test_root_probe_diagnostics_survive_logstash_formatting(caplog, user_agent):
+    import json
+
+    from aion.server.logging.handlers.logstash import AionLogstashFormatter
+
+    app = FastAPI()
+    app.add_middleware(ProxyLoggingMiddleware)
+    with TestClient(app, client=("172.31.1.2", 43210)) as client:
+        with caplog.at_level(logging.WARNING, logger="aion.proxy"):
+            response = client.get("/?token=query-secret", headers={
+                "user-agent": user_agent,
+                "host": "172.31.2.3:8080",
+                "x-forwarded-for": "192.0.2.1, 192.0.2.2",
+                "x-real-ip": "192.0.2.1",
+                "authorization": "Bearer auth-secret",
+                "cookie": "session=cookie-secret",
+                "x-private": "private-secret",
+            })
+    assert response.status_code == 404
+    record, = _proxy_records(caplog)
+    payload = AionLogstashFormatter(client_id="test", host_name="test").format(record)
+    details = json.loads(payload)["proxy_request"]
+    assert details == {
+        "method": "GET", "path": "/", "status_code": 404,
+        "client_host": "172.31.1.2", "client_port": 43210,
+        "user_agent": user_agent, "host": "172.31.2.3:8080",
+        "forwarded_for": "192.0.2.1, 192.0.2.2", "real_ip": "192.0.2.1",
+    }
+    assert user_agent in record.getMessage()
+    assert "secret" not in payload
+
+
+def test_diagnostics_bound_and_sanitize_untrusted_values(middleware, caplog):
+    from starlette.requests import Request
+
+    request = Request({
+        "type": "http", "method": "GET", "path": "/\nforged",
+        "headers": [(b"user-agent", b"probe\r\n\x1b[31m" + b"x" * 1000)],
+        "query_string": b"secret=value", "client": None,
+    })
+    with caplog.at_level(logging.WARNING, logger="aion.proxy"):
+        middleware._log_request_response(request, FakeResponse(404))
+    record, = _proxy_records(caplog)
+    assert len(record.proxy_request["user_agent"]) == 512
+    assert "client_host" not in record.proxy_request
+    assert all(c not in record.getMessage() for c in ("\n", "\r", "\x1b"))
+    assert "secret" not in record.getMessage()
