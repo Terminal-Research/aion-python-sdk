@@ -3,6 +3,7 @@ import logging
 import asyncio
 import signal
 from contextlib import suppress
+from enum import Enum
 from typing import Optional
 
 from aion.api.http import aion_jwt_manager
@@ -27,6 +28,17 @@ from aion.cli.utils.cli_messages import generate_welcome_message
 from aion.cli.utils.port_manager import AionPortManager
 
 logger = logging.getLogger(__name__)
+
+
+class ServeOutcome(Enum):
+    """How :meth:`ServeHandler.run` ended; the command's exit status follows it."""
+
+    NOT_STARTED = "not_started"
+    """No agent started."""
+    STOPPED = "stopped"
+    """A shutdown was requested while the deployment served."""
+    AGENTS_STOPPED = "agents_stopped"
+    """Every agent exited while the deployment served."""
 
 
 class ServeHandler:
@@ -112,7 +124,7 @@ class ServeHandler:
             proxy_port_search_end: int = 8100,
             startup_timeout: int = 30,
             startup_span: StartupSpan | None = None,
-    ) -> bool:
+    ) -> ServeOutcome:
         """
         Complete lifecycle: startup, broadcast config, monitor, and shutdown.
 
@@ -129,8 +141,10 @@ class ServeHandler:
             startup_span: Attempt opened by the CLI before importing the application.
 
         Returns:
-            False when no agent started, so the command can fail; True once a
-            deployment that started has shut down.
+            ``NOT_STARTED`` when no agent started; ``AGENTS_STOPPED`` when the
+            deployment started and every agent exited while it served;
+            ``STOPPED`` once a requested shutdown ended it. The command fails
+            on the first two.
         """
         try:
             self._setup_signal_handlers()
@@ -158,7 +172,7 @@ class ServeHandler:
 
             # Exit if no agents started successfully
             if not successful_agents:
-                return False
+                return ServeOutcome.NOT_STARTED
 
             # Announce this deployment to the platform, in the background so the
             # agents keep serving while registration retries. Tracked rather than
@@ -170,8 +184,9 @@ class ServeHandler:
             self._track_background_task(self._platform_link_task, "platform link")
 
             # Monitor processes (blocking call until shutdown)
-            await self._monitor()
-            return True
+            if await self._monitor():
+                return ServeOutcome.AGENTS_STOPPED
+            return ServeOutcome.STOPPED
 
         finally:
             # Ensure graceful shutdown
@@ -387,7 +402,7 @@ class ServeHandler:
             startup_timeout=self.startup_timeout,
         )
 
-    async def _monitor(self) -> None:
+    async def _monitor(self) -> bool:
         """
         Monitor running processes and handle restarts.
 
@@ -398,6 +413,10 @@ class ServeHandler:
         a shutdown signal arrives (see :meth:`_setup_signal_handlers`). The
         actual teardown is left to the caller's ``finally``, so it happens once
         and on the event loop rather than inside a signal handler.
+
+        Returns:
+            bool: True when monitoring ended because every agent stopped,
+            False when a shutdown was requested
 
         Raises:
             RuntimeError: If called before startup()
@@ -428,6 +447,9 @@ class ServeHandler:
                     await task
                 except asyncio.CancelledError:
                     pass
+        # A requested shutdown wins when both finished together: the agents
+        # stopping is then part of that shutdown.
+        return not self._shutdown_requested.is_set()
 
     async def shutdown(self, timeout: Optional[float] = None) -> bool:
         """
