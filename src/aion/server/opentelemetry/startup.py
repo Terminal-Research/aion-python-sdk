@@ -57,6 +57,9 @@ class StartupSpan:
         init_tracing()
         self.name = name
         self.finished = False
+        # Outcome passed to ``finish``: tells a later error while serving
+        # apart from the startup failure it already reported.
+        self.outcome: str | None = None
         # An empty explicit context also prevents forked processes from using
         # an inherited current span when this launch has no parent.
         parent = _propagator.extract(carrier or {}, context=context.Context())
@@ -93,3 +96,4 @@ class StartupSpan:
                 logger.info("%s %s", self.name, outcome)
         self.span.end()
         self.finished = True
+        self.outcome = outcome
