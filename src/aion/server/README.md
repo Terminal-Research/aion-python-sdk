@@ -634,7 +634,8 @@ child still records its own eventual outcome. A later managed-process restart
 captures fresh launch context instead of replaying the original carrier.
 
 Requests, the platform connection, and ongoing background maintenance do not
-inherit startup tracing. Database pool workers start without tracing context;
+inherit startup tracing. An error that stops `aion serve` after its startup
+finished is logged outside the startup trace, not as a failed start. Database pool workers start without tracing context;
 the awaited pool readiness check retains the initialization span. Agent and
 proxy lifespan failures log their cause before leaving their startup span.
 Code that launches long-lived background tasks during

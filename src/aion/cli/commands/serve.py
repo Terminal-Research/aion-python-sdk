@@ -165,13 +165,25 @@ async def serve(
             str(missing_server_extra_error("aion serve", ex))
         ) from ex
     except Exception as ex:
-        if startup is not None:
-            with startup.activate():
-                logger.exception(f"Failed to start server: {str(ex)}")
-            startup.finish("failed", ex)
-        else:
+        if startup is not None and startup.outcome not in (None, "failed"):
+            # The deployment started and this error stopped it while serving,
+            # so it is reported outside the startup trace.
+            logger.exception(f"AION system stopped on an error: {str(ex)}")
+            raise click.ClickException(f"AION system stopped on an error: {str(ex)}")
+        if startup is None:
             logger.exception(f"Failed to start server: {str(ex)}")
+        elif not startup.finished:
+            with startup.activate():
+                logger.error(f"Failed to start server: {str(ex)}")
+            # Logs the traceback once, with the failed outcome.
+            startup.finish("failed", ex)
+        # A startup the handler finished as failed has already logged its cause.
         raise click.ClickException(f"Unable to start AION system: {str(ex)}")
+    except BaseException as ex:
+        # An interrupt or a cancellation still ends the attempt it interrupted.
+        if startup is not None and not startup.finished:
+            startup.finish("failed", ex)
+        raise
 
     # A deployment none of whose agents started has failed, whatever stopped
     # them - a wrong DEPLOYMENT_ID among other settings - and a supervisor has
