@@ -215,16 +215,26 @@ class TestDeduplicateMessage:
         assert result is not None
         assert not result.HasField("metadata")
 
-    def test_reference_task_ids_are_normalized_and_deduplicated(self):
-        """Verify that references include the canonical task once."""
+    def test_a_message_names_its_task_by_task_id_and_gets_no_reference_to_it(self):
+        """``task_id`` says which task a message belongs to; ``reference_task_ids`` would only repeat it."""
+        ded = A2ATaskDeduplicator(_make_task(task_id="canonical"))
+
+        result = ded.deduplicate_message(_make_message("msg-1", task_id="agent-task"))
+
+        assert result is not None
+        assert result.task_id == "canonical"
+        assert list(result.reference_task_ids) == []
+
+    def test_the_senders_references_stay_as_they_are(self):
+        """References name other tasks the sender points to; the deduplicator leaves them alone."""
         ded = A2ATaskDeduplicator(_make_task(task_id="canonical"))
         msg = _make_message("msg-1")
-        msg.reference_task_ids.extend(["", "canonical", "other", "other"])
+        msg.reference_task_ids.extend(["other", "", "canonical", "other"])
 
         result = ded.deduplicate_message(msg)
 
         assert result is not None
-        assert list(result.reference_task_ids) == ["canonical", "other"]
+        assert list(result.reference_task_ids) == ["other", "", "canonical", "other"]
 
     def test_apply_processed_item_message_updates_known_ids(self):
         """Verify that apply processed item message updates known IDs."""
@@ -492,7 +502,6 @@ class TestDeduplicateTask:
         result = ded.deduplicate_task(patch)
 
         assert result.status.message.message_id == "known-status-msg"
-        assert list(result.status.message.reference_task_ids) == ["task-1"]
         assert [m.message_id for m in result.history] == ["known-status-msg"]
 
     def test_status_message_is_not_added_to_history_in_task_merge(self):

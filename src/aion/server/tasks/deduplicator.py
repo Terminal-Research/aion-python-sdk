@@ -182,8 +182,10 @@ class A2ATaskDeduplicator:
     def deduplicate_message(self, message: Message) -> Message | None:
         """Normalize a message relative to the original task.
 
-        The message is rewritten to reference the original task. Messages are
-        deduplicated strictly by `message_id`. If a message does not have an
+        The message is rewritten to belong to the original task: its task and
+        context ids become the task's. Its ``reference_task_ids`` name other
+        tasks and stay as the sender set them. Messages are deduplicated
+        strictly by `message_id`. If a message does not have an
         identifier, it is always treated as unique.
 
         Args:
@@ -200,11 +202,10 @@ class A2ATaskDeduplicator:
         return normalized
 
     def _normalize_message(self, message: Message) -> Message:
-        """Return a copy of the message rewritten to reference the original task."""
+        """Return a copy of the message rewritten to belong to the original task."""
         normalized = copy.deepcopy(message)
         normalized.task_id = self._original_task.id
         normalized.context_id = self._original_task.context_id
-        self._normalize_reference_task_ids(normalized, self._original_task.id)
         self._sanitize_struct_field(normalized, "metadata")
         return normalized
 
@@ -462,23 +463,6 @@ class A2ATaskDeduplicator:
         new_struct = Struct()
         ParseDict(sanitized, new_struct)
         getattr(message, field_name).CopyFrom(new_struct)
-
-    @classmethod
-    def _normalize_reference_task_ids(cls, message: Message, original_task_id: str) -> None:
-        """Ensure the original task ID is present once in the reference list."""
-        reference_task_ids: list[str] = [original_task_id]
-        reference_task_ids.extend(message.reference_task_ids)
-
-        deduplicated: list[str] = []
-        seen: set[str] = set()
-        for task_id in reference_task_ids:
-            if not task_id or task_id in seen:
-                continue
-            deduplicated.append(task_id)
-            seen.add(task_id)
-
-        del message.reference_task_ids[:]
-        message.reference_task_ids.extend(deduplicated)
 
     def _message_is_duplicate(self, message: Message) -> bool:
         """Return `True` when a message ID is already represented by the task."""

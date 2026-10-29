@@ -378,8 +378,7 @@ async def test_a_reply_emitted_twice_before_the_task_is_stored_reaches_the_clien
 
     A LangGraph node that sends a reply and returns it in its state emits the
     same message twice. Nothing consumes the queue here, so the task is never
-    stored: the repeat is still dropped, and the reply is normalized against
-    the task like any other.
+    stored: the repeat is still dropped.
     """
     pipeline = _pipeline(queue)
     reply = _message("which environment?", message_id="m-1")
@@ -390,7 +389,6 @@ async def test_a_reply_emitted_twice_before_the_task_is_stored_reaches_the_clien
     assert await store.get(TASK_ID, call_context) is None
     carried = [e.status.message for e in _status_events(queue) if e.status.HasField("message")]
     assert [m.message_id for m in carried] == ["m-1"]
-    assert list(carried[0].reference_task_ids) == [TASK_ID]
 
 
 async def test_every_artifact_chunk_is_streamed(manager, queue) -> None:
