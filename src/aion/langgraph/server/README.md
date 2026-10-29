@@ -78,6 +78,8 @@ async def planner(state: State) -> dict:
 
 Each model call streams under its own message id, and LangGraph does not repeat a message once its chunks went out. A chunk under a new id therefore ends the previous call's section of `aion:stream-delta`, and the new call opens a section of its own. The streamed text stays that artifact; it is never sent as a reply.
 
+`thread.reply()` with an async iterator returns the whole message that ended its section. A node may keep it in the conversation by returning it into `messages`, as it would any reply; LangGraph then sends that message on the `messages` stream once more, and the server does not send it again.
+
 ---
 
 ## Outbound — `a2a_outbox`

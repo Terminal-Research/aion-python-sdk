@@ -13,15 +13,20 @@ DEFAULT_CHUNKS = 3
 DEFAULT_THOUGHTS = 3
 
 
-async def stream(invocation: Invocation) -> None:
-    """Stream one answer as ``n`` chunks."""
+async def stream(invocation: Invocation) -> dict:
+    """Stream one answer as ``n`` chunks, and keep it in ``messages``.
+
+    A LangGraph agent keeps its conversation by returning its replies into
+    the graph's state, and LangGraph sends what a node returns on its
+    ``messages`` stream; the streamed answer has to stay one answer anyway.
+    """
     count = invocation.command.int_argument(DEFAULT_CHUNKS)
 
     async def chunk_source() -> AsyncIterator[str]:
         for chunk in stream_chunks(count):
             yield chunk
 
-    await invocation.thread.reply(chunk_source())
+    return {"messages": [await invocation.thread.reply(chunk_source())]}
 
 
 async def think(invocation: Invocation) -> None:

@@ -313,6 +313,35 @@ async def _run_graph(*nodes) -> list:
     return [event async for event in executor.execute({"messages": [HumanMessage(content="hi")]}, {})]
 
 
+async def test_a_streamed_reply_the_node_keeps_in_state_is_not_sent_again() -> None:
+    """A node keeps its conversation the usual way, by returning its reply into
+    ``messages``; LangGraph then sends the message that ended the thread's
+    stream once more, and that copy is not a reply of its own."""
+    thread = Thread(
+        context=Mock(inbox=None, event=None),
+        context_id="C123",
+        parent_context_id=None,
+        network="Slack",
+        default_reply_target="C123",
+    )
+
+    async def answer():
+        yield "It "
+        yield "is sunny."
+
+    async def respond(state):
+        return {"messages": [await thread.reply(answer())]}
+
+    events = await _run_graph(("respond", respond))
+
+    assert _deltas(events) == [
+        ("It ", False, False),
+        ("is sunny.", True, False),
+        ("", True, True),
+    ]
+    assert _messages(events) == []
+
+
 async def test_an_internal_nodes_answer_reaches_the_client_too() -> None:
     """The contract's deliberate consequence: any node's AI message is a reply."""
 

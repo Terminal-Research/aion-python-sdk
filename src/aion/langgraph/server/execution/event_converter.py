@@ -67,6 +67,10 @@ class LangGraphA2AConverter:
         self._section_open = False
         self._section_ended = False
         self._graph_stream_id: Optional[str] = None
+        # Ids of the messages that ended a section. A node that keeps such a
+        # message in the graph's state makes LangGraph send it again on the
+        # "messages" stream; that copy is the same answer, not a new reply.
+        self._section_closer_ids: set[str] = set()
 
     def convert(self, event_type: str, event_data: Any) -> list[A2AAgentEvent]:
         """Convert a LangGraph event to zero or more A2A events.
@@ -111,8 +115,16 @@ class LangGraphA2AConverter:
         ends the section, and its text, which the chunks carried already, is
         not sent again. A finished message of a call that did not stream is
         a message.
+
+        ``Thread.reply()`` with an async iterator streams its chunks through
+        the "custom" stream and ends the section with the whole message. A
+        node that returns that message into the graph's state gets it sent
+        once more here, as LangGraph does with every message a node returns;
+        a message that already ended a section produces no event.
         """
         if not isinstance(message, AIMessage):
+            return []
+        if not isinstance(message, AIMessageChunk) and message.id in self._section_closer_ids:
             return []
 
         events: list[A2AAgentEvent] = []
@@ -209,6 +221,8 @@ class LangGraphA2AConverter:
         where the message's routing target says when it has one.
         """
         events = self._close_section()
+        if message.id:
+            self._section_closer_ids.add(message.id)
         parts = LcToA2AConverter.from_message(message)
         rest = [part for part in parts if part.WhichOneof("content") != "text"]
         if rest:
