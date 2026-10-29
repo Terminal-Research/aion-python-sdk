@@ -3,6 +3,8 @@
 Focus areas:
   - An error raised once the deployment is serving stays out of the startup
     trace and is not reported as a failed start.
+  - Agents that stop while serving fail the command, and the startup keeps
+    its outcome.
   - A startup failure is logged once with its traceback, whether the command
     or the handler finishes the attempt.
   - A cancellation before serving still ends the startup attempt.
@@ -22,6 +24,7 @@ from opentelemetry.sdk.trace import TracerProvider
 
 import aion.core.logging
 import aion.server.logging
+from aion.cli.handlers.serve import ServeOutcome
 from aion.server.logging.filters import ServerAionContextFilter
 
 serve_module = importlib.import_module("aion.cli.commands.serve")
@@ -69,6 +72,7 @@ def _configure(monkeypatch, load=None, run=None):
 
     handlers = types.ModuleType("aion.cli.handlers.serve")
     handlers.ServeHandler = _Handler
+    handlers.ServeOutcome = ServeOutcome
     monkeypatch.setitem(sys.modules, "aion.cli.handlers.serve", handlers)
     monkeypatch.setattr(serve_module, "AionConfigReader", _Reader)
 
@@ -97,6 +101,28 @@ async def test_error_while_serving_stays_out_of_the_startup_trace(monkeypatch, r
     assert stopped.trace_id is None
     assert stopped.exc_info
     assert not any("Failed to start server" in message for message in _messages(records))
+
+
+async def test_agents_stopping_while_serving_fail_the_command_not_the_startup(monkeypatch, records):
+    async def run(startup):
+        startup.finish("ready")
+        return ServeOutcome.AGENTS_STOPPED
+
+    _configure(monkeypatch, run=run)
+    with pytest.raises(click.ClickException, match="All agents stopped while serving"):
+        await _serve()
+
+    assert "application.startup ready" in _messages(records)
+    assert "application.startup failed" not in _messages(records)
+
+
+async def test_requested_shutdown_ends_the_command_cleanly(monkeypatch, records):
+    async def run(startup):
+        startup.finish("ready")
+        return ServeOutcome.STOPPED
+
+    _configure(monkeypatch, run=run)
+    await _serve()
 
 
 async def test_handler_startup_failure_is_logged_once(monkeypatch, records):

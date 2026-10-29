@@ -119,7 +119,7 @@ async def serve(
         with startup.activate():
             # Application imports validate database settings. Keep them inside the
             # logged failure path, after the logging handlers are ready.
-            from aion.cli.handlers.serve import ServeHandler
+            from aion.cli.handlers.serve import ServeHandler, ServeOutcome
 
             # Load configuration
             reader = AionConfigReader()
@@ -139,7 +139,7 @@ async def serve(
 
             # Run complete lifecycle through handler
             handler = ServeHandler()
-        started = await handler.run(
+        outcome = await handler.run(
             config=config,
             proxy_port=strategy.proxy_port,
             port_range_start=strategy.port_range_start,
@@ -188,5 +188,9 @@ async def serve(
     # A deployment none of whose agents started has failed, whatever stopped
     # them - a wrong DEPLOYMENT_ID among other settings - and a supervisor has
     # to see that in the exit status, not a clean exit.
-    if not started:
+    if outcome is ServeOutcome.NOT_STARTED:
         raise click.ClickException("No agent started; the errors above say why")
+    # Agents that exit by themselves end a deployment that was serving. The
+    # startup keeps its outcome; the exit status reports the failure.
+    if outcome is ServeOutcome.AGENTS_STOPPED:
+        raise click.ClickException("All agents stopped while serving; the errors above say why")

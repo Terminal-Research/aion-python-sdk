@@ -400,6 +400,66 @@ if __name__ == '__main__':
                    for event in events), output
 
 
+@pytest.mark.parametrize("method", ["spawn", "fork"])
+def test_cli_fails_when_every_agent_stops_after_a_ready_startup(tmp_path, log_receiver, method):
+    if method not in multiprocessing.get_all_start_methods():
+        pytest.skip(f"{method} is unavailable")
+    port, events = log_receiver
+    env = _environment(port)
+    (tmp_path / "aion.yaml").write_text(
+        'aion:\n  agents:\n    probe:\n      path: "probe_agent:create_agent"\n', encoding="utf-8"
+    )
+    (tmp_path / "probe_agent.py").write_text('''
+from typing import TypedDict
+from langgraph.graph import StateGraph, START, END
+
+class State(TypedDict):
+    text: str
+
+def create_agent():
+    graph = StateGraph(State)
+    graph.add_node("echo", lambda state: state)
+    graph.add_edge(START, "echo")
+    graph.add_edge("echo", END)
+    return graph
+''', encoding="utf-8")
+    with socket.socket() as reserved:
+        reserved.bind(("127.0.0.1", 0))
+        proxy_port = reserved.getsockname()[1]
+    code, output = _run(tmp_path, f'''
+import multiprocessing
+
+if __name__ == '__main__':
+    multiprocessing.set_start_method({method!r})
+    import asyncio
+    import os
+    import signal
+    from aion.cli.handlers.serve import ServeHandler
+    from aion.cli.services.serve.monitoring import ServeMonitoringService
+    from aion.cli.cli import cli
+
+    ServeMonitoringService.check_interval = 0.2
+    supervise = ServeHandler._monitor
+
+    async def monitor(self):
+        agent = self.process_manager.get_process_info("probe").process
+        os.kill(agent.pid, signal.SIGKILL)
+        await asyncio.to_thread(agent.join, 10)
+        return await supervise(self)
+
+    ServeHandler._monitor = monitor
+    cli()
+''', env, "serve", "--port", str(proxy_port), "--port-range-start", "40000",
+        "--port-range-end", "41000", "--startup-timeout", "20")
+    assert code == 1, output
+    assert "All agents stopped while serving" in output
+    messages = [event["message"] for event in events]
+    assert "application.startup ready" in messages, output
+    assert "application.startup failed" not in messages
+    stopped, = [event for event in events if event["message"] == "All agents have stopped, exiting..."]
+    assert not stopped.get("trace.id")
+
+
 @pytest.mark.skipif("fork" not in multiprocessing.get_all_start_methods(), reason="fork unavailable")
 @pytest.mark.parametrize(("exit_kind", "expected_code"), [("return", 0), ("raise", 1), ("exit", 7)])
 def test_managed_child_delivers_last_log_before_exit(tmp_path, log_receiver, exit_kind, expected_code):
