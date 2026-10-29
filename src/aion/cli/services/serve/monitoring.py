@@ -1,7 +1,7 @@
 """Service for monitoring and restarting AION processes"""
 import asyncio
+from collections.abc import Awaitable, Callable
 
-from aion.core.config import AionConfig
 from aion.server.services import BaseExecuteService
 from aion.server.utils.processes import ProcessManager
 
@@ -14,12 +14,15 @@ class ServeMonitoringService(BaseExecuteService):
     cleaning up dead processes and restarting the proxy if needed.
     """
 
+    check_interval: float = 10.0
+    """Seconds between two checks of the managed processes."""
+
     async def execute(
         self,
         successful_agents: list[str],
         proxy_started: bool,
-        config: AionConfig,
         process_manager: ProcessManager,
+        restart_proxy: Callable[[], Awaitable[bool]],
     ) -> None:
         """
         Monitor running processes and handle restarts.
@@ -27,15 +30,16 @@ class ServeMonitoringService(BaseExecuteService):
         Args:
             successful_agents: List of successfully started agent IDs
             proxy_started: Whether proxy was started initially
-            config: AION configuration instance
             process_manager: ProcessManager instance
+            restart_proxy: Starts the proxy again on its reserved port;
+                resolves to True once the new proxy confirms its startup
         """
         proxy_alive = proxy_started
 
         try:
             while True:
                 # Use asyncio.sleep for async compatibility
-                await asyncio.sleep(10)
+                await asyncio.sleep(self.check_interval)
 
                 # Clean up any dead processes
                 process_manager.cleanup_dead_processes()
@@ -61,7 +65,7 @@ class ServeMonitoringService(BaseExecuteService):
                 # Restart proxy if it died but agents are still running
                 if proxy_started and not proxy_alive and alive_count > 0:
                     self.logger.warning("Proxy server died, attempting to restart...")
-                    if await self._restart_proxy(config, process_manager):
+                    if await restart_proxy():
                         self.logger.debug("Proxy server restarted successfully")
                         proxy_alive = True
                     else:
@@ -70,19 +74,3 @@ class ServeMonitoringService(BaseExecuteService):
 
         except KeyboardInterrupt:
             self.logger.debug("Received shutdown signal...")
-
-    @staticmethod
-    async def _restart_proxy(config: AionConfig, process_manager: ProcessManager) -> bool:
-        """
-        Restart the proxy server.
-
-        Args:
-            config: AION configuration
-            process_manager: ProcessManager instance
-
-        Returns:
-            bool: True if proxy restarted successfully
-        """
-        from .proxy_startup import ServeProxyStartupService
-
-        return await ServeProxyStartupService().execute(config, process_manager)

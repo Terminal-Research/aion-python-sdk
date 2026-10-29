@@ -636,7 +636,9 @@ Startup spans finish at readiness or failure; the launcher records a failed
 startup if any required child fails. With `--startup-timeout 0`, the launcher
 records `application.startup launched`, without claiming readiness, while each
 child still records its own eventual outcome. A later managed-process restart
-captures fresh launch context instead of replaying the original carrier.
+captures fresh launch context instead of replaying the original carrier: when
+the proxy dies while agents still serve, the launcher starts it again on its
+reserved port, and the new proxy opens its own `proxy.startup` trace.
 
 Requests, the platform connection, and ongoing background maintenance do not
 inherit startup tracing. An error that stops `aion serve` after its startup

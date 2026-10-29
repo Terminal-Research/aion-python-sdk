@@ -208,6 +208,33 @@ async def test_each_agent_gets_its_whole_shutdown_budget(handler, monkeypatch):
     assert execute.await_args.kwargs["timeout"] == 7.0
 
 
+class TestProxyRestart:
+    async def test_monitor_restarts_the_proxy_through_the_handler(self, handler):
+        with patch.object(serve, "ServeMonitoringService") as MockService:
+            MockService.return_value.execute = AsyncMock(return_value=None)
+            await handler._monitor()
+
+        kwargs = MockService.return_value.execute.await_args.kwargs
+        assert kwargs["restart_proxy"] == handler._restart_proxy
+
+    async def test_restart_reuses_the_proxy_port_reservation_and_agents(self, handler):
+        handler.port_manager = MagicMock()
+        handler.proxy_port = 8080
+        handler.proxy_agents = {"agent-1": "http://0.0.0.0:8081"}
+        handler.startup_timeout = 12
+        with patch.object(serve, "ServeProxyStartupService") as MockService:
+            MockService.return_value.execute = AsyncMock(return_value=True)
+            assert await handler._restart_proxy() is True
+
+        MockService.return_value.execute.assert_awaited_once_with(
+            port=8080,
+            agents={"agent-1": "http://0.0.0.0:8081"},
+            process_manager=handler.process_manager,
+            port_manager=handler.port_manager,
+            startup_timeout=12,
+        )
+
+
 class TestStartupOutcome:
     async def test_run_reports_that_no_agent_started(self, handler):
         """The command turns this into a failing exit status; a clean exit would hide it."""

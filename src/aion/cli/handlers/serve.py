@@ -46,6 +46,11 @@ class ServeHandler:
         self.successful_agents: list[str] = []
         self.failed_agents: list[str] = []
         self.proxy_started: bool = False
+        # What a restarted proxy needs: its reserved port, the agents it
+        # routes to, and the startup confirmation timeout.
+        self.proxy_port: Optional[int] = None
+        self.proxy_agents: dict[str, str] = {}
+        self.startup_timeout: int = 30
         self._platform_link_task: Optional[asyncio.Task] = None
         self._websocket_manager: Optional[AionWebSocketManager] = None
         self._shutdown_requested = asyncio.Event()
@@ -342,6 +347,9 @@ class ServeHandler:
                     agent_url = f"http://0.0.0.0:{agent_port}"
                     agents[agent_id] = agent_url
 
+            self.proxy_port = proxy_port
+            self.proxy_agents = agents
+            self.startup_timeout = startup_timeout
             self.proxy_started = await ServeProxyStartupService().execute(
                 port=proxy_port,
                 agents=agents,
@@ -359,6 +367,25 @@ class ServeHandler:
             pass
 
         return self.successful_agents, self.failed_agents, self.proxy_started
+
+    async def _restart_proxy(self) -> bool:
+        """Start the proxy again on its reserved port, for the agents it served.
+
+        The launcher keeps the proxy's port reserved for the life of the
+        deployment, so the new process receives the same listening socket.
+        The monitor runs outside the startup trace: the restarted proxy opens a
+        fresh ``proxy.startup`` trace rather than joining the original launch.
+
+        Returns:
+            bool: True once the restarted proxy confirms its startup
+        """
+        return await ServeProxyStartupService().execute(
+            port=self.proxy_port,
+            agents=self.proxy_agents,
+            process_manager=self.process_manager,
+            port_manager=self.port_manager,
+            startup_timeout=self.startup_timeout,
+        )
 
     async def _monitor(self) -> None:
         """
@@ -382,8 +409,8 @@ class ServeHandler:
             ServeMonitoringService().execute(
                 successful_agents=self.successful_agents,
                 proxy_started=self.proxy_started,
-                config=self.config,
                 process_manager=self.process_manager,
+                restart_proxy=self._restart_proxy,
             )
         )
         signalled = asyncio.ensure_future(self._shutdown_requested.wait())
