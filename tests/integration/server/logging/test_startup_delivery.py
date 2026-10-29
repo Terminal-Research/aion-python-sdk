@@ -308,6 +308,98 @@ if __name__ == '__main__':
     assert all(not event.get("trace.id") for event in runtime)
 
 
+@pytest.mark.parametrize("method", ["spawn", "fork"])
+def test_cli_restarts_a_dead_proxy_with_a_fresh_startup_trace(tmp_path, log_receiver, method):
+    if method not in multiprocessing.get_all_start_methods():
+        pytest.skip(f"{method} is unavailable")
+    port, events = log_receiver
+    env = _environment(port)
+    (tmp_path / "aion.yaml").write_text(
+        'aion:\n  agents:\n    probe:\n      path: "probe_agent:create_agent"\n', encoding="utf-8"
+    )
+    (tmp_path / "probe_agent.py").write_text('''
+from typing import TypedDict
+from langgraph.graph import StateGraph, START, END
+
+class State(TypedDict):
+    text: str
+
+def create_agent():
+    graph = StateGraph(State)
+    graph.add_node("echo", lambda state: state)
+    graph.add_edge(START, "echo")
+    graph.add_edge("echo", END)
+    return graph
+''', encoding="utf-8")
+    with socket.socket() as reserved:
+        reserved.bind(("127.0.0.1", 0))
+        proxy_port = reserved.getsockname()[1]
+    code, output = _run(tmp_path, f'''
+import multiprocessing
+
+if __name__ == '__main__':
+    multiprocessing.set_start_method({method!r})
+    import asyncio
+    import os
+    import signal
+    import httpx
+    from aion.cli.handlers.serve import ServeHandler
+    from aion.cli.services.serve.monitoring import ServeMonitoringService
+    from aion.cli.cli import cli
+
+    ServeMonitoringService.check_interval = 0.2
+    supervise = ServeHandler._monitor
+
+    async def delivered(client, message, count):
+        while True:
+            events = (await client.get("http://127.0.0.1:{port}/startup-events")).json()
+            if sum(event["message"] == message for event in events) == count:
+                return
+            await asyncio.sleep(0.05)
+
+    async def monitor(self):
+        async with asyncio.timeout(30), httpx.AsyncClient() as client:
+            # SIGKILL drops what the proxy has not shipped yet.
+            await delivered(client, "proxy.startup ready", 1)
+        proxy = self.process_manager.get_process_info("proxy").process
+        os.kill(proxy.pid, signal.SIGKILL)
+        await asyncio.to_thread(proxy.join, 10)
+        monitoring = asyncio.ensure_future(supervise(self))
+        try:
+            async with asyncio.timeout(30), httpx.AsyncClient() as client:
+                # The restarted proxy serves on the port the launcher kept reserved.
+                while True:
+                    try:
+                        response = await client.get(
+                            f"http://127.0.0.1:{proxy_port}/agents/probe/.well-known/agent-card.json")
+                        if response.status_code == 200:
+                            break
+                    except httpx.TransportError:
+                        pass
+                    await asyncio.sleep(0.1)
+                await delivered(client, "proxy.startup ready", 2)
+        finally:
+            monitoring.cancel()
+
+    ServeHandler._monitor = monitor
+    cli()
+''', env, "serve", "--port", str(proxy_port), "--port-range-start", "40000",
+        "--port-range-end", "41000", "--startup-timeout", "20")
+    assert code == 0, output
+    parent, = [event for event in events if event["message"] == "application.startup ready"]
+    first, restarted = [event for event in events if event["message"] == "proxy.startup ready"]
+    assert first["trace.id"] == parent["trace.id"]
+    assert first["parent.span.id"] == parent["span.id"]
+    assert restarted["trace.id"] and restarted["trace.id"] != parent["trace.id"]
+    assert not restarted.get("parent.span.id")
+    assert restarted["process.pid"] != first["process.pid"]
+    _assert_attribution(restarted)
+    died, = [event for event in events if event["message"].startswith("Proxy server died")]
+    assert not died.get("trace.id")
+    assert not any(event["message"].startswith(("Failed to start server", "AION system stopped"))
+                   for event in events), output
+
+
 @pytest.mark.skipif("fork" not in multiprocessing.get_all_start_methods(), reason="fork unavailable")
 @pytest.mark.parametrize(("exit_kind", "expected_code"), [("return", 0), ("raise", 1), ("exit", 7)])
 def test_managed_child_delivers_last_log_before_exit(tmp_path, log_receiver, exit_kind, expected_code):
