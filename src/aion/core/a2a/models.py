@@ -14,6 +14,7 @@ from pydantic import ConfigDict, RootModel, Field, field_serializer, model_seria
 
 from aion.core.a2a import A2ABaseModel
 from aion.core.utils.pydantic import Protobuf
+from aion.core.deployment import RuntimeIdentity
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
@@ -239,4 +240,8 @@ class A2AManifest(A2ABaseModel):
     endpoints: Dict[str, str] = Field(
         default_factory=dict,
         description="A map of agent identifiers to relative paths"
+    )
+    runtime: Optional[RuntimeIdentity] = Field(
+        default=None,
+        description="Frozen identity of the runtime serving this manifest.",
     )

@@ -92,13 +92,20 @@ class AionDeploymentRegisterVersionService(BaseExecuteService):
         Returns:
             bool: True once registration succeeded, False if it was refused
         """
+        identity = app_settings.runtime_identity()
+        version_id = str(identity.version_id) if identity else app_settings.version_id
+        identity_arguments = (
+            {"runtime_attempt_id": str(identity.runtime_attempt_id)}
+            if identity else {}
+        )
         attempt = 0
 
         while True:
             attempt += 1
             try:
                 async with AionGqlContextClient() as client:
-                    await client.register_version(version_id=app_settings.version_id)
+                    await client.register_version(
+                        version_id=version_id, **identity_arguments)
             except Exception as ex:
                 failure = self._describe_failure(ex)
 

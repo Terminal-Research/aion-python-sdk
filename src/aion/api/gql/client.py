@@ -324,7 +324,11 @@ class AionGqlClient:
         ):
             yield chunk
 
-    async def register_version(self, version_id: Optional[str] = None):
+    async def register_version(
+        self,
+        version_id: Optional[str] = None,
+        runtime_attempt_id: Optional[str] = None,
+    ):
         """Register deployment version metadata with the Aion API.
 
         Starts backend-side registration for the deployment version. Runtime
@@ -335,10 +339,14 @@ class AionGqlClient:
             version_id (Optional[str]): Version ID to register. User-authenticated
                 callers should provide this value. Version-authenticated callers
                 can omit it so the backend uses the authenticated version.
+            runtime_attempt_id (Optional[str]): Exact hosted runtime attempt
+                captured at startup. Omitted for runtimes without this proof.
         """
         from .generated.graphql_client.custom_fields import AgentBehaviorFields
 
-        register_field = Mutation.register_version(version_id=version_id).fields(
+        register_field = Mutation.register_version(
+            version_id=version_id, runtime_attempt_id=runtime_attempt_id,
+        ).fields(
             AgentBehaviorFields.id,
             AgentBehaviorFields.organization_id,
             AgentBehaviorFields.deployment_id,

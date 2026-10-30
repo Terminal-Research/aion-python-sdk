@@ -6,7 +6,8 @@ import httpx
 import pytest
 
 from tests.scenarios.commands import help_text
-from tests.scenarios.harness import ScenarioClient, ServeProcess, control_plane
+from tests.scenarios.harness import ScenarioClient, ServeProcess, ServeVariant, control_plane
+from tests.scenarios.harness.serve import serve
 
 pytestmark = pytest.mark.smoke
 
@@ -25,6 +26,27 @@ def test_manifest_lists_the_agent(server: ServeProcess) -> None:
     payload = httpx.get(f"{server.base_url}/.well-known/manifest.json", timeout=10.0).json()
 
     assert server.variant.agent_id in str(payload)
+
+
+def test_every_registration_response_identifies_the_same_runtime(framework) -> None:
+    """Separate proxy and agent processes prove the same admitted input."""
+    version = "00000000-0000-0000-0000-000000000001"
+    attempt = "00000000-0000-0000-0000-000000000002"
+    variant = ServeVariant(env={
+        "VERSION_ID": version, "AION_RUNTIME_ATTEMPT_ID": attempt,
+    })
+    with serve(framework, variant) as runtime:
+        for path in ("/.well-known/manifest.json", "/health/system/", "/health/"):
+            response = httpx.get(f"{runtime.base_url}{path}", timeout=10)
+            assert response.status_code == 200
+            assert response.headers["Aion-Runtime-Attempt-Id"] == attempt
+            if path != "/health/":
+                assert response.json()["runtime"] == {
+                    "versionId": version, "runtimeAttemptId": attempt}
+        for path in ("/.well-known/agent-card.json", "/.well-known/configuration.json", "/health/"):
+            response = httpx.get(f"{runtime.agent_url()}{path}", timeout=10)
+            assert response.status_code == 200
+            assert response.headers["Aion-Runtime-Attempt-Id"] == attempt
 
 
 def test_agent_card_is_served_through_the_proxy(server: ServeProcess) -> None:

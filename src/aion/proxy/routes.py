@@ -67,6 +67,8 @@ class ProxyRouter:
         @self.app.get(
             SYSTEM_HEALTH_CHECK_URL,
             response_model=SystemHealthResponse,
+            response_model_exclude=(
+                {"runtime"} if self.ap_server.runtime_identity is None else None),
             summary="Agents health check",
             description="Check health status of all configured agents"
         )
@@ -78,7 +80,8 @@ class ProxyRouter:
                 Dictionary with status of proxy and all agents
             """
             result = await self.request_handler.check_agents_health()
-            return SystemHealthResponse(**result)
+            return SystemHealthResponse(
+                **result, runtime=self.ap_server.runtime_identity)
 
     def _register_manifest(self) -> None:
         """Register manifest endpoint"""
@@ -86,6 +89,8 @@ class ProxyRouter:
         @self.app.get(
             MANIFEST_URL,
             response_model=A2AManifest,
+            response_model_exclude=(
+                {"runtime"} if self.ap_server.runtime_identity is None else None),
             summary="Manifest",
             description="Get a manifest from the deployment"
         )
@@ -96,7 +101,9 @@ class ProxyRouter:
             Returns:
                 RootManifest containing API version, service name, and agent endpoints
             """
-            return generate_a2a_manifest(agent_ids=list(self.ap_server.agent_urls.keys()))
+            manifest = generate_a2a_manifest(
+                agent_ids=list(self.ap_server.agent_urls.keys()))
+            return manifest.model_copy(update={"runtime": self.ap_server.runtime_identity})
 
     def _register_proxy(self) -> None:
         """Register proxy endpoint for forwarding requests to agents"""

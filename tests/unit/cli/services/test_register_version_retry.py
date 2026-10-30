@@ -9,6 +9,7 @@ red anywhere. The loop around it is a ``while True`` and needs no test of its ow
 from __future__ import annotations
 
 import logging
+from uuid import UUID
 
 import pytest
 
@@ -188,3 +189,35 @@ async def test_retrying_is_not_capped(monkeypatch):
 
     assert await register_version.AionDeploymentRegisterVersionService().execute([])
     assert calls["count"] == 9
+
+
+async def test_registration_retries_keep_the_original_runtime_identity(monkeypatch):
+    """An ambiguous registration result must retry for the same runtime input."""
+    version = "00000000-0000-0000-0000-000000000001"
+    attempt = UUID("00000000-0000-0000-0000-000000000002")
+    monkeypatch.setattr(register_version.app_settings, "version_id", version)
+    monkeypatch.setattr(register_version.app_settings, "runtime_attempt_id", attempt)
+    calls = []
+
+    class FakeClient:
+        async def register_version(self, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                monkeypatch.setattr(register_version.app_settings, "version_id", None)
+                monkeypatch.setattr(register_version.app_settings, "runtime_attempt_id", None)
+                raise httpx.ConnectTimeout("")
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+    monkeypatch.setattr(
+        register_version, "AionGqlContextClient", lambda **kwargs: FakeClient())
+
+    assert await register_version.AionDeploymentRegisterVersionService().execute([])
+    assert calls == [
+        {"version_id": version, "runtime_attempt_id": str(attempt)},
+        {"version_id": version, "runtime_attempt_id": str(attempt)},
+    ]

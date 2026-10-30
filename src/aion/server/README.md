@@ -28,6 +28,26 @@ its own endpoint stays protected.
 MCP proxy, and rejects any other key - see the [AppRegistry
 guide](https://docs.aion.to/sdk/python/extensibility/app-registry).
 
+## Hosted runtime identity
+
+The control plane can supply `AION_RUNTIME_ATTEMPT_ID` with `VERSION_ID`.
+Both must be UUIDs. The attempt identifies one exact hosted runtime input;
+replicas share it, and a replacement input gets a different attempt. The SDK
+does not generate this identity or read it from incoming requests.
+
+After startup environment preparation, the proxy and each agent capture an
+immutable identity. Registration captures the same input before its retry
+loop and sends it as the optional `runtimeAttemptId` GraphQL argument.
+Manifest and system-health responses include
+`runtime: {"versionId": "...", "runtimeAttemptId": "..."}`. Origin responses
+carry `Aion-Runtime-Attempt-Id`; the proxy preserves an agent's header when
+forwarding and never substitutes its own for missing or older agent proof.
+
+With no attempt configured, registration omits that argument and responses
+omit the runtime identity and header. This keeps remote runtimes and older
+control planes compatible. A configured malformed attempt or missing Version
+UUID fails startup instead of silently reverting to registration without proof.
+
 ## Who a task belongs to
 
 Every task belongs to one owner: the caller who started it. The owner is
