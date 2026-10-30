@@ -21,6 +21,7 @@ from a2a.types import (
 )
 from google.protobuf.json_format import MessageToDict
 
+from aion.core.a2a import text_artifact
 from aion.core.a2a.enums import A2AMetadataKey, ArtifactId, ArtifactName, MessageType
 from aion.core.a2a.extensions.messaging import MessageActionPayload
 from aion.core.constants.a2a import MESSAGING_EXTENSION_URI_V1
@@ -188,6 +189,11 @@ class TestTheAnswer:
 class TestNoAnswer:
     def test_a_result_of_the_turn_means_no_answer(self):
         assert _answer_after(_message("here it is"), _artifact("report")) is None
+
+    def test_a_text_answer_sent_as_an_artifact_means_no_answer(self):
+        answer = TaskArtifactUpdateEvent(task_id=TASK_ID, context_id=CONTEXT_ID, artifact=text_artifact("pong"))
+
+        assert _answer_after(answer) is None
 
     def test_a_whole_task_with_a_result_means_no_answer(self):
         task = Task(id=TASK_ID, context_id=CONTEXT_ID, artifacts=[Artifact(artifact_id="report")])

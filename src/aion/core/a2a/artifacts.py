@@ -111,4 +111,36 @@ def data_artifact(
     )
 
 
-__all__ = ["ARTIFACT_VERSION_KEY", "url_artifact", "file_artifact", "data_artifact"]
+def text_artifact(
+    text: str,
+    *,
+    name: str | None = None,
+    artifact_id: str | None = None,
+) -> Artifact:
+    """Build an Artifact carrying a single text part.
+
+    An agent answers with text this way when the answer is the task's
+    result: a task that has an artifact of its own gets no
+    ``aion:assistant-answer`` copied from its last message.
+
+    Args:
+        text: The text of the artifact.
+        name: Human-readable artifact name. Defaults to "text".
+        artifact_id: Explicit artifact ID. Auto-generated if not provided.
+
+    Returns:
+        a2a.types.Artifact with a single TextPart.
+
+    Raises:
+        TypeError: If text is not a string.
+    """
+    if not isinstance(text, str):
+        raise TypeError(f"'text' must be str, got {type(text).__name__}")
+    return Artifact(
+        artifact_id=artifact_id or str(uuid4()),
+        name=name or "text",
+        parts=[Part(text=text)],
+    )
+
+
+__all__ = ["ARTIFACT_VERSION_KEY", "url_artifact", "file_artifact", "data_artifact", "text_artifact"]
