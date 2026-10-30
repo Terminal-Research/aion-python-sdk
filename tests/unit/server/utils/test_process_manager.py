@@ -640,3 +640,25 @@ class TestProcessGroupTermination:
             assert mgr.terminate_process("p1") is True
 
         process.terminate.assert_called_once()
+
+
+class TestManagedTargetLoggingShutdown:
+    def test_flushes_after_normal_return_and_preserves_result(self):
+        from aion.server.utils.processes.process_manager import _run_in_process_group
+
+        with patch('os.setsid'), patch('logging.shutdown') as shutdown:
+            assert _run_in_process_group(lambda x, *, y: x + y, 2, y=3) == 5
+        shutdown.assert_called_once_with()
+
+    @pytest.mark.parametrize('error', [RuntimeError('startup failed'), SystemExit(7), KeyboardInterrupt()])
+    def test_flushes_on_every_exception_without_changing_it(self, error):
+        from aion.server.utils.processes.process_manager import _run_in_process_group
+
+        def fail():
+            raise error
+
+        with patch('os.setsid'), patch('logging.shutdown') as shutdown:
+            with pytest.raises(type(error)) as caught:
+                _run_in_process_group(fail)
+        assert caught.value is error
+        shutdown.assert_called_once_with()

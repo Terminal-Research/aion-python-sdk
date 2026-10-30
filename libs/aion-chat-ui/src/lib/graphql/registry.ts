@@ -20,6 +20,24 @@ export interface RegistryAgentIdentity {
 	updatedAt: string;
 }
 
+export type RegistryWorkspace = NonNullable<
+	NonNullable<CurrentUserQuery["user"]>["homeOrganization"]
+>;
+
+export interface RegistryAccount {
+	userId: string;
+	homeWorkspaceId?: string;
+	workspaces: RegistryWorkspace[];
+}
+
+export interface RegistryRequestOptions {
+	environmentId: AionEnvironmentId;
+	accessToken: string;
+	fetchImpl?: typeof fetch;
+	graphQLUrl?: string;
+	logger?: ChatSessionLogger;
+}
+
 export const CURRENT_USER_QUERY = `
 query CurrentUser {
 	user {
@@ -27,6 +45,14 @@ query CurrentUser {
 		homeOrganization {
 			id
 			name
+			organizationType
+		}
+		memberships {
+			organization {
+				id
+				name
+				organizationType
+			}
 		}
 		agentIdentity {
 			id
@@ -171,13 +197,9 @@ function logSkippedIdentity(
 	});
 }
 
-export async function fetchRegistryAgentIdentities(options: {
-	environmentId: AionEnvironmentId;
-	accessToken: string;
-	fetchImpl?: typeof fetch;
-	graphQLUrl?: string;
-	logger?: ChatSessionLogger;
-}): Promise<RegistryAgentIdentity[]> {
+export async function fetchRegistryAccount(
+	options: RegistryRequestOptions
+): Promise<RegistryAccount> {
 	const graphQLUrl = options.graphQLUrl ?? getGraphQLHttpUrl(options.environmentId);
 	const bootstrap = await runLoginBootstrap({
 		environmentId: options.environmentId,
@@ -213,7 +235,29 @@ export async function fetchRegistryAgentIdentities(options: {
 
 	options.logger?.debug("registry.current_user.loaded", summarizeCurrentUser(user));
 
-	const organizationId = user.homeOrganization?.id ?? user.agentIdentity.organizationId;
+	const workspaces = new Map<string, RegistryWorkspace>();
+	const organizations = [
+		user.homeOrganization,
+		...(user.memberships ?? []).map((item) => item.organization)
+	];
+	for (const organization of organizations) {
+		if (organization) workspaces.set(organization.id, organization);
+	}
+	return {
+		userId: user.id,
+		...(user.homeOrganization ? { homeWorkspaceId: user.homeOrganization.id } : {}),
+		workspaces: [...workspaces.values()].sort((left, right) =>
+			(left.name ?? left.id).localeCompare(right.name ?? right.id) || left.id.localeCompare(right.id)
+		)
+	};
+}
+
+/** The caller resolves this organization against freshly loaded memberships. */
+export async function fetchRegistryAgentIdentities(
+	options: RegistryRequestOptions & { organizationId: string }
+): Promise<RegistryAgentIdentity[]> {
+	const graphQLUrl = options.graphQLUrl ?? getGraphQLHttpUrl(options.environmentId);
+	const { organizationId } = options;
 	const catalog = await executeGraphQL<
 		AgentCatalogIdentitiesQuery,
 		AgentCatalogIdentitiesQueryVariables
@@ -232,14 +276,6 @@ export async function fetchRegistryAgentIdentities(options: {
 	});
 
 	const identities = new Map<string, RegistryAgentIdentity>();
-	const personalIdentity = normalizeIdentity(user.agentIdentity);
-	if (personalIdentity) {
-		identities.set(personalIdentity.id, personalIdentity);
-	} else {
-		logSkippedIdentity(options.logger, user.agentIdentity, "missing_a2a_url", {
-			source: "current_user"
-		});
-	}
 
 	for (const detail of catalog.data?.agentIdentityDetails ?? []) {
 		const identity = normalizeIdentity(detail.identity);

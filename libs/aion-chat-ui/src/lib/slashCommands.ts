@@ -56,6 +56,14 @@ export const RESPONSE_MODE_OPTIONS: readonly SlashCommandOption<ResponseMode>[] 
 
 export const SLASH_COMMANDS = [
 	{
+		id: "workspace",
+		label: "/workspace",
+		description: "Choose the workspace whose agents to browse.",
+		title: "Workspace",
+		subtitle: "Select a workspace by name or ID.",
+		options: []
+	},
+	{
 		id: "session",
 		label: "/session",
 		description: "Retry guest authentication or explicitly replace a guest session.",

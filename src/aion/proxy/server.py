@@ -5,8 +5,10 @@ Simple proxy server that routes requests to different AION agents based on agent
 import aion.core.logging.base  # noqa: F401
 import logging
 import uvicorn
+from aion.server.opentelemetry.startup import StartupSpan, startup_phase
+from aion.server.startup import StartupServer
 from aion.server.settings import app_settings
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from fastapi import FastAPI
 from typing import Dict, Optional, Callable
 
@@ -24,18 +26,21 @@ class AionAgentProxyServer:
     based on agent_id in the URL path
     """
 
-    def __init__(self, agents: Dict[str, str], startup_callback: Optional[Callable] = None):
+    def __init__(self, agents: Dict[str, str], startup_callback: Optional[Callable] = None,
+                 startup_span: StartupSpan | None = None):
         """
         Initialize proxy server with agent mappings
 
         Args:
             agents: Dictionary mapping agent_id to agent_url (e.g., {"my-agent": "http://0.0.0.0:8001"})
-            startup_callback: Optional callback to call after server lifespan startup completes
+            startup_callback: Notify the launcher after sockets are listening.
+            startup_span: Startup attempt owned by the launching process.
         """
         self.agent_urls = agents
         self.http_client_manager = ProxyHttpClient()
         self.request_handler: Optional[RequestHandler] = None
         self.startup_callback = startup_callback
+        self.startup_span = startup_span or StartupSpan("proxy.startup")
 
         # Log agent mappings
         for agent_id, agent_url in self.agent_urls.items():
@@ -57,19 +62,23 @@ class AionAgentProxyServer:
     async def _lifespan(self, app: FastAPI):
         """
         Lifespan event handler for startup and shutdown.
-        Initializes HTTP client, request handler, routes, and calls startup callback.
+        Initializes the HTTP client, request handler, and routes. The server
+        acknowledges readiness separately, after binding its sockets.
         """
         # Startup
-        async with self.http_client_manager.lifespan() as http_client:
-            # Initialize request handler with HTTP client
-            self.request_handler = RequestHandler(self.agent_urls, http_client)
+        async with AsyncExitStack() as resources:
+            with startup_phase("proxy.initialize", self.startup_span.context):
+                try:
+                    http_client = await resources.enter_async_context(self.http_client_manager.lifespan())
+                    # Initialize request handler with HTTP client
+                    self.request_handler = RequestHandler(self.agent_urls, http_client)
 
-            # Setup routes
-            ProxyRouter(agent_proxy_server=self, request_handler=self.request_handler).register_routes()
-
-            # Call startup callback if provided - server is now ready
-            if self.startup_callback is not None:
-                self.startup_callback()
+                    # Setup routes
+                    ProxyRouter(agent_proxy_server=self, request_handler=self.request_handler).register_routes()
+                except BaseException:
+                    # Record the cause while the initialization span is current.
+                    logger.exception("Proxy lifespan initialization failed")
+                    raise
 
             yield
 
@@ -101,9 +110,12 @@ class AionAgentProxyServer:
             access_log=False
         )
 
-        server = uvicorn.Server(config)
+        server = StartupServer(
+            config, self.startup_span, "Proxy", logger, self.startup_callback
+        )
         if sockets is not None:
             server.servers = []  # Clear default servers
 
-        logger.info(f"Starting AION Proxy Server on http://{host}:{port}")
+        with self.startup_span.activate():
+            logger.info(f"Starting AION Proxy Server on http://{host}:{port}")
         await server.serve(sockets=sockets)

@@ -619,11 +619,11 @@ describe("discoverAgentSources", () => {
 		});
 
 		expect(result.agents).toEqual([]);
-		expect(result.errors[0]?.error).toBe("Aion Control Plane did not respond.");
+		expect(result.errors[0]?.error).toBe("Workspace membership lookup failed: Aion Control Plane did not respond.");
 		expect(result.sources[0]).toMatchObject({
 			type: "registry",
 			status: "unavailable",
-			lastError: "Aion Control Plane did not respond."
+			lastError: "Workspace membership lookup failed: Aion Control Plane did not respond."
 		});
 		expect(
 			findLoggedEvent(logger, "graphql.response.http_error")?.data
@@ -716,7 +716,7 @@ describe("discoverAgentSources", () => {
 		expect(result.sources[0]).toMatchObject({
 			type: "registry",
 			status: "unavailable",
-			lastError: "Unexpected error."
+			lastError: expect.stringContaining("Unexpected error.")
 		});
 	});
 

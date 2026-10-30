@@ -1,6 +1,7 @@
 """Console (stream) log handler with agent/task context and ANSI color output."""
 
 import logging
+import sys
 from datetime import datetime
 
 from aion.core.logging.base import AionLogRecord
@@ -22,14 +23,17 @@ class LogStreamFormatter(logging.Formatter):
 
     def format(self, record: AionLogRecord) -> str:
         """Format a log record with timestamp, level, context prefix, and ANSI color."""
-        from aion.server.agent.aion_agent import agent_manager
+        # Startup errors can precede the agent module's first successful
+        # import. Formatting a record must not retry that failing import.
+        module = sys.modules.get("aion.server.agent.aion_agent")
+        agent_manager = getattr(module, "agent_manager", None)
 
         # Format timestamp
         timestamp = datetime.fromtimestamp(record.created).strftime('%Y-%m-%d %H:%M:%S,%f')[:-3]
 
         # Build context prefixes
         context_parts = []
-        if agent_manager.agent_id:
+        if agent_manager is not None and agent_manager.agent_id:
             context_parts.append(f"Agent [{agent_manager.agent_id}]")
         elif role := get_process_role():
             # The CLI and the proxy share this console with the agents and have

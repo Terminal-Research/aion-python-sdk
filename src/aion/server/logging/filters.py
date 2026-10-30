@@ -1,6 +1,7 @@
 """Logging filter that injects OpenTelemetry and execution-scope context into log records."""
 
 import logging
+import sys
 
 from aion.core.logging.base import AionLogRecord
 
@@ -122,9 +123,11 @@ class ServerAionContextFilter(logging.Filter):
         try:
             record.aion_version_id = record.aion_version_id or cls._get_app_version_id()
 
-            from aion.server.agent.execution.scope import get_execution_scope
-
-            scope = get_execution_scope()
+            # Logging must not import the application it is reporting a startup
+            # failure for. Request context can only exist once this is loaded.
+            module = sys.modules.get("aion.server.agent.execution.scope")
+            get_execution_scope = getattr(module, "get_execution_scope", None)
+            scope = get_execution_scope() if get_execution_scope else None
             if not scope:
                 return
 

@@ -8,9 +8,9 @@ import type {
 	TaskArtifactUpdateEvent,
 	TaskStatusUpdateEvent
 } from "@a2a-js/sdk";
-import { roleToJSON } from "@a2a-js/sdk";
+import { Role, roleToJSON } from "@a2a-js/sdk";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Box, useApp, useInput, useStdout } from "ink";
+import { Box, Text, useApp, useInput, useStdout } from "ink";
 
 import type { ChatCliOptions } from "./args.js";
 import {
@@ -75,6 +75,7 @@ import {
 import {
 	discoverAgentSources,
 	selectDiscoveredAgent,
+	type RegistrySelection,
 	toPersistedAgents
 } from "./lib/agents/discovery.js";
 import {
@@ -87,8 +88,12 @@ import {
 } from "./lib/agents/model.js";
 import {
 	resolveSessionFilePath,
-	saveCompletedExchange
+	saveCompletedExchange, loadContextSession, copyContextSession
 } from "./lib/agents/sessionStore.js";
+import { type ChatOperation, ChatOperationGate } from "./lib/chatOperationGate.js";
+import { eligibleLegacyRegistryAgent } from "./lib/workspaces.js";
+import { fetchRegistryAccount, type RegistryAccount } from "./lib/graphql/registry.js";
+import { restoredTranscriptEntries } from "./lib/restoredTranscript.js";
 import { createChatSessionLogger } from "./lib/sessionLogger.js";
 import {
 	formatProtocolPayload,
@@ -332,6 +337,7 @@ interface CopyableResponse {
 
 type ExactSlashCommand =
 	| { kind: "session"; action: "new" | "retry"; sourceKey?: string }
+	| { kind: "workspace"; selector?: string }
 	| { kind: "login" }
 	| { kind: "copy" }
 	| { kind: "clear" }
@@ -340,6 +346,16 @@ type ExactSlashCommand =
 
 function parseExactSlashCommand(value: string): ExactSlashCommand | undefined {
 	const [command, environmentId, extra, trailing] = value.trim().split(/\s+/);
+	if (command === "/workspace") {
+		const raw = value.trim().slice("/workspace".length).trim();
+		if (!raw) return { kind: "workspace" };
+		const quote = raw[0];
+		if (quote === '"' || quote === "'") {
+			if (raw.length < 2 || raw.at(-1) !== quote) return { kind: "invalid", message: "Close the workspace name's quotation marks." };
+			return { kind: "workspace", selector: raw.slice(1, -1) };
+		}
+		return { kind: "workspace", selector: raw };
+	}
 	if (command === "/session" && (environmentId === "new" || environmentId === "retry")) {
 		return { kind: "session", action: environmentId, sourceKey: extra };
 	}
@@ -382,6 +398,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	const [chatSettings, setChatSettings] = useState<ChatSettings>(
 		initialSettingsResult.settings
 	);
+	const chatSettingsRef = useRef(chatSettings);
+	const operationGate = useRef(new ChatOperationGate()).current;
 	const [selectedEnvironment, setSelectedEnvironment] = useState<AionEnvironmentId>(
 		initialSettingsResult.settings.selectedEnvironment
 	);
@@ -422,6 +440,13 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		ReturnType<typeof createPushNotificationConfig> | undefined
 	>();
 	const [discoveredAgents, setDiscoveredAgents] = useState<DiscoveredAgentRecord[]>([]);
+	const [registrySelection, setRegistrySelection] = useState<RegistrySelection>();
+	const [workspaceAccount, setWorkspaceAccount] = useState<RegistryAccount>();
+	const workspaceSelectorRef = useRef(options.workspace);
+	const discoveryLifetimeRef = useRef(new AbortController());
+	const connectionAbortRef = useRef<AbortController | undefined>(undefined);
+	const workspaceConnectionRef = useRef<{ agentKey: string; operation: ChatOperation; finish(): void } | undefined>(undefined);
+	const [workspaceConnectionNonce, setWorkspaceConnectionNonce] = useState(0);
 	const [agentSources, setAgentSources] = useState<Record<string, AgentSourceRecord>>(
 		activeEnvironmentSettings.agentSources
 	);
@@ -542,6 +567,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		return () => {
 			welcomeLifetimeRef.current.abort();
 			foregroundLifetimeRef.current.abort();
+			operationGate.cancel();
+			discoveryLifetimeRef.current.abort();
 			chatSessionLogger.info("chat.session.ended", {
 				mode: "interactive",
 				environmentId: environmentAtStart
@@ -554,6 +581,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	}, []);
 
 	const persistSettings = (nextSettings: ChatSettings): void => {
+		chatSettingsRef.current = nextSettings;
 		setChatSettings(nextSettings);
 		const warning = saveChatSettings(nextSettings);
 		if (warning) {
@@ -565,16 +593,37 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		environmentId: AionEnvironmentId,
 		update: Partial<(typeof chatSettings.environments)[AionEnvironmentId]>
 	): void => {
-		const current = chatSettings.environments[environmentId];
+		const latest = chatSettingsRef.current;
+		const current = latest.environments[environmentId];
 		persistSettings({
-			...chatSettings,
+			...latest,
 			environments: {
-				...chatSettings.environments,
+				...latest.environments,
 				[environmentId]: {
 					...current,
 					...update
 				}
 			}
+		});
+	};
+
+	const persistAgentSelection = (agent: DiscoveredAgentRecord): void => {
+		if (isTransientAgentSource(agent.source)) return;
+		const environment = chatSettingsRef.current.environments[selectedEnvironment];
+		const registry = agent.registry;
+		persistEnvironmentSettings(selectedEnvironment, {
+			selectedAgentKey: agent.agentKey, selectedAgentId: agent.id,
+			...(registry ? { registryAccounts: {
+				...environment.registryAccounts,
+				[registry.accountScope]: {
+					...environment.registryAccounts?.[registry.accountScope],
+					workspaceId: registry.workspace.id,
+					selectedAgentKeys: {
+						...environment.registryAccounts?.[registry.accountScope]?.selectedAgentKeys,
+						[registry.workspace.id]: agent.agentKey
+					}
+				}
+			} } : {})
 		});
 	};
 
@@ -601,6 +650,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		// Retire the old conversation's responses, not the reusable connection
 		// or independent welcomes whose results belong to their original thread.
 		foregroundLifetimeRef.current.abort();
+		if (operationGate.kind === "reply") operationGate.cancel();
 		foregroundLifetimeRef.current = new AbortController();
 		setEntries([]);
 		setTranscriptGeneration((current) => current + 1);
@@ -615,6 +665,12 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	};
 
 	const reloadEnvironmentState = (environmentId: AionEnvironmentId, origin?: string): void => {
+		operationGate.cancel();
+		discoveryLifetimeRef.current.abort();
+		workspaceSelectorRef.current = undefined;
+		setRegistrySelection(undefined);
+		setWorkspaceAccount(undefined);
+		setSlashSubmenuId(undefined);
 		credentials.cancelPending();
 		welcomeLifetimeRef.current.abort();
 		welcomeLifetimeRef.current = new AbortController();
@@ -622,7 +678,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		lastConnectionNoticeRef.current = undefined;
 		connectedAgentKeyRef.current = undefined;
 		credentialScopeRef.current = undefined;
-		const nextSettings = selectChatEnvironment(chatSettings, environmentId, origin);
+		const nextSettings = selectChatEnvironment(chatSettingsRef.current, environmentId, origin);
 		const nextEnvironmentSettings = nextSettings.environments[environmentId];
 		persistSettings(nextSettings);
 		setSelectedEnvironment(environmentId);
@@ -666,10 +722,14 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		return {
 			title: command.title,
 			subtitle: command.subtitle,
-			options: command.options,
+			options: command.id === "workspace" ? (workspaceAccount?.workspaces ?? []).map((workspace) => ({
+				value: workspace.id,
+				label: workspace.name + (registrySelection?.workspace.id === workspace.id ? " (current)" : ""),
+				description: workspace.id
+			})) : command.options,
 			selectedIndex: selectedSlashSubmenuIndex
 		};
-	}, [selectedSlashSubmenuIndex, slashSubmenuId]);
+	}, [selectedSlashSubmenuIndex, slashSubmenuId, workspaceAccount, registrySelection]);
 
 	const agentSuggestions = useMemo<AgentSuggestionView[]>(() => {
 		if (slashQuery !== undefined || slashSubmenuId || !isCursorAtDraftEnd) {
@@ -739,25 +799,36 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	}, [slashCommands]);
 
 	useEffect(() => {
-		const optionCount = getSlashCommandById(slashSubmenuId)?.options.length ?? 0;
+		const optionCount = slashSubmenu?.options.length ?? 0;
 		setSelectedSlashSubmenuIndex((current) => {
 			if (optionCount === 0) {
 				return 0;
 			}
 			return Math.min(current, optionCount - 1);
 		});
-	}, [slashSubmenuId]);
+	}, [slashSubmenuId, workspaceAccount]);
 
 	const refreshAgentDiscovery = async ({
 		announceExplicitSourceErrors = true,
-		isClosed = () => false
+		isClosed = () => false,
+		workspaceSelector = workspaceSelectorRef.current,
+		workspaceChange
 	}: {
 		announceExplicitSourceErrors?: boolean;
 		isClosed?: () => boolean;
+		workspaceSelector?: string;
+		workspaceChange?: { operation: ChatOperation; finish(): void; requireRegistry?: boolean };
 	} = {}): Promise<AgentSourceRecord[] | undefined> => {
+		discoveryLifetimeRef.current.abort();
+		const discoveryLifetime = new AbortController();
+		discoveryLifetimeRef.current = discoveryLifetime;
+		const signal = AbortSignal.any([credentials.signal, discoveryLifetime.signal,
+			...(workspaceChange ? [workspaceChange.operation.signal] : [])]);
+		const obsolete = () => isClosed() || signal.aborted;
 		try {
-			const runtimeSources = mergeAgentSources(
-				activeEnvironmentSettings.agentSources,
+			const latestEnvironment = chatSettingsRef.current.environments[selectedEnvironment];
+			const runtimeSources = agentEndpointUrl ? [createExplicitAgentSource(agentEndpointUrl)] : mergeAgentSources(
+				latestEnvironment.agentSources,
 				selectedEnvironment,
 				agentEndpointUrl,
 				controlPlaneOrigin
@@ -776,13 +847,15 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				{
 					environmentId: selectedEnvironment,
 					controlPlaneOrigin,
+					workspaceSelector,
+					registryPreferences: latestEnvironment.registryAccounts,
 					controlPlaneAccessTokenProvider: (request) =>
 						getStoredAccessToken(selectedEnvironment, {
 							forceRefresh: request?.forceRefresh,
 							controlPlaneOrigin
 						}),
-					graphQLFetchImpl: credentials.fetch(createDefaultRegistryAgentSource(selectedEnvironment, controlPlaneOrigin)),
-					sourceFetchImpl: (source) => credentials.fetch(source),
+					graphQLFetchImpl: credentials.fetch(createDefaultRegistryAgentSource(selectedEnvironment, controlPlaneOrigin), signal),
+					sourceFetchImpl: (source) => credentials.fetch(source, signal),
 					logger: chatSessionLogger
 				}
 			);
@@ -792,10 +865,29 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				agentCount: discovery.agents.length,
 				errorCount: discovery.errors.length
 			});
-			if (isClosed() || credentials.signal.aborted) {
+			if (obsolete()) {
 				return undefined;
 			}
 
+			if (workspaceChange && workspaceChange.requireRegistry !== false && !discovery.registry) {
+				appendNotification(discovery.errors.find((error) => error.source.type === "registry")?.error ?? "Workspace lookup failed. Please try again.");
+				return undefined;
+			}
+			const switchingScope = !!(workspaceChange || registrySelection) && (registrySelection?.accountScope !== discovery.registry?.accountScope ||
+				registrySelection?.workspace.id !== discovery.registry?.workspace.id);
+			if (switchingScope) {
+				welcomeLifetimeRef.current.abort();
+				welcomeLifetimeRef.current = new AbortController();
+				connectionAbortRef.current?.abort();
+				setClientState(undefined);
+				connectedAgentKeyRef.current = undefined;
+				clearTranscript();
+			}
+			setRegistrySelection(discovery.registry);
+			setWorkspaceAccount(discovery.workspaceAccount);
+			if (discovery.workspaceAccount && !discovery.registry) setSlashSubmenuId("workspace");
+			if (discovery.registry) workspaceSelectorRef.current = undefined;
+			const currentEnvironment = chatSettingsRef.current.environments[selectedEnvironment];
 			const nextSources = Object.fromEntries(
 				discovery.sources.map((source) => [source.sourceKey, source])
 			);
@@ -814,13 +906,20 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 						!isTransientAgentSource(agent.source) &&
 						agent.sourceKey !== explicitSourceKey
 				),
-				activeEnvironmentSettings.agents
+				chatSettingsRef.current.environments[selectedEnvironment].agents
 			);
 			setAgentSources(nextSources);
 			setDiscoveredAgents(discovery.agents);
 			persistEnvironmentSettings(selectedEnvironment, {
 				agents: nextAgents,
-				agentSources: persistentSources
+				agentSources: { ...currentEnvironment.agentSources, ...persistentSources },
+				...(discovery.registry ? { registryAccounts: {
+					...currentEnvironment.registryAccounts,
+					[discovery.registry.accountScope]: {
+						...currentEnvironment.registryAccounts?.[discovery.registry.accountScope],
+						workspaceId: discovery.registry.workspace.id
+					}
+				} } : {})
 			});
 
 			if (announceExplicitSourceErrors) {
@@ -836,51 +935,56 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				}
 			}
 
-			const nextSelected = selectDiscoveredAgent(discovery.agents, {
+			const registry = discovery.registry;
+			const savedRegistryKey = registry
+				? currentEnvironment.registryAccounts?.[registry.accountScope]?.selectedAgentKeys?.[registry.workspace.id]
+				: undefined;
+			const legacySelected = registry && currentEnvironment.selectedAgentKey ? discovery.agents.find((agent) => agent.registry &&
+				eligibleLegacyRegistryAgent({ agents: currentEnvironment.agents,
+					sourceKey: agent.sourceKey, identityId: agent.agentId!,
+					workspaceId: registry.workspace.id, homeWorkspaceId: registry.account.homeWorkspaceId,
+					credentialScope: credentials.owner(agent.source)
+				})?.agentKey === currentEnvironment.selectedAgentKey) : undefined;
+			const savedDirect = discovery.agents.find((agent) => agent.source.type !== "registry" &&
+				agent.agentKey === currentEnvironment.selectedAgentKey);
+			const registryOnly = (workspaceChange && workspaceChange.requireRegistry !== false) ||
+				workspaceSelector !== undefined || (discovery.workspaceAccount && !discovery.registry);
+			const candidates = registryOnly
+				? discovery.agents.filter((agent) => agent.source.type === "registry")
+				: discovery.agents;
+			const nextSelected = selectDiscoveredAgent(candidates, {
 				requestedAgentId: options.agentId,
-				selectedAgentKey,
-				selectedAgentId: options.agentId ? undefined : selectedAgentId,
+				selectedAgentKey: savedRegistryKey ?? legacySelected?.agentKey ?? savedDirect?.agentKey,
 				explicitSourceKey,
 				autoSelectExplicit: Boolean(agentEndpointUrl)
 			});
-
+			if (workspaceChange && nextSelected && (switchingScope || nextSelected.agentKey !== connectedAgentKeyRef.current || !clientState)) {
+				workspaceConnectionRef.current = { ...workspaceChange, agentKey: nextSelected.agentKey };
+				setWorkspaceConnectionNonce((value) => value + 1);
+			}
+			if (discovery.registry && !discovery.agents.some((agent) => agent.registry) && !discovery.errors.some((error) => error.source.type === "registry")) {
+				appendNotification(`No agents are available in workspace "${discovery.registry.workspace.name}". Use /workspace to choose another.`);
+			}
 			if (nextSelected) {
-				const shouldPersistSelection = !isTransientAgentSource(nextSelected.source);
 				setSelectedAgentKey(nextSelected.agentKey);
 				setSelectedAgentId(nextSelected.id);
-				persistEnvironmentSettings(selectedEnvironment, {
-					...(shouldPersistSelection
-						? {
-								selectedAgentKey: nextSelected.agentKey,
-								selectedAgentId: nextSelected.id
-							}
-						: {}),
-					agents: nextAgents,
-					agentSources: persistentSources
-				});
-			} else if (selectedAgentKey || (!options.agentId && selectedAgentId)) {
+				persistAgentSelection(nextSelected);
+			} else {
 				setSelectedAgentKey(undefined);
 				setSelectedAgentId(undefined);
 				setClientState(undefined);
 				connectedAgentKeyRef.current = undefined;
-				setCurrentContextId(undefined);
-				setTaskId(undefined);
-				setStreamLabel("Idle");
-				persistEnvironmentSettings(selectedEnvironment, {
-					selectedAgentKey: undefined,
-					selectedAgentId: undefined,
-					agents: nextAgents,
-					agentSources: persistentSources
-				});
-				appendSystem("The selected agent is no longer available.");
+				clearTranscript();
+				persistEnvironmentSettings(selectedEnvironment, { selectedAgentKey: undefined, selectedAgentId: undefined });
+				if (selectedAgentKey || selectedAgentId) appendSystem("The selected agent is no longer available in this workspace. Choose an agent to continue.");
 			}
 
 			return discovery.sources;
 		} catch (error) {
-			if (isClosed()) {
+			if (obsolete()) {
 				return undefined;
 			}
-			setDiscoveredAgents([]);
+			if (!workspaceChange) setDiscoveredAgents([]);
 			const message = error instanceof Error ? error.message : String(error);
 			if (announceExplicitSourceErrors) {
 				appendNotification(
@@ -895,15 +999,25 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 	useEffect(() => {
 		let closed = false;
-		void refreshAgentDiscovery({ isClosed: () => closed });
+		const transition = !agentEndpointUrl && !operationGate.busy ? startWorkspaceOperation() : undefined;
+		// Startup has no current conversation to preserve on a selection error.
+		// Publish the available memberships so an invalid choice can open the picker.
+		void refreshAgentDiscovery({
+			isClosed: () => closed,
+			...(transition ? { workspaceChange: { ...transition, requireRegistry: false } } : {})
+		}).finally(() => {
+			if (transition && workspaceConnectionRef.current?.operation !== transition.operation) transition.finish();
+		});
 		return () => {
 			closed = true;
+			transition?.operation.cancel();
 		};
 	}, [
 		agentEndpointUrl,
 		credentials,
 		controlPlaneApiBaseUrl,
 		options.agentId,
+		options.workspace,
 		options.headers,
 		options.token,
 		reconnectNonce,
@@ -913,13 +1027,17 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	useEffect(() => {
 		let closed = false;
 		const connectionLifetime = new AbortController();
-		connectionSignalRef.current = connectionLifetime.signal;
+		connectionAbortRef.current = connectionLifetime;
+		const workspaceConnection = workspaceConnectionRef.current?.agentKey === selectedAgent?.agentKey ? workspaceConnectionRef.current : undefined;
+		const connectionSignal = AbortSignal.any([connectionLifetime.signal, ...(workspaceConnection ? [workspaceConnection.operation.signal] : [])]);
+		connectionSignalRef.current = connectionSignal;
 		setWorkingStartedAt(undefined);
 		setStreamLabel("Idle");
 		finalizeOpenStreamEntries();
 		let closePush: (() => Promise<void>) | undefined;
 
 		const handlePushEvent = (event: PushNotificationEvent): void => {
+			if (closed || connectionSignal.aborted) return;
 			if (event.kind === "validation") {
 				appendSystem(`Push notification validation received: ${String(event.payload)}`);
 				return;
@@ -945,7 +1063,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 						options.pushReceiver,
 						handlePushEvent
 					);
-					if (closed) {
+					if (closed || connectionSignal.aborted) {
 						await server.close();
 						return;
 					}
@@ -960,17 +1078,33 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				const connected = await connectClient({
 					...options,
 					headers: {}, token: undefined,
-					fetchImpl: credentials.fetch(selectedAgent.source, connectionLifetime.signal),
+					fetchImpl: credentials.fetch(selectedAgent.source, connectionSignal),
 					url: selectedAgent.connectionUrl,
 					agentId: selectedAgent.connectionAgentId
 				});
-				if (closed) {
+				if (closed || connectionSignal.aborted) {
 					return;
 				}
 
 				const owner = credentials.owner(selectedAgent.source);
 				const scope = `${selectedEnvironment}:${selectedAgent.agentKey}`;
-				const stored = activeEnvironmentSettings.agents[selectedAgent.agentKey];
+				const environment = chatSettingsRef.current.environments[selectedEnvironment];
+				let stored = environment.agents[selectedAgent.agentKey];
+				let historyAgentKey = selectedAgent.agentKey;
+				const registry = selectedAgent.registry;
+				if (registry && !stored?.activeContextId) {
+					const legacy = eligibleLegacyRegistryAgent({ agents: environment.agents,
+						sourceKey: selectedAgent.sourceKey, identityId: selectedAgent.agentId!,
+						workspaceId: registry.workspace.id, homeWorkspaceId: registry.account.homeWorkspaceId,
+						credentialScope: owner });
+					if (legacy?.activeContextId) {
+						historyAgentKey = legacy.agentKey;
+						stored = { ...stored, ...selectedAgent, activeContextId: legacy.activeContextId, credentialScope: owner };
+						persistEnvironmentSettings(selectedEnvironment, { agents: {
+							...environment.agents, [selectedAgent.agentKey]: stored
+						} });
+					}
+				}
 				const sameOwner = !!owner && owner === credentialScopeRef.current &&
 					contextScopeRef.current === scope;
 				if (!sameOwner) clearTranscript();
@@ -980,6 +1114,17 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 						: owner ? createdContextsRef.current.get(JSON.stringify([scope, owner]))
 							?? (stored?.credentialScope === owner ? stored.activeContextId : undefined) : undefined
 				);
+				if (registry && !sameOwner && contextIdRef.current) {
+					const restored = loadContextSession(selectedEnvironment, historyAgentKey, contextIdRef.current);
+					if (restored.session) {
+						if (historyAgentKey !== selectedAgent.agentKey) {
+							const warning = copyContextSession(restored.session, selectedAgent.agentKey);
+							if (warning) appendNotification(warning);
+						}
+						setEntries(restoredTranscriptEntries(restored.session.messages));
+						for (const message of restored.session.messages) markShownMessage(shownMessageKeysRef.current, message);
+					} else if (restored.warning) appendNotification(restored.warning);
+				}
 				credentialScopeRef.current = owner;
 				setClientState(connected);
 				connectedAgentKeyRef.current = selectedAgent.agentKey;
@@ -992,12 +1137,14 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 					);
 				}
 			} catch (error) {
-				if (closed) {
+				if (closed || connectionSignal.aborted) {
 					return;
 				}
 				appendSystem(
 					`Connection failed: ${error instanceof Error ? error.message : String(error)}`
 				);
+			} finally {
+				workspaceConnection?.finish();
 			}
 		};
 
@@ -1016,6 +1163,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		options.pushNotifications,
 		options.pushReceiver,
 		reconnectNonce,
+		workspaceConnectionNonce,
 		// Discovery refreshes replace records without changing the connection.
 		selectedAgent?.agentKey,
 		selectedAgent?.connectionUrl,
@@ -1338,7 +1486,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		}
 
 		const currentAgent =
-			chatSettings.environments[selectedEnvironment].agents[selectedAgentKey] ??
+			chatSettingsRef.current.environments[selectedEnvironment].agents[selectedAgentKey] ??
 			selectedAgent;
 		const shouldPersistAgentContext =
 			!selectedAgent ||
@@ -1347,7 +1495,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		if (currentAgent && shouldPersistAgentContext) {
 			persistEnvironmentSettings(selectedEnvironment, {
 				agents: {
-					...chatSettings.environments[selectedEnvironment].agents,
+					...chatSettingsRef.current.environments[selectedEnvironment].agents,
 					[selectedAgentKey]: {
 						agentKey: currentAgent.agentKey,
 						agentId: currentAgent.agentId,
@@ -1367,6 +1515,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	};
 
 	const applySelectedAgentSuggestion = (): void => {
+		if (operationGate.kind === "workspace") { appendNotification(operationGate.reason!); return; }
 		const suggestion = agentSuggestions[selectedSuggestionIndex];
 		if (!suggestion) {
 			return;
@@ -1382,12 +1531,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		if (selectedAgentId !== selectedId || selectedAgentKey !== selectedKey) {
 			setSelectedAgentId(selectedId);
 			setSelectedAgentKey(selectedKey);
-			if (!agent || !isTransientAgentSource(agent.source)) {
-				persistEnvironmentSettings(selectedEnvironment, {
-					selectedAgentId: selectedId,
-					selectedAgentKey: selectedKey
-				});
-			}
+			if (agent) persistAgentSelection(agent);
 		}
 	};
 
@@ -1426,6 +1570,11 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			void runLoginSlashCommand();
 			return;
 		}
+		if (command.id === "workspace") {
+			resetSlashSelection();
+			void runWorkspaceSlashCommand();
+			return;
+		}
 		if (command.id === "session") {
 			resetSlashSelection();
 			appendSystem("Use /session retry <source-key> or /session new <source-key>. " + GUEST_HISTORY_WARNING);
@@ -1445,6 +1594,52 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		setSlashSubmenuId(command.id as SlashCommandId);
 		setSelectedSlashSubmenuIndex(0);
 		replaceDraft("");
+	};
+
+	const startWorkspaceOperation = (): { operation: ChatOperation; finish(): void } | undefined => {
+		const operation = operationGate.begin("workspace");
+		if (!operation) { appendNotification(operationGate.reason!); return undefined; }
+		const finish = (): void => {
+			clearTimeout(timer);
+			if (workspaceConnectionRef.current?.operation === operation) workspaceConnectionRef.current = undefined;
+			operation.finish();
+		};
+		const timer = setTimeout(() => {
+			operation.cancel();
+			appendNotification("Workspace selection timed out. Please try /workspace again.");
+		}, 30_000);
+		operation.signal.addEventListener("abort", finish, { once: true });
+		return { operation, finish };
+	};
+
+	const runWorkspaceSlashCommand = async (selector?: string): Promise<void> => {
+		if (agentEndpointUrl) { appendNotification("Workspace selection is unavailable with --url. Restart Chat without --url to browse the registry."); return; }
+		const transition = startWorkspaceOperation();
+		if (!transition) return;
+		const { operation, finish } = transition;
+		try {
+			if (selector !== undefined) {
+				await refreshAgentDiscovery({ workspaceSelector: selector, workspaceChange: { operation, finish } });
+			} else {
+				const signal = AbortSignal.any([operation.signal, credentials.signal]);
+				const token = await getStoredAccessToken(selectedEnvironment, { controlPlaneOrigin });
+				if (signal.aborted) return;
+				if (!token) { appendNotification("Use /login before choosing a workspace."); return; }
+				const account = await fetchRegistryAccount({ environmentId: selectedEnvironment, accessToken: token,
+					graphQLUrl: getGraphQLHttpUrl(selectedEnvironment, controlPlaneOrigin),
+					fetchImpl: credentials.fetch(createDefaultRegistryAgentSource(selectedEnvironment, controlPlaneOrigin), signal),
+					logger: chatSessionLogger });
+				if (signal.aborted) return;
+				setWorkspaceAccount(account);
+				setSelectedSlashSubmenuIndex(0);
+				setSlashSubmenuId("workspace");
+				if (!account.workspaces.length) appendNotification("No accessible workspaces were returned for this account.");
+			}
+		} catch (error) {
+			if (!operation.signal.aborted) appendNotification(`Workspace lookup failed: ${error instanceof Error ? error.message : String(error)}`);
+		} finally {
+			if (workspaceConnectionRef.current?.operation !== operation) finish();
+		}
 	};
 
 	const runLoginSlashCommand = async (): Promise<void> => {
@@ -1490,7 +1685,15 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				}
 			}
 			appendSystem(`Logged in to Aion ${selectedEnvironment}.`);
+			operationGate.cancel();
+			discoveryLifetimeRef.current.abort();
+			setRegistrySelection(undefined);
+			setWorkspaceAccount(undefined);
 			credentials.cancelPending();
+			welcomeLifetimeRef.current.abort();
+			welcomeLifetimeRef.current = new AbortController();
+			setDiscoveredAgents([]);
+			setClientState(undefined);
 			clearTranscript();
 			chatSessionLogger.info("auth.login.completed", {
 				environmentId: selectedEnvironment,
@@ -1538,11 +1741,11 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				JSON.stringify([`${selectedEnvironment}:${key}`, credentialScopeRef.current]), nextContextId
 			);
 		}
-		const existing = key ? activeEnvironmentSettings.agents[key] : undefined;
+		const existing = key ? chatSettingsRef.current.environments[selectedEnvironment].agents[key] : undefined;
 		if (key && existing) {
 			persistEnvironmentSettings(selectedEnvironment, {
 				agents: {
-					...activeEnvironmentSettings.agents,
+					...chatSettingsRef.current.environments[selectedEnvironment].agents,
 					[key]: { ...existing, activeContextId: nextContextId, credentialScope: credentialScopeRef.current }
 				}
 			});
@@ -1592,6 +1795,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	};
 
 	const runClearSlashCommand = (): void => {
+		if (operationGate.kind === "workspace") { appendNotification(operationGate.reason!); return; }
 		const selectedContextAgentKey = selectedAgent?.agentKey ?? selectedAgentKey;
 		clearTranscript();
 		startNewContext(connectedAgentKeyRef.current === selectedContextAgentKey ? clientState : undefined);
@@ -1629,6 +1833,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	};
 
 	const runSourcesSlashCommand = async (): Promise<void> => {
+		if (operationGate.kind === "workspace") { appendNotification(operationGate.reason!); return; }
 		const refreshedSources = await refreshAgentDiscovery({
 			announceExplicitSourceErrors: false
 		});
@@ -1652,6 +1857,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 		resetSlashSelection();
 		if (command.kind === "invalid") { appendSystem(command.message); return true; }
+		if (command.kind === "workspace") { void runWorkspaceSlashCommand(command.selector); return true; }
+		if (operationGate.kind === "workspace" && ["session", "clear"].includes(command.kind)) { appendNotification(operationGate.reason!); return true; }
 		if (command.kind === "session") {
 			const source = command.sourceKey ? agentSources[command.sourceKey] : selectedAgent?.source;
 			if (!source) {
@@ -1686,12 +1893,16 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 	const applySlashSubmenuSelection = (optionIndex = selectedSlashSubmenuIndex): void => {
 		const command = getSlashCommandById(slashSubmenuId);
-		const option = command?.options[optionIndex];
+		const option = slashSubmenu?.options[optionIndex];
 		if (!command || !option) {
 			return;
 		}
 
-		if (command.id === "request") {
+		if (command.id === "workspace") {
+			resetSlashSelection();
+			void runWorkspaceSlashCommand(option.value);
+			return;
+		} else if (command.id === "request") {
 			applyRequestMode(option.value as RequestMode);
 		} else if (command.id === "response") {
 			applyResponseMode(option.value as ResponseMode);
@@ -1701,6 +1912,17 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	};
 
 	const submitPrompt = async (): Promise<void> => {
+		const selection = parseAgentSelection(draft, discoveredAgents.map((agent) => agent.id));
+		if (operationGate.kind === "reply" && selection.agentId && !selection.message.trim()) operationGate.cancel();
+		const operation = operationGate.begin("reply");
+		if (!operation) { appendNotification(operationGate.reason!); return; }
+		try { await submitPromptImpl(operation.signal); }
+		catch (error) {
+			if (!operation.signal.aborted) appendStatus(`Request preparation failed: ${error instanceof Error ? error.message : String(error)}`);
+		} finally { operation.finish(); }
+	};
+
+	const submitPromptImpl = async (operationSignal: AbortSignal): Promise<void> => {
 		const selection = parseAgentSelection(
 			draft,
 			discoveredAgents.map((agent) => agent.id)
@@ -1709,13 +1931,10 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			const agent = discoveredAgents.find((item) => item.id === selection.agentId);
 			setSelectedAgentId(selection.agentId);
 			setSelectedAgentKey(agent?.agentKey);
-			if (!agent || !isTransientAgentSource(agent.source)) {
-				persistEnvironmentSettings(selectedEnvironment, {
-					selectedAgentId: selection.agentId,
-					selectedAgentKey: agent?.agentKey
-				});
-			}
+			if (agent) persistAgentSelection(agent);
 			appendStatus(`Active agent changed to @${selection.agentId}`);
+			replaceDraft(selection.message);
+			return;
 		}
 
 		const trimmed = selection.message.trim();
@@ -1732,7 +1951,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 		const requestSignal = AbortSignal.any([
 			credentials.signal, connectionSignalRef.current ?? credentials.signal,
-			foregroundLifetimeRef.current.signal
+			foregroundLifetimeRef.current.signal, operationSignal
 		]);
 		const parts = await buildMessageParts(trimmed);
 		if (requestSignal.aborted) return;
@@ -1795,6 +2014,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			if (useStreaming) {
 				setStreamLabel("Streaming");
 				let completedTask: Task | undefined;
+				const completedMessages: Message[] = [];
 				let finalStatusUpdate: TaskStatusUpdateEvent | undefined;
 				let reachedTerminal = false;
 				let renderedAgentOutput = false;
@@ -1808,6 +2028,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 						event: summarizeProtocolEventForLog(event)
 					});
 					if (isMessage(event)) {
+						if (event.role === Role.ROLE_AGENT && shouldRenderLiveResponseMessage(event)) completedMessages.push(event);
 						renderedAgentOutput =
 							handleMessage(event, streamResponse) || renderedAgentOutput;
 					} else if (isTask(event)) {
@@ -1848,7 +2069,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				if (completedTask) {
 					persistCompletedExchange(
 						completedTask.contextId,
-						getTaskMessages(completedTask),
+						[outboundMessage, ...getTaskMessages(completedTask)],
 						completedTask.id
 					);
 				} else if (finalStatusUpdate?.status?.message) {
@@ -1857,6 +2078,8 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 						[outboundMessage, finalStatusUpdate.status.message],
 						finalStatusUpdate.taskId
 					);
+				} else if (completedMessages.length) {
+					persistCompletedExchange(completedMessages.at(-1)?.contextId || requestContextId, [outboundMessage, ...completedMessages]);
 				}
 				chatSessionLogger.debug("a2a.request.completed", {
 					transport: "stream",
@@ -1890,7 +2113,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 					if (reachedTerminal) {
 						persistCompletedExchange(
 							response.contextId,
-							getTaskMessages(response),
+							[outboundMessage, ...getTaskMessages(response)],
 							response.id
 						);
 					}
@@ -1953,7 +2176,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		}
 
 		if (isSlashSubmenuOpen && key.upArrow) {
-			const optionsCount = getSlashCommandById(slashSubmenuId)?.options.length ?? 0;
+			const optionsCount = slashSubmenu?.options.length ?? 0;
 			if (optionsCount > 0) {
 				setSelectedSlashSubmenuIndex((current) =>
 					current === 0 ? optionsCount - 1 : current - 1
@@ -1963,7 +2186,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		}
 
 		if (isSlashSubmenuOpen && key.downArrow) {
-			const optionsCount = getSlashCommandById(slashSubmenuId)?.options.length ?? 0;
+			const optionsCount = slashSubmenu?.options.length ?? 0;
 			if (optionsCount > 0) {
 				setSelectedSlashSubmenuIndex((current) =>
 					current === optionsCount - 1 ? 0 : current + 1
@@ -2077,7 +2300,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 
 		if (isSlashSubmenuOpen && input >= "1" && input <= "9") {
 			const optionIndex = Number.parseInt(input, 10) - 1;
-			const optionsCount = getSlashCommandById(slashSubmenuId)?.options.length ?? 0;
+			const optionsCount = slashSubmenu?.options.length ?? 0;
 			if (optionIndex >= 0 && optionIndex < optionsCount) {
 				applySlashSubmenuSelection(optionIndex);
 			}
@@ -2154,6 +2377,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 					<WorkingIndicator startedAt={workingStartedAt} />
 				</Box>
 			) : null}
+			<Box><Text dimColor>{selectedEnvironment} · Workspace: {registrySelection?.workspace.name ?? (agentEndpointUrl ? "direct endpoint" : "not selected")} · /workspace</Text></Box>
 			<ChatComposer
 				draft={draft}
 				cursorOffset={draftCursor}

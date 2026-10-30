@@ -3,6 +3,7 @@ import logging
 import asyncio
 import signal
 from contextlib import suppress
+from enum import Enum
 from typing import Optional
 
 from aion.api.http import aion_jwt_manager
@@ -11,6 +12,7 @@ from aion.core.settings import api_settings
 from aion.server import services as aion_services
 from aion.server.core.platform import AionWebSocketManager, WebsocketTransportFactory
 from aion.server.shutdown import shutdown_budget
+from aion.server.opentelemetry.startup import StartupSpan
 from aion.server.utils.processes import ProcessManager
 
 from aion.cli.services import (
@@ -26,6 +28,17 @@ from aion.cli.utils.cli_messages import generate_welcome_message
 from aion.cli.utils.port_manager import AionPortManager
 
 logger = logging.getLogger(__name__)
+
+
+class ServeOutcome(Enum):
+    """How :meth:`ServeHandler.run` ended; the command's exit status follows it."""
+
+    NOT_STARTED = "not_started"
+    """No agent started."""
+    STOPPED = "stopped"
+    """A shutdown was requested while the deployment served."""
+    AGENTS_STOPPED = "agents_stopped"
+    """Every agent exited while the deployment served."""
 
 
 class ServeHandler:
@@ -45,6 +58,11 @@ class ServeHandler:
         self.successful_agents: list[str] = []
         self.failed_agents: list[str] = []
         self.proxy_started: bool = False
+        # What a restarted proxy needs: its reserved port, the agents it
+        # routes to, and the startup confirmation timeout.
+        self.proxy_port: Optional[int] = None
+        self.proxy_agents: dict[str, str] = {}
+        self.startup_timeout: int = 30
         self._platform_link_task: Optional[asyncio.Task] = None
         self._websocket_manager: Optional[AionWebSocketManager] = None
         self._shutdown_requested = asyncio.Event()
@@ -104,8 +122,9 @@ class ServeHandler:
             port_range_end: int = 9000,
             proxy_port_search_start: int = 8000,
             proxy_port_search_end: int = 8100,
-            startup_timeout: int = 30
-    ) -> bool:
+            startup_timeout: int = 30,
+            startup_span: StartupSpan | None = None,
+    ) -> ServeOutcome:
         """
         Complete lifecycle: startup, broadcast config, monitor, and shutdown.
 
@@ -119,28 +138,41 @@ class ServeHandler:
             proxy_port_search_start: Starting port for proxy search if auto-finding
             proxy_port_search_end: Ending port for proxy search if auto-finding
             startup_timeout: Timeout in seconds for startup confirmation (0 to skip)
+            startup_span: Attempt opened by the CLI before importing the application.
 
         Returns:
-            False when no agent started, so the command can fail; True once a
-            deployment that started has shut down.
+            ``NOT_STARTED`` when no agent started; ``AGENTS_STOPPED`` when the
+            deployment started and every agent exited while it served;
+            ``STOPPED`` once a requested shutdown ended it. The command fails
+            on the first two.
         """
         try:
             self._setup_signal_handlers()
 
-            # Startup phase
-            successful_agents, failed_agents, proxy_started = await self._startup(
-                config=config,
-                proxy_port=proxy_port,
-                port_range_start=port_range_start,
-                port_range_end=port_range_end,
-                proxy_port_search_start=proxy_port_search_start,
-                proxy_port_search_end=proxy_port_search_end,
-                startup_timeout=startup_timeout
-            )
+            startup = startup_span or StartupSpan("application.startup")
+            try:
+                with startup.activate():
+                    # Startup phase
+                    successful_agents, failed_agents, proxy_started = await self._startup(
+                        config=config,
+                        proxy_port=proxy_port,
+                        port_range_start=port_range_start,
+                        port_range_end=port_range_end,
+                        proxy_port_search_start=proxy_port_search_start,
+                        proxy_port_search_end=proxy_port_search_end,
+                        startup_timeout=startup_timeout
+                    )
+                if failed_agents or not successful_agents or not proxy_started:
+                    startup.finish("failed")
+                else:
+                    startup.finish("ready" if startup_timeout else "launched")
+            except BaseException as error:
+                startup.finish("failed", error)
+                raise
 
             # Exit if no agents started successfully
             if not successful_agents:
-                return False
+                return ServeOutcome.NOT_STARTED
 
             # Announce this deployment to the platform, in the background so the
             # agents keep serving while registration retries. Tracked rather than
@@ -152,8 +184,9 @@ class ServeHandler:
             self._track_background_task(self._platform_link_task, "platform link")
 
             # Monitor processes (blocking call until shutdown)
-            await self._monitor()
-            return True
+            if await self._monitor():
+                return ServeOutcome.AGENTS_STOPPED
+            return ServeOutcome.STOPPED
 
         finally:
             # Ensure graceful shutdown
@@ -329,6 +362,9 @@ class ServeHandler:
                     agent_url = f"http://0.0.0.0:{agent_port}"
                     agents[agent_id] = agent_url
 
+            self.proxy_port = proxy_port
+            self.proxy_agents = agents
+            self.startup_timeout = startup_timeout
             self.proxy_started = await ServeProxyStartupService().execute(
                 port=proxy_port,
                 agents=agents,
@@ -347,7 +383,26 @@ class ServeHandler:
 
         return self.successful_agents, self.failed_agents, self.proxy_started
 
-    async def _monitor(self) -> None:
+    async def _restart_proxy(self) -> bool:
+        """Start the proxy again on its reserved port, for the agents it served.
+
+        The launcher keeps the proxy's port reserved for the life of the
+        deployment, so the new process receives the same listening socket.
+        The monitor runs outside the startup trace: the restarted proxy opens a
+        fresh ``proxy.startup`` trace rather than joining the original launch.
+
+        Returns:
+            bool: True once the restarted proxy confirms its startup
+        """
+        return await ServeProxyStartupService().execute(
+            port=self.proxy_port,
+            agents=self.proxy_agents,
+            process_manager=self.process_manager,
+            port_manager=self.port_manager,
+            startup_timeout=self.startup_timeout,
+        )
+
+    async def _monitor(self) -> bool:
         """
         Monitor running processes and handle restarts.
 
@@ -359,6 +414,10 @@ class ServeHandler:
         actual teardown is left to the caller's ``finally``, so it happens once
         and on the event loop rather than inside a signal handler.
 
+        Returns:
+            bool: True when monitoring ended because every agent stopped,
+            False when a shutdown was requested
+
         Raises:
             RuntimeError: If called before startup()
         """
@@ -369,8 +428,8 @@ class ServeHandler:
             ServeMonitoringService().execute(
                 successful_agents=self.successful_agents,
                 proxy_started=self.proxy_started,
-                config=self.config,
                 process_manager=self.process_manager,
+                restart_proxy=self._restart_proxy,
             )
         )
         signalled = asyncio.ensure_future(self._shutdown_requested.wait())
@@ -388,6 +447,9 @@ class ServeHandler:
                     await task
                 except asyncio.CancelledError:
                     pass
+        # A requested shutdown wins when both finished together: the agents
+        # stopping is then part of that shutdown.
+        return not self._shutdown_requested.is_set()
 
     async def shutdown(self, timeout: Optional[float] = None) -> bool:
         """

@@ -21,7 +21,10 @@ import {
 	createDefaultRegistryAgentSource
 } from "./agents/model.js";
 
+import { normalizeRegistryPreferences, type RegistryAccountPreference } from "./workspaces.js";
+
 interface ChatEnvironmentSettingsFile {
+	registryAccounts?: Record<string, RegistryAccountPreference>;
 	controlPlaneOrigin?: string;
 	requestMode?: string;
 	responseMode?: string;
@@ -44,6 +47,7 @@ interface ChatSettingsFile {
 }
 
 export interface ChatEnvironmentSettings extends ChatModeSettings {
+	registryAccounts?: Record<string, RegistryAccountPreference>;
 	controlPlaneOrigin?: string;
 	selectedAgentId?: string;
 	selectedAgentKey?: string;
@@ -256,7 +260,9 @@ function normalizeEnvironmentSettings(
 		}
 	}
 
+	const registryAccounts = normalizeRegistryPreferences(value?.registryAccounts);
 	return {
+		...(registryAccounts ? { registryAccounts } : {}),
 		requestMode,
 		responseMode,
 		...(controlPlaneOrigin ? { controlPlaneOrigin } : {}),
@@ -528,9 +534,11 @@ export function selectChatEnvironment(
 				url: registry.url
 			}
 		},
-		// Registry identities and context IDs are not portable between control planes.
+		// Scoped records stay available when returning to an origin; discard legacy indexes.
 		agents: changed
-			? Object.fromEntries(Object.entries(current.agents).filter(([, agent]) => agent.sourceKey !== registry.sourceKey))
+			? Object.fromEntries(Object.entries(current.agents).filter(([, agent]) =>
+				agent.sourceKey !== registry.sourceKey || agent.agentKey.startsWith(`${registry.sourceKey}:workspace-`)
+			))
 			: current.agents
 	};
 	if (changed) {

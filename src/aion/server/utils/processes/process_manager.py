@@ -27,6 +27,8 @@ class ProcessStatus(Enum):
 
 def _run_in_process_group(target_function: Callable, *args, **kwargs):
     """Run a managed target as the leader of its own POSIX process group."""
+    from aion.server.opentelemetry.startup import without_trace
+
     if os.name == "posix":
         try:
             os.setsid()
@@ -35,7 +37,16 @@ def _run_in_process_group(target_function: Callable, *args, **kwargs):
             # platform refuses a new session.  Termination falls back to the
             # Process API when no group id was recorded.
             pass
-    return target_function(*args, **kwargs)
+    try:
+        # A fork copies the launcher's contextvars. Only the serialized carrier
+        # may establish a parent in the child; runtime work starts untraced.
+        with without_trace():
+            return target_function(*args, **kwargs)
+    finally:
+        # A fork child clears the parent's atexit hooks. Its asynchronous
+        # Logstash worker must drain before multiprocessing exits the process,
+        # including when startup returns early, raises, or calls sys.exit().
+        logging.shutdown()
 
 
 @dataclass
@@ -61,6 +72,8 @@ class ProcessInfo:
     """
     process_group_id: Optional[int] = None
     """POSIX process-group id, when the child was launched in its own session."""
+    propagate_trace: bool = False
+    """Capture fresh trace context at each launch, including restarts."""
 
 
 class ProcessManager:
@@ -85,7 +98,8 @@ class ProcessManager:
             func: Callable,
             func_args: Optional[Tuple] = None,
             func_kwargs: Optional[Dict[str, Any]] = None,
-            use_pipe: bool = False
+            use_pipe: bool = False,
+            propagate_trace: bool = False,
     ) -> bool:
         """
         Create and start a new process with custom key
@@ -96,6 +110,7 @@ class ProcessManager:
             func_args: Positional arguments for target function
             func_kwargs: Keyword arguments for target function
             use_pipe: If True, creates a bidirectional pipe for parent-child communication
+            propagate_trace: Pass the current trace as ``startup_context`` to the target.
 
         Returns:
             bool: True if process created successfully, False otherwise
@@ -115,6 +130,9 @@ class ProcessManager:
             child_conn = None
 
             process_kwargs = dict(func_kwargs)
+            if propagate_trace:
+                from aion.server.opentelemetry.startup import startup_carrier
+                process_kwargs['startup_context'] = startup_carrier()
 
             # Create pipe if requested
             if use_pipe:
@@ -150,6 +168,7 @@ class ProcessManager:
                 parent_conn=parent_conn,
                 child_conn=child_conn,
                 use_pipe=use_pipe,
+                propagate_trace=propagate_trace,
                 # ``_run_in_process_group`` makes the child a session leader,
                 # so its own pid is the group id of everything it spawns.
                 process_group_id=process.pid if os.name == "posix" else None,
@@ -490,6 +509,7 @@ class ProcessManager:
         args = process_info.args
         kwargs = process_info.kwargs
         use_pipe = process_info.use_pipe
+        propagate_trace = process_info.propagate_trace
 
         # Terminate current process
         if not self.terminate_process(key, timeout):
@@ -505,7 +525,8 @@ class ProcessManager:
             func=target_function,
             func_args=args,
             func_kwargs=kwargs,
-            use_pipe=use_pipe
+            use_pipe=use_pipe,
+            propagate_trace=propagate_trace,
         )
 
     def __enter__(self):

@@ -39,7 +39,7 @@ def _normalize_environment_args(args: list[str], *, group: bool = False) -> list
             # Other options own their next token, even when that token is --env.
             if value in {"--url", "--host", "-u", "--agent-id", "--agent", "--token",
                          "--header", "--push-receiver", "--request-mode", "--response-mode",
-                         "--control-plane-origin"} and index < len(args):
+                         "--control-plane-origin", "--workspace"} and index < len(args):
                 normalized.append(args[index])
                 index += 1
             continue
@@ -79,6 +79,7 @@ def _validate_environment_origin(environment: str | None, origin: str | None) ->
 @click.option("--env", "environment_id", type=click.Choice(["production", "staging", "development"]),
               help="Save the selected environment. Use --env development [origin] for a custom HTTP(S) API origin, e.g. http://localhost:8081. The agent endpoint set with --url is separate.")
 @click.option("--control-plane-origin", default=None, hidden=True)
+@click.option("--workspace", default=None, help="Workspace ID or exact name whose registry catalog to search. In run mode this overrides only this request.")
 @click.option(
     "--url",
     "--host",
@@ -117,6 +118,7 @@ def chat(
     ctx: click.Context,
     environment_id: Optional[str],
     control_plane_origin: Optional[str],
+    workspace: Optional[str],
     endpoint: Optional[str],
     agent_id: Optional[str],
     token: Optional[str],
@@ -128,10 +130,13 @@ def chat(
     if ctx.invoked_subcommand is not None:
         return
 
+    if workspace is not None and (not workspace.strip() or endpoint is not None):
+        raise click.UsageError("--workspace requires a name or ID and cannot be combined with --url.")
     _validate_environment_origin(environment_id, control_plane_origin)
     options = ChatLaunchOptions(
         environment_id=environment_id,
         control_plane_origin=control_plane_origin,
+        workspace=workspace,
         endpoint=endpoint,
         agent_id=agent_id,
         token=token,
@@ -152,6 +157,7 @@ def chat(
 @click.option("--env", "environment_id", type=click.Choice(["production", "staging", "development"]),
               help="Save the selected environment. Use --env development [origin] for a custom HTTP(S) API origin, e.g. http://localhost:8081. The agent endpoint set with --url is separate.")
 @click.option("--control-plane-origin", default=None, hidden=True)
+@click.option("--workspace", default=None, help="Workspace ID or exact name whose registry catalog to search. In run mode this overrides only this request.")
 @click.option(
     "--new-session",
     is_flag=True,
@@ -216,6 +222,7 @@ def run(
     new_session: bool,
     environment_id: Optional[str],
     control_plane_origin: Optional[str],
+    workspace: Optional[str],
     endpoint: Optional[str],
     agent_id: Optional[str],
     agent: Optional[str],
@@ -237,6 +244,7 @@ def run(
 
     \b
     Agent selection:
+      --workspace selects the workspace catalog by ID or exact name.
       --agent selects a discovered agent by @ handle, display id, identity id, or agent key.
       --agent-id is for proxy-aware routing when --url points at an explicit A2A endpoint.
 
@@ -254,13 +262,18 @@ def run(
       aion chat run --agent @team-agent --request-mode streaming-message "Hello"
       aion chat run --agent @team-agent --response-mode a2a "Hello"
     """
+    if workspace is None and ctx.parent is not None:
+        workspace = ctx.parent.params.get("workspace")
     if environment_id is None and ctx.parent is not None:
         environment_id = ctx.parent.params.get("environment_id")
         control_plane_origin = control_plane_origin or ctx.parent.params.get("control_plane_origin")
+    if workspace is not None and (not workspace.strip() or endpoint is not None):
+        raise click.UsageError("--workspace requires a name or ID and cannot be combined with --url.")
     _validate_environment_origin(environment_id, control_plane_origin)
     options = ChatRunLaunchOptions(
         environment_id=environment_id,
         control_plane_origin=control_plane_origin,
+        workspace=workspace,
         new_session=new_session,
         endpoint=endpoint,
         agent_id=agent_id,

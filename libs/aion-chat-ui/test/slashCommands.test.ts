@@ -26,7 +26,8 @@ describe("slashCommands", () => {
 			"/request",
 			"/response",
 			"/session",
-			"/sources"
+			"/sources",
+			"/workspace"
 		]);
 		expect(filterSlashCommands("e").map((command) => command.label)).toEqual([
 			"/exit"

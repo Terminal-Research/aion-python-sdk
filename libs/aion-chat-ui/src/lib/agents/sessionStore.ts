@@ -126,3 +126,68 @@ export function loadMostRecentSession(
 		return undefined;
 	}
 }
+
+export interface SessionLoadResult {
+	session?: AgentContextSessionFile;
+	warning?: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function isSavedMessage(value: unknown, contextId: string): value is Message {
+	if (!isRecord(value) || typeof value.messageId !== "string" || !value.messageId ||
+		(value.taskId !== undefined && typeof value.taskId !== "string") ||
+		![1, 2].includes(value.role as number) || (value.contextId !== undefined && value.contextId !== "" && value.contextId !== contextId) ||
+		(value.extensions !== undefined && (!Array.isArray(value.extensions) || !value.extensions.every((item) => typeof item === "string"))) ||
+		!Array.isArray(value.parts)) return false;
+	return value.parts.every((part) => {
+		if (!isRecord(part)) return false;
+		if (part.content === undefined) return true;
+		if (!isRecord(part.content)) return false;
+		const content = part.content;
+		if (content.$case === "text" || content.$case === "url") return typeof content.value === "string";
+		if (content.$case === "data") return isRecord(content.value);
+		// JSON.stringify stores a Uint8Array as an object of numeric indices.
+		if (content.$case === "raw" && isRecord(content.value)) {
+			const bytes = Object.values(content.value);
+			if (!bytes.every((byte) => typeof byte === "number" && Number.isInteger(byte) && byte >= 0 && byte <= 255)) return false;
+			content.value = Uint8Array.from(bytes as number[]);
+			return true;
+		}
+		return false;
+	});
+}
+
+/** Read only the validated active context; never substitute another recent conversation. */
+export function loadContextSession(
+	environment: AionEnvironmentId,
+	agentKey: string,
+	contextId: string,
+	sessionsDirectory = resolveSessionsDirectory()
+): SessionLoadResult {
+	const session = readSessionFile(resolveSessionFilePath(environment, agentKey, contextId, sessionsDirectory));
+	if (!session || session.schemaVersion !== 1 || session.environment !== environment ||
+		session.agentKey !== agentKey || session.contextId !== contextId ||
+		typeof session.createdAt !== "string" || typeof session.lastUpdatedAt !== "string" ||
+		!Number.isInteger(session.localTurnCount) || session.localTurnCount < 0 ||
+		!Array.isArray(session.messages) || !session.messages.every((message) => isSavedMessage(message, contextId))) {
+		return { warning: "This conversation is still selected, but its saved history could not be loaded." };
+	}
+	return { session: { ...session, messages: [...new Map(session.messages.map((message) => [message.messageId, message])).values()] } };
+}
+
+/** Copy verified legacy home history without removing it or counting another turn. */
+export function copyContextSession(
+	session: AgentContextSessionFile,
+	agentKey: string,
+	sessionsDirectory = resolveSessionsDirectory()
+): string | undefined {
+	try {
+		const filePath = resolveSessionFilePath(session.environment, agentKey, session.contextId, sessionsDirectory);
+		mkdirSync(path.dirname(filePath), { recursive: true });
+		writeFileSync(filePath, `${JSON.stringify({ ...session, agentKey }, null, 2)}\n`, "utf8");
+		return undefined;
+	} catch { return "The saved history could not be copied into this workspace."; }
+}

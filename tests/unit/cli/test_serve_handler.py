@@ -107,14 +107,15 @@ class TestShutdownSignal:
             assert not monitor.done()
 
             handler._request_shutdown(signal.SIGINT)
-            await asyncio.wait_for(monitor, timeout=1.0)
+            assert await asyncio.wait_for(monitor, timeout=1.0) is False
 
     async def test_monitor_returns_when_monitoring_finishes_on_its_own(self, handler):
+        """The monitoring service returns by itself only once every agent stopped."""
         with patch.object(serve, "ServeMonitoringService") as MockService:
             MockService.return_value.execute = AsyncMock(return_value=None)
             result = await asyncio.wait_for(handler._monitor(), timeout=1.0)
 
-        assert result is None
+        assert result is True
 
     async def test_monitor_surfaces_a_monitoring_failure(self, handler):
         with patch.object(serve, "ServeMonitoringService") as MockService:
@@ -208,6 +209,33 @@ async def test_each_agent_gets_its_whole_shutdown_budget(handler, monkeypatch):
     assert execute.await_args.kwargs["timeout"] == 7.0
 
 
+class TestProxyRestart:
+    async def test_monitor_restarts_the_proxy_through_the_handler(self, handler):
+        with patch.object(serve, "ServeMonitoringService") as MockService:
+            MockService.return_value.execute = AsyncMock(return_value=None)
+            await handler._monitor()
+
+        kwargs = MockService.return_value.execute.await_args.kwargs
+        assert kwargs["restart_proxy"] == handler._restart_proxy
+
+    async def test_restart_reuses_the_proxy_port_reservation_and_agents(self, handler):
+        handler.port_manager = MagicMock()
+        handler.proxy_port = 8080
+        handler.proxy_agents = {"agent-1": "http://0.0.0.0:8081"}
+        handler.startup_timeout = 12
+        with patch.object(serve, "ServeProxyStartupService") as MockService:
+            MockService.return_value.execute = AsyncMock(return_value=True)
+            assert await handler._restart_proxy() is True
+
+        MockService.return_value.execute.assert_awaited_once_with(
+            port=8080,
+            agents={"agent-1": "http://0.0.0.0:8081"},
+            process_manager=handler.process_manager,
+            port_manager=handler.port_manager,
+            startup_timeout=12,
+        )
+
+
 class TestStartupOutcome:
     async def test_run_reports_that_no_agent_started(self, handler):
         """The command turns this into a failing exit status; a clean exit would hide it."""
@@ -215,5 +243,25 @@ class TestStartupOutcome:
         handler._startup = AsyncMock(return_value=([], ["agent-1"], False))
         handler.shutdown = AsyncMock()
 
-        assert await handler.run(config=MagicMock()) is False
+        assert await handler.run(config=MagicMock()) is serve.ServeOutcome.NOT_STARTED
+        handler.shutdown.assert_awaited_once()
+
+    @pytest.mark.parametrize(("agents_stopped", "outcome"), [
+        (True, "AGENTS_STOPPED"),
+        (False, "STOPPED"),
+    ])
+    async def test_run_tells_agents_stopping_apart_from_a_requested_shutdown(
+            self, handler, agents_stopped, outcome):
+        """Agents exiting by themselves fail the command; the startup stays ready."""
+        handler._setup_signal_handlers = MagicMock()
+        handler._startup = AsyncMock(return_value=(["agent-1"], [], True))
+        handler._link_to_platform = AsyncMock()
+        handler._monitor = AsyncMock(return_value=agents_stopped)
+        handler.shutdown = AsyncMock()
+        startup = serve.StartupSpan("application.startup")
+
+        result = await handler.run(config=MagicMock(), startup_span=startup)
+
+        assert result is serve.ServeOutcome[outcome]
+        assert startup.outcome == "ready"
         handler.shutdown.assert_awaited_once()

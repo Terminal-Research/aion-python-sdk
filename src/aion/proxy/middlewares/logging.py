@@ -1,5 +1,6 @@
 """Request logging middleware for the Aion proxy."""
 
+import json
 import logging
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -12,6 +13,11 @@ __all__ = ["ProxyLoggingMiddleware"]
 # proxy's work: the platform sends one every 30 s, and recording each would be
 # the bulk of the log. A probe that fails is logged like any other failure.
 _QUIET_PATHS = frozenset({HEALTH_CHECK_URL, SYSTEM_HEALTH_CHECK_URL})
+
+
+def _log_value(value: str) -> str:
+    """Bound caller-controlled values and keep each log entry on one line."""
+    return "".join(char if char.isprintable() else " " for char in value[:512])
 
 
 class ProxyLoggingMiddleware(BaseHTTPMiddleware):
@@ -64,10 +70,34 @@ class ProxyLoggingMiddleware(BaseHTTPMiddleware):
         """
         if request.url.path in _QUIET_PATHS and response.status_code == 200:
             return
-        text = f"{request.method} {request.url.path} | {response.status_code}"
+        # Use a separate namespace from Logstash's HTTP ingestion metadata.
+        # The ASGI client may already have been rewritten by trusted proxy
+        # middleware; forwarded headers are caller claims, not verified identity.
+        details = {
+            "method": _log_value(request.method),
+            "path": _log_value(request.url.path),
+            "status_code": response.status_code,
+        }
+        if request.client is not None:
+            details["client_host"] = _log_value(request.client.host)
+            details["client_port"] = request.client.port
+        for header, field in (
+            ("user-agent", "user_agent"),
+            ("host", "host"),
+            ("x-forwarded-for", "forwarded_for"),
+            ("x-real-ip", "real_ip"),
+        ):
+            value = request.headers.get(header)
+            if value is not None:
+                details[field] = _log_value(value)
+        # Include diagnostics in text too, for terminal and message-only readers.
+        # Do not collect query strings, bodies, cookies, or authorization headers.
+        text = (f"{details['method']} {details['path']} | {response.status_code} "
+                f"| proxy_request={json.dumps(details, ensure_ascii=True)}")
+        extra = {"proxy_request": details}
 
         logged_elsewhere = getattr(request.state, "logged_elsewhere", False)
         if response.status_code >= 400 and not logged_elsewhere:
-            self.logger.warning(text)
+            self.logger.warning(text, extra=extra)
         else:
-            self.logger.debug(text)
+            self.logger.debug(text, extra=extra)

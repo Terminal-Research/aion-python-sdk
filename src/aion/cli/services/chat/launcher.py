@@ -39,6 +39,7 @@ class ChatLaunchOptions:
         push_receiver: Push notification receiver URL.
         environment_id: Optional Aion Chat account and registry environment.
         control_plane_origin: Optional explicit development API origin.
+        workspace: Optional workspace ID or exact display name for registry discovery.
     """
 
     endpoint: Optional[str]
@@ -49,6 +50,7 @@ class ChatLaunchOptions:
     push_receiver: str
     environment_id: Optional[str] = None
     control_plane_origin: Optional[str] = None
+    workspace: Optional[str] = None
 
     def to_args(self) -> list[str]:
         """Convert the options to CLI arguments for the standalone UI."""
@@ -58,6 +60,8 @@ class ChatLaunchOptions:
             args.extend(["--env", self.environment_id])
             if self.control_plane_origin:
                 args.append(self.control_plane_origin)
+        if self.workspace is not None:
+            args.extend(["--workspace", self.workspace])
         if self.endpoint:
             args.extend(["--url", self.endpoint])
         if self.agent_id:
@@ -87,6 +91,7 @@ class ChatRunLaunchOptions:
         push_receiver: Push notification receiver URL.
         environment_id: Optional Aion Chat account and registry environment.
         control_plane_origin: Optional explicit development API origin.
+        workspace: Optional workspace ID or exact display name for registry discovery.
         request_mode: A2A request mode to use.
         response_mode: Output rendering mode to use.
         message: Message text, or ``-`` to read from standard input.
@@ -106,6 +111,7 @@ class ChatRunLaunchOptions:
     new_session: bool = False
     environment_id: Optional[str] = None
     control_plane_origin: Optional[str] = None
+    workspace: Optional[str] = None
 
     def to_args(self) -> list[str]:
         """Convert the options to CLI arguments for the standalone UI."""
@@ -118,6 +124,8 @@ class ChatRunLaunchOptions:
             args.extend(["--env", self.environment_id])
             if self.control_plane_origin:
                 args.append(self.control_plane_origin)
+        if self.workspace is not None:
+            args.extend(["--workspace", self.workspace])
         if self.endpoint:
             args.extend(["--url", self.endpoint])
         if self.agent_id:

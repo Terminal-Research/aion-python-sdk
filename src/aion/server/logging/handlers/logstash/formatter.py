@@ -9,6 +9,7 @@ from a2a.types import TaskState
 from aion.core.logging.base import AionLogRecord
 from logstash_async.formatter import LogstashFormatter
 
+from aion.server.settings import app_settings
 from aion.server.utils.deployment import get_service_name
 
 __all__ = ["AionLogstashFormatter"]
@@ -66,6 +67,18 @@ class AionLogstashFormatter(LogstashFormatter):
         agent_framework_baggage = record.agent_trace_baggage if isinstance(record.agent_trace_baggage, dict) else {}
         user_id = trace_baggage.get("aion.sender.id", None)
 
+        # Keep request attribution ahead of the deployment default, including
+        # the existing framework-over-inbound precedence. Never mutate baggage:
+        # the next record may be a startup or background log with no request.
+        tags = trace_baggage | agent_framework_baggage
+        for tag, default in (
+            ("aion.organization.id", app_settings.organization_id),
+            ("aion.deployment.id", app_settings.deployment_id),
+        ):
+            value = agent_framework_baggage.get(tag) or trace_baggage.get(tag) or default
+            if value:
+                tags[tag] = value
+
         message = {
             '@timestamp': datetime.datetime.fromtimestamp(
                 record.created,
@@ -90,7 +103,7 @@ class AionLogstashFormatter(LogstashFormatter):
             "span.name": record.trace_span_name,
             "parent.span.id": record.trace_parent_span_id,
 
-            "_tags": trace_baggage | agent_framework_baggage | {
+            "_tags": tags | {
                 "aion.distribution.id": record.aion_distribution_id,
                 "aion.version.id": record.aion_version_id,
                 "aion.agentEnvironment.id": record.aion_agent_environment_id,
@@ -100,6 +113,12 @@ class AionLogstashFormatter(LogstashFormatter):
                 "a2a.taskStatus.state": TaskState.Name(record.a2a_task_status) if record.a2a_task_status is not None else None,
             },
         }
+        # Original proxy request details must not collide with the collector's
+        # own HTTP transport fields added during ingestion.
+        proxy_request = getattr(record, "proxy_request", None)
+        if isinstance(proxy_request, dict):
+            message["proxy_request"] = proxy_request
+
         # Add exception information if present
         if record.exc_info:
             exc_type, exc_value, exc_traceback = record.exc_info

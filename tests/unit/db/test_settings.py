@@ -50,3 +50,19 @@ class TestDatabaseSettingsUrlParsing:
         db = _db("postgresql://host:5432/db")
         assert db.pg_user_name is None
         assert db.pg_user_password is None
+
+
+@pytest.mark.parametrize("url", [
+    "postgres://alice:PRIVATE_PASSWORD@db.host/example",
+    "postgresql://alice:PRIVATE_PASSWORD@[invalid/example",
+    "postgresql:///PRIVATE_PASSWORD",
+])
+def test_invalid_url_error_names_setting_without_echoing_credentials(url):
+    with pytest.raises(ValidationError) as caught:
+        DatabaseSettings(POSTGRES_URL=url)
+
+    message = str(caught.value)
+    assert "POSTGRES_URL" in message
+    assert "PostgreSQL URL" in message
+    assert "PRIVATE_PASSWORD" not in message
+    assert url not in message

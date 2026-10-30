@@ -41,11 +41,6 @@ def _model_variables() -> set[str]:
     }
 
 
-# Read outside any settings model, by a deployment's process environment.
-DEPLOYMENT_OUTSIDE_MODELS = {
-    "DEPLOYMENT_ID",
-}
-
 # Set by the SDK itself for a process it starts, and read back on the other
 # side of that boundary.
 LAUNCHER = {
@@ -62,7 +57,7 @@ CLI = {
 
 def _inventory() -> set[str]:
     """Everything this module accounts for."""
-    return _model_variables() | DEPLOYMENT_OUTSIDE_MODELS | LAUNCHER | CLI
+    return _model_variables() | LAUNCHER | CLI
 
 
 def _read_environment_variables() -> set[str]:
@@ -114,7 +109,7 @@ def test_the_platform_supplied_marker_reaches_the_fields_that_carry_it() -> None
 
 
 @pytest.mark.parametrize(
-    "name", sorted(DEPLOYMENT_OUTSIDE_MODELS | {"POSTGRES_URL", "ENCRYPTION_KEY", "HOST_NAME"})
+    "name", sorted({"DEPLOYMENT_ID", "POSTGRES_URL", "ENCRYPTION_KEY", "HOST_NAME"})
 )
 def test_a_deployment_variable_names_its_own_scope(name: str) -> None:
     """A name set from outside says what it configures.

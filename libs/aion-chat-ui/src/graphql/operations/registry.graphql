@@ -4,6 +4,14 @@ query CurrentUser {
 		homeOrganization {
 			id
 			name
+			organizationType
+		}
+		memberships {
+			organization {
+				id
+				name
+				organizationType
+			}
 		}
 		agentIdentity {
 			id

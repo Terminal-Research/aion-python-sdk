@@ -1,8 +1,15 @@
+import asyncio
+from contextvars import ContextVar
+
 import pytest
 from unittest.mock import AsyncMock, Mock, patch
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
 from psycopg_pool import AsyncConnectionPool
+from psycopg_pool.pool_async import MaintenanceTask
 from sqlalchemy.ext.asyncio import AsyncSession
 from aion.db.postgres.manager import DbManager
+from aion.db.settings import db_settings
 
 
 class TestDbManager:
@@ -118,6 +125,56 @@ class TestDbManager:
 
         with pytest.raises(Exception, match="Connection failed"):
             await db_manager.initialize(sample_dsn)
+
+    async def test_pool_workers_do_not_retain_initialization_trace(self, monkeypatch, db_manager, sample_dsn):
+        # An empty real pool starts workers without opening database connections.
+        monkeypatch.setattr(db_settings, "pool_min_size", 0)
+        application_context = ContextVar("pool_test_application_context", default=None)
+        completed = asyncio.get_running_loop().create_future()
+        wait_contexts = []
+        original_wait = AsyncConnectionPool.wait
+
+        async def wait(pool, *args, **kwargs):
+            wait_contexts.append(trace.get_current_span().get_span_context())
+            return await original_wait(pool, *args, **kwargs)
+
+        monkeypatch.setattr(AsyncConnectionPool, "wait", wait)
+
+        class Probe(MaintenanceTask):
+            async def _run(self, pool):
+                completed.set_result((
+                    trace.get_current_span().get_span_context(), application_context.get(),
+                ))
+
+        provider = TracerProvider()
+        token = application_context.set("preserved")
+        try:
+            with provider.get_tracer(__name__).start_as_current_span("database.prepare") as span:
+                await db_manager.initialize(sample_dsn)
+                assert trace.get_current_span() is span
+            db_manager.get_pool().run_task(Probe(db_manager.get_pool()))
+            worker_context, application_value = await asyncio.wait_for(completed, 2)
+            assert not worker_context.is_valid
+            assert application_value == "preserved"
+            assert wait_contexts == [span.get_span_context()]
+        finally:
+            await db_manager.close()
+            application_context.reset(token)
+            provider.shutdown()
+
+    @pytest.mark.parametrize("method", ["open", "wait"])
+    async def test_pool_initialization_failure_restores_trace(self, monkeypatch, db_manager, sample_dsn, method):
+        pool = AsyncMock(spec=AsyncConnectionPool)
+        getattr(pool, method).side_effect = RuntimeError("pool initialization failed")
+        monkeypatch.setattr("aion.db.postgres.manager.AsyncConnectionPool", Mock(return_value=pool))
+        provider = TracerProvider()
+        try:
+            with provider.get_tracer(__name__).start_as_current_span("database.prepare") as span:
+                with pytest.raises(RuntimeError, match="pool initialization failed"):
+                    await db_manager.initialize(sample_dsn)
+                assert trace.get_current_span() is span
+        finally:
+            provider.shutdown()
 
     def test_get_pool_success(self, db_manager):
         """Test getting pool when initialized."""

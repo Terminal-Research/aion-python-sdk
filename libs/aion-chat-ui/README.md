@@ -26,6 +26,48 @@ aio --agent-id my-agent --url http://localhost:8000
 
 CLI endpoint auth values such as `--token` and `--header` are sent only to the explicit `--url` source. They are not sent to default localhost discovery or Aion registry-discovered agents.
 
+### Workspaces
+
+Sign in with `/login`, then choose the workspace whose registry agents you want to browse:
+
+```text
+/workspace
+/workspace "Terminal Research"
+```
+
+The picker lists your home workspace and current memberships. Names match exactly,
+ignoring case and surrounding spaces; use the workspace ID when names are duplicated.
+The selected workspace appears above the composer. Use `@` to choose an agent.
+
+Both launchers accept the same startup option:
+
+```bash
+aio --env production --workspace "Terminal Research"
+aion chat --env production --workspace "Terminal Research"
+aion chat run --env production --workspace "Terminal Research" --agent @nflstats "Hello"
+```
+
+Interactive choices persist per account, environment and API origin. With no explicit
+choice, Chat uses that scope's saved workspace, or the home workspace on first use.
+A removed membership requires a new choice. An empty catalog identifies its workspace.
+An explicit workspace choice never selects a local agent as a substitute.
+
+A headless `run --workspace` overrides only that request and starts a fresh conversation.
+It never opens a picker or changes your interactive workspace or conversation.
+`--workspace` cannot be combined with `--url`. An explicit `--url` discovers only that
+endpoint and does not need workspace membership lookup.
+
+Wait for the current reply and its save to finish before switching workspaces.
+Chat accepts one switch at a time through catalog loading, connection and history
+restoration. Additional choices and messages are refused, not queued. A failed
+membership check keeps the current conversation; a timed-out switch can be retried.
+
+Registry conversations are scoped by account, API origin, workspace and agent.
+Returning to one restores its exact saved context and local messages without a new
+welcome or reactivating an old task. Missing or damaged local history produces a
+notice while keeping the verified context ID. Workspace selection changes the catalog
+you browse; it does not change caller identity, credentials, billing or authorization.
+
 ### Headless Run
 
 ```bash
@@ -84,7 +126,7 @@ When an interactive chat session starts, `aio` checks npm for the latest publish
 
 ### Agent Sources and Sessions
 
-Agent sources are discovered per selected Aion environment. Every environment includes a default local source at `http://localhost:8000`; this default is silent when no local server is running. When you are logged in, the selected Aion environment can also provide registry-backed agents with an A2A or AionChat distribution for that account. An identity exposed through both types appears once. Passing `--url` adds an explicit source for that run. Explicit URLs are resolved as a manifest first and then as a direct agent card.
+Agent sources are discovered per selected Aion environment. Every environment includes a default local source at `http://localhost:8000`; this default is silent when no local server is running. When you are logged in, the selected Aion environment can also provide registry-backed agents with an A2A or AionChat distribution for that account. An identity exposed through both types appears once. Passing `--url` limits discovery to that explicit source for the run. Explicit URLs are resolved as a manifest first and then as a direct agent card.
 
 Inside the composer, `/sources` is visible in the slash command picker and lists configured sources, their type, URL, description, and current status.
 
@@ -94,7 +136,9 @@ The chat UI stores source and agent indexes in `chat2.json`. Context session pre
 ~/.config/aion/sessions/<environment>/<agent-key>/<context-id>.json
 ```
 
-Session files store A2A `Message` objects for the latest completed exchange, not full transcripts.
+Session files accumulate locally captured A2A `Message` objects, deduplicated by message ID.
+They are not a downloaded server archive. Registry context restoration reads the exact active-context
+file, never whichever file was updated most recently.
 
 ### Environments
 
@@ -157,7 +201,9 @@ Guest records use the versioned scope from the caller-authentication spec:
 control-plane API URL, environment, stable source key and destination origin.
 `credentialScope` in the agent index is a non-secret local-history discriminator,
 not an authorization assertion. It prevents a replacement guest or different
-account from restoring an old active context. No history or access is migrated.
+account from restoring an old active context. Verified legacy registry history can
+be copied into the same account's home workspace scope.
+Legacy history is never adopted into a team workspace based on an agent handle.
 
 See [Authentication And Guest Sessions](https://docs.aion.to/tools/aion-chat#authentication-and-guest-sessions)
 for user-facing behavior. Client tests use controlled receivers and fake
@@ -249,5 +295,5 @@ completion is independent of the foreground request. Reconnect and context
 restoration reuse the existing ID without another welcome, including after a
 failed welcome. Agents without welcome support use the allocated ID on the
 first user prompt. Session saves merge messages by ID so concurrent welcomes
-cannot erase ordinary replies. Context fetching and transcript restoration
-remain unchanged.
+cannot erase ordinary replies. Registry transcript restoration reads the exact
+scoped context without replaying events or fetching remote history.

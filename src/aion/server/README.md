@@ -629,6 +629,11 @@ its console and, when `LOGSTASH_HOST` and `LOGSTASH_PORT` are configured, to
 Logstash. `LOG_LEVEL` defaults to `INFO`; Logstash excludes debug records and
 records without a running version, invocation distribution, or trace.
 
+The proxy stays silent for HTTP 200 responses to `/health/` and `/health/system/`.
+Other requests are logged at debug level, or warning for proxy-owned failures,
+with the method, path, status, client address, and supplied `Host`, `User-Agent`,
+`X-Forwarded-For`, and `X-Real-IP` headers.
+
 `VERSION_ID` identifies startup, shutdown, scheduled jobs, and background threads
 without requiring an incoming request. Within a request, its version and tracing
 context take precedence. Logs emitted before a version is supplied or resolved
@@ -640,6 +645,37 @@ The agent process logs `Agent server starting` after configuring its handlers.
 `Agent server ready; accepting requests` follows completed application startup
 and socket binding. A failed lifespan emits a failure event instead. These events
 use the SDK logger, independently of the suppressed Uvicorn INFO messages.
+
+Each `aion serve` launch opens an `application.startup` trace before loading
+the application. Its agent processes use `agent.startup` child spans and its
+proxy uses `proxy.startup`. Process launches carry W3C trace context explicitly;
+each child keeps the trace ID and generates its own span ID. Log records expose
+`trace.id`, `span.id`, `span.name`, and `parent.span.id`, together with the
+existing deployment, organization, version, host, and process identifiers.
+Database preparation, plugin initialization, agent construction, application
+assembly, and lifespan startup have their own phase spans. Awaited operations
+and migration work dispatched with `asyncio.to_thread` retain that context.
+
+Readiness is acknowledged after lifespan initialization and socket binding.
+Startup spans finish at readiness or failure; the launcher records a failed
+startup if any required child fails. With `--startup-timeout 0`, the launcher
+records `application.startup launched`, without claiming readiness, while each
+child still records its own eventual outcome. A later managed-process restart
+captures fresh launch context instead of replaying the original carrier: when
+the proxy dies while agents still serve, the launcher starts it again on its
+reserved port, and the new proxy opens its own `proxy.startup` trace.
+
+Requests, the platform connection, and ongoing background maintenance do not
+inherit startup tracing. An error that stops `aion serve` after its startup
+finished is logged outside the startup trace, not as a failed start. Database pool workers start without tracing context;
+the awaited pool readiness check retains the initialization span. Agent and
+proxy lifespan failures log their cause before leaving their startup span.
+Code that launches long-lived background tasks during
+initialization should also detach the startup context for those tasks; ending
+a span alone does not clear the context a task inherited. Tracing initialization
+preserves an application-configured OpenTelemetry provider. The SDK supplies
+log correlation by default; it does not configure a span exporter or connect
+startup to the backend deployment trace.
 
 An independently launched child process must configure its own logging or relay
 structured records to its parent. Environment inheritance alone does not carry
