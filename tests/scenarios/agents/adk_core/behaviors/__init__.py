@@ -20,7 +20,15 @@ from .events import ids, react, steps
 from .files import artifacts, parts, send_file
 from .lifecycle import slow
 from .interrupts import ask, ask_fail, ask_twice
-from .outbox import outbox_failed, outbox_history, outbox_message, outbox_pause, outbox_task
+from .outbox import (
+    outbox_after_reply,
+    outbox_failed,
+    outbox_failed_after_reply,
+    outbox_history,
+    outbox_message,
+    outbox_pause,
+    outbox_task,
+)
 from .payload import big
 from .smoke import echo, help_menu
 from .streaming import stream, think
@@ -58,4 +66,6 @@ BEHAVIORS: dict[str, Behavior] = {
     "outbox-history": outbox_history,
     "outbox-failed": outbox_failed,
     "outbox-pause": outbox_pause,
+    "outbox-after-reply": outbox_after_reply,
+    "outbox-failed-after-reply": outbox_failed_after_reply,
 }

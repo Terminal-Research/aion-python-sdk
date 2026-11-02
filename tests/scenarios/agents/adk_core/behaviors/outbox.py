@@ -20,6 +20,7 @@ from tests.scenarios.commands import (
     OUTBOX_FAILED_REASON,
     OUTBOX_MESSAGE_TEXT,
     OUTBOX_PAUSE_QUESTION,
+    OUTBOX_PREFACE_TEXT,
     OUTBOX_TASK_ARTIFACT_NAME,
     OUTBOX_TASK_ARTIFACT_TEXT,
     OUTBOX_TASK_HISTORY_TEXT,
@@ -28,7 +29,15 @@ from tests.scenarios.commands import (
 
 AGENT_NAME = "scenario_agent"
 
-__all__ = ["outbox_failed", "outbox_history", "outbox_message", "outbox_pause", "outbox_task"]
+__all__ = [
+    "outbox_after_reply",
+    "outbox_failed",
+    "outbox_failed_after_reply",
+    "outbox_history",
+    "outbox_message",
+    "outbox_pause",
+    "outbox_task",
+]
 
 
 def _carrying(outbox: A2AOutbox) -> Event:
@@ -118,3 +127,15 @@ async def outbox_pause(invocation: Invocation) -> Event:
             )
         )
     )
+
+
+async def outbox_after_reply(invocation: Invocation) -> Event:
+    """Say something through the thread first, then hand over a `Message`."""
+    await invocation.thread.reply(OUTBOX_PREFACE_TEXT)
+    return await outbox_message(invocation)
+
+
+async def outbox_failed_after_reply(invocation: Invocation) -> Event:
+    """Explain through the thread first, then fail through the outbox."""
+    await invocation.thread.reply(OUTBOX_PREFACE_TEXT)
+    return await outbox_failed(invocation)

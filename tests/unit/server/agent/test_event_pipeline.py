@@ -18,6 +18,7 @@ stored task, not about a call that happened.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from unittest.mock import AsyncMock, patch
 
@@ -40,6 +41,7 @@ from aion.core.a2a.deltas import stream_delta_chunk, stream_delta_end, thinking_
 from aion.core.a2a.enums import ArtifactId
 from aion.server.a2a.outbox import outbox_task
 from aion.server.a2a.response_extensions import ResponseServiceParameters
+from aion.server.agent.execution import event_pipeline as event_pipeline_module
 from aion.server.agent.execution.event_pipeline import (
     AionEventPipeline,
     OutboundFileNotStoredError,
@@ -75,6 +77,12 @@ class ReplacingTransformer:
         if isinstance(event, TaskStatusUpdateEvent) and event.status.HasField("message"):
             event.status.message.parts[0].text = "transformed"
         return Transform(event, TransformReport())
+
+
+@pytest.fixture(autouse=True)
+def _short_silent_save_wait(monkeypatch):
+    """No event consumer runs here, so a direct write that waits for one gives up quickly."""
+    monkeypatch.setattr(event_pipeline_module, "SILENT_SAVE_WAIT", 0.05)
 
 
 @pytest.fixture(autouse=True)
@@ -330,6 +338,26 @@ async def test_a_task_is_persisted_without_reaching_the_client(manager, queue, s
     assert queue.events == []
     stored = await store.get(TASK_ID, call_context)
     assert [m.parts[0].text for m in stored.history] == ["from the agent"]
+
+
+async def test_a_direct_write_waits_for_the_updates_queued_before_it(manager, queue, store, call_context, monkeypatch) -> None:
+    """A message saved directly goes in after the reply the agent queued first, not before it."""
+    monkeypatch.setattr(event_pipeline_module, "SILENT_SAVE_WAIT", 5.0)
+    pipeline = _pipeline(queue, task_started=True)
+    await manager.save_task_event(_task())
+    await pipeline.process(_status("first"))
+
+    saving = asyncio.create_task(pipeline.process(_message("second")))
+    await asyncio.sleep(0.05)
+    assert not saving.done(), "the direct write did not wait for the queued reply"
+
+    await _consume(manager, queue)
+    await asyncio.wait_for(saving, 1)
+    stored = await store.get(TASK_ID, call_context)
+    texts = [m.parts[0].text for m in stored.history] + (
+        [stored.status.message.parts[0].text] if stored.status.HasField("message") else []
+    )
+    assert texts.index("first") < texts.index("second")
 
 
 @pytest.mark.parametrize(

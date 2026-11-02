@@ -24,6 +24,7 @@ from tests.scenarios.commands import (
     OUTBOX_FAILED_REASON,
     OUTBOX_MESSAGE_TEXT,
     OUTBOX_PAUSE_QUESTION,
+    OUTBOX_PREFACE_TEXT,
     OUTBOX_TASK_ARTIFACT_NAME,
     OUTBOX_TASK_ARTIFACT_TEXT,
     OUTBOX_TASK_HISTORY_TEXT,
@@ -257,3 +258,25 @@ async def test_a_task_left_waiting_by_the_outbox_continues_with_the_next_message
     assert resumed.state == "COMPLETED"
     stored = await client.get_task(closing.task_id)
     assert echo_text("answered") in _history_of(stored) + _texts_of(stored.artifacts)
+
+
+@pytest.mark.command("outbox-after-reply")
+async def test_what_the_turn_said_comes_before_the_outbox_in_the_history(client: ScenarioClient) -> None:
+    """The history keeps the order things were said in: the reply, then the outbox Message."""
+    events = await client.send("outbox-after-reply")
+    stored = await client.get_task(final_task(events).task_id)
+
+    history = _history_of(stored)
+    assert history.index(OUTBOX_PREFACE_TEXT) < history.index(OUTBOX_MESSAGE_TEXT)
+
+
+@pytest.mark.command("outbox-failed-after-reply")
+async def test_what_the_turn_said_before_failing_through_the_outbox_is_kept(client: ScenarioClient) -> None:
+    """The explanation sent before the outbox failed the task stays in its history, and the reason in its status."""
+    events = await client.send("outbox-failed-after-reply")
+    closing = final_task(events)
+
+    assert closing.state == "FAILED"
+    stored = await client.get_task(closing.task_id)
+    assert OUTBOX_PREFACE_TEXT in _history_of(stored)
+    assert _texts_of([stored.status.message]) == [OUTBOX_FAILED_REASON]

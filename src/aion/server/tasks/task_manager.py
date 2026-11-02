@@ -11,7 +11,7 @@ from a2a.server.cluster.task_store import (
 )
 from a2a.server.events import Event
 from a2a.server.tasks import TaskManager
-from a2a.types import Message, Task, TaskState, TaskStatus, TaskStatusUpdateEvent
+from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskState, TaskStatus, TaskStatusUpdateEvent
 from aion.server.a2a.constants import (
     INTERRUPT_TASK_STATES,
     NON_ACTIVE_TASK_STATES,
@@ -91,6 +91,10 @@ class AionTaskManager(TaskManager):
         # Set once the store holds the task: read back from it, or written by
         # this manager. See ``wait_until_stored``.
         self._stored = asyncio.Event()
+        # How many status and artifact updates the SDK consumer has applied
+        # from the queue. See ``wait_until_applied``.
+        self._applied = 0
+        self._applied_changed = asyncio.Condition()
 
     @property
     def written_outcome(self) -> TaskState | None:
@@ -251,18 +255,45 @@ class AionTaskManager(TaskManager):
         Returns:
             The same event object that was processed.
         """
-        if isinstance(event, Message):
-            event = await self._wrap_message_as_status_event(event)
+        # Status and artifact updates reach this method only from the queue;
+        # what the producer saves itself is a Task or a Message.
+        queued = isinstance(event, (TaskStatusUpdateEvent, TaskArtifactUpdateEvent))
+        try:
+            if isinstance(event, Message):
+                event = await self._wrap_message_as_status_event(event)
 
-        if isinstance(event, TaskStatusUpdateEvent) and not event.status.HasField("timestamp"):
-            event.status.timestamp.GetCurrentTime()
+            if isinstance(event, TaskStatusUpdateEvent) and not event.status.HasField("timestamp"):
+                event.status.timestamp.GetCurrentTime()
 
-        event = await self._carry_pending_message(event)
-        await self._forget_recorded_status_message(event)
+            event = await self._carry_pending_message(event)
+            await self._forget_recorded_status_message(event)
 
-        result = await super().process(event)
-        self._track_task_status(event)
-        return result
+            result = await super().process(event)
+            self._track_task_status(event)
+            return result
+        finally:
+            if queued:
+                async with self._applied_changed:
+                    self._applied += 1
+                    self._applied_changed.notify_all()
+
+    async def wait_until_applied(self, count: int, timeout: float) -> bool:
+        """Wait until the SDK consumer has applied ``count`` status and artifact updates; False when time ran out.
+
+        The producer's own writes of a Task or Message go to the store
+        directly, while its status and artifact updates go through the queue.
+        A direct write that overtakes an update still queued lands out of
+        order: before a reply the agent sent first, or under a state the
+        update then overwrites.
+        """
+        async with self._applied_changed:
+            try:
+                await asyncio.wait_for(
+                    self._applied_changed.wait_for(lambda: self._applied >= count), timeout
+                )
+            except asyncio.TimeoutError:
+                return False
+        return True
 
     @override
     def update_with_message(self, message: Message, task: Task) -> Task:

@@ -75,6 +75,7 @@ __all__ = [
     "OUTBOX_TASK_METADATA",
     "OUTBOX_FAILED_REASON",
     "OUTBOX_PAUSE_QUESTION",
+    "OUTBOX_PREFACE_TEXT",
     "FAIL_MODES",
     "FAIL_REPLY_TEXT",
     "FAIL_MESSAGE",
@@ -206,6 +207,10 @@ COMMANDS: tuple[Command, ...] = (
             tags=("events", "terminal_states")),
     Command("outbox-pause", "Leave the task waiting for input through an A2A Task in the outbox",
             tags=("events", "interrupts")),
+    Command("outbox-after-reply", "Reply through the thread, then return an A2A Message through the outbox",
+            tags=("events",)),
+    Command("outbox-failed-after-reply", "Reply through the thread, then fail through an A2A Task in the outbox",
+            tags=("events", "terminal_states")),
     Command("ask", "Ask a question, then quote the answer", tags=("interrupts",)),
     Command("ask-twice", "Ask two questions in a row", tags=("interrupts",)),
     Command("ask-fail", "Ask a question, then fail on the answer", tags=("interrupts", "errors")),
@@ -489,6 +494,9 @@ OUTBOX_TASK_METADATA = {"scenario": "outbox-task"}
 # and the question `outbox-pause` asks in its own.
 OUTBOX_FAILED_REASON = "outbox failure reason"
 OUTBOX_PAUSE_QUESTION = "outbox question?"
+# What `outbox-after-reply` and `outbox-failed-after-reply` say through the
+# thread before the outbox: it has to stay in the history, before the outbox.
+OUTBOX_PREFACE_TEXT = "said before the outbox"
 
 
 # How `fail <mode>` fails: before saying anything, or with a reply already

@@ -24,12 +24,17 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-TASK_STORED_TIMEOUT = 5.0
-"""Seconds a Task or Message the pipeline saves itself waits for the store to hold the task.
+SILENT_SAVE_WAIT = 5.0
+"""Seconds a Task or Message the pipeline saves itself waits for the queue to catch up.
 
-The event consumer writes a new task when it takes the request's opening Task
-off the queue. A write that comes first creates the task in the store itself,
-and the consumer then refuses the opening Task as a second one."""
+The event consumer applies what goes through the queue - the task a request
+opens with, then the status and artifact updates - and the pipeline writes a
+Task or Message to the store directly. A direct write that comes first lands
+out of order: it creates a new task the consumer then refuses as a second
+one, or goes in before a reply the agent sent earlier, or under a state an
+update still queued then overwrites. So it waits until the store holds the
+task and the consumer has applied every update the pipeline queued before it.
+After this long it is written anyway, with a warning."""
 
 
 class OutboundFileNotStoredError(AionError):
@@ -114,6 +119,7 @@ class AionEventPipeline:
             task_started: bool = False,
             response_parameters: ResponseServiceParameters = ResponseServiceParameters(),
             prior_message_ids: frozenset[str] = frozenset(),
+            queued_before: int = 0,
     ):
         """
         Args:
@@ -125,12 +131,16 @@ class AionEventPipeline:
                 executor makes a resumed task before its turn runs.
             response_parameters: Verified activation for this invocation only.
             prior_message_ids: Existing history/status messages to preserve.
+            queued_before: Status updates the caller queued for the turn
+                before this pipeline took over - the ``WORKING`` a resumed
+                turn opens with - which a direct write waits for too.
         """
         self._queue = event_queue
         self._task_updater = task_updater
         self._file_transformer = file_transformer
         self._task_started = task_started
         self._task_is_new = not task_started
+        self._queued = queued_before
         self._outcome: Optional[int] = None
         self._terminal_seen = False
         self._response_parameters = response_parameters
@@ -201,6 +211,9 @@ class AionEventPipeline:
 
         # Task and Message events are persisted silently (not streamed to client)
         if isinstance(event, (Task, Message)):
+            # Before anything is read from the stored task for this write:
+            # the reply a queued update carries is not in it until applied.
+            await self._catch_up(event)
             if isinstance(event, Task):
                 await self._flush_pending_status_message(event)
             await self._save_silently(event)
@@ -295,21 +308,33 @@ class AionEventPipeline:
         """Persist event to database without emitting to client.
 
         Task and Message events bypass the event queue and are saved
-        directly to the database without being streamed to the client. On a
-        new task they first wait until the store holds it
-        (``TASK_STORED_TIMEOUT``); a resumed task is there already.
+        directly to the database without being streamed to the client, once
+        the queue has caught up with them (``_catch_up``).
         """
         task_manager = self._task_manager
         if task_manager:
-            if self._task_is_new and not await task_manager.wait_until_stored(TASK_STORED_TIMEOUT):
-                logger.warning(
-                    "The task is not in the store after %ss; saving %s anyway",
-                    TASK_STORED_TIMEOUT,
-                    _event_debug_info(event),
-                )
             await task_manager.process(event)
         else:
             logger.warning("Cannot process event silently: task_manager is not initialized.")
+
+    async def _catch_up(self, event: Task | Message) -> None:
+        """Wait until the store holds the task and every update queued before ``event`` is applied.
+
+        Gives up after ``SILENT_SAVE_WAIT`` seconds, with a warning, and the
+        write goes ahead.
+        """
+        task_manager = self._task_manager
+        if task_manager is None:
+            return
+        caught_up = (
+            not self._task_is_new or await task_manager.wait_until_stored(SILENT_SAVE_WAIT)
+        ) and await task_manager.wait_until_applied(self._queued, SILENT_SAVE_WAIT)
+        if not caught_up:
+            logger.warning(
+                "The queue has not caught up after %ss; saving %s anyway",
+                SILENT_SAVE_WAIT,
+                _event_debug_info(event),
+            )
 
     async def _emit_to_client(self, event) -> None:
         """Put the event on the queue, for the consumer to deliver and persist.
@@ -318,6 +343,7 @@ class AionEventPipeline:
         """
         event_copy = copy.deepcopy(event)
         await self._queue.enqueue_event(event_copy)
+        self._queued += 1
 
     async def _start_task(self, event) -> None:
         """Move the task to ``WORKING`` ahead of the first event that does not move it itself."""
@@ -327,6 +353,7 @@ class AionEventPipeline:
         if self._starts_the_task(event):
             return
         await self._task_updater.update_status(TaskState.TASK_STATE_WORKING)
+        self._queued += 1
 
     @staticmethod
     def _starts_the_task(event) -> bool:

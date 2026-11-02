@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-230 scenarios in 42 files, 511 runs across 2 frameworks: 495 run, 15 skipped, 1 independent of the framework.
+232 scenarios in 42 files, 515 runs across 2 frameworks: 499 run, 15 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -14,15 +14,15 @@ A status cell reads `✓` when it runs, `skip` when `frameworks.UNSUPPORTED`, `f
 
 |  | Covered | Not yet |
 |---|---|---|
-| Commands | 26 of 26: `help`, `echo`, `stream`, `think`, `react`, `steps`, `slow`, `artifacts`, `send-file`, `card`, `outbox-task`, `outbox-message`, `outbox-history`, `outbox-failed`, `outbox-pause`, `ask`, `ask-twice`, `ask-fail`, `fail`, `ext`, `whoami`, `event`, `config`, `ids`, `big`, `parts` | — |
+| Commands | 28 of 28: `help`, `echo`, `stream`, `think`, `react`, `steps`, `slow`, `artifacts`, `send-file`, `card`, `outbox-task`, `outbox-message`, `outbox-history`, `outbox-failed`, `outbox-pause`, `outbox-after-reply`, `outbox-failed-after-reply`, `ask`, `ask-twice`, `ask-fail`, `fail`, `ext`, `whoami`, `event`, `config`, `ids`, `big`, `parts` | — |
 | Suites | 18 of 18: `smoke`, `streaming`, `events`, `terminal_states`, `interrupts`, `errors`, `artifacts`, `files`, `extensions`, `daemon`, `authentication`, `config`, `lifecycle`, `contexts`, `evolution`, `persistence`, `distributed`, `native` | — |
 
 ## Frameworks
 
 | Framework | Agent package | Entry | SDK extras | Commands implemented |
 |---|---|---|---|---|
-| langgraph | `tests.scenarios.agents.langgraph_core` | `graph.py:create_graph` | `langgraph-server` | 26 of 26 |
-| adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 26 of 26 |
+| langgraph | `tests.scenarios.agents.langgraph_core` | `graph.py:create_graph` | `langgraph-server` | 28 of 28 |
+| adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 28 of 28 |
 
 The `native` suite runs a second agent per framework instead: an ordinary agent on the framework's own path - a model, a tool, the framework's loop and memory - with no Aion authoring API and no part of the command contract. Its cells name the agent.
 
@@ -60,7 +60,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 |---|---|---|---|
 | `smoke` | agent answers at all: card, health, help, echo | 8 | `make tests-scenarios TAGS=smoke` |
 | `streaming` | streamed answers, thoughts, unary send | 17 | `make tests-scenarios TAGS=streaming` |
-| `events` | event order, ids, outbox, get_task agreement | 27 | `make tests-scenarios TAGS=events` |
+| `events` | event order, ids, outbox, get_task agreement | 29 | `make tests-scenarios TAGS=events` |
 | `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 11 | `make tests-scenarios TAGS=terminal_states` |
 | `interrupts` | INPUT_REQUIRED and resume | 10 | `make tests-scenarios TAGS=interrupts` |
 | `errors` | failures that must stay reported, not crash the server | 10 | `make tests-scenarios TAGS=errors` |
@@ -297,18 +297,20 @@ The other door: an agent that hands the server a finished A2A payload.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The terminal task carries the reply, because that is where it is read.](core/test_outbox.py#L53 "test_a_message_from_the_outbox_is_in_the_task_that_closes_the_stream") | `events` | `outbox-message` | `default` | ✓ | ✓ |
-| [It is history, not a frame: `tasks/get` answers with it afterwards.](core/test_outbox.py#L72 "test_a_message_from_the_outbox_is_in_the_stored_task") | `events` | `outbox-message` | `default` | ✓ | ✓ |
-| [An artifact named by the patch is on the task afterwards.](core/test_outbox.py#L86 "test_a_task_patch_adds_its_artifacts") | `events` | `outbox-task` | `default` | ✓ | ✓ |
-| [A message named by the patch is in the task's history afterwards.](core/test_outbox.py#L98 "test_a_task_patch_adds_its_history") | `events` | `outbox-task` | `default` | ✓ | ✓ |
-| [The patch adds to history; it does not replace what was already there.](core/test_outbox.py#L116 "test_a_task_patch_keeps_the_inbound_message_it_is_answering") | `events` | `outbox-task` | `default` | ✓ | ✓ |
-| [Agent metadata lands on the task, under the agent's own keys.](core/test_outbox.py#L133 "test_the_metadata_of_a_task_patch_is_merged") | `events` | `outbox-task` | `default` | ✓ | ✓ |
-| [Identity is the server's, whatever the payload says or omits.](core/test_outbox.py#L145 "test_the_server_keeps_the_ids_the_patch_left_unset") | `events` | `outbox-task` | `default` | ✓ | ✓ |
-| [An outbox answers the turn that wrote it, and only that one.](core/test_outbox.py#L163 "test_the_next_turn_in_the_context_does_not_repeat_the_outbox") | `events` | `outbox-message` | `default` | ✓ | ✓ |
-| [A task patch is not merged again into the next task of the context.](core/test_outbox.py#L184 "test_the_next_turn_in_the_context_does_not_repeat_the_task_patch") | `events` | `outbox-task` | `default` | ✓ | ✓ |
-| [A Task the agent built is the agent's: the server adds no answer to it.](core/test_outbox.py#L200 "test_a_task_from_the_outbox_gets_no_answer_of_the_servers") | `events` | `outbox-history` | `default` | ✓ | ✓ |
-| [The FAILED the agent set stays the task's state, with the reason it gave.](core/test_outbox.py#L218 "test_a_failed_task_from_the_outbox_is_the_outcome") | `events` | `outbox-failed` | `default` | ✓ | ✓ |
-| [INPUT_REQUIRED from the outbox holds, and the reply runs as the task's next turn.](core/test_outbox.py#L238 "test_a_task_left_waiting_by_the_outbox_continues_with_the_next_message") | `events` | `outbox-pause` | `default` | ✓ | ✓ |
+| [The terminal task carries the reply, because that is where it is read.](core/test_outbox.py#L54 "test_a_message_from_the_outbox_is_in_the_task_that_closes_the_stream") | `events` | `outbox-message` | `default` | ✓ | ✓ |
+| [It is history, not a frame: `tasks/get` answers with it afterwards.](core/test_outbox.py#L73 "test_a_message_from_the_outbox_is_in_the_stored_task") | `events` | `outbox-message` | `default` | ✓ | ✓ |
+| [An artifact named by the patch is on the task afterwards.](core/test_outbox.py#L87 "test_a_task_patch_adds_its_artifacts") | `events` | `outbox-task` | `default` | ✓ | ✓ |
+| [A message named by the patch is in the task's history afterwards.](core/test_outbox.py#L99 "test_a_task_patch_adds_its_history") | `events` | `outbox-task` | `default` | ✓ | ✓ |
+| [The patch adds to history; it does not replace what was already there.](core/test_outbox.py#L117 "test_a_task_patch_keeps_the_inbound_message_it_is_answering") | `events` | `outbox-task` | `default` | ✓ | ✓ |
+| [Agent metadata lands on the task, under the agent's own keys.](core/test_outbox.py#L134 "test_the_metadata_of_a_task_patch_is_merged") | `events` | `outbox-task` | `default` | ✓ | ✓ |
+| [Identity is the server's, whatever the payload says or omits.](core/test_outbox.py#L146 "test_the_server_keeps_the_ids_the_patch_left_unset") | `events` | `outbox-task` | `default` | ✓ | ✓ |
+| [An outbox answers the turn that wrote it, and only that one.](core/test_outbox.py#L164 "test_the_next_turn_in_the_context_does_not_repeat_the_outbox") | `events` | `outbox-message` | `default` | ✓ | ✓ |
+| [A task patch is not merged again into the next task of the context.](core/test_outbox.py#L185 "test_the_next_turn_in_the_context_does_not_repeat_the_task_patch") | `events` | `outbox-task` | `default` | ✓ | ✓ |
+| [A Task the agent built is the agent's: the server adds no answer to it.](core/test_outbox.py#L201 "test_a_task_from_the_outbox_gets_no_answer_of_the_servers") | `events` | `outbox-history` | `default` | ✓ | ✓ |
+| [The FAILED the agent set stays the task's state, with the reason it gave.](core/test_outbox.py#L219 "test_a_failed_task_from_the_outbox_is_the_outcome") | `events` | `outbox-failed` | `default` | ✓ | ✓ |
+| [INPUT_REQUIRED from the outbox holds, and the reply runs as the task's next turn.](core/test_outbox.py#L239 "test_a_task_left_waiting_by_the_outbox_continues_with_the_next_message") | `events` | `outbox-pause` | `default` | ✓ | ✓ |
+| [The history keeps the order things were said in: the reply, then the outbox Message.](core/test_outbox.py#L263 "test_what_the_turn_said_comes_before_the_outbox_in_the_history") | `events` | `outbox-after-reply` | `default` | ✓ | ✓ |
+| [The explanation sent before the outbox failed the task stays in its history, and the reason in its status.](core/test_outbox.py#L273 "test_what_the_turn_said_before_failing_through_the_outbox_is_kept") | `events` | `outbox-failed-after-reply` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_ports.py`
 
@@ -624,6 +626,8 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | `outbox-history` | Return an A2A Task through the outbox that only adds a message | `events` | 1 | ✓ | ✓ |
 | `outbox-failed` | Fail the task through an A2A Task in the outbox, with a reason | `events`, `terminal_states` | 1 | ✓ | ✓ |
 | `outbox-pause` | Leave the task waiting for input through an A2A Task in the outbox | `events`, `interrupts` | 1 | ✓ | ✓ |
+| `outbox-after-reply` | Reply through the thread, then return an A2A Message through the outbox | `events` | 1 | ✓ | ✓ |
+| `outbox-failed-after-reply` | Reply through the thread, then fail through an A2A Task in the outbox | `events`, `terminal_states` | 1 | ✓ | ✓ |
 | `ask` | Ask a question, then quote the answer | `interrupts` | 13 | ✓ | ✓ |
 | `ask-twice` | Ask two questions in a row | `interrupts` | 3 | ✓ | ✓ |
 | `ask-fail` | Ask a question, then fail on the answer | `interrupts`, `errors` | 3 | ✓ | ✓ |

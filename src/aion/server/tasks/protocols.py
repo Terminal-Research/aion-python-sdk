@@ -22,6 +22,10 @@ class AionTaskManagerProtocol(Protocol):
         """Wait until the store holds the task; False when ``timeout`` seconds ran out first."""
         ...
 
+    async def wait_until_applied(self, count: int, timeout: float) -> bool:
+        """Wait until the consumer has applied ``count`` queued status and artifact updates; False when time ran out."""
+        ...
+
     async def get_task(self) -> Task | None:
         """Retrieve the current task object, either from memory or the store.
 
