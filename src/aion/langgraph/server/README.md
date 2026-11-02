@@ -101,9 +101,19 @@ def my_node(state: State) -> State:
     }
 ```
 
-`A2AOutbox` accepts either `message` or `task`. It answers the run whose node wrote it: the server reads it from that run's own updates, so the value the checkpoint keeps in the channel afterwards is not applied to later turns of the same context. A streamed answer is the `aion:stream-delta` artifact, not a message: a section the run leaves open is closed before the outbox is applied.
+Declare the field with `A2AOutboxField` from `aion.langgraph.authoring`:
 
-With a file storage backend configured, an inline file part (`Part(raw=...)`) anywhere in the outbox - the message, or the task's status message, history and artifacts - is stored and replaced with a URL part before the response is delivered, as every outbound file is. A file that cannot be stored fails the task. The checkpoint still holds the outbox as the node returned it, bytes included; to keep file content out of graph state, send the file with `thread.post(file_artifact(...))` instead.
+```python
+from aion.langgraph.authoring import A2AOutboxField
+
+class State(TypedDict):
+    messages: Annotated[list[BaseMessage], add_messages]
+    a2a_outbox: A2AOutboxField
+```
+
+`A2AOutbox` accepts either `message` or `task`. It answers the run whose node wrote it: the server reads it from that run's own updates, never from the checkpoint. `A2AOutboxField` puts the field on LangGraph's `UntrackedValue` channel, so the value is not checkpointed at all: a later turn does not find it in its state, and the checkpoint holds no `A2AOutbox`, a type LangGraph's serializer does not know and warns it will refuse to load. A field declared as plain `Optional[A2AOutbox]` still works, with that warning, and its checkpoint keeps the outbox as the node returned it, file bytes included. A Task in the outbox is the agent's: its state is the turn's outcome when it decides the turn - a terminal state, or `INPUT_REQUIRED` that the next message continues as an ordinary turn - and the server builds no `aion:assistant-answer` for it. A streamed answer is the `aion:stream-delta` artifact, not a message: a section the run leaves open is closed before the outbox is applied.
+
+With a file storage backend configured, an inline file part (`Part(raw=...)`) anywhere in the outbox - the message, or the task's status message, history and artifacts - is stored and replaced with a URL part before the response is delivered, as every outbound file is. A file that cannot be stored fails the task.
 
 For full outbound precedence rules, see [Message Mapping](https://docs.aion.to/sdk/python/frameworks/langgraph/message-mapping).
 
