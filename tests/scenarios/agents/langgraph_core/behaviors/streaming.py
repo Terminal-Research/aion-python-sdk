@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from typing import AsyncIterator
 
+from langchain_core.messages import AIMessageChunk
+
 from tests.scenarios.agents.langgraph_core.invocation import Invocation
 from tests.scenarios.commands import stream_chunks, think_text, thoughts_texts
 
-__all__ = ["stream", "think"]
+__all__ = ["stream", "stream_marked", "think"]
 
 DEFAULT_CHUNKS = 3
 DEFAULT_THOUGHTS = 3
@@ -25,6 +27,18 @@ async def stream(invocation: Invocation) -> dict:
     async def chunk_source() -> AsyncIterator[str]:
         for chunk in stream_chunks(count):
             yield chunk
+
+    return {"messages": [await invocation.thread.reply(chunk_source())]}
+
+
+async def stream_marked(invocation: Invocation) -> dict:
+    """Stream ``n`` chunks of the agent's own generation, the last marked as the last."""
+    chunks = stream_chunks(invocation.command.int_argument(DEFAULT_CHUNKS))
+
+    async def chunk_source() -> AsyncIterator[AIMessageChunk]:
+        for index, chunk in enumerate(chunks):
+            last = index == len(chunks) - 1
+            yield AIMessageChunk(content=chunk, chunk_position="last" if last else None)
 
     return {"messages": [await invocation.thread.reply(chunk_source())]}
 

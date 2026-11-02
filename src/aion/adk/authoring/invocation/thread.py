@@ -62,7 +62,7 @@ class Thread(BaseThread):
         """Post a message via the ADK event emitter.
 
         Supports str, Card, a2a.types.Artifact, google.adk.events.Event,
-        or an async iterator yielding str chunks. Returns the emitted Event,
+        or an async iterator yielding str or google.adk.events.Event chunks. Returns the emitted Event,
         or None when the emitter is not available or the content type is unsupported.
 
         When target is provided, the MessageActionPayload is embedded in
@@ -95,7 +95,7 @@ class Thread(BaseThread):
         logger.warning(
             "Thread.post() received unsupported content type: %s. "
             "Supported types: str, Card, a2a.types.Artifact, "
-            "google.adk.events.Event, async iterator of str.",
+            "google.adk.events.Event, async iterator of str or google.adk.events.Event.",
             type(content).__name__,
         )
         return None
@@ -105,15 +105,21 @@ class Thread(BaseThread):
             text: str,
             metadata: dict | None = None,
             routing: Optional[MessageActionPayload] = None,
+            *,
+            last: bool = False,
     ) -> Event:
-        """Build a partial (streaming) ADK Event for a text chunk, with its routing target under aion:routing."""
+        """Build a partial (streaming) ADK Event for a text chunk, with its routing target under aion:routing.
+
+        ``last`` marks the section's last chunk with ``turn_complete``.
+        """
         meta = dict(metadata) if metadata else {}
         if routing is not None:
             meta[AION_ROUTING_KEY] = routing.model_dump(by_alias=True, exclude_none=True)
         return Event(
             author="agent",
-            content=types.Content(parts=[types.Part(text=text)], role="model"),
+            content=types.Content(parts=[types.Part(text=text)], role="model") if text else None,
             partial=True,
+            turn_complete=True if last else None,
             custom_metadata=meta or None,
         )
 
@@ -132,6 +138,11 @@ class Thread(BaseThread):
         text is the task's answer, not a message. The ADK session keeps it as
         what the agent said. Every event carries ``routing``; the section
         takes it on its first chunk.
+
+        A chunk is a ``str``, or an ADK ``Event`` whose text is the chunk: one
+        that sets ``turn_complete`` is the section's last, which then needs
+        no end mark - as a LangGraph ``AIMessageChunk`` with
+        ``chunk_position="last"``.
         """
         accumulated = ""
         try:
@@ -139,10 +150,18 @@ class Thread(BaseThread):
                 if isinstance(chunk, str):
                     emitter(self._build_partial_text_event(chunk, metadata=metadata, routing=routing))
                     accumulated += chunk
+                elif isinstance(chunk, Event):
+                    text = "".join(
+                        part.text or "" for part in (chunk.content.parts if chunk.content else []) or []
+                    )
+                    emitter(self._build_partial_text_event(
+                        text, metadata=metadata, routing=routing, last=bool(chunk.turn_complete)
+                    ))
+                    accumulated += text
                 else:
                     logger.warning(
                         "Thread async iterator yielded unsupported type: %s. "
-                        "Expected str.",
+                        "Expected str or google.adk.events.Event.",
                         type(chunk).__name__,
                     )
         except Exception as e:

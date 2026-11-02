@@ -190,6 +190,7 @@ COMMANDS: tuple[Command, ...] = (
     Command("help", "Show this menu", tags=("smoke",)),
     Command("echo", "Reply with the argument, unchanged", "<text>", ("smoke", "events")),
     Command("stream", "Stream an answer in n chunks", "<n>", ("streaming",)),
+    Command("stream-marked", "Stream an answer in n chunks, marking the last one", "<n>", ("streaming",)),
     Command("think", "Think n thoughts, then reply", "<n>", ("streaming",)),
     Command("react", "React to the inbound message, then reply", tags=("events",)),
     Command("steps", "Emit n working statuses, then complete", "<n>", ("events",)),

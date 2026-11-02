@@ -60,6 +60,7 @@ class ADKToA2AEventConverter:
         self._ctx = ctx
         # Whether a section of `aion:stream-delta` is open.
         self._section_open = False
+        self._section_ended = False
 
     async def convert(self, adk_event: Event) -> list[AgentEvent]:
         """Convert an ADK event to zero or more A2A events.
@@ -87,27 +88,34 @@ class ADKToA2AEventConverter:
         the rest extend it. The agent's metadata from custom_metadata goes on
         the artifact, so the UI can filter or route individual chunks.
 
-        No chunk is the last one, and that is the ADK streaming contract
-        rather than a missing feature: intermediate responses are partial=True
-        and the section ends with a separate partial=False response carrying
-        the aggregated content, so at the moment a partial is converted
-        nothing says it was the last one. The section's end mark follows
-        with that response.
+        A model's chunks do not say which is the last: intermediate responses
+        are partial=True and the section ends with a separate partial=False
+        response carrying the aggregated content, which brings the section's
+        end mark. A partial event that sets ``turn_complete`` - the agent's
+        own generation marking its last chunk - ends the section itself with
+        ``lastChunk`` set, as a LangGraph chunk with ``chunk_position="last"``
+        does, and an empty one is the end mark.
 
         A routing target ``Thread.reply`` gives the chunks goes out on the
         section's first chunk.
         """
-        parts = A2ATransformer.transform_content(adk_event.content)
+        is_last = bool(adk_event.turn_complete)
+        parts = A2ATransformer.transform_content(adk_event.content) if adk_event.content else []
         if not parts:
+            if is_last and self._section_open and not self._section_ended:
+                self._section_ended = True
+                return [stream_delta_end(task_id=self._task_id, context_id=self._context_id)]
             return []
 
         append = self._section_open
         self._section_open = True
+        self._section_ended = is_last
         return [stream_delta_chunk(
             task_id=self._task_id,
             context_id=self._context_id,
             parts=parts,
             append=append,
+            last_chunk=is_last,
             metadata=get_aion_user_metadata(adk_event),
             routing=None if append else get_aion_routing(adk_event),
         )]
@@ -115,12 +123,16 @@ class ADKToA2AEventConverter:
     def _close_section(self) -> list[AgentEvent]:
         """End the open section of ``aion:stream-delta`` with the end mark, if one is open.
 
-        No ADK chunk says it is the last, so every section gets the mark
+        A section whose last chunk did not say so gets the mark
         (``stream_delta_end``); its text is not sent again.
         """
         if not self._section_open:
             return []
+        owes_end = not self._section_ended
         self._section_open = False
+        self._section_ended = False
+        if not owes_end:
+            return []
         return [stream_delta_end(task_id=self._task_id, context_id=self._context_id)]
 
     def _build_reaction_event(self, reaction: ReactionActionPayload) -> AgentEvent:

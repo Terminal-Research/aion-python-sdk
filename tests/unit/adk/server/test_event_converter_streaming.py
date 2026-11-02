@@ -278,3 +278,27 @@ async def test_a_function_response_is_not_a_message() -> None:
     )
 
     assert _messages(await _convert(response)) == []
+
+
+async def test_a_partial_event_that_completes_the_turn_ends_the_section_itself() -> None:
+    """``turn_complete`` on a chunk is the agent marking its last one: no end mark follows it."""
+    from google.adk.events import Event
+    from google.genai import types
+
+    from aion.adk.server.execution.event_converter import ADKToA2AEventConverter
+
+    converter = ADKToA2AEventConverter(task_id="t-1", context_id="c-1")
+
+    def chunk(text: str, *, last: bool = False) -> Event:
+        return Event(
+            author="agent",
+            content=types.Content(role="model", parts=[types.Part(text=text)]),
+            partial=True,
+            turn_complete=True if last else None,
+        )
+
+    first = await converter.convert(chunk("a "))
+    last = await converter.convert(chunk("b", last=True))
+
+    assert [(e.append, e.last_chunk) for e in first + last] == [(False, False), (True, True)]
+    assert converter.finalize_stream() == []

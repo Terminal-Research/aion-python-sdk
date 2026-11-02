@@ -31,7 +31,7 @@ from .outbox import (
 )
 from .payload import big
 from .smoke import echo, help_menu
-from .streaming import stream, think
+from .streaming import stream, stream_marked, think
 
 __all__ = ["BEHAVIORS", "Behavior"]
 
@@ -43,6 +43,7 @@ BEHAVIORS: dict[str, Behavior] = {
     "help": help_menu,
     "echo": echo,
     "stream": stream,
+    "stream-marked": stream_marked,
     "think": think,
     "react": react,
     "steps": steps,

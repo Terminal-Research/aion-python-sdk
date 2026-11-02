@@ -81,6 +81,20 @@ async def test_the_first_chunk_opens_the_section_and_the_rest_append(
     assert {event.artifact_id for event in updates} == {STREAM_DELTA_ARTIFACT_ID}
 
 
+@pytest.mark.command("stream-marked")
+async def test_a_section_whose_last_chunk_says_so_needs_no_end_mark(client: ScenarioClient) -> None:
+    """The agent's own generation marks its last chunk: that chunk ends the section, and no empty mark follows."""
+    events = await client.send("stream-marked 3")
+
+    updates = [event for event in events if event.kind == "artifact" and event.artifact_id == STREAM_DELTA_ARTIFACT_ID]
+    assert [(event.append, event.last_chunk) for event in updates] == [
+        (False, False),
+        (True, False),
+        (True, True),
+    ]
+    assert section_texts(events) == [stream_text(3)]
+
+
 @pytest.mark.command("stream")
 async def test_one_chunk_is_still_a_section(client: ScenarioClient) -> None:
     """`stream 1` keeps the same shape: one chunk, then the end mark."""
