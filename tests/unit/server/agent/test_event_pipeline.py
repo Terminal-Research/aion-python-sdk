@@ -276,6 +276,20 @@ async def test_a_first_event_stored_silently_is_preceded_by_working(submitted, q
     assert queue.events[0] is _bare_working(queue)[0]
 
 
+@pytest.mark.parametrize(
+    "outcome", [TaskState.TASK_STATE_FAILED, TaskState.TASK_STATE_INPUT_REQUIRED, TaskState.TASK_STATE_COMPLETED]
+)
+async def test_a_first_task_that_decides_the_turn_moves_the_task_itself(submitted, queue, store, call_context, outcome) -> None:
+    """No WORKING is queued before it: the event consumer would apply that after the write and undo the outcome."""
+    pipeline = _pipeline(queue)
+
+    await pipeline.process(_task(state=outcome))
+
+    assert queue.events == []
+    stored = await store.get(TASK_ID, call_context)
+    assert stored.status.state == outcome
+
+
 async def test_a_resumed_task_announces_nothing(manager, queue) -> None:
     """A task resumed after an interrupt is WORKING before the agent runs.
 
@@ -316,6 +330,40 @@ async def test_a_task_is_persisted_without_reaching_the_client(manager, queue, s
     assert queue.events == []
     stored = await store.get(TASK_ID, call_context)
     assert [m.parts[0].text for m in stored.history] == ["from the agent"]
+
+
+@pytest.mark.parametrize(
+    ("outcome", "closes_the_task"),
+    [(TaskState.TASK_STATE_FAILED, True), (TaskState.TASK_STATE_INPUT_REQUIRED, False)],
+)
+async def test_what_a_turn_yields_after_an_outbox_outcome_is_dropped(
+    manager, queue, store, call_context, outcome, closes_the_task
+) -> None:
+    """A Task that decides the turn is its outcome: the executor's own end after it never lands.
+
+    Without this the COMPLETED every executor closes a turn with would
+    complete a task the agent failed, or reopen one it left waiting.
+    """
+    pipeline = _pipeline(queue, task_started=True)
+
+    await pipeline.process(_task(state=outcome))
+    await pipeline.process(_message("too late"))
+    await pipeline.process(_status(state=TaskState.TASK_STATE_COMPLETED))
+
+    assert queue.events == []
+    assert pipeline.terminal_seen is closes_the_task
+    stored = await store.get(TASK_ID, call_context)
+    assert stored.status.state == outcome
+    assert "too late" not in [m.parts[0].text for m in stored.history]
+
+
+async def test_what_a_turn_yields_after_its_outcome_status_is_dropped(manager, queue) -> None:
+    pipeline = _pipeline(queue, task_started=True)
+
+    await pipeline.process(_status(state=TaskState.TASK_STATE_COMPLETED))
+    await pipeline.process(_artifact_update("late"))
+
+    assert [type(event) for event in queue.events] == [TaskStatusUpdateEvent]
 
 
 async def test_a_message_is_persisted_without_reaching_the_client(manager, queue, store, call_context) -> None:
@@ -589,16 +637,15 @@ async def test_a_task_that_only_talked_gets_its_last_message_as_its_answer(manag
     assert completed.status.state == TaskState.TASK_STATE_COMPLETED
 
 
-async def test_a_task_an_outbox_completes_holds_its_answer(manager, queue, store, call_context) -> None:
-    """A whole task is stored as it is, so the answer from its history goes into it."""
+async def test_a_task_an_outbox_completes_gets_no_answer_of_the_servers(manager, queue, store, call_context) -> None:
+    """A whole task is the agent's, stored as it is: the server adds no answer to it."""
     pipeline = _pipeline(queue, task_started=True)
     outbox = _task(state=TaskState.TASK_STATE_COMPLETED, history=[_message("all set")])
 
     await pipeline.process(outbox)
 
     stored = await store.get(TASK_ID, call_context)
-    answer = _stored_artifact(stored, ArtifactId.ASSISTANT_ANSWER.value)
-    assert _texts(answer) == ["all set"]
+    assert [artifact.artifact_id for artifact in stored.artifacts] == []
     assert _answers(queue) == []
 
 

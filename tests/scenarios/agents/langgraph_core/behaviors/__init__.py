@@ -18,7 +18,7 @@ from .events import ids, react, steps
 from .files import artifacts, parts, send_file
 from .interrupts import ask, ask_fail, ask_twice
 from .lifecycle import slow
-from .outbox import outbox_message, outbox_task
+from .outbox import outbox_failed, outbox_history, outbox_message, outbox_pause, outbox_task
 from .payload import big
 from .smoke import echo, help_menu
 from .streaming import stream, think
@@ -51,4 +51,7 @@ BEHAVIORS: dict[str, Behavior] = {
     "config": config,
     "outbox-message": outbox_message,
     "outbox-task": outbox_task,
+    "outbox-history": outbox_history,
+    "outbox-failed": outbox_failed,
+    "outbox-pause": outbox_pause,
 }

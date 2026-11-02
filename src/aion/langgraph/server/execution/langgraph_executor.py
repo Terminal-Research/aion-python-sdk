@@ -119,8 +119,10 @@ class LangGraphExecutor(AgentFrameworkExecutor):
             snapshot = await self._graph_state(config)
 
             if not snapshot.interrupts:
-                logger.warning(
-                    f"Attempted to resume non-interrupted execution: {config.context_id}"
+                # The task waits without an interrupt - an outbox Task left it
+                # waiting for input - so the message is the next turn of it.
+                logger.info(
+                    f"Task waits without an interrupt; the message runs as a new turn: {config.context_id}"
                 )
                 user_input = context.get_user_input()
                 if not user_input:

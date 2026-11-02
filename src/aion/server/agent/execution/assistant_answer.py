@@ -42,11 +42,14 @@ class AssistantAnswer:
     delivered by it already, and a copy that carried it would be delivered
     again. A completed task that produced neither gets no answer, and the
     server says so in its log. A task that ends any other way gets none: the
-    last message of a failed or cancelled turn is not its answer.
+    last message of a failed or cancelled turn is not its answer. Neither
+    does a turn whose agent handed over a whole Task through its outbox:
+    what that task holds, artifacts included, is the agent's to decide.
     """
 
     def __init__(self) -> None:
         self._result_seen = False
+        self._agent_task_seen = False
         self._last_message: Optional[Message] = None
 
     def observe(self, event: object) -> None:
@@ -59,6 +62,7 @@ class AssistantAnswer:
         elif isinstance(event, Message):
             self._note(event)
         elif isinstance(event, Task):
+            self._agent_task_seen = True
             self._result_seen = self._result_seen or any(is_result_artifact(a) for a in event.artifacts)
             for message in event.history:
                 self._note(message)
@@ -72,8 +76,8 @@ class AssistantAnswer:
 
         Args:
             completed: The turn's ``COMPLETED`` status update, or the whole
-                task an outbox completes it with, not yet delivered. Its own
-                message, and for a task its artifacts and history, count.
+                task an outbox completes it with, not yet delivered. A status
+                update's own message counts; a whole task gets no answer.
             stored: The task as the store holds it, for what earlier turns produced.
         """
         if isinstance(completed, Task):
@@ -83,6 +87,8 @@ class AssistantAnswer:
             if completed.status.HasField("message"):
                 self._note(completed.status.message)
             task_id = completed.task_id
+        if self._agent_task_seen:
+            return None
         if self._result_seen or (stored is not None and any(is_result_artifact(a) for a in stored.artifacts)):
             return None
         if self._last_message is None:

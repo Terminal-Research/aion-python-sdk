@@ -21,13 +21,22 @@ from __future__ import annotations
 import pytest
 
 from tests.scenarios.commands import (
+    OUTBOX_FAILED_REASON,
     OUTBOX_MESSAGE_TEXT,
+    OUTBOX_PAUSE_QUESTION,
     OUTBOX_TASK_ARTIFACT_NAME,
     OUTBOX_TASK_ARTIFACT_TEXT,
     OUTBOX_TASK_HISTORY_TEXT,
     OUTBOX_TASK_METADATA,
+    echo_text,
 )
-from tests.scenarios.harness import ScenarioClient, final_task
+from tests.scenarios.harness import (
+    ASSISTANT_ANSWER_ARTIFACT_ID,
+    ScenarioClient,
+    artifact_updates,
+    final_task,
+    stored_artifact,
+)
 
 pytestmark = pytest.mark.events
 
@@ -186,3 +195,65 @@ async def test_the_next_turn_in_the_context_does_not_repeat_the_task_patch(
     assert OUTBOX_TASK_HISTORY_TEXT not in _history_of(stored)
     for key in OUTBOX_TASK_METADATA:
         assert key not in stored.metadata
+
+
+@pytest.mark.command("outbox-history")
+async def test_a_task_from_the_outbox_gets_no_answer_of_the_servers(client: ScenarioClient) -> None:
+    """A Task the agent built is the agent's: the server adds no answer to it.
+
+    The patch only adds a message. A turn that spoke through the thread would
+    get that message copied into `aion:assistant-answer`; a turn that handed
+    over a Task decided what the task holds, artifacts included.
+    """
+    events = await client.send("outbox-history")
+    closing = final_task(events)
+
+    assert closing.state == "COMPLETED"
+    assert artifact_updates(events, ASSISTANT_ANSWER_ARTIFACT_ID) == []
+    stored = await client.get_task(closing.task_id)
+    assert OUTBOX_TASK_HISTORY_TEXT in _history_of(stored)
+    assert stored_artifact(stored, ASSISTANT_ANSWER_ARTIFACT_ID) is None
+
+
+@pytest.mark.command("outbox-failed")
+async def test_a_failed_task_from_the_outbox_is_the_outcome(client: ScenarioClient) -> None:
+    """The FAILED the agent set stays the task's state, with the reason it gave.
+
+    The executor ends every turn with a status of its own. After an outbox
+    that already failed the task, that end is not sent: no COMPLETED, no
+    answer built for it, and the stream reports the failure once.
+    """
+    events = await client.send("outbox-failed")
+    closing = final_task(events)
+
+    assert closing.state == "FAILED"
+    assert _texts_of([closing.raw.status.message]) == [OUTBOX_FAILED_REASON]
+    assert artifact_updates(events, ASSISTANT_ANSWER_ARTIFACT_ID) == []
+    assert [event.state for event in events if event.kind == "task"].count("FAILED") == 1
+    stored = await client.get_task(closing.task_id)
+    assert _texts_of([stored.status.message]) == [OUTBOX_FAILED_REASON]
+    assert stored_artifact(stored, ASSISTANT_ANSWER_ARTIFACT_ID) is None
+
+
+@pytest.mark.command("outbox-pause")
+async def test_a_task_left_waiting_by_the_outbox_continues_with_the_next_message(
+    client: ScenarioClient,
+) -> None:
+    """INPUT_REQUIRED from the outbox holds, and the reply runs as the task's next turn.
+
+    No framework knows the task waits - there is no interrupt behind it - so
+    the reply reaches the agent as an ordinary message of the same task.
+    """
+    closing = final_task(await client.send("outbox-pause"))
+
+    assert closing.state == "INPUT_REQUIRED"
+    assert _texts_of([closing.raw.status.message]) == [OUTBOX_PAUSE_QUESTION]
+
+    resumed = final_task(
+        await client.send("echo answered", task_id=closing.task_id, context_id=closing.context_id)
+    )
+
+    assert resumed.task_id == closing.task_id
+    assert resumed.state == "COMPLETED"
+    stored = await client.get_task(closing.task_id)
+    assert echo_text("answered") in _history_of(stored) + _texts_of(stored.artifacts)

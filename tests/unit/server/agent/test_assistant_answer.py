@@ -105,17 +105,6 @@ class TestTheAnswer:
 
         assert [part.text for part in answer.artifact.parts] == ["done"]
 
-    def test_the_status_message_of_a_whole_task_counts(self):
-        task = Task(
-            id=TASK_ID,
-            context_id=CONTEXT_ID,
-            status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=_message("from the task")),
-        )
-
-        answer = _answer_after(task)
-
-        assert [part.text for part in answer.artifact.parts] == ["from the task"]
-
     def test_a_user_message_is_not_the_answer(self):
         answer = _answer_after(_message("agent said"), _message("user said", role=Role.ROLE_USER))
 
@@ -199,6 +188,27 @@ class TestNoAnswer:
         task = Task(id=TASK_ID, context_id=CONTEXT_ID, artifacts=[Artifact(artifact_id="report")])
 
         assert _answer_after(_message("here it is"), task) is None
+
+    def test_a_whole_task_from_the_agent_means_no_answer(self):
+        """A Task the agent handed over is its own: no message in it, or before it, is copied into an answer."""
+        task = Task(
+            id=TASK_ID,
+            context_id=CONTEXT_ID,
+            status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=_message("in its status")),
+            history=[_message("in its history")],
+        )
+
+        assert _answer_after(_message("before"), task) is None
+
+    def test_a_whole_task_that_completes_the_turn_gets_no_answer(self):
+        task = Task(
+            id=TASK_ID,
+            context_id=CONTEXT_ID,
+            status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
+            history=[_message("done")],
+        )
+
+        assert AssistantAnswer().for_completion(task, None) is None
 
     def test_a_result_the_stored_task_holds_means_no_answer(self):
         stored = Task(id=TASK_ID, context_id=CONTEXT_ID, artifacts=[Artifact(artifact_id="report")])

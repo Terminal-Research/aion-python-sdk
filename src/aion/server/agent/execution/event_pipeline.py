@@ -83,6 +83,13 @@ class AionEventPipeline:
     with a status of its own gets no status without a message or details in
     front of it.
 
+    A turn has one outcome, the first one it reports: a terminal state or a
+    wait for input, whether a status update of the executor states it or a
+    Task the agent handed over through its outbox. Whatever the turn yields
+    after that is dropped - the executor's own end of a turn whose outbox
+    already decided it among them - so the task is not reopened, completed
+    over a failure, or answered after the fact.
+
     Two things of the SDK's own artifacts happen here, the same for every
     executor:
 
@@ -116,6 +123,7 @@ class AionEventPipeline:
         self._task_updater = task_updater
         self._file_transformer = file_transformer
         self._task_started = task_started
+        self._outcome: Optional[int] = None
         self._terminal_seen = False
         self._response_parameters = response_parameters
         self._prior_message_ids = prior_message_ids
@@ -141,12 +149,22 @@ class AionEventPipeline:
     async def process(self, event) -> None:
         """Prepare one agent event and deliver what is left of it.
 
+        An event that comes after the turn's outcome is dropped unread, its
+        files included: the task has its answer for this turn already.
+
         Raises:
             OutboundFileNotStoredError: The event carried a file that could
                 not be stored. The rest of the event has been delivered by
                 then, so an answer sent alongside the file reaches the client
                 before the task fails.
         """
+        if self._outcome is not None:
+            logger.debug(
+                "The turn already has its outcome (%s); dropping %s",
+                TaskState.Name(self._outcome),
+                _event_debug_info(event),
+            )
+            return
         produced = event
         event, failures = await self._prepare_event(event)
         if event is not None:
@@ -169,10 +187,7 @@ class AionEventPipeline:
             await self._add_thought(event)
         elif self._completes(event):
             answer = self._answer.for_completion(event, await self._stored_task())
-            if answer is not None and isinstance(event, Task):
-                # A whole task is stored as it is: the answer goes in it.
-                event.artifacts.append(answer.artifact)
-            elif answer is not None:
+            if answer is not None:
                 await self._emit_to_client(answer)
         self._answer.observe(event)
 
@@ -185,7 +200,7 @@ class AionEventPipeline:
             # All other events are streamed to client
             await self._emit_to_client(event)
 
-        self._note_terminal_state(event)
+        self._note_outcome(event)
 
         if self._deduplicator is not None:
             self._deduplicator.apply_processed_item(event)
@@ -230,12 +245,11 @@ class AionEventPipeline:
             and event.status.state in NON_ACTIVE_TASK_STATES
         )
 
-    def _note_terminal_state(self, event) -> None:
-        """Record that this event closed the task, whatever shape it arrived in."""
-        if isinstance(event, (Task, TaskStatusUpdateEvent)):
-            self._terminal_seen = (
-                self._terminal_seen or event.status.state in TERMINAL_TASK_STATES
-            )
+    def _note_outcome(self, event) -> None:
+        """Record that this event decided the turn - and whether it closed the task - whatever shape it arrived in."""
+        if self._declares_outcome(event):
+            self._outcome = event.status.state
+            self._terminal_seen = self._terminal_seen or event.status.state in TERMINAL_TASK_STATES
 
     async def _flush_pending_status_message(self, incoming_task: Task) -> None:
         """Move pending status.message from current task into incoming task's history.
@@ -302,13 +316,18 @@ class AionEventPipeline:
     def _starts_the_task(event) -> bool:
         """Whether delivering the event moves a ``SUBMITTED`` task out of that state.
 
-        Only a status update does. A ``Message`` or ``Task`` is stored
-        silently, under the state the task already has, and the ``WORKING``
-        written before it is also what moves a message left in
-        ``status.message`` into the history when the event consumer applies
-        it.
+        A status update does, and so does a whole ``Task`` that declares
+        the turn's outcome: it is stored silently with that state, and a
+        ``WORKING`` queued before it would be applied by the event consumer
+        after the write and undo it. A ``Message``, or a ``Task`` that leaves
+        the state as it is, is stored silently under the state the task
+        already has, and the ``WORKING`` written before it is also what moves
+        a message left in ``status.message`` into the history when the event
+        consumer applies it.
         """
-        return isinstance(event, TaskStatusUpdateEvent)
+        return isinstance(event, TaskStatusUpdateEvent) or (
+            isinstance(event, Task) and AionEventPipeline._declares_outcome(event)
+        )
 
     async def _prepare_event(self, event) -> tuple[object, list[UploadFailure]]:
         """Return the event ready for delivery and the files it could not keep.
