@@ -819,3 +819,23 @@ class TestWrittenOutcome:
         await manager.save_task_event(_task(TaskState.TASK_STATE_INPUT_REQUIRED))
 
         assert manager.written_outcome is None
+
+
+class TestWaitUntilStored:
+    """A write that comes before the consumer stores a new task would create the task itself."""
+
+    async def test_a_task_the_store_does_not_hold_yet_is_waited_for(self):
+        manager, store = _built(TaskState.TASK_STATE_SUBMITTED, task_id="not-yet-stored")
+
+        assert await manager.wait_until_stored(0.01) is False
+
+        await manager.save_task_event(Task(id="not-yet-stored", context_id=CONTEXT_ID, status=TaskStatus(state=TaskState.TASK_STATE_SUBMITTED)))
+
+        assert await manager.wait_until_stored(0.01) is True
+
+    async def test_a_task_read_back_from_the_store_is_there(self):
+        manager, _ = _built(TaskState.TASK_STATE_WORKING)
+
+        await manager.get_task()
+
+        assert await manager.wait_until_stored(0.01) is True

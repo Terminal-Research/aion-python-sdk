@@ -24,6 +24,13 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+TASK_STORED_TIMEOUT = 5.0
+"""Seconds a Task or Message the pipeline saves itself waits for the store to hold the task.
+
+The event consumer writes a new task when it takes the request's opening Task
+off the queue. A write that comes first creates the task in the store itself,
+and the consumer then refuses the opening Task as a second one."""
+
 
 class OutboundFileNotStoredError(AionError):
     """A file the agent produced could not be stored, so the task fails.
@@ -123,6 +130,7 @@ class AionEventPipeline:
         self._task_updater = task_updater
         self._file_transformer = file_transformer
         self._task_started = task_started
+        self._task_is_new = not task_started
         self._outcome: Optional[int] = None
         self._terminal_seen = False
         self._response_parameters = response_parameters
@@ -287,10 +295,18 @@ class AionEventPipeline:
         """Persist event to database without emitting to client.
 
         Task and Message events bypass the event queue and are saved
-        directly to the database without being streamed to the client.
+        directly to the database without being streamed to the client. On a
+        new task they first wait until the store holds it
+        (``TASK_STORED_TIMEOUT``); a resumed task is there already.
         """
         task_manager = self._task_manager
         if task_manager:
+            if self._task_is_new and not await task_manager.wait_until_stored(TASK_STORED_TIMEOUT):
+                logger.warning(
+                    "The task is not in the store after %ss; saving %s anyway",
+                    TASK_STORED_TIMEOUT,
+                    _event_debug_info(event),
+                )
             await task_manager.process(event)
         else:
             logger.warning("Cannot process event silently: task_manager is not initialized.")

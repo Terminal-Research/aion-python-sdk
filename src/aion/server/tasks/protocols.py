@@ -18,6 +18,10 @@ class AionTaskManagerProtocol(Protocol):
         """The non-active state this manager's own last write moved the task into, or None."""
         ...
 
+    async def wait_until_stored(self, timeout: float) -> bool:
+        """Wait until the store holds the task; False when ``timeout`` seconds ran out first."""
+        ...
+
     async def get_task(self) -> Task | None:
         """Retrieve the current task object, either from memory or the store.
 

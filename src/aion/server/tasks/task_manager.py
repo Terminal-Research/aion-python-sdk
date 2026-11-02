@@ -88,6 +88,9 @@ class AionTaskManager(TaskManager):
         # events ``AionEventPipeline`` saves itself. Each write names the
         # version the previous one left, so they take turns.
         self._write_lock = asyncio.Lock()
+        # Set once the store holds the task: read back from it, or written by
+        # this manager. See ``wait_until_stored``.
+        self._stored = asyncio.Event()
 
     @property
     def written_outcome(self) -> TaskState | None:
@@ -101,6 +104,21 @@ class AionTaskManager(TaskManager):
         a2a-sdk's producer writes directly when the agent raises.
         """
         return self._written_outcome
+
+    async def wait_until_stored(self, timeout: float) -> bool:
+        """Wait until the store holds the task; False when ``timeout`` seconds ran out first.
+
+        A new task is written by the SDK consumer when it takes the Task the
+        request opened with off the queue. A Task or Message the producer
+        saves before that write creates the task in the store, and the
+        consumer then refuses the opening Task as a second one, with an
+        error in the log.
+        """
+        try:
+            await asyncio.wait_for(self._stored.wait(), timeout)
+        except asyncio.TimeoutError:
+            return False
+        return True
 
     @override
     def invalidate(self) -> None:
@@ -138,6 +156,8 @@ class AionTaskManager(TaskManager):
         the manager's own cache, which already carries whatever this turn has
         written.
         """
+        if task is not None:
+            self._stored.set()
         if task is not None and self._persisted_state is None:
             self._persisted_state = task.status.state
 
@@ -199,6 +219,7 @@ class AionTaskManager(TaskManager):
             record_closing_message(task)
             join_streamed_answer(task)
             await super()._save_task(task)
+            self._stored.set()
 
             state = task.status.state
             self._persisted_state = state
