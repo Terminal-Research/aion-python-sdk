@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
-from aion.adk.authoring.invocation.event_metadata import is_thinking_event
+from aion.adk.authoring.invocation.event_metadata import stays_out_of_session
 from aion.adk.authoring.invocation.context_vars import (
     reset_adk_ctx,
     reset_adk_emitter,
@@ -203,9 +203,9 @@ class ADKStreamExecutor:
 
         Events from agent.run_async() are persisted by the agent task before
         they are forwarded; events the thread emits reach the queue directly
-        and are persisted when the consumer takes them. A thought is never
-        persisted: the next model call builds its request from the session,
-        and the model would take the thought for something it said.
+        and are persisted when the consumer takes them. A thought, or an
+        artifact published as it is, is never persisted
+        (``stays_out_of_session``).
 
         An agent's event keeps the author, branch and invocation ADK gave it,
         as ADK's own Runner keeps them: ADK shows a model another author's
@@ -214,7 +214,7 @@ class ADKStreamExecutor:
         theirs. Only what the event leaves empty is filled in. An event the
         thread emits is the SDK's own and is stamped as the root agent's.
         """
-        if is_thinking_event(event):
+        if stays_out_of_session(event):
             return
         # Looked up before serializing, which drops an outbox written as None:
         # that write still clears one made earlier in the same run.

@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-232 scenarios in 42 files, 515 runs across 2 frameworks: 499 run, 15 skipped, 1 independent of the framework.
+232 scenarios in 42 files, 515 runs across 2 frameworks: 502 run, 12 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -30,12 +30,6 @@ The `native` suite runs a second agent per framework instead: an ordinary agent 
 |---|---|---|---|
 | langgraph | `tests.scenarios.agents.langgraph_native` | `graph.py:create_graph` | `langgraph-server` |
 | adk | `tests.scenarios.agents.adk_native` | `agent.py:create_agent` | `adk-server` |
-
-Pairs a framework genuinely cannot do, which is what a `skip` cell means:
-
-| Framework | Command | Reason |
-|---|---|---|
-| adk | `artifacts` | the ADK artifact service stores one part per artifact, so the SDK refuses the two-part data artifact this command emits (aion.adk emit_artifact) |
 
 Features a framework's native agent does not have; a native scenario driving one `skip`s there:
 
@@ -89,7 +83,7 @@ The answer of a task that only talked: the ``aion:assistant-answer`` artifact.
 | [The stored task holds the answer as its artifact and the reply in its history.](core/test_assistant_answer.py#L61 "test_the_task_keeps_the_answer_and_the_message") | `artifacts` | `echo` | `default` | ✓ | ✓ |
 | [``aion:sourceMessageId`` is the id of the last reply, so a client can show one of the two.](core/test_assistant_answer.py#L75 "test_the_answer_names_the_message_it_was_copied_from") | `artifacts` | `steps` | `default` | ✓ | ✓ |
 | [A reply of text and a file becomes an answer of the same two parts.](core/test_assistant_answer.py#L89 "test_the_answer_carries_every_part_of_the_message") | `artifacts` | `send-file` | `default` | ✓ | ✓ |
-| [The artifacts the agent emitted are the task's result, so its reply stays a message only.](core/test_assistant_answer.py#L102 "test_a_task_with_an_artifact_of_its_own_gets_no_answer") | `artifacts` | `artifacts` | `default` | ✓ | [skip](#frameworks) |
+| [The artifacts the agent emitted are the task's result, so its reply stays a message only.](core/test_assistant_answer.py#L102 "test_a_task_with_an_artifact_of_its_own_gets_no_answer") | `artifacts` | `artifacts` | `default` | ✓ | ✓ |
 | [What the agent said before failing is a message of a failed turn, not its answer.](core/test_assistant_answer.py#L113 "test_a_failed_task_gets_no_answer") | `artifacts` | `fail` | `default` | ✓ | ✓ |
 | [A question that pauses the task is not its answer; the reply of the completing turn is.](core/test_assistant_answer.py#L125 "test_the_answer_comes_from_the_turn_that_completes") | `artifacts` | `ask` | `default` | ✓ | ✓ |
 
@@ -268,8 +262,8 @@ Inline file parts: stored on the way in and out, rejected, or passed through.
 | [Missing distribution principals do not override accepted callback attribution.](core/test_files.py#L174 "test_distribution_recipients_do_not_select_file_authority") | `files` | `parts` | `file-storage` | ✓ | ✓ |
 | [Storage is a concern of file parts only; a plain message is unaffected.](core/test_files.py#L188 "test_text_only_requests_need_no_distribution") | `files` | `parts` | `file-storage` | ✓ | ✓ |
 | [Passthrough is a supported mode: no backend, the bytes reach the agent and the record.](core/test_files.py#L198 "test_without_a_backend_inline_content_passes_through") | `files` | `parts` | `default` | ✓ | ✓ |
-| [The uploaded URL preserves the file action, including explicit null retention.](core/test_files.py#L216 "test_an_outbound_file_leaves_as_a_url") | `files` | `artifacts` | `file-storage` | ✓ | [skip](#frameworks) |
-| [No backend, no conversion: the bytes the agent emitted are the bytes received.](core/test_files.py#L246 "test_without_a_backend_an_outbound_file_stays_inline") | `files` | `artifacts` | `default` | ✓ | [skip](#frameworks) |
+| [The uploaded URL preserves the file action, including explicit null retention.](core/test_files.py#L216 "test_an_outbound_file_leaves_as_a_url") | `files` | `artifacts` | `file-storage` | ✓ | ✓ |
+| [No backend, no conversion: the bytes the agent emitted are the bytes received.](core/test_files.py#L246 "test_without_a_backend_an_outbound_file_stays_inline") | `files` | `artifacts` | `default` | ✓ | ✓ |
 | [No route an agent hands the server a file by skips storage.](core/test_files.py#L278 "test_every_route_out_of_the_agent_delivers_a_file_as_a_url") | `files` | `send-file` | `file-storage` | ✓ | ✓ |
 | [No backend, no conversion, whichever route the file takes.](core/test_files.py#L306 "test_without_a_backend_every_route_delivers_the_bytes") | `files` | `send-file` | `default` | ✓ | ✓ |
 | [Selecting the Aion backend without AION_CLIENT_ID and AION_CLIENT_SECRET is a startup error.](core/test_files.py#L327 "test_the_aion_backend_does_not_serve_without_credentials") | `files` | — | `aion-no-credentials` | ✓ | ✓ |
@@ -618,7 +612,7 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | `react` | React to the inbound message, then reply | `events` | 4 | ✓ | ✓ |
 | `steps <n>` | Emit n working statuses, then complete | `events` | 6 | ✓ | ✓ |
 | `slow <sec>` | Reply after n seconds | `lifecycle` | 20 | ✓ | ✓ |
-| `artifacts` | Emit a two-part data artifact, an inline file and a url | `artifacts`, `files` | 3 | ✓ | [skip](#frameworks) |
+| `artifacts` | Emit a two-part data artifact, an inline file and a url | `artifacts`, `files` | 3 | ✓ | ✓ |
 | `send-file <route>` | Send one inline file: artifact \| reply \| outbox-message \| outbox-task | `files` | 3 | ✓ | ✓ |
 | `card` | Emit one card | `artifacts` | 4 | ✓ | ✓ |
 | `outbox-task` | Return an A2A Task through the outbox | `events` | 6 | ✓ | ✓ |

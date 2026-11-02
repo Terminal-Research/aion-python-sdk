@@ -151,10 +151,6 @@ def native_unsupported_reason(framework: str, capability: str) -> str | None:
 
 UNSUPPORTED: dict[tuple[str, str], str] = {
     # (framework name, command key) -> why this pair is skipped.
-    ("adk", "artifacts"): (
-        "the ADK artifact service stores one part per artifact, so the SDK refuses "
-        "the two-part data artifact this command emits (aion.adk emit_artifact)"
-    ),
 }
 
 

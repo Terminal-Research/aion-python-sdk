@@ -14,6 +14,7 @@ from a2a.types import (
 )
 from aion.adk.authoring.invocation import AionInvocationContext
 from aion.adk.authoring.invocation.event_metadata import (
+    PublishedArtifact,
     get_aion_output,
     get_aion_routing,
     get_aion_user_metadata,
@@ -162,6 +163,9 @@ class ADKToA2AEventConverter:
         if output and output.thinking:
             return self._convert_thinking(adk_event)
 
+        if output and output.published is not None:
+            return [self._published_artifact_event(adk_event, output.published)]
+
         if output and output.card is not None:
             # A card is the agent's own output after the model call it made,
             # so the section that call was streaming has ended.
@@ -245,9 +249,9 @@ class ADKToA2AEventConverter:
     async def _convert_artifact_delta(self, adk_event: Event) -> list[AgentEvent]:
         """Load artifacts from artifact_delta and emit TaskArtifactUpdateEvents.
 
-        When aion:output.artifact hint is present (set by emit_artifact()), uses
-        the provided artifact_id and name instead of generating a random UUID.
-        This preserves the identity of explicitly emitted artifacts. A routing
+        This is ADK's own path, ``save_artifact`` from a tool or a callback.
+        An event that also carries an aion:output.artifact hint names the
+        artifact_id and name to use instead of a random UUID. A routing
         target under aion:routing goes into the artifact as a data part beside
         its content, the way a message carries one.
         """
@@ -325,6 +329,27 @@ class ADKToA2AEventConverter:
             task_id=self._task_id,
             context_id=self._context_id,
             status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
+        )
+
+    def _published_artifact_event(
+            self, adk_event: Event, published: PublishedArtifact
+    ) -> TaskArtifactUpdateEvent:
+        """The artifact ``emit_artifact`` published, as it is: the event the LangGraph adapter makes of one.
+
+        A routing target travels in the artifact, as a data part beside its
+        content; the agent's own metadata for the update rides on the event.
+        """
+        artifact = json_format.ParseDict(published.artifact, Artifact())
+        routing = get_aion_routing(adk_event)
+        if routing is not None:
+            artifact = routing.route(artifact)
+        return TaskArtifactUpdateEvent(
+            task_id=self._task_id,
+            context_id=self._context_id,
+            artifact=artifact,
+            append=published.append,
+            last_chunk=published.last_chunk,
+            metadata=get_aion_user_metadata(adk_event) or None,
         )
 
     def generate_pause(self, call: PendingCall) -> TaskStatusUpdateEvent:

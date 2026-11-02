@@ -56,6 +56,20 @@ class CardOutput(BaseModel):
     )
 
 
+class PublishedArtifact(BaseModel):
+    """An A2A artifact ``emit_artifact`` publishes as it is, as the LangGraph adapter does.
+
+    ``artifact`` is the ``a2a.types.Artifact`` serialized with
+    ``MessageToDict(preserving_proto_field_name=True)``: every part and the
+    artifact's own metadata. It does not go through ADK's artifact service,
+    and the event that carries it stays out of the ADK session.
+    """
+
+    artifact: dict[str, Any] = Field(description="The artifact, as MessageToDict serializes it.")
+    append: bool = Field(default=False, description="Whether it extends the artifact sent before under its id.")
+    last_chunk: bool = Field(default=True, description="Whether it is the artifact's last chunk.")
+
+
 class AionOutput(BaseModel):
     """Top-level model for the aion:output custom_metadata key.
 
@@ -86,10 +100,16 @@ class AionOutput(BaseModel):
         description="Emit event content as one thought of the aion:thinking-delta artifact. "
                     "The event stays out of the ADK session.",
     )
+    published: PublishedArtifact | None = Field(
+        default=None,
+        description="Publish this A2A artifact as it is. The event stays out of the ADK session.",
+    )
 
     @model_validator(mode="after")
     def check_at_most_one(self) -> AionOutput:
-        filled = sum(1 for v in (self.artifact, self.card, self.reaction) if v is not None) + bool(self.thinking)
+        filled = sum(
+            1 for v in (self.artifact, self.card, self.reaction, self.published) if v is not None
+        ) + bool(self.thinking)
         if filled > 1:
             raise ValueError("At most one of AionOutput fields may be set, got multiple.")
         return self
@@ -111,6 +131,17 @@ def is_thinking_event(event: Event) -> bool:
     """Whether an ADK Event carries a thought, which stays out of the ADK session."""
     output = get_aion_output(event)
     return bool(output and output.thinking)
+
+
+def stays_out_of_session(event: Event) -> bool:
+    """Whether an ADK Event is for the client only: a thought, or an artifact published as it is.
+
+    The next model call is built from the session: a thought would read as
+    something the model said, and a published artifact - file bytes and all -
+    is already in the task, where ADK's artifact service finds it by name.
+    """
+    output = get_aion_output(event)
+    return bool(output and (output.thinking or output.published is not None))
 
 
 def get_aion_routing(event: Event) -> MessageActionPayload | None:
@@ -141,4 +172,6 @@ __all__ = [
     "get_aion_routing",
     "get_aion_user_metadata",
     "is_thinking_event",
+    "PublishedArtifact",
+    "stays_out_of_session",
 ]
