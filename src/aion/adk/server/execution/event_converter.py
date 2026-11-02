@@ -29,6 +29,9 @@ from aion.core.constants import CARDS_EXTENSION_URI_V1, MESSAGING_EXTENSION_URI_
 from google.adk.events import Event
 from google.protobuf import json_format, struct_pb2
 
+from aion.adk.authoring.transformers import convert_a2a_part_to_genai_part
+from aion.adk.server.artifacts.backends.a2a import A2AArtifactService
+
 from .pause import PendingCall
 
 AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
@@ -352,6 +355,8 @@ class ADKToA2AEventConverter:
         content; the agent's own metadata for the update rides on the event.
         """
         artifact = json_format.ParseDict(published.artifact, Artifact())
+        if not published.append:
+            self._remember_published(artifact)
         routing = get_aion_routing(adk_event)
         if routing is not None:
             artifact = routing.route(artifact)
@@ -363,6 +368,28 @@ class ADKToA2AEventConverter:
             last_chunk=published.last_chunk,
             metadata=get_aion_user_metadata(adk_event) or None,
         )
+
+    def _remember_published(self, artifact: Artifact) -> None:
+        """Let ADK's own tools find a published artifact in this turn, before its task is stored.
+
+        ADK reads an artifact as one ``Part``: the artifact's first part, the
+        same one the artifact service reads back from the task later.
+        """
+        ctx = self._ctx
+        service = getattr(ctx, "artifact_service", None)
+        if not isinstance(service, A2AArtifactService) or not artifact.name:
+            return
+        for a2a_part in artifact.parts:
+            part = convert_a2a_part_to_genai_part(a2a_part)
+            if part is not None:
+                service.remember_published(
+                    app_name=ctx.app_name,
+                    user_id=ctx.user_id,
+                    filename=artifact.name,
+                    part=part,
+                    session_id=ctx.session.id,
+                )
+                return
 
     def generate_pause(self, call: PendingCall) -> TaskStatusUpdateEvent:
         """Produce the input_required status of a run that paused on a long-running tool call.
