@@ -17,6 +17,7 @@ from tests.scenarios.agents.native_script import (
     confirmed_answer,
     report_text,
 )
+from aion.adk.server.execution.adk_executor import CREDENTIALS_UNSUPPORTED
 from tests.scenarios.harness import STREAM_DELTA_ARTIFACT_ID, ScenarioClient, final_task, section_texts
 
 pytestmark = pytest.mark.native
@@ -34,6 +35,15 @@ async def test_a_tool_asking_the_user_pauses_the_task_for_input(client: Scenario
 
     assert final_task(events).state == "COMPLETED"
     assert section_texts(events) == [confirmed_answer("yes")]
+
+
+@pytest.mark.capability("credential-request")
+async def test_a_tool_asking_for_credentials_fails_the_task_with_the_reason(client: ScenarioClient) -> None:
+    """``tool_context.request_credential``: the server cannot take credentials yet, so the task fails and says why."""
+    closing = final_task(await client.send("sign-in mail"))
+
+    assert closing.state == "FAILED"
+    assert closing.text == CREDENTIALS_UNSUPPORTED
 
 
 @pytest.mark.capability("artifact-service")

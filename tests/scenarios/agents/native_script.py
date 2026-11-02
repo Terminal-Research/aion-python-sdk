@@ -24,6 +24,8 @@ latest user message, the way a scenario decides what to send:
                         stopped, then answer
     confirm <action>    call ``confirm_action``, which asks the user (LangGraph
                         ``interrupt``), then answer with what they said
+    sign-in <service>   call ``sign_in``, which asks for credentials (ADK
+                        ``request_credential``)
     report <title>      call ``save_report``, which saves an ADK artifact
     remember <note>     call ``remember``, which writes the note to ADK state
     instruction         answer with the system instruction the model received
@@ -78,6 +80,7 @@ TICKER_TOOL = "ticker"
 COUNT_TOOL = "count_call"
 COUNTED_ANSWER = "Counted."
 CONFIRM_TOOL = "confirm_action"
+SIGN_IN_TOOL = "sign_in"
 REPORT_TOOL = "save_report"
 REMEMBER_TOOL = "remember"
 SLOW_WORDS = 600
@@ -241,6 +244,7 @@ def model_turn(
     tools = {
         "slow-tool": (TICKER_TOOL, {"path": argument}, lambda result: result),
         "confirm": (CONFIRM_TOOL, {"action": argument}, confirmed_answer),
+        "sign-in": (SIGN_IN_TOOL, {"service": argument}, lambda result: str(result)),
         "report": (REPORT_TOOL, {"title": argument}, lambda result: REPORT_SAVED),
         "remember": (REMEMBER_TOOL, {"note": argument}, lambda result: NOTED),
     }

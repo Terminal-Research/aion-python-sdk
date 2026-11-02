@@ -28,6 +28,8 @@ from aion.core.constants import CARDS_EXTENSION_URI_V1, MESSAGING_EXTENSION_URI_
 from google.adk.events import Event
 from google.protobuf import json_format, struct_pb2
 
+from .pause import PendingCall
+
 AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 
 logger = logging.getLogger(__name__)
@@ -323,6 +325,30 @@ class ADKToA2AEventConverter:
             task_id=self._task_id,
             context_id=self._context_id,
             status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
+        )
+
+    def generate_pause(self, call: PendingCall) -> TaskStatusUpdateEvent:
+        """Produce the input_required status of a run that paused on a long-running tool call.
+
+        Shaped as the LangGraph adapter shapes an ``interrupt()``: one text
+        part asking the question, and the call's id as ``interruptId``, so a
+        client answers either framework the same way.
+        """
+        logger.info("Paused for input on %s, call id=%s", call.name, call.call_id)
+        return TaskStatusUpdateEvent(
+            task_id=self._task_id,
+            context_id=self._context_id,
+            status=TaskStatus(
+                state=TaskState.TASK_STATE_INPUT_REQUIRED,
+                message=Message(
+                    context_id=self._context_id,
+                    task_id=self._task_id,
+                    message_id=str(uuid.uuid4()),
+                    role=Role.ROLE_AGENT,
+                    parts=[Part(text=call.question)],
+                    metadata={"interruptId": call.call_id},
+                ),
+            ),
         )
 
 

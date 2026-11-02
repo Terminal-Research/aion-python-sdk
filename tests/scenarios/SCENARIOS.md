@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-226 scenarios in 42 files, 503 runs across 2 frameworks: 466 run, 36 skipped, 1 independent of the framework.
+230 scenarios in 42 files, 511 runs across 2 frameworks: 495 run, 15 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -14,15 +14,15 @@ A status cell reads `✓` when it runs, `skip` when `frameworks.UNSUPPORTED`, `f
 
 |  | Covered | Not yet |
 |---|---|---|
-| Commands | 23 of 23: `help`, `echo`, `stream`, `think`, `react`, `steps`, `slow`, `artifacts`, `send-file`, `card`, `outbox-task`, `outbox-message`, `ask`, `ask-twice`, `ask-fail`, `fail`, `ext`, `whoami`, `event`, `config`, `ids`, `big`, `parts` | — |
+| Commands | 26 of 26: `help`, `echo`, `stream`, `think`, `react`, `steps`, `slow`, `artifacts`, `send-file`, `card`, `outbox-task`, `outbox-message`, `outbox-history`, `outbox-failed`, `outbox-pause`, `ask`, `ask-twice`, `ask-fail`, `fail`, `ext`, `whoami`, `event`, `config`, `ids`, `big`, `parts` | — |
 | Suites | 18 of 18: `smoke`, `streaming`, `events`, `terminal_states`, `interrupts`, `errors`, `artifacts`, `files`, `extensions`, `daemon`, `authentication`, `config`, `lifecycle`, `contexts`, `evolution`, `persistence`, `distributed`, `native` | — |
 
 ## Frameworks
 
 | Framework | Agent package | Entry | SDK extras | Commands implemented |
 |---|---|---|---|---|
-| langgraph | `tests.scenarios.agents.langgraph_core` | `graph.py:create_graph` | `langgraph-server` | 23 of 23 |
-| adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 20 of 23 |
+| langgraph | `tests.scenarios.agents.langgraph_core` | `graph.py:create_graph` | `langgraph-server` | 26 of 26 |
+| adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 26 of 26 |
 
 The `native` suite runs a second agent per framework instead: an ordinary agent on the framework's own path - a model, a tool, the framework's loop and memory - with no Aion authoring API and no part of the command contract. Its cells name the agent.
 
@@ -36,15 +36,12 @@ Pairs a framework genuinely cannot do, which is what a `skip` cell means:
 | Framework | Command | Reason |
 |---|---|---|
 | adk | `artifacts` | the ADK artifact service stores one part per artifact, so the SDK refuses the two-part data artifact this command emits (aion.adk emit_artifact) |
-| adk | `ask` | ADK has no interrupt/pause primitive; resume is a plain message send |
-| adk | `ask-twice` | ADK has no interrupt/pause primitive; resume is a plain message send |
-| adk | `ask-fail` | ADK has no interrupt/pause primitive; resume is a plain message send |
 
 Features a framework's native agent does not have; a native scenario driving one `skip`s there:
 
 | Framework | Capability | Reason |
 |---|---|---|
-| adk | `interrupt` | ADK has no interrupt/pause primitive; a tool cannot suspend the run for input |
+| langgraph | `credential-request` | LangGraph has no credential request of its own; a graph would ask through interrupt() |
 | langgraph | `artifact-service` | LangGraph has no artifact service; a graph emits artifacts through the Aion API |
 | adk | `prebuilt-agent` | ADK's LlmAgent is already its one standard way to build an agent; the rest of the native group runs it |
 | langgraph | `session-state` | LangGraph has no output_key or tool-written session state; its state is the graph's own channels |
@@ -63,7 +60,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 |---|---|---|---|
 | `smoke` | agent answers at all: card, health, help, echo | 8 | `make tests-scenarios TAGS=smoke` |
 | `streaming` | streamed answers, thoughts, unary send | 17 | `make tests-scenarios TAGS=streaming` |
-| `events` | event order, ids, outbox, get_task agreement | 24 | `make tests-scenarios TAGS=events` |
+| `events` | event order, ids, outbox, get_task agreement | 27 | `make tests-scenarios TAGS=events` |
 | `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 11 | `make tests-scenarios TAGS=terminal_states` |
 | `interrupts` | INPUT_REQUIRED and resume | 10 | `make tests-scenarios TAGS=interrupts` |
 | `errors` | failures that must stay reported, not crash the server | 10 | `make tests-scenarios TAGS=errors` |
@@ -78,7 +75,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `evolution` | the evolution extension through the SDK's wrapper and a stand-in toolkit: the standard path, refusals as REJECTED tasks, a cancel | 15 | `make tests-scenarios TAGS=evolution` |
 | `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 21 | `make tests-scenarios-persistence` |
 | `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 19 | `make tests-scenarios-distributed` |
-| `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 29 | `make tests-scenarios TAGS=native` |
+| `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 30 | `make tests-scenarios TAGS=native` |
 
 ## Scenarios by file
 
@@ -94,7 +91,7 @@ The answer of a task that only talked: the ``aion:assistant-answer`` artifact.
 | [A reply of text and a file becomes an answer of the same two parts.](core/test_assistant_answer.py#L89 "test_the_answer_carries_every_part_of_the_message") | `artifacts` | `send-file` | `default` | ✓ | ✓ |
 | [The artifacts the agent emitted are the task's result, so its reply stays a message only.](core/test_assistant_answer.py#L102 "test_a_task_with_an_artifact_of_its_own_gets_no_answer") | `artifacts` | `artifacts` | `default` | ✓ | [skip](#frameworks) |
 | [What the agent said before failing is a message of a failed turn, not its answer.](core/test_assistant_answer.py#L113 "test_a_failed_task_gets_no_answer") | `artifacts` | `fail` | `default` | ✓ | ✓ |
-| [A question that pauses the task is not its answer; the reply of the completing turn is.](core/test_assistant_answer.py#L125 "test_the_answer_comes_from_the_turn_that_completes") | `artifacts` | `ask` | `default` | ✓ | [skip](#frameworks) |
+| [A question that pauses the task is not its answer; the reply of the completing turn is.](core/test_assistant_answer.py#L125 "test_the_answer_comes_from_the_turn_that_completes") | `artifacts` | `ask` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_authentication.py`
 
@@ -241,7 +238,7 @@ The evolution extension served by a real ``aion serve``: the standard path, arti
 | [``aion serve`` exits, and its output says what the agent lacks.](core/test_evolution.py#L350 "test_without_the_toolkit_an_agent_that_enables_evolution_does_not_start") | `evolution` | — | `evolution-without-toolkit` | ✓ | ✓ |
 | [A second directive is rejected with ``context_busy``, and a message into the running task refused with ``task_busy``.](core/test_evolution.py#L367 "test_evolution_refuses_a_second_task_in_a_context_until_the_first_ends") | `evolution` | — | `evolution` | ✓ | ✓ |
 | [The limit is per context: two contexts each hold a running evolution.](core/test_evolution.py#L393 "test_evolution_runs_in_several_contexts_at_once") | `evolution` | — | `evolution` | ✓ | ✓ |
-| [The directive is not taken as the answer: an evolution task starts, and the question keeps waiting for it.](core/test_evolution.py#L409 "test_a_directive_beside_the_agents_waiting_question_starts_its_own_task") | `evolution` | `ask` | `evolution` | ✓ | [skip](#frameworks) |
+| [The directive is not taken as the answer: an evolution task starts, and the question keeps waiting for it.](core/test_evolution.py#L409 "test_a_directive_beside_the_agents_waiting_question_starts_its_own_task") | `evolution` | `ask` | `evolution` | ✓ | ✓ |
 | [A directive without a task id reaches the extension's waiting task, which fails: an evolution never waits for input.](core/test_evolution.py#L433 "test_a_directive_into_an_evolution_task_left_waiting_fails_it") | `evolution` | — | `evolution` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_extensions.py`
@@ -283,16 +280,16 @@ Interrupt pauses a task for user input; resume delivers the answer.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The stream ends with INPUT_REQUIRED carrying the interrupt question.](core/test_interrupts.py#L51 "test_ask_pauses_the_task_as_input_required") | `interrupts` | `ask` | `default` | ✓ | [skip](#frameworks) |
-| [Sending a message to the paused task resumes it with the user's answer.](core/test_interrupts.py#L60 "test_resume_delivers_the_answer_and_completes") | `interrupts` | `ask` | `default` | ✓ | [skip](#frameworks) |
-| [tasks/get after resume reports COMPLETED, not INPUT_REQUIRED.](core/test_interrupts.py#L77 "test_resumed_task_is_stored_as_completed") | `interrupts` | `ask` | `default` | ✓ | [skip](#frameworks) |
-| [The paused task holds its question in status and as the last history entry; the](core/test_interrupts.py#L91 "test_the_question_and_the_final_reply_each_end_the_history_once") | `interrupts` | `ask` | `default` | ✓ | [skip](#frameworks) |
-| [Each interrupt pauses the one task again, with its own question.](core/test_interrupts.py#L116 "test_two_interrupts_pause_the_same_task_in_turn") | `interrupts` | `ask-twice` | `default` | ✓ | [skip](#frameworks) |
-| [The second resume completes the task, carrying both answers as given.](core/test_interrupts.py#L135 "test_both_answers_reach_the_agent_in_order") | `interrupts` | `ask-twice` | `default` | ✓ | [skip](#frameworks) |
-| [The task the server kept agrees: two pauses, one outcome.](core/test_interrupts.py#L151 "test_a_twice_resumed_task_is_stored_as_completed") | `interrupts` | `ask-twice` | `default` | ✓ | [skip](#frameworks) |
-| [The resumed turn ends in one terminal FAILED task, and nothing after it.](core/test_interrupts.py#L168 "test_a_crash_on_resume_closes_the_task_as_failed") | `interrupts` | `ask-fail` | `default` | ✓ | [skip](#frameworks) |
-| [The stored task is FAILED and still says what led up to the crash.](core/test_interrupts.py#L193 "test_a_task_that_failed_on_resume_keeps_its_history") | `interrupts` | `ask-fail` | `default` | ✓ | [skip](#frameworks) |
-| [The next request is answered normally.](core/test_interrupts.py#L214 "test_a_crash_on_resume_does_not_take_the_agent_with_it") | `interrupts` | `ask-fail` | `default` | ✓ | [skip](#frameworks) |
+| [The stream ends with INPUT_REQUIRED carrying the interrupt question.](core/test_interrupts.py#L51 "test_ask_pauses_the_task_as_input_required") | `interrupts` | `ask` | `default` | ✓ | ✓ |
+| [Sending a message to the paused task resumes it with the user's answer.](core/test_interrupts.py#L60 "test_resume_delivers_the_answer_and_completes") | `interrupts` | `ask` | `default` | ✓ | ✓ |
+| [tasks/get after resume reports COMPLETED, not INPUT_REQUIRED.](core/test_interrupts.py#L77 "test_resumed_task_is_stored_as_completed") | `interrupts` | `ask` | `default` | ✓ | ✓ |
+| [The paused task holds its question in status and as the last history entry; the](core/test_interrupts.py#L91 "test_the_question_and_the_final_reply_each_end_the_history_once") | `interrupts` | `ask` | `default` | ✓ | ✓ |
+| [Each interrupt pauses the one task again, with its own question.](core/test_interrupts.py#L116 "test_two_interrupts_pause_the_same_task_in_turn") | `interrupts` | `ask-twice` | `default` | ✓ | ✓ |
+| [The second resume completes the task, carrying both answers as given.](core/test_interrupts.py#L135 "test_both_answers_reach_the_agent_in_order") | `interrupts` | `ask-twice` | `default` | ✓ | ✓ |
+| [The task the server kept agrees: two pauses, one outcome.](core/test_interrupts.py#L151 "test_a_twice_resumed_task_is_stored_as_completed") | `interrupts` | `ask-twice` | `default` | ✓ | ✓ |
+| [The resumed turn ends in one terminal FAILED task, and nothing after it.](core/test_interrupts.py#L168 "test_a_crash_on_resume_closes_the_task_as_failed") | `interrupts` | `ask-fail` | `default` | ✓ | ✓ |
+| [The stored task is FAILED and still says what led up to the crash.](core/test_interrupts.py#L193 "test_a_task_that_failed_on_resume_keeps_its_history") | `interrupts` | `ask-fail` | `default` | ✓ | ✓ |
+| [The next request is answered normally.](core/test_interrupts.py#L214 "test_a_crash_on_resume_does_not_take_the_agent_with_it") | `interrupts` | `ask-fail` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_outbox.py`
 
@@ -300,15 +297,18 @@ The other door: an agent that hands the server a finished A2A payload.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The terminal task carries the reply, because that is where it is read.](core/test_outbox.py#L44 "test_a_message_from_the_outbox_is_in_the_task_that_closes_the_stream") | `events` | `outbox-message` | `default` | ✓ | ✓ |
-| [It is history, not a frame: `tasks/get` answers with it afterwards.](core/test_outbox.py#L63 "test_a_message_from_the_outbox_is_in_the_stored_task") | `events` | `outbox-message` | `default` | ✓ | ✓ |
-| [An artifact named by the patch is on the task afterwards.](core/test_outbox.py#L77 "test_a_task_patch_adds_its_artifacts") | `events` | `outbox-task` | `default` | ✓ | ✓ |
-| [A message named by the patch is in the task's history afterwards.](core/test_outbox.py#L89 "test_a_task_patch_adds_its_history") | `events` | `outbox-task` | `default` | ✓ | ✓ |
-| [The patch adds to history; it does not replace what was already there.](core/test_outbox.py#L107 "test_a_task_patch_keeps_the_inbound_message_it_is_answering") | `events` | `outbox-task` | `default` | ✓ | ✓ |
-| [Agent metadata lands on the task, under the agent's own keys.](core/test_outbox.py#L124 "test_the_metadata_of_a_task_patch_is_merged") | `events` | `outbox-task` | `default` | ✓ | ✓ |
-| [Identity is the server's, whatever the payload says or omits.](core/test_outbox.py#L136 "test_the_server_keeps_the_ids_the_patch_left_unset") | `events` | `outbox-task` | `default` | ✓ | ✓ |
-| [An outbox answers the turn that wrote it, and only that one.](core/test_outbox.py#L154 "test_the_next_turn_in_the_context_does_not_repeat_the_outbox") | `events` | `outbox-message` | `default` | ✓ | ✓ |
-| [A task patch is not merged again into the next task of the context.](core/test_outbox.py#L175 "test_the_next_turn_in_the_context_does_not_repeat_the_task_patch") | `events` | `outbox-task` | `default` | ✓ | ✓ |
+| [The terminal task carries the reply, because that is where it is read.](core/test_outbox.py#L53 "test_a_message_from_the_outbox_is_in_the_task_that_closes_the_stream") | `events` | `outbox-message` | `default` | ✓ | ✓ |
+| [It is history, not a frame: `tasks/get` answers with it afterwards.](core/test_outbox.py#L72 "test_a_message_from_the_outbox_is_in_the_stored_task") | `events` | `outbox-message` | `default` | ✓ | ✓ |
+| [An artifact named by the patch is on the task afterwards.](core/test_outbox.py#L86 "test_a_task_patch_adds_its_artifacts") | `events` | `outbox-task` | `default` | ✓ | ✓ |
+| [A message named by the patch is in the task's history afterwards.](core/test_outbox.py#L98 "test_a_task_patch_adds_its_history") | `events` | `outbox-task` | `default` | ✓ | ✓ |
+| [The patch adds to history; it does not replace what was already there.](core/test_outbox.py#L116 "test_a_task_patch_keeps_the_inbound_message_it_is_answering") | `events` | `outbox-task` | `default` | ✓ | ✓ |
+| [Agent metadata lands on the task, under the agent's own keys.](core/test_outbox.py#L133 "test_the_metadata_of_a_task_patch_is_merged") | `events` | `outbox-task` | `default` | ✓ | ✓ |
+| [Identity is the server's, whatever the payload says or omits.](core/test_outbox.py#L145 "test_the_server_keeps_the_ids_the_patch_left_unset") | `events` | `outbox-task` | `default` | ✓ | ✓ |
+| [An outbox answers the turn that wrote it, and only that one.](core/test_outbox.py#L163 "test_the_next_turn_in_the_context_does_not_repeat_the_outbox") | `events` | `outbox-message` | `default` | ✓ | ✓ |
+| [A task patch is not merged again into the next task of the context.](core/test_outbox.py#L184 "test_the_next_turn_in_the_context_does_not_repeat_the_task_patch") | `events` | `outbox-task` | `default` | ✓ | ✓ |
+| [A Task the agent built is the agent's: the server adds no answer to it.](core/test_outbox.py#L200 "test_a_task_from_the_outbox_gets_no_answer_of_the_servers") | `events` | `outbox-history` | `default` | ✓ | ✓ |
+| [The FAILED the agent set stays the task's state, with the reason it gave.](core/test_outbox.py#L218 "test_a_failed_task_from_the_outbox_is_the_outcome") | `events` | `outbox-failed` | `default` | ✓ | ✓ |
+| [INPUT_REQUIRED from the outbox holds, and the reply runs as the task's next turn.](core/test_outbox.py#L238 "test_a_task_left_waiting_by_the_outbox_continues_with_the_next_message") | `events` | `outbox-pause` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_ports.py`
 
@@ -330,7 +330,7 @@ Push notification delivery to a real HTTP callback.
 | [The reaction reaches the callback as it reached the stream, and the task pushed last keeps it.](core/test_push_notifications.py#L284 "test_a_reaction_is_pushed") | `lifecycle` | `react` | `push` | ✓ | ✓ |
 | [The ``aion:assistant-answer`` update reaches the callback before the completed task, which holds it.](core/test_push_notifications.py#L313 "test_the_answer_of_a_task_that_only_talked_is_pushed") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
 | [The FAILED a crash leaves reaches the callback as the full Task.](core/test_push_notifications.py#L329 "test_a_crashed_agent_s_failure_is_pushed") | `lifecycle` | `fail` | `push` | ✓ | ✓ |
-| [A task that stops for input is pushed once, as the full Task, after the turn's earlier events.](core/test_push_notifications.py#L348 "test_an_interrupt_is_pushed_to_a_caller_that_returned_immediately") | `lifecycle` | `ask` | `push` | ✓ | [skip](#frameworks) |
+| [A task that stops for input is pushed once, as the full Task, after the turn's earlier events.](core/test_push_notifications.py#L348 "test_an_interrupt_is_pushed_to_a_caller_that_returned_immediately") | `lifecycle` | `ask` | `push` | ✓ | ✓ |
 | [A unary send's notifications carry status times in the order of the turn.](core/test_push_notifications.py#L385 "test_pushed_status_times_follow_the_turn_of_a_unary_send") | `lifecycle` | `steps` | `default` | ✓ | ✓ |
 | [The pushed body identifies the task the notification is about.](core/test_push_notifications.py#L416 "test_push_notification_carries_the_task_id") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
 | [The callback accepts the delivery, because it arrived authenticated.](core/test_push_notifications.py#L439 "test_a_declared_credential_is_presented_to_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
@@ -356,8 +356,8 @@ What ``tasks/resubscribe`` gives a client that comes back to a task.
 | [The reconnecting client sees the rest of the turn, outcome included.](core/test_resubscribe.py#L79 "test_a_running_task_hands_its_remaining_events_to_a_subscriber") | `events` | `slow` | `default` | ✓ | ✓ |
 | [One execution, one task: the reply is said once, not once per subscriber.](core/test_resubscribe.py#L97 "test_resubscribing_does_not_start_the_turn_again") | `events` | `slow` | `default` | ✓ | ✓ |
 | [Nothing is left to stream; the refusal leaves the stored task as it was.](core/test_resubscribe.py#L128 "test_a_task_with_an_outcome_refuses_a_subscriber") | `events` | `echo` | `default` | ✓ | ✓ |
-| [The subscriber is given the pause, then the turn that ends it.](core/test_resubscribe.py#L156 "test_a_paused_task_keeps_a_subscriber_until_another_client_resumes_it") | `events` | `ask` | `default` | ✓ | [skip](#frameworks) |
-| [No second task, and nothing the pause had recorded is lost.](core/test_resubscribe.py#L196 "test_resuming_under_a_subscriber_keeps_one_task_and_its_question") | `events` | `ask` | `default` | ✓ | [skip](#frameworks) |
+| [The subscriber is given the pause, then the turn that ends it.](core/test_resubscribe.py#L156 "test_a_paused_task_keeps_a_subscriber_until_another_client_resumes_it") | `events` | `ask` | `default` | ✓ | ✓ |
+| [No second task, and nothing the pause had recorded is lost.](core/test_resubscribe.py#L196 "test_resuming_under_a_subscriber_keeps_one_task_and_its_question") | `events` | `ask` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_smoke.py`
 
@@ -441,7 +441,7 @@ Two servers of one agent over one database: a2a-sdk's cluster mode.
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
 | [A subscriber on the server not running the task gets its live tail.](distributed/test_cluster.py#L48 "test_the_other_server_follows_a_running_task_to_its_end") | `distributed` | `slow` | `default` | ✓ | ✓ |
-| [The next turn runs wherever it arrives, from the stored task.](distributed/test_cluster.py#L71 "test_a_task_paused_on_one_server_is_resumed_on_the_other") | `distributed` | `ask` | `default` | ✓ | [skip](#frameworks) |
+| [The next turn runs wherever it arrives, from the stored task.](distributed/test_cluster.py#L71 "test_a_task_paused_on_one_server_is_resumed_on_the_other") | `distributed` | `ask` | `default` | ✓ | ✓ |
 | [Nothing stops two executions of one task; the version decides what lands.](distributed/test_cluster.py#L89 "test_a_second_message_runs_on_the_other_server_and_the_first_outcome_wins") | `distributed` | `slow` | `default` | ✓ | ✓ |
 | [There is nothing left to stream, so a2a-sdk refuses the subscription.](distributed/test_cluster.py#L118 "test_resubscribing_to_a_finished_task_is_refused") | `distributed` | `echo` | `default` | ✓ | ✓ |
 | [One database, one answer: the outcome does not depend on who is asked.](distributed/test_cluster.py#L133 "test_both_servers_read_the_same_finished_task") | `distributed` | `echo` | `default` | ✓ | ✓ |
@@ -471,7 +471,7 @@ A native agent served by two instances over one database.
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
 | [A conversation begun on one instance continues on the other](native/test_distributed.py#L51 "test_a_conversation_begun_on_one_instance_continues_on_the_other") | `native`, `distributed` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [A tool paused on one instance resumes on the other](native/test_distributed.py#L64 "test_a_tool_paused_on_one_instance_resumes_on_the_other") | `native`, `distributed` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
+| [A tool paused on one instance resumes on the other](native/test_distributed.py#L64 "test_a_tool_paused_on_one_instance_resumes_on_the_other") | `native`, `distributed` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
 
 ### `tests/scenarios/native/test_failure_and_cancel.py`
 
@@ -493,9 +493,10 @@ Features only one framework has, used the way that framework documents them.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [``interrupt()`` inside a tool: INPUT_REQUIRED with the question, then resume.](native/test_framework_features.py#L25 "test_a_tool_asking_the_user_pauses_the_task_for_input") | `native` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
-| [``tool_context.save_artifact`` becomes an artifact on the wire and on the task, beside the streamed answer.](native/test_framework_features.py#L39 "test_an_artifact_a_tool_saves_reaches_the_client") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
-| [What ``output_key`` and a tool wrote is there when the next turn runs.](native/test_framework_features.py#L53 "test_output_key_and_tool_state_are_in_the_next_turns_state") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+| [``interrupt()`` inside a tool: INPUT_REQUIRED with the question, then resume.](native/test_framework_features.py#L26 "test_a_tool_asking_the_user_pauses_the_task_for_input") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [``tool_context.request_credential``: the server cannot take credentials yet, so the task fails and says why.](native/test_framework_features.py#L40 "test_a_tool_asking_for_credentials_fails_the_task_with_the_reason") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+| [``tool_context.save_artifact`` becomes an artifact on the wire and on the task, beside the streamed answer.](native/test_framework_features.py#L49 "test_an_artifact_a_tool_saves_reaches_the_client") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+| [What ``output_key`` and a tool wrote is there when the next turn runs.](native/test_framework_features.py#L63 "test_output_key_and_tool_state_are_in_the_next_turns_state") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
 
 ### `tests/scenarios/native/test_memory.py`
 
@@ -528,7 +529,7 @@ A native agent's memory and pause live in the database, not in the process.
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
 | [The conversation survives a restart](native/test_persistence.py#L56 "test_the_conversation_survives_a_restart") | `native`, `persistence` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [The run paused inside ``interrupt()`` continues from the PG checkpoint.](native/test_persistence.py#L68 "test_a_paused_tool_resumes_after_a_restart") | `native`, `persistence` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
+| [The run paused inside ``interrupt()`` continues from the PG checkpoint.](native/test_persistence.py#L68 "test_a_paused_tool_resumes_after_a_restart") | `native`, `persistence` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
 | [``create_agent`` brings no checkpointer; the one it runs with is the](native/test_persistence.py#L84 "test_a_prebuilt_agents_conversation_survives_a_restart") | `native`, `persistence` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
 
 ### `tests/scenarios/native/test_prebuilt_agent.py`
@@ -590,9 +591,9 @@ Resubscribing to a paused task in a2a-sdk's cluster mode.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The stored pause first, then the turn that ends it, closed by a Task.](persistence/test_resubscribe.py#L49 "test_a_paused_task_is_followed_until_the_resume_finishes_it") | `persistence` | `ask` | `default` | ✓ | [skip](#frameworks) |
-| [No second task, and nothing the pause had recorded is lost.](persistence/test_resubscribe.py#L78 "test_following_the_pause_leaves_one_task_and_its_question") | `persistence` | `ask` | `default` | ✓ | [skip](#frameworks) |
-| [Once the turn is over there is nothing to follow; tasks/get has the outcome.](persistence/test_resubscribe.py#L104 "test_a_finished_task_refuses_a_subscriber") | `persistence` | `ask` | `default` | ✓ | [skip](#frameworks) |
+| [The stored pause first, then the turn that ends it, closed by a Task.](persistence/test_resubscribe.py#L49 "test_a_paused_task_is_followed_until_the_resume_finishes_it") | `persistence` | `ask` | `default` | ✓ | ✓ |
+| [No second task, and nothing the pause had recorded is lost.](persistence/test_resubscribe.py#L78 "test_following_the_pause_leaves_one_task_and_its_question") | `persistence` | `ask` | `default` | ✓ | ✓ |
+| [Once the turn is over there is nothing to follow; tasks/get has the outcome.](persistence/test_resubscribe.py#L104 "test_a_finished_task_refuses_a_subscriber") | `persistence` | `ask` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/persistence/test_streamed_answer.py`
 
@@ -620,9 +621,12 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | `card` | Emit one card | `artifacts` | 4 | ✓ | ✓ |
 | `outbox-task` | Return an A2A Task through the outbox | `events` | 6 | ✓ | ✓ |
 | `outbox-message` | Return an A2A Message through the outbox | `events` | 3 | ✓ | ✓ |
-| `ask` | Ask a question, then quote the answer | `interrupts` | 13 | ✓ | [skip](#frameworks) |
-| `ask-twice` | Ask two questions in a row | `interrupts` | 3 | ✓ | [skip](#frameworks) |
-| `ask-fail` | Ask a question, then fail on the answer | `interrupts`, `errors` | 3 | ✓ | [skip](#frameworks) |
+| `outbox-history` | Return an A2A Task through the outbox that only adds a message | `events` | 1 | ✓ | ✓ |
+| `outbox-failed` | Fail the task through an A2A Task in the outbox, with a reason | `events`, `terminal_states` | 1 | ✓ | ✓ |
+| `outbox-pause` | Leave the task waiting for input through an A2A Task in the outbox | `events`, `interrupts` | 1 | ✓ | ✓ |
+| `ask` | Ask a question, then quote the answer | `interrupts` | 13 | ✓ | ✓ |
+| `ask-twice` | Ask two questions in a row | `interrupts` | 3 | ✓ | ✓ |
+| `ask-fail` | Ask a question, then fail on the answer | `interrupts`, `errors` | 3 | ✓ | ✓ |
 | `fail <mode>` | Fail on purpose: exception \| after-reply \| reason | `errors`, `terminal_states` | 9 | ✓ | ✓ |
 | `ext` | Report active and unknown extensions | `extensions` | 6 | ✓ | ✓ |
 | `whoami` | Report the daemon identity | `daemon` | 6 | ✓ | ✓ |

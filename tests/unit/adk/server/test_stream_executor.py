@@ -242,3 +242,47 @@ async def test_a_thought_is_delivered_and_never_written_to_the_session() -> None
         if isinstance(event, TaskArtifactUpdateEvent) and event.artifact.artifact_id == ArtifactId.THINKING_DELTA.value
     ]
     assert thoughts == ["Looking up the forecast", "Comparing the two forecasts"]
+
+
+async def test_an_agents_event_keeps_the_author_and_branch_adk_gave_it() -> None:
+    """A sub-agent's reply stays its own: ADK quotes another author's words to a model as data, not as its own."""
+    child = Event(
+        author="child_agent",
+        branch="root.child_agent",
+        invocation_id="inv-child",
+        content=types.Content(parts=[types.Part(text="from the child")], role="model"),
+    )
+    executor, _ = _recording_executor(_Agent(("yield", child)))
+
+    async for _ in executor.execute(_CONTEXT, session=None):
+        pass
+
+    assert (child.author, child.branch, child.invocation_id) == ("child_agent", "root.child_agent", "inv-child")
+
+
+async def test_an_event_the_thread_emits_is_stamped_as_the_root_agents() -> None:
+    emitted = Event(author="", content=types.Content(parts=[types.Part(text="from the thread")], role="model"))
+    executor, _ = _recording_executor(_Agent(("emit", emitted)))
+
+    async for _ in executor.execute(_CONTEXT, session=None):
+        pass
+
+    assert (emitted.author, emitted.invocation_id) == ("agent", "inv-1")
+
+
+async def test_a_run_that_ends_on_a_long_running_call_reports_the_pause() -> None:
+    asking = Event(
+        author="agent",
+        invocation_id="inv-1",
+        content=types.Content(
+            role="model",
+            parts=[types.Part(function_call=types.FunctionCall(id="c-1", name="adk_request_input", args={"message": "Which city?"}))],
+        ),
+        long_running_tool_ids={"c-1"},
+    )
+    executor, _ = _recording_executor(_Agent(("yield", asking)))
+
+    async for _ in executor.execute(_CONTEXT, session=None):
+        pass
+
+    assert executor.result.paused_on.question == "Which city?"

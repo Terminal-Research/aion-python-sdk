@@ -19,6 +19,7 @@ from .errors import fail
 from .events import ids, react, steps
 from .files import artifacts, parts, send_file
 from .lifecycle import slow
+from .interrupts import ask, ask_fail, ask_twice
 from .outbox import outbox_failed, outbox_history, outbox_message, outbox_pause, outbox_task
 from .payload import big
 from .smoke import echo, help_menu
@@ -49,6 +50,9 @@ BEHAVIORS: dict[str, Behavior] = {
     "whoami": whoami,
     "event": event,
     "config": config,
+    "ask": ask,
+    "ask-twice": ask_twice,
+    "ask-fail": ask_fail,
     "outbox-message": outbox_message,
     "outbox-task": outbox_task,
     "outbox-history": outbox_history,
