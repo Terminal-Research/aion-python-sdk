@@ -29,7 +29,8 @@ from starlette.middleware import Middleware
 from aion.db.postgres import db_manager
 from aion.langgraph.server.checkpoint.backends.postgres import PostgresBackend
 from aion.server.auth import JwksKeySource, TokenVerifier
-from aion.server.core.middlewares import AionAuthMiddleware, AionContextMiddleware
+from aion.server.core.middlewares.aion_context import AionContextMiddleware
+from aion.server.core.middlewares.auth import AionAuthMiddleware
 from aion.server.tasks.admission import ContextHolder, PostgresContextAdmission
 
 from tests.support.aion_tokens import CLIENT_ID, ISSUER, SigningKey

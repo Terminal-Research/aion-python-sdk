@@ -13,11 +13,9 @@ from fastapi import FastAPI
 import aion.server.core.app.factory as factory_module
 from aion.server.auth import AuthConfigurationError
 from aion.server.core.app.factory import AppFactory
-from aion.server.core.middlewares import (
-    AionAuthMiddleware,
-    AionContextMiddleware,
-    TracingMiddleware,
-)
+from aion.server.core.middlewares.aion_context import AionContextMiddleware
+from aion.server.core.middlewares.auth import AionAuthMiddleware
+from aion.server.core.middlewares.tracing import TracingMiddleware
 
 
 @pytest.fixture

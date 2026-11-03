@@ -12,7 +12,7 @@ import pytest
 from starlette.middleware import Middleware
 
 from aion.core.constants import DISTRIBUTION_EXTENSION_URI_V1, TRACEABILITY_EXTENSION_URI_V1
-from aion.server.core.middlewares import AionContextMiddleware
+from aion.server.core.middlewares.aion_context import AionContextMiddleware
 
 from tests.unit.support.distribution import distribution_metadata
 from tests.unit.support.request_path import Probe, send_message

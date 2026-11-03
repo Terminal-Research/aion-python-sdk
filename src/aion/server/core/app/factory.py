@@ -29,8 +29,10 @@ from aion.server.agent.factory import AgentFactory
 from aion.server.core.app.api import AionExtraHTTPRoutes, ContextHTTPRoutes
 from aion.server.core.app.handlers import AionJsonRpcDispatcher, AionRequestHandler
 from aion.server.core.app.handlers.request_preprocessors import A2ARequestPreprocessor, FilePartPreprocessor
-from aion.server.core.middlewares import AionAuthMiddleware, AionContextMiddleware, TracingMiddleware
+from aion.server.core.middlewares.aion_context import AionContextMiddleware
+from aion.server.core.middlewares.auth import AionAuthMiddleware
 from aion.server.core.middlewares.runtime_identity import RuntimeIdentityMiddleware
+from aion.server.core.middlewares.tracing import TracingMiddleware
 from aion.server.plugins import PluginFactory
 from aion.server.settings import app_settings
 from aion.server.tasks import StoreManager, PushNotificationFactory

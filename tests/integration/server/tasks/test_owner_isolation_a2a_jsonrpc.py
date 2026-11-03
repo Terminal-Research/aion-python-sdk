@@ -42,7 +42,7 @@ from starlette.authentication import AuthCredentials, AuthenticationBackend, Sim
 from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
 
-from aion.server.core.middlewares import AionContextMiddleware
+from aion.server.core.middlewares.aion_context import AionContextMiddleware
 from aion.server.tasks.stores import TaskOwnerUndefinedError
 
 from .jsonrpc_harness import (
