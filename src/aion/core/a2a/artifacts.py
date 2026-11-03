@@ -28,6 +28,7 @@ def url_artifact(
     mime_type: str,
     name: str | None = None,
     artifact_id: str | None = None,
+    metadata: dict | None = None,
 ) -> Artifact:
     """Build an Artifact referencing a remote file by URL.
 
@@ -36,6 +37,8 @@ def url_artifact(
         mime_type: MIME type of the file (e.g. "application/pdf", "image/png").
         name: Human-readable artifact name. Defaults to "file".
         artifact_id: Explicit artifact ID. Auto-generated if not provided.
+        metadata: Metadata of the artifact itself; the client reads it in
+            ``artifact.metadata``. Keys under ``aion:`` are the platform's.
 
     Returns:
         a2a.types.Artifact with a single FilePart (FileWithUri).
@@ -44,6 +47,7 @@ def url_artifact(
         artifact_id=artifact_id or str(uuid4()),
         name=name or "file",
         parts=[Part(url=url, media_type=mime_type)],
+        metadata=metadata or {},
     )
 
 
@@ -54,6 +58,7 @@ def file_artifact(
     name: str | None = None,
     artifact_id: str | None = None,
     file_action: FileActionPayload | None = None,
+    metadata: dict | None = None,
 ) -> Artifact:
     """Build an Artifact carrying inline file content as bytes.
 
@@ -65,6 +70,8 @@ def file_artifact(
         file_action: Per-file retention request. Omit for the Aion storage
             provider's 30-day default. An action with no deadline requests
             indefinite storage.
+        metadata: Metadata of the artifact itself; the client reads it in
+            ``artifact.metadata``. Keys under ``aion:`` are the platform's.
 
     Returns:
         a2a.types.Artifact with a single FilePart (FileWithBytes).
@@ -83,6 +90,7 @@ def file_artifact(
             metadata=file_action.to_metadata() if file_action is not None else {},
         )],
         extensions=[MESSAGING_EXTENSION_URI_V1] if file_action is not None else [],
+        metadata=metadata or {},
     )
 
 
@@ -91,6 +99,7 @@ def data_artifact(
     *,
     name: str | None = None,
     artifact_id: str | None = None,
+    metadata: dict | None = None,
 ) -> Artifact:
     """Build an Artifact carrying a single structured-data part.
 
@@ -98,6 +107,8 @@ def data_artifact(
         data: JSON-serializable dict to include as a Protobuf Value.
         name: Human-readable artifact name. Defaults to "data".
         artifact_id: Explicit artifact ID. Auto-generated if not provided.
+        metadata: Metadata of the artifact itself; the client reads it in
+            ``artifact.metadata``. Keys under ``aion:`` are the platform's.
 
     Returns:
         a2a.types.Artifact with a single DataPart.
@@ -108,6 +119,7 @@ def data_artifact(
         artifact_id=artifact_id or str(uuid4()),
         name=name or "data",
         parts=[Part(data=proto_value)],
+        metadata=metadata or {},
     )
 
 
@@ -116,6 +128,7 @@ def text_artifact(
     *,
     name: str | None = None,
     artifact_id: str | None = None,
+    metadata: dict | None = None,
 ) -> Artifact:
     """Build an Artifact carrying a single text part.
 
@@ -127,6 +140,8 @@ def text_artifact(
         text: The text of the artifact.
         name: Human-readable artifact name. Defaults to "text".
         artifact_id: Explicit artifact ID. Auto-generated if not provided.
+        metadata: Metadata of the artifact itself; the client reads it in
+            ``artifact.metadata``. Keys under ``aion:`` are the platform's.
 
     Returns:
         a2a.types.Artifact with a single TextPart.
@@ -140,6 +155,7 @@ def text_artifact(
         artifact_id=artifact_id or str(uuid4()),
         name=name or "text",
         parts=[Part(text=text)],
+        metadata=metadata or {},
     )
 
 

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from aion.core.a2a import text_artifact
+from google.protobuf import json_format
+
+from aion.core.a2a import data_artifact, file_artifact, text_artifact, url_artifact
 
 
 class TestTextArtifact:
@@ -28,3 +30,24 @@ class TestTextArtifact:
     def test_text_must_be_a_string(self):
         with pytest.raises(TypeError, match="'text' must be str"):
             text_artifact(b"pong")
+
+
+BUILDERS = {
+    "text": lambda **kw: text_artifact("pong", **kw),
+    "file": lambda **kw: file_artifact(b"a,b", mime_type="text/csv", **kw),
+    "url": lambda **kw: url_artifact("https://example.com/r.pdf", mime_type="application/pdf", **kw),
+    "data": lambda **kw: data_artifact({"total": 1}, **kw),
+}
+
+
+class TestArtifactMetadata:
+    @pytest.mark.parametrize("build", BUILDERS.values(), ids=BUILDERS.keys())
+    def test_metadata_goes_on_the_artifact(self, build):
+        artifact = build(metadata={"showcase.kind": "helper", "nested": {"step": 2}})
+
+        assert json_format.MessageToDict(artifact.metadata) == {"showcase.kind": "helper", "nested": {"step": 2}}
+        assert all(not part.metadata for part in artifact.parts)
+
+    @pytest.mark.parametrize("build", BUILDERS.values(), ids=BUILDERS.keys())
+    def test_without_metadata_the_artifact_has_none(self, build):
+        assert not build().metadata
