@@ -198,22 +198,27 @@ def test_register_version_custom_mutation_arguments_exclude_manifest() -> None:
 
 
 @pytest.mark.anyio("asyncio")
-async def test_register_version_sends_only_version_id_variable() -> None:
-    """register_version should send only the optional versionId variable."""
+@pytest.mark.parametrize("attempt", [None, "00000000-0000-0000-0000-000000000002"])
+async def test_register_version_sends_attempt_only_when_configured(attempt) -> None:
+    """An absent attempt stays compatible with the older server schema."""
     client = AionGqlClient()
     gql_client = CapturingMutationClient()
     client.client = gql_client
     client._is_initialized = True
 
-    result = await client.register_version(version_id="version-123")
+    result = await client.register_version(
+        version_id="version-123", runtime_attempt_id=attempt)
 
     assert result == {"registerVersion": []}
     assert len(gql_client.calls) == 1
     call = gql_client.calls[0]
     assert call["operation_name"] == "RegisterVersion"
+    expected = {"versionId": "version-123"}
+    if attempt:
+        expected["runtimeAttemptId"] = attempt
     assert {
         variable["name"]: variable["value"] for variable in call["variables"].values()
-    } == {"versionId": "version-123"}
+    } == expected
 
 
 @pytest.mark.anyio("asyncio")

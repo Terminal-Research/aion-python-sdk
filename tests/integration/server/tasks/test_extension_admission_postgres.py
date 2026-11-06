@@ -48,7 +48,8 @@ from aion.server.agent.execution.extensions import create_extension_executors, r
 from aion.server.agent.execution.request_context_builder import AionRequestContextBuilder
 from aion.server.auth import JwksKeySource, TokenVerifier
 from aion.server.core.app.handlers import AionJsonRpcDispatcher, AionRequestHandler
-from aion.server.core.middlewares import AionAuthMiddleware, AionContextMiddleware
+from aion.server.core.middlewares.aion_context import AionContextMiddleware
+from aion.server.core.middlewares.auth import AionAuthMiddleware
 from aion.server.tasks.abandoned import AbandonedTasks, PostgresStaleTasks
 from aion.server.tasks.admission import PostgresContextAdmission
 from aion.server.tasks.context_artifacts import PostgresContextArtifacts

@@ -29,7 +29,10 @@ from aion.server.agent.factory import AgentFactory
 from aion.server.core.app.api import AionExtraHTTPRoutes, ContextHTTPRoutes
 from aion.server.core.app.handlers import AionJsonRpcDispatcher, AionRequestHandler
 from aion.server.core.app.handlers.request_preprocessors import A2ARequestPreprocessor, FilePartPreprocessor
-from aion.server.core.middlewares import AionAuthMiddleware, AionContextMiddleware, TracingMiddleware
+from aion.server.core.middlewares.aion_context import AionContextMiddleware
+from aion.server.core.middlewares.auth import AionAuthMiddleware
+from aion.server.core.middlewares.runtime_identity import RuntimeIdentityMiddleware
+from aion.server.core.middlewares.tracing import TracingMiddleware
 from aion.server.plugins import PluginFactory
 from aion.server.settings import app_settings
 from aion.server.tasks import StoreManager, PushNotificationFactory
@@ -84,6 +87,7 @@ class AppFactory:
                 for the mode the server runs in at initialization.
         """
         self.aion_agent = aion_agent
+        self.runtime_identity = app_settings.runtime_identity()
         self.db_factory = db_factory
         self.agent_factory = agent_factory
         self.plugin_factory = plugin_factory
@@ -283,6 +287,9 @@ class AppFactory:
         self.fastapi_app.add_middleware(
             AionAuthMiddleware, verifier=self.token_verifier, application_routes=self._application_routes
         )
+        if self.runtime_identity is not None:
+            self.fastapi_app.add_middleware(
+                RuntimeIdentityMiddleware, identity=self.runtime_identity)
 
     async def stop_turns(self, within: float) -> None:
         """Stop the turns running here, once the server has stopped accepting requests.

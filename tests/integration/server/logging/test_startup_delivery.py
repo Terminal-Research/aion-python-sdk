@@ -2,7 +2,8 @@
 
 These use real CLI/managed processes and the SDK's asynchronous Logstash
 handler. All endpoints are loopback fixtures; no database or Aion account is
-required. Fork and spawn run in isolated interpreters, not the pytest process.
+required. Every start method runs in an isolated interpreter, not the pytest
+process.
 """
 
 from __future__ import annotations
@@ -124,11 +125,30 @@ def _assert_attribution(event):
     assert tags["aion.version.id"] == VERSION_ID
 
 
-@pytest.mark.parametrize("failure", ["malformed", "unreachable-fork", "unreachable-spawn"])
-def test_cli_delivers_database_startup_failure(tmp_path, log_receiver, failure):
-    method = failure.removeprefix("unreachable-") if failure != "malformed" else "spawn"
+# The SDK leaves the start method to Python, so managed processes start the way
+# the interpreter does by default: ``fork`` on Linux up to Python 3.13,
+# ``forkserver`` on Linux from 3.14, ``spawn`` on macOS and Windows. Each test
+# that starts managed processes runs under every one of them.
+START_METHODS = ["spawn", "forkserver", "fork"]
+
+
+def _require_default_start_method(method):
+    """Skip ``method`` where this interpreter lacks it or no platform defaults to it.
+
+    From Python 3.14 on no platform starts processes with ``fork`` by default,
+    so a ``fork`` run there would test a setup that nothing uses.
+    """
     if method not in multiprocessing.get_all_start_methods():
         pytest.skip(f"{method} is unavailable")
+    if method == "fork" and sys.version_info >= (3, 14):
+        pytest.skip("no platform starts processes with fork by default from Python 3.14 on")
+
+
+@pytest.mark.parametrize(
+    "failure", ["malformed", *(f"unreachable-{method}" for method in START_METHODS)])
+def test_cli_delivers_database_startup_failure(tmp_path, log_receiver, failure):
+    method = failure.removeprefix("unreachable-") if failure != "malformed" else "spawn"
+    _require_default_start_method(method)
     port, events = log_receiver
     env = _environment(port)
     (tmp_path / "aion.yaml").write_text(
@@ -175,10 +195,9 @@ if __name__ == '__main__':
     assert all(event.get("trace.id") for event in errors), (output, errors)
 
 
-@pytest.mark.parametrize("method", ["spawn", "fork"])
+@pytest.mark.parametrize("method", START_METHODS)
 def test_cli_startup_connects_agents_and_proxy_but_not_runtime_requests(tmp_path, log_receiver, method):
-    if method not in multiprocessing.get_all_start_methods():
-        pytest.skip(f"{method} is unavailable")
+    _require_default_start_method(method)
     port, events = log_receiver
     env = _environment(port)
     (tmp_path / "aion.yaml").write_text(
@@ -260,10 +279,9 @@ if __name__ == '__main__':
     assert not background.get("trace.id")
 
 
-@pytest.mark.parametrize("method", ["spawn", "fork"])
+@pytest.mark.parametrize("method", START_METHODS)
 def test_restarting_a_managed_process_does_not_replay_the_initial_trace(tmp_path, log_receiver, method):
-    if method not in multiprocessing.get_all_start_methods():
-        pytest.skip(f"{method} is unavailable")
+    _require_default_start_method(method)
     port, events = log_receiver
     code, output = _run(tmp_path, f'''
 import logging
@@ -308,10 +326,9 @@ if __name__ == '__main__':
     assert all(not event.get("trace.id") for event in runtime)
 
 
-@pytest.mark.parametrize("method", ["spawn", "fork"])
+@pytest.mark.parametrize("method", START_METHODS)
 def test_cli_restarts_a_dead_proxy_with_a_fresh_startup_trace(tmp_path, log_receiver, method):
-    if method not in multiprocessing.get_all_start_methods():
-        pytest.skip(f"{method} is unavailable")
+    _require_default_start_method(method)
     port, events = log_receiver
     env = _environment(port)
     (tmp_path / "aion.yaml").write_text(
@@ -400,10 +417,9 @@ if __name__ == '__main__':
                    for event in events), output
 
 
-@pytest.mark.parametrize("method", ["spawn", "fork"])
+@pytest.mark.parametrize("method", START_METHODS)
 def test_cli_fails_when_every_agent_stops_after_a_ready_startup(tmp_path, log_receiver, method):
-    if method not in multiprocessing.get_all_start_methods():
-        pytest.skip(f"{method} is unavailable")
+    _require_default_start_method(method)
     port, events = log_receiver
     env = _environment(port)
     (tmp_path / "aion.yaml").write_text(
@@ -460,9 +476,10 @@ if __name__ == '__main__':
     assert not stopped.get("trace.id")
 
 
-@pytest.mark.skipif("fork" not in multiprocessing.get_all_start_methods(), reason="fork unavailable")
+@pytest.mark.parametrize("method", START_METHODS)
 @pytest.mark.parametrize(("exit_kind", "expected_code"), [("return", 0), ("raise", 1), ("exit", 7)])
-def test_managed_child_delivers_last_log_before_exit(tmp_path, log_receiver, exit_kind, expected_code):
+def test_managed_child_delivers_last_log_before_exit(tmp_path, log_receiver, exit_kind, expected_code, method):
+    _require_default_start_method(method)
     port, events = log_receiver
     code, output = _run(tmp_path, f"""
 import logging
@@ -479,7 +496,7 @@ def target():
         raise SystemExit(7)
 
 if __name__ == '__main__':
-    multiprocessing.set_start_method('fork')
+    multiprocessing.set_start_method({method!r})
     manager = ProcessManager()
     assert manager.create_process('probe', target)
     child = manager.processes['probe'].process

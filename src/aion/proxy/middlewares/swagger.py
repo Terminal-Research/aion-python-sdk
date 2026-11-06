@@ -16,6 +16,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response, HTMLResponse, JSONResponse
 
+from aion.core.deployment import RUNTIME_ATTEMPT_HEADER
 from ..constants import AGENT_PATH_PATTERN, build_agent_path
 
 logger = logging.getLogger(__name__)
@@ -57,12 +58,18 @@ class ProxySwaggerUIFixMiddleware(BaseHTTPMiddleware):
 
         # Fix paths based on endpoint type
         if agent_path == 'docs' or agent_path.endswith('/docs'):
-            return await self._fix_docs_html(response, agent_id)
+            rewritten = await self._fix_docs_html(response, agent_id)
+        elif agent_path == 'openapi.json' or agent_path.endswith('/openapi.json'):
+            rewritten = await self._fix_openapi_schema(response, agent_id)
+        else:
+            return response
 
-        if agent_path == 'openapi.json' or agent_path.endswith('/openapi.json'):
-            return await self._fix_openapi_schema(response, agent_id)
-
-        return response
+        # Rewriting presentation must keep the producing agent's identity.
+        # Never substitute the proxy's identity when the upstream omitted it.
+        attempt = response.headers.get(RUNTIME_ATTEMPT_HEADER)
+        if attempt is not None:
+            rewritten.headers[RUNTIME_ATTEMPT_HEADER] = attempt
+        return rewritten
 
     @staticmethod
     async def _read_response_body(response: Response) -> bytes:

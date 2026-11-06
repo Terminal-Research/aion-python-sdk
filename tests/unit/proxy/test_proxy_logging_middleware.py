@@ -107,6 +107,7 @@ class _ProxyServer:
     def __init__(self, app):
         self.app = app
         self.agent_urls = {"command-agent": "http://agent.test"}
+        self.runtime_identity = None
 
 
 def _proxy_client(transport_handler):

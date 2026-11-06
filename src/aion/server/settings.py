@@ -1,10 +1,12 @@
 """Environment-based server configuration settings (log level, Logstash, storage, etc.)."""
 
 from typing import Literal, Optional
+from uuid import UUID
 
 from pydantic import Field, field_validator
 
 from aion.core.settings import PLATFORM_SUPPLIED, BaseEnvSettings
+from aion.core.deployment import RuntimeIdentity
 from aion.core.utils.optional_deps import server_extras_hint
 
 __all__ = ["AppSettings", "app_settings"]
@@ -151,6 +153,17 @@ class AppSettings(BaseEnvSettings):
         json_schema_extra=PLATFORM_SUPPLIED,
     )
 
+    runtime_attempt_id: Optional[UUID] = Field(
+        default=None,
+        alias="AION_RUNTIME_ATTEMPT_ID",
+        description=(
+            "Control-plane identity for this exact hosted runtime input. "
+            "Replicas share the attempt; a replacement input gets a new one. "
+            "Default: unset, with no runtime identity proof emitted."
+        ),
+        json_schema_extra=PLATFORM_SUPPLIED,
+    )
+
     deployment_id: Optional[str] = Field(
         default=None,
         description=(
@@ -251,6 +264,20 @@ class AppSettings(BaseEnvSettings):
     def is_logstash_configured(self) -> bool:
         """Return True when both LOGSTASH_HOST and LOGSTASH_PORT are set."""
         return bool(self.logstash_host and self.logstash_port)
+
+    def runtime_identity(self) -> Optional[RuntimeIdentity]:
+        """Capture identity after VERSION_ID preparation and before serving.
+
+        Returns:
+            Immutable identity when an attempt is configured, otherwise None.
+            A configured attempt requires a valid Version UUID.
+        """
+        if self.runtime_attempt_id is None:
+            return None
+        return RuntimeIdentity(
+            version_id=self.version_id,
+            runtime_attempt_id=self.runtime_attempt_id,
+        )
 
 
 try:

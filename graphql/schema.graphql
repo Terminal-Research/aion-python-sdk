@@ -231,7 +231,7 @@ type LogEvent {
 
 type Mutations {
   "Registers behavior metadata for a deployment version. Runtime metadata is resolved according to the deployment type."
-  registerVersion("Identifier of the version being registered. This is required when authenticating as a User. When authenticating as a Version, this query will only register the Version connected to your credentials." versionId: ID): [AgentBehavior!]
+  registerVersion("Identifier of the version being registered. This is required when authenticating as a User. When authenticating as a Version, this query will only register the Version connected to your credentials." versionId: ID, "Identity of the exact hosted runtime input, captured at startup. Omitted for runtimes without attempt identity." runtimeAttemptId: ID): [AgentBehavior!]
 }
 
 type PromptTokensDetails {

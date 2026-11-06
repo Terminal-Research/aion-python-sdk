@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-233 scenarios in 42 files, 517 runs across 2 frameworks: 504 run, 12 skipped, 1 independent of the framework.
+234 scenarios in 42 files, 519 runs across 2 frameworks: 506 run, 12 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -52,7 +52,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 
 | Suite | What it covers | Scenarios | Run |
 |---|---|---|---|
-| `smoke` | agent answers at all: card, health, help, echo | 8 | `make tests-scenarios TAGS=smoke` |
+| `smoke` | agent answers at all: card, health, help, echo | 9 | `make tests-scenarios TAGS=smoke` |
 | `streaming` | streamed answers, thoughts, unary send | 18 | `make tests-scenarios TAGS=streaming` |
 | `events` | event order, ids, outbox, get_task agreement | 29 | `make tests-scenarios TAGS=events` |
 | `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 11 | `make tests-scenarios TAGS=terminal_states` |
@@ -361,14 +361,15 @@ Does a deployment of this framework answer at all.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The proxy's system health names the agent and calls it healthy.](core/test_smoke.py#L14 "test_proxy_reports_every_agent_healthy") | `smoke` | — | `default` | ✓ | ✓ |
-| [The deployment manifest names the agents the proxy routes to.](core/test_smoke.py#L23 "test_manifest_lists_the_agent") | `smoke` | — | `default` | ✓ | ✓ |
-| [The card arrives on the proxy route and describes the deployed agent.](core/test_smoke.py#L30 "test_agent_card_is_served_through_the_proxy") | `smoke` | — | `default` | ✓ | ✓ |
-| [Every call needs a token, and the card says so before the first one is refused.](core/test_smoke.py#L40 "test_the_card_asks_for_a_bearer_token") | `smoke` | — | `default` | ✓ | ✓ |
-| [There is no api browser](core/test_smoke.py#L47 "test_there_is_no_api_browser") | `smoke` | — | `default` | ✓ | ✓ |
-| [`help` answers the menu, and the turn completes.](core/test_smoke.py#L55 "test_help_answers_with_the_menu") | `smoke` | `help` | `default` | ✓ | ✓ |
-| [`echo <text>` answers with the argument, unchanged.](core/test_smoke.py#L64 "test_echo_answers_with_the_argument") | `smoke` | `echo` | `default` | ✓ | ✓ |
-| [The card names a 0.3 interface; a 0.3 `message/send` through the proxy completes.](core/test_smoke.py#L74 "test_an_a2a_0_3_client_is_answered_too") | `smoke` | `echo` | `default` | ✓ | ✓ |
+| [The proxy's system health names the agent and calls it healthy.](core/test_smoke.py#L15 "test_proxy_reports_every_agent_healthy") | `smoke` | — | `default` | ✓ | ✓ |
+| [The deployment manifest names the agents the proxy routes to.](core/test_smoke.py#L24 "test_manifest_lists_the_agent") | `smoke` | — | `default` | ✓ | ✓ |
+| [Separate proxy and agent processes prove the same admitted input.](core/test_smoke.py#L31 "test_every_registration_response_identifies_the_same_runtime") | `smoke` | — | `default` | ✓ | ✓ |
+| [The card arrives on the proxy route and describes the deployed agent.](core/test_smoke.py#L52 "test_agent_card_is_served_through_the_proxy") | `smoke` | — | `default` | ✓ | ✓ |
+| [Every call needs a token, and the card says so before the first one is refused.](core/test_smoke.py#L62 "test_the_card_asks_for_a_bearer_token") | `smoke` | — | `default` | ✓ | ✓ |
+| [There is no api browser](core/test_smoke.py#L69 "test_there_is_no_api_browser") | `smoke` | — | `default` | ✓ | ✓ |
+| [`help` answers the menu, and the turn completes.](core/test_smoke.py#L77 "test_help_answers_with_the_menu") | `smoke` | `help` | `default` | ✓ | ✓ |
+| [`echo <text>` answers with the argument, unchanged.](core/test_smoke.py#L86 "test_echo_answers_with_the_argument") | `smoke` | `echo` | `default` | ✓ | ✓ |
+| [The card names a 0.3 interface; a 0.3 `message/send` through the proxy completes.](core/test_smoke.py#L96 "test_an_a2a_0_3_client_is_answered_too") | `smoke` | `echo` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_stream_delta_shape.py`
 

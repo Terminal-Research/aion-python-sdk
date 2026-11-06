@@ -3,6 +3,7 @@
 from typing import Literal, Optional, Dict
 
 from pydantic import BaseModel, Field
+from aion.core.deployment import RuntimeIdentity
 
 
 class AgentHealthInfo(BaseModel):
@@ -34,4 +35,8 @@ class SystemHealthResponse(BaseModel):
     )
     agents: Dict[str, AgentHealthInfo] = Field(
         description="Health status of each configured agent"
+    )
+    runtime: Optional[RuntimeIdentity] = Field(
+        default=None,
+        description="Frozen identity of the proxy reporting system health.",
     )

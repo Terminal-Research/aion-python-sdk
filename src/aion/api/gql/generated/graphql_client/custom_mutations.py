@@ -8,11 +8,15 @@ from .custom_fields import AgentBehaviorFields
 class Mutation:
     @classmethod
     def register_version(
-        cls, *, version_id: Optional[str] = None
+        cls,
+        *,
+        version_id: Optional[str] = None,
+        runtime_attempt_id: Optional[str] = None,
     ) -> AgentBehaviorFields:
         """Registers behavior metadata for a deployment version. Runtime metadata is resolved according to the deployment type."""
         arguments: dict[str, dict[str, Any]] = {
-            "versionId": {"type": "ID", "value": version_id}
+            "versionId": {"type": "ID", "value": version_id},
+            "runtimeAttemptId": {"type": "ID", "value": runtime_attempt_id},
         }
         cleared_arguments = {
             key: value for key, value in arguments.items() if value["value"] is not None

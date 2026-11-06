@@ -27,7 +27,7 @@ from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
 
 from aion.core.constants.a2a import CONTEXT_EXTENSION_URI_V1
-from aion.server.core.middlewares import AionContextMiddleware
+from aion.server.core.middlewares.aion_context import AionContextMiddleware
 
 from .jsonrpc_harness import TASK_NOT_FOUND, JsonRpcServer, error_of, serving, task_of
 from .postgres_support import POSTGRES_TEST_URL, prepared_database

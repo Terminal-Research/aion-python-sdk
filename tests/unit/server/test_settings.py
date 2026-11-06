@@ -1,8 +1,26 @@
 """Tests for aion.server.settings.AppSettings."""
 
 import pytest
+from pydantic import ValidationError
 
 from aion.server.settings import AppSettings
+
+
+@pytest.mark.parametrize("version", [None, "not-a-version"])
+def test_attempt_cannot_claim_an_unidentified_version(version):
+    """VERSION_ID can resolve later, but proof requires both valid UUIDs."""
+    settings = AppSettings(
+        VERSION_ID=version,
+        AION_RUNTIME_ATTEMPT_ID="00000000-0000-0000-0000-000000000002",
+    )
+    with pytest.raises(ValidationError):
+        settings.runtime_identity()
+
+
+def test_malformed_attempt_stops_configuration():
+    """A bad deployment setting must not silently become legacy registration."""
+    with pytest.raises(ValidationError):
+        AppSettings(AION_RUNTIME_ATTEMPT_ID="not-an-attempt")
 
 
 class TestAppSettings:

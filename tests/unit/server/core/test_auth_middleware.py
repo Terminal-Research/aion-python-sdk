@@ -24,7 +24,8 @@ from starlette.routing import Route
 
 from aion.server.auth.verifier import CLOCK_SKEW_LEEWAY_SECONDS, INVOCATION_LIFETIME_SECONDS as INVOCATION_LIFETIME
 from aion.server.core.errors import AUTHENTICATION_REQUIRED_CODE
-from aion.server.core.middlewares import AionAuthMiddleware, AionContextMiddleware
+from aion.server.core.middlewares.aion_context import AionContextMiddleware
+from aion.server.core.middlewares.auth import AionAuthMiddleware
 
 from tests.unit.support.distribution import distribution_metadata
 from tests.unit.support.request_path import ELSEWHERE, Probe, send_message

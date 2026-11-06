@@ -8,6 +8,7 @@ import uvicorn
 from aion.server.opentelemetry.startup import StartupSpan, startup_phase
 from aion.server.startup import StartupServer
 from aion.server.settings import app_settings
+from aion.server.core.middlewares.runtime_identity import RuntimeIdentityMiddleware
 from contextlib import AsyncExitStack, asynccontextmanager
 from fastapi import FastAPI
 from typing import Dict, Optional, Callable
@@ -16,6 +17,7 @@ from .client import ProxyHttpClient
 from .handlers import RequestHandler
 from .middlewares import ProxySwaggerUIFixMiddleware, ProxyLoggingMiddleware
 from .routes import ProxyRouter
+from .constants import HEALTH_CHECK_URL, SYSTEM_HEALTH_CHECK_URL, MANIFEST_URL
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,7 @@ class AionAgentProxyServer:
             startup_span: Startup attempt owned by the launching process.
         """
         self.agent_urls = agents
+        self.runtime_identity = app_settings.runtime_identity()
         self.http_client_manager = ProxyHttpClient()
         self.request_handler: Optional[RequestHandler] = None
         self.startup_callback = startup_callback
@@ -57,6 +60,12 @@ class AionAgentProxyServer:
         """Add middlewares to app"""
         self.app.add_middleware(ProxySwaggerUIFixMiddleware)
         self.app.add_middleware(ProxyLoggingMiddleware)
+        if self.runtime_identity is not None:
+            self.app.add_middleware(
+                RuntimeIdentityMiddleware,
+                identity=self.runtime_identity,
+                paths=frozenset({HEALTH_CHECK_URL, SYSTEM_HEALTH_CHECK_URL, MANIFEST_URL}),
+            )
 
     @asynccontextmanager
     async def _lifespan(self, app: FastAPI):

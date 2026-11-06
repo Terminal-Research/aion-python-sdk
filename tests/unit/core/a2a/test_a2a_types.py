@@ -313,6 +313,15 @@ class TestA2AManifest:
         with pytest.raises(Exception):
             A2AManifest(api_version="1.0")
 
+    def test_runtime_identity_uses_wire_names_in_manifest_json(self):
+        """Nested identity must serialize the same way outside HTTP routes."""
+        runtime = {
+            "versionId": "00000000-0000-0000-0000-000000000001",
+            "runtimeAttemptId": "00000000-0000-0000-0000-000000000002",
+        }
+        manifest = A2AManifest(api_version="1.0", name="svc", runtime=runtime)
+        assert json.loads(manifest.model_dump_json())["runtime"] == runtime
+
 
 class TestEventExtensions:
     def test_event_message_metadata(self):

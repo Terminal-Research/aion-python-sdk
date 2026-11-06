@@ -28,6 +28,7 @@ class FakeProxyServer:
     def __init__(self, app: FastAPI):
         self.app = app
         self.agent_urls = {"command-agent": "http://127.0.0.1:8001"}
+        self.runtime_identity = None
 
 
 @pytest.fixture

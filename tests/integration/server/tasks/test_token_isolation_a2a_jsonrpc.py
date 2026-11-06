@@ -29,7 +29,8 @@ import pytest_asyncio
 from starlette.middleware import Middleware
 
 from aion.server.auth import JwksKeySource, Principal, TokenVerifier
-from aion.server.core.middlewares import AionAuthMiddleware, AionContextMiddleware
+from aion.server.core.middlewares.aion_context import AionContextMiddleware
+from aion.server.core.middlewares.auth import AionAuthMiddleware
 
 from tests.support.aion_tokens import CLIENT_ID, ISSUER, SigningKey, subject
 
