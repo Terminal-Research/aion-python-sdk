@@ -16,16 +16,13 @@ import logging
 
 from a2a.types import Artifact
 from aion.adk.authoring.constants import AION_OUTPUT_KEY, AION_ROUTING_KEY
-from aion.adk.authoring.transformers import convert_a2a_part_to_genai_part
-from aion.core.a2a.enums import ArtifactId, ArtifactName
-from aion.core.a2a.extensions.messaging import FileActionPayload, MessageActionPayload, ReactionActionPayload
-from aion.core.constants import MESSAGING_EXTENSION_URI_V1
+from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 from aion.core.agent.invocation.card import Card
-from google.adk.events import Event, EventActions
+from google.adk.events import Event
 from google.genai import types
 from google.protobuf.json_format import MessageToDict
 from .context_vars import EventEmitter
-from .event_metadata import AionOutput, ArtifactOutput, CardOutput
+from .event_metadata import AionOutput, CardOutput, PublishedArtifact
 
 from .invocation_context import AionInvocationContext
 
@@ -37,24 +34,23 @@ def emit_message(
         text: str,
         *,
         routing: MessageActionPayload | None = None,
-        ephemeral: bool = False,
         metadata: dict | None = None,
 ) -> None:
     """Emit a text message during ADK agent execution.
+
+    The message reaches the client as it is sent and stays in the task's
+    history.
 
     Args:
         emitter: ADK event emitter callable from the invocation ContextVar
         text: Text content to emit
         routing: Optional delivery routing target (MessageActionPayload)
-        ephemeral: If True, routes event to EPHEMERAL_MESSAGE artifact —
-                   shown in real time, never persisted in task history
         metadata: Optional user-defined metadata forwarded to A2A Message.metadata.
                   Keys must not start with "aion:" (reserved for service use).
 
     Example:
         def my_agent(ctx, emitter):
             emit_message(emitter, "Processing your request...")
-            emit_message(emitter, "Searching...", ephemeral=True)
             emit_message(emitter, "Done", metadata={"trace_id": "abc"})
     """
     meta: dict = {}
@@ -63,19 +59,45 @@ def emit_message(
     if routing is not None:
         meta[AION_ROUTING_KEY] = routing.model_dump(by_alias=True, exclude_none=True)
 
-    if ephemeral:
-        meta[AION_OUTPUT_KEY] = AionOutput(
-            artifact=ArtifactOutput(
-                artifact_id=ArtifactId.EPHEMERAL_MESSAGE.value,
-                artifact_name=ArtifactName.EPHEMERAL_MESSAGE.value,
-            )
-        ).model_dump(exclude_none=True)
-
     emitter(Event(
         author="agent",
         content=types.Content(parts=[types.Part(text=text)], role="model"),
         partial=False,
         custom_metadata=meta or None,
+    ))
+
+
+def emit_thinking(
+        emitter: EventEmitter,
+        text: str,
+        *,
+        metadata: dict | None = None,
+) -> None:
+    """Emit one thought of the agent during ADK agent execution.
+
+    The thought becomes one more text part of the task's
+    ``aion:thinking-delta`` artifact, which keeps every thought of the task
+    for a client to show how the answer came about. It is not the answer and
+    not a message, and it stays out of the ADK session: the model does not
+    read it back as something it said.
+
+    Args:
+        emitter: ADK event emitter callable from the invocation ContextVar
+        text: The thought
+        metadata: Optional user-defined metadata merged into A2A Artifact.metadata.
+                  Keys must not start with "aion:" (reserved for service use).
+
+    Example:
+        def my_agent(ctx, emitter):
+            emit_thinking(emitter, "Looking up the account...")
+    """
+    meta = dict(metadata) if metadata else {}
+    meta[AION_OUTPUT_KEY] = AionOutput(thinking=True).model_dump(exclude_none=True)
+    emitter(Event(
+        author="agent",
+        content=types.Content(parts=[types.Part(text=text)], role="model"),
+        partial=False,
+        custom_metadata=meta,
     ))
 
 
@@ -132,23 +154,34 @@ async def emit_artifact(
         artifact: Artifact,
         *,
         routing: MessageActionPayload | None = None,
+        append: bool = False,
+        is_last_chunk: bool = True,
         metadata: dict | None = None,
 ) -> None:
     """Emit a pre-built artifact during ADK agent execution.
 
-    Saves the artifact part to artifact_service, then emits an ADK Event
-    with EventActions(artifact_delta=...) — the standard ADK artifact path.
-    The aion:output hint carries artifact_id, name, and any file action, which
-    the converter puts on the TaskArtifactUpdateEvent it emits; the server
-    applies that retention when it stores the bytes.
+    The artifact reaches the client as it is, as ``emit_artifact`` does in
+    the LangGraph adapter: every part, its own metadata, and an artifact
+    built in chunks with ``append``. It does not go through ADK's artifact
+    service, which keeps one part per version; a tool that saves an artifact
+    the ADK way (``tool_context.save_artifact``) still does, and both reach
+    the client. The server's artifact service reads the task's artifacts by
+    name, so ADK's own ``load_artifacts`` finds this one too - as its first
+    part, the one ``Part`` an ADK artifact holds.
 
     Args:
         emitter: ADK event emitter callable from the invocation ContextVar
         ctx: ADK InvocationContext from the invocation ContextVar
         artifact: Pre-built a2a.types.Artifact to emit
-        routing: Optional delivery routing target (MessageActionPayload)
-        metadata: Optional user-defined metadata merged into A2A Artifact.metadata.
-                  Keys must not start with "aion:" (reserved for service use).
+        routing: Optional delivery routing target (MessageActionPayload); the
+                 converter adds it to the A2A artifact as a data part beside
+                 its content. With ``append``, give it on the chunk that
+                 starts the artifact only.
+        append: If True, append to the artifact sent before under its id
+        is_last_chunk: If True, this is the artifact's final chunk
+        metadata: Optional user-defined metadata for the artifact's update
+                  event, beside the artifact's own. Keys must not start with
+                  "aion:" (reserved for service use).
 
     Example:
         from aion.core.a2a import data_artifact, url_artifact
@@ -157,68 +190,18 @@ async def emit_artifact(
             await emit_artifact(emitter, ctx, url_artifact("https://example.com/r.pdf", mime_type="application/pdf"))
             await emit_artifact(emitter, ctx, data_artifact({"score": 42}, name="result"), metadata={"owner": "agent-x"})
     """
-    if not isinstance(ctx, AionInvocationContext) or ctx.artifact_service is None:
-        logger.warning(
-            "emit_artifact: artifact_service not available — event not emitted for '%s'.",
-            artifact.artifact_id,
-        )
-        return
-
-    if len(artifact.parts) > 1:
-        logger.warning(
-            "emit_artifact: multi-part artifacts are not supported — event not emitted for '%s' (%d parts).",
-            artifact.artifact_id,
-            len(artifact.parts),
-        )
-        return
-
-    filename = artifact.name or artifact.artifact_id
-    version = None
-
-    for part in artifact.parts:
-        genai_part = convert_a2a_part_to_genai_part(part)
-        if genai_part is None:
-            logger.warning(
-                "emit_artifact: could not convert part in artifact '%s' — skipped.",
-                artifact.artifact_id,
-            )
-            continue
-        version = await ctx.artifact_service.save_artifact(
-            app_name=ctx.app_name,
-            user_id=ctx.user_id,
-            session_id=ctx.session.id,
-            filename=filename,
-            artifact=genai_part,
-        )
-
-    if version is None:
-        logger.warning(
-            "emit_artifact: no parts saved for artifact '%s' — event not emitted.",
-            artifact.artifact_id,
-        )
-        return
-
     meta = dict(metadata) if metadata else {}
-    file_action = MessageToDict(artifact.parts[0].metadata).get(MESSAGING_EXTENSION_URI_V1)
-    if not isinstance(file_action, dict) or file_action.get("schema") != FileActionPayload.SCHEMA_URI:
-        file_action = None
     meta[AION_OUTPUT_KEY] = AionOutput(
-        artifact=ArtifactOutput(
-            artifact_id=artifact.artifact_id,
-            artifact_name=artifact.name,
-            file_action=file_action,
+        published=PublishedArtifact(
+            artifact=MessageToDict(artifact, preserving_proto_field_name=True),
+            append=append,
+            last_chunk=is_last_chunk,
         )
     ).model_dump(exclude_none=True)
     if routing is not None:
         meta[AION_ROUTING_KEY] = routing.model_dump(by_alias=True, exclude_none=True)
 
-    emitter(Event(
-        author="agent",
-        content=None,
-        partial=False,
-        actions=EventActions(artifact_delta={filename: version}),
-        custom_metadata=meta,
-    ))
+    emitter(Event(author="agent", content=None, partial=False, custom_metadata=meta))
 
 
 def emit_reaction(
@@ -228,7 +211,8 @@ def emit_reaction(
     """Emit a reaction action event during ADK agent execution.
 
     Instructs the distribution to add or remove a reaction on an existing provider message.
-    Produces a TaskArtifactUpdateEvent with artifact_id ``aion:reaction``.
+    Produces a TaskArtifactUpdateEvent with artifact_id ``aion:reaction``, which the task
+    keeps; a reaction is not a result of the task.
 
     Args:
         emitter: ADK event emitter callable from the invocation ContextVar

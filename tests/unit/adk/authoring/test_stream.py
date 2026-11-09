@@ -1,16 +1,24 @@
-"""Tests for ADK emit_* streaming helpers."""
+"""Tests for ADK emit_* streaming helpers and the Thread methods built on them."""
 
 import asyncio
 from aion.adk.authoring.constants import AION_OUTPUT_KEY, AION_ROUTING_KEY
-from aion.adk.authoring.invocation.emitters import emit_artifact, emit_card, emit_reaction, emit_message
-from aion.adk.authoring.invocation.event_metadata import get_aion_output
+from aion.adk.authoring.invocation.emitters import emit_artifact, emit_card, emit_reaction, emit_message, emit_thinking
+from aion.adk.authoring.invocation.event_metadata import (
+    get_aion_output,
+    get_aion_user_metadata,
+    is_thinking_event,
+    stays_out_of_session,
+)
 from aion.adk.authoring.invocation.invocation_context import AionInvocationContext
 from aion.core.a2a import FileActionPayload, data_artifact, file_artifact, url_artifact
-from aion.core.a2a.enums import ArtifactId
 from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 from aion.core.agent.invocation.card import Card
+from a2a.types import Artifact, Part
 from google.adk.events import Event
-from unittest.mock import AsyncMock, MagicMock
+from google.protobuf.json_format import ParseDict
+from unittest.mock import AsyncMock, MagicMock, patch
+
+THREAD_EMITTER_PATH = "aion.adk.authoring.invocation.thread.get_adk_emitter"
 
 
 def make_routing() -> MessageActionPayload:
@@ -32,7 +40,7 @@ class TestEmitText:
         assert event.partial is False
         assert event.content.parts[0].text == "hello"
 
-    def test_no_custom_metadata_without_routing_or_ephemeral(self):
+    def test_no_custom_metadata_without_routing_or_metadata(self):
         emitter = MagicMock()
         emit_message(emitter, "hello")
 
@@ -48,35 +56,100 @@ class TestEmitText:
         assert AION_ROUTING_KEY in event.custom_metadata
         assert event.custom_metadata[AION_ROUTING_KEY]["contextId"] == "D06DM456"
 
-    def test_ephemeral_sets_aion_output_artifact(self):
+    def test_user_metadata_kept_in_custom_metadata(self):
         emitter = MagicMock()
-        emit_message(emitter, "typing...", ephemeral=True)
+        emit_message(emitter, "hello", metadata={"trace_id": "abc"})
 
         event: Event = emitter.call_args[0][0]
+        assert event.custom_metadata == {"trace_id": "abc"}
+        assert get_aion_output(event) is None
+
+
+class TestEmitThinking:
+    def test_emits_complete_event_marked_as_thought(self):
+        emitter = MagicMock()
+        emit_thinking(emitter, "Looking up the account...")
+
+        emitter.assert_called_once()
+        event: Event = emitter.call_args[0][0]
+        assert event.partial is False
+        assert event.content.parts[0].text == "Looking up the account..."
         output = get_aion_output(event)
         assert output is not None
-        assert output.artifact is not None
-        assert output.artifact.artifact_id == ArtifactId.EPHEMERAL_MESSAGE.value
+        assert output.thinking is True
+        assert is_thinking_event(event)
 
-    def test_ephemeral_text_in_content_not_duplicated(self):
-        """Text is in event.content only — aion:output carries just the routing hint."""
+    def test_thought_names_no_artifact_card_or_reaction(self):
         emitter = MagicMock()
-        emit_message(emitter, "typing...", ephemeral=True)
+        emit_thinking(emitter, "Looking up the account...")
+
+        output = get_aion_output(emitter.call_args[0][0])
+        assert output.artifact is None
+        assert output.card is None
+        assert output.reaction is None
+
+    def test_user_metadata_kept_beside_the_thought_marker(self):
+        emitter = MagicMock()
+        emit_thinking(emitter, "Looking up the account...", metadata={"step": "lookup"})
 
         event: Event = emitter.call_args[0][0]
-        assert event.content is not None
-        assert event.content.parts[0].text == "typing..."
-        # aion:output.artifact must NOT contain parts/data — only routing metadata
-        output = get_aion_output(event)
-        assert "parts" not in output.model_dump(exclude_none=True).get("artifact", {})
-
-    def test_ephemeral_with_routing_has_both_keys(self):
-        emitter = MagicMock()
-        emit_message(emitter, "typing...", routing=make_routing(), ephemeral=True)
-
-        event: Event = emitter.call_args[0][0]
+        assert event.custom_metadata["step"] == "lookup"
         assert AION_OUTPUT_KEY in event.custom_metadata
-        assert AION_ROUTING_KEY in event.custom_metadata
+        assert get_aion_user_metadata(event) == {"step": "lookup"}
+
+    def test_caller_metadata_dict_is_not_modified(self):
+        emitter = MagicMock()
+        metadata = {"step": "lookup"}
+        emit_thinking(emitter, "Looking up the account...", metadata=metadata)
+
+        assert metadata == {"step": "lookup"}
+
+    def test_plain_message_is_not_a_thought(self):
+        emitter = MagicMock()
+        emit_message(emitter, "hello")
+
+        assert not is_thinking_event(emitter.call_args[0][0])
+
+
+class TestThreadThinking:
+    @staticmethod
+    def make_thread():
+        from aion.adk.authoring.invocation.thread import Thread
+        return Thread(
+            context=MagicMock(),
+            context_id="C123",
+            parent_context_id=None,
+            network="Slack",
+            default_reply_target="C123",
+        )
+
+    def test_thinking_emits_a_thought(self):
+        emitter = MagicMock()
+        thread = self.make_thread()
+
+        with patch(THREAD_EMITTER_PATH, return_value=emitter):
+            asyncio.run(thread.thinking("Looking up the account...", metadata={"step": "lookup"}))
+
+        emitter.assert_called_once()
+        event: Event = emitter.call_args[0][0]
+        assert is_thinking_event(event)
+        assert event.content.parts[0].text == "Looking up the account..."
+        assert get_aion_user_metadata(event) == {"step": "lookup"}
+
+    def test_thinking_rejects_non_string_content(self):
+        emitter = MagicMock()
+        thread = self.make_thread()
+
+        with patch(THREAD_EMITTER_PATH, return_value=emitter):
+            asyncio.run(thread.thinking({"not": "supported"}))
+
+        emitter.assert_not_called()
+
+    def test_thinking_without_emitter_does_nothing(self):
+        thread = self.make_thread()
+
+        with patch(THREAD_EMITTER_PATH, return_value=None):
+            assert asyncio.run(thread.thinking("Looking up the account...")) is None
 
 
 class TestEmitCard:
@@ -137,106 +210,46 @@ def make_mock_ctx() -> MagicMock:
 
 
 class TestEmitArtifact:
-    def test_url_artifact_routing_hint_in_metadata(self):
+    """The artifact is published as it is, as emit_artifact does in LangGraph; ADK's artifact service is not used."""
+
+    def _published(self, artifact, **kwargs):
         emitter = MagicMock()
         ctx = make_mock_ctx()
-        artifact = url_artifact("https://example.com/r.pdf", mime_type="application/pdf", name="report")
-        asyncio.run(emit_artifact(emitter, ctx, artifact))
-
+        asyncio.run(emit_artifact(emitter, ctx, artifact, **kwargs))
         event: Event = emitter.call_args[0][0]
-        output = get_aion_output(event)
-        assert output.artifact is not None
-        assert output.artifact.artifact_id == artifact.artifact_id
-        assert output.artifact.artifact_name == "report"
+        return event, ctx
 
-    def test_url_artifact_saved_to_artifact_service(self):
-        emitter = MagicMock()
-        ctx = make_mock_ctx()
-        artifact = url_artifact("https://example.com/r.pdf", mime_type="application/pdf", name="report")
-        asyncio.run(emit_artifact(emitter, ctx, artifact))
+    def test_the_whole_artifact_travels_in_the_event(self):
+        artifact = data_artifact({"a": 1}, name="result")
+        artifact.parts.append(Part(text="second part"))
+        artifact.metadata.update({"owner": "agent-x"})
 
-        ctx.artifact_service.save_artifact.assert_called_once()
-        call_kwargs = ctx.artifact_service.save_artifact.call_args.kwargs
-        assert call_kwargs["filename"] == "report"
-        assert call_kwargs["artifact"].file_data.file_uri == "https://example.com/r.pdf"
+        event, ctx = self._published(artifact)
 
-    def test_bytes_artifact_saved_to_artifact_service(self):
-        emitter = MagicMock()
-        ctx = make_mock_ctx()
-        artifact = file_artifact(b"hello", mime_type="text/plain", name="file.txt")
-        asyncio.run(emit_artifact(emitter, ctx, artifact))
+        published = get_aion_output(event).published
+        assert ParseDict(published.artifact, Artifact()) == artifact
+        assert (published.append, published.last_chunk) == (False, True)
+        ctx.artifact_service.save_artifact.assert_not_called()
 
-        ctx.artifact_service.save_artifact.assert_called_once()
-        call_kwargs = ctx.artifact_service.save_artifact.call_args.kwargs
-        assert call_kwargs["filename"] == "file.txt"
-        assert call_kwargs["artifact"].inline_data.data == b"hello"
+    def test_chunks_say_whether_they_extend_and_end_the_artifact(self):
+        event, _ = self._published(url_artifact("https://example.com/r.pdf", mime_type="application/pdf", name="r"), append=True, is_last_chunk=False)
 
-    def test_file_action_preserves_explicit_null_in_event(self):
-        emitter = MagicMock()
-        ctx = make_mock_ctx()
-        artifact = file_artifact(
-            b"hello", mime_type="text/plain", name="file.txt",
-            file_action=FileActionPayload(retention_expires_at=None),
-        )
-        asyncio.run(emit_artifact(emitter, ctx, artifact))
+        published = get_aion_output(event).published
+        assert (published.append, published.last_chunk) == (True, False)
 
-        output = get_aion_output(emitter.call_args[0][0])
-        assert output.artifact.file_action == {
-            "schema": FileActionPayload.SCHEMA_URI,
-            "retentionExpiresAt": None,
-        }
+    def test_the_agents_metadata_and_routing_ride_beside_it(self):
+        routing = make_routing()
 
-    def test_data_artifact_saved_to_artifact_service(self):
-        emitter = MagicMock()
-        ctx = make_mock_ctx()
-        artifact = data_artifact({"score": 42}, name="result")
-        asyncio.run(emit_artifact(emitter, ctx, artifact))
+        event, _ = self._published(file_artifact(b"hello", mime_type="text/plain", name="f.txt"), routing=routing, metadata={"owner": "x"})
 
-        ctx.artifact_service.save_artifact.assert_called_once()
-        call_kwargs = ctx.artifact_service.save_artifact.call_args.kwargs
-        assert call_kwargs["filename"] == "result"
-
-    def test_emits_event_with_artifact_delta(self):
-        emitter = MagicMock()
-        ctx = make_mock_ctx()
-        ctx.artifact_service.save_artifact = AsyncMock(return_value=3)
-        artifact = url_artifact("https://example.com/r.pdf", mime_type="application/pdf", name="report")
-        asyncio.run(emit_artifact(emitter, ctx, artifact))
-
-        event: Event = emitter.call_args[0][0]
-        assert event.actions.artifact_delta == {"report": 3}
-        assert event.content is None
-
-    def test_routing_embedded_in_metadata(self):
-        emitter = MagicMock()
-        ctx = make_mock_ctx()
-        artifact = url_artifact("https://example.com/f.pdf", mime_type="application/pdf")
-        asyncio.run(emit_artifact(emitter, ctx, artifact, routing=make_routing()))
-
-        event: Event = emitter.call_args[0][0]
+        assert get_aion_user_metadata(event) == {"owner": "x"}
         assert AION_ROUTING_KEY in event.custom_metadata
-        assert AION_OUTPUT_KEY in event.custom_metadata
 
-    def test_no_artifact_service_logs_warning_and_skips(self):
-        emitter = MagicMock()
-        ctx = MagicMock()
-        ctx.artifact_service = None
-        artifact = url_artifact("https://example.com/r.pdf", mime_type="application/pdf")
-        asyncio.run(emit_artifact(emitter, ctx, artifact))
+    def test_the_event_stays_out_of_the_session(self):
+        event, _ = self._published(url_artifact("https://example.com/r.pdf", mime_type="application/pdf", name="r"))
 
-        emitter.assert_not_called()
-
-    def test_metadata_contains_only_routing_hint(self):
-        """aion:output.artifact carries only artifact_id/name — no data."""
-        emitter = MagicMock()
-        ctx = make_mock_ctx()
-        artifact = url_artifact("https://example.com/r.pdf", mime_type="application/pdf", name="doc")
-        asyncio.run(emit_artifact(emitter, ctx, artifact))
-
-        event: Event = emitter.call_args[0][0]
-        output = get_aion_output(event)
-        artifact_hint = output.model_dump(exclude_none=True)["artifact"]
-        assert set(artifact_hint.keys()) <= {"artifact_id", "artifact_name"}
+        assert stays_out_of_session(event)
+        assert event.content is None
 
 
 class TestEmitReaction:

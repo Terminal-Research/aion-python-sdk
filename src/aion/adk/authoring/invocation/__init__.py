@@ -4,7 +4,7 @@ Provides the core abstractions for managing ADK agent execution:
 - Thread: conversation thread bound to the current invocation
 - Message: inbound message with reaction support
 - AionInvocationContext: runtime context carrying Aion data
-- emit_*: helpers for streaming responses (messages, cards, artifacts, reactions)
+- emit_*: helpers for streaming responses (messages, thoughts, cards, artifacts, reactions)
 - Context variables: per-invocation emitter and context storage
 """
 
@@ -21,6 +21,7 @@ from .emitters import (
     emit_card,
     emit_reaction,
     emit_message,
+    emit_thinking,
 )
 from .invocation_context import AionInvocationContext
 from .message import Message, User
@@ -41,4 +42,5 @@ __all__ = [
     "emit_card",
     "emit_reaction",
     "emit_message",
+    "emit_thinking",
 ]

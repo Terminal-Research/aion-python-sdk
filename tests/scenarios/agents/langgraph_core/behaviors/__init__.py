@@ -14,14 +14,22 @@ from tests.scenarios.agents.langgraph_core.invocation import Invocation
 from .cards import card
 from .config import config, event, ext, whoami
 from .errors import fail
-from .events import ids, steps
+from .events import ids, react, steps
 from .files import artifacts, parts, send_file
 from .interrupts import ask, ask_fail, ask_twice
 from .lifecycle import slow
-from .outbox import outbox_message, outbox_task
+from .outbox import (
+    outbox_after_reply,
+    outbox_failed,
+    outbox_failed_after_reply,
+    outbox_history,
+    outbox_message,
+    outbox_pause,
+    outbox_task,
+)
 from .payload import big
 from .smoke import echo, help_menu
-from .streaming import stream, typing_indicator
+from .streaming import stream, stream_marked, think
 
 __all__ = ["BEHAVIORS", "Behavior"]
 
@@ -31,7 +39,9 @@ BEHAVIORS: dict[str, Behavior] = {
     "help": help_menu,
     "echo": echo,
     "stream": stream,
-    "typing": typing_indicator,
+    "stream-marked": stream_marked,
+    "think": think,
+    "react": react,
     "steps": steps,
     "slow": slow,
     "ask": ask,
@@ -50,4 +60,9 @@ BEHAVIORS: dict[str, Behavior] = {
     "config": config,
     "outbox-message": outbox_message,
     "outbox-task": outbox_task,
+    "outbox-history": outbox_history,
+    "outbox-failed": outbox_failed,
+    "outbox-pause": outbox_pause,
+    "outbox-after-reply": outbox_after_reply,
+    "outbox-failed-after-reply": outbox_failed_after_reply,
 }

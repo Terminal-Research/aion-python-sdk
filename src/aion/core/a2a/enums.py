@@ -11,8 +11,6 @@ __all__ = [
     "ArtifactName",
     "A2AEventType",
     "A2AMetadataKey",
-    "ArtifactStreamingStatus",
-    "ArtifactStreamingStatusReason",
     "TaskSettlementReason",
 ]
 
@@ -25,11 +23,15 @@ class MessageType(str, Enum):
 
 
 class ArtifactId(str, Enum):
-    """Artifact IDs used in A2A message headers."""
+    """Ids of the artifacts the SDK fills itself, one artifact of each per task."""
     STREAM_DELTA = "aion:stream-delta"
+    """The agent's answer as the model streamed it: the last section of the task."""
     THINKING_DELTA = "aion:thinking-delta"
-    EPHEMERAL_MESSAGE = "aion:ephemeral-message"
+    """The agent's thoughts, one text part per thought, for the whole task."""
+    ASSISTANT_ANSWER = "aion:assistant-answer"
+    """The last agent message of a completed task that produced no result artifact."""
     REACTION = "aion:reaction"
+    """The agent's latest reaction to a message of the conversation."""
 
 
 class ArtifactName(str, Enum):
@@ -37,7 +39,7 @@ class ArtifactName(str, Enum):
     MESSAGE_RESULT = "Message Result"
     STREAM_DELTA = "Stream Delta"
     THINKING_DELTA = "Thinking Delta"
-    EPHEMERAL_MESSAGE = "Ephemeral Message"
+    ASSISTANT_ANSWER = "Assistant Answer"
     REACTION = "Reaction"
     OUTPUT_FILE = "Output File"
 
@@ -61,6 +63,8 @@ class A2AMetadataKey(str, Enum):
     DISTRIBUTION = "aion:distribution"
     SETTLED_REASON = "aion:settledReason"
     ROUTED_EXTENSION = "aion:routedExtension"
+    SOURCE_MESSAGE_ID = "aion:sourceMessageId"
+    """On ``aion:assistant-answer``: the id of the message the answer was copied from."""
 
 
 class TaskSettlementReason(str, Enum):
@@ -139,29 +143,3 @@ _SETTLEMENT_DESCRIPTIONS = {
         "stopped responding - so it was ended without finishing."
     ),
 }
-
-
-class ArtifactStreamingStatus(str, Enum):
-    """Enumeration representing the current status of artifact streaming."""
-
-    FINALIZED = "finalized"
-    """Artifact streaming has been completed and finalized."""
-
-    ACTIVE = "active"
-    """Artifact streaming is currently in progress."""
-
-
-class ArtifactStreamingStatusReason(str, Enum):
-    """Enumeration representing the reason for the current artifact streaming status."""
-
-    INTERRUPTED = "interrupted"
-    """Streaming was interrupted before completion."""
-
-    COMPLETE_MESSAGE = "complete_message"
-    """Streaming completed with a AIMessage."""
-
-    COMPLETE_TASK = "complete_task"
-    """Streaming completed with a Task status update."""
-
-    CHUNK_STREAMING = "chunk_streaming"
-    """Currently streaming data in chunks."""

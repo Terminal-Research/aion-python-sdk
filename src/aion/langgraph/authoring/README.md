@@ -159,26 +159,31 @@ automatically when declared in a handler registered via `create_event_router`.
 
 ### Thread
 
-Bound to the current invocation. Wraps reply/post/typing primitives with LangGraph streaming.
+Bound to the current invocation. Wraps reply/post/thinking primitives with LangGraph streaming.
 
 ```python
 async def handle_message(thread: Thread):
-    # Durable reply — saved in task history
+    # Reply — saved in task history
     await thread.reply("Processing your request...")
 
-    # Ephemeral typing indicator — stream only, not saved
-    await thread.typing("Thinking...")
+    # One thought — added to the task's aion:thinking-delta artifact
+    await thread.thinking("Looking up the account...")
 
     # Post to an explicit target context
     await thread.post("Update from agent", target=some_routing_payload)
 
-    # Stream an async generator as message chunks
+    # Stream an async generator as the answer (aion:stream-delta)
     async def token_stream():
         async for chunk in llm.astream(prompt):
             yield chunk
 
     await thread.post(token_stream())
 ```
+
+`reply` sends back to where the inbound event came from: a text, a card, a streamed
+answer or an artifact carries that routing target, and the task keeps it with what it
+routes. `post` routes only with an explicit `target`. Output that carries no target goes
+where the distribution's reply mode says.
 
 ### Message
 
@@ -204,12 +209,15 @@ Use these inside any graph node that receives a `StreamWriter`. They emit events
 ```python
 from langgraph.types import StreamWriter
 from langchain_core.messages import AIMessage, AIMessageChunk
-from aion.core.a2a import data_artifact, file_artifact, url_artifact
-from aion.langgraph.authoring import emit_artifact, emit_message
+from aion.core.a2a import data_artifact, file_artifact, text_artifact, url_artifact
+from aion.langgraph.authoring import emit_artifact, emit_message, emit_thinking
 
 def my_node(state: dict, writer: StreamWriter):
-    # Ephemeral notification — reaches client, not saved in task history
-    emit_message(writer, AIMessage(content="Searching knowledge base..."), ephemeral=True)
+    # One thought — added to the task's aion:thinking-delta artifact
+    emit_thinking(writer, "Searching knowledge base...")
+
+    # Text answer as the task's result: the task gets no aion:assistant-answer
+    emit_artifact(writer, text_artifact("Found 3 matching documents."))
 
     # Structured data artifact
     emit_artifact(writer, data_artifact({"status": "success", "results": [...]}, name="analysis"))
@@ -228,7 +236,7 @@ def my_node(state: dict, writer: StreamWriter):
 
 ### Streaming chunks
 
-`AIMessageChunk` emitted via `emit_message` produces `STREAM_DELTA` artifacts with artifact ID `aion:stream-delta` (identical to LangGraph's automatic `messages` stream mode):
+`AIMessageChunk` emitted via `emit_message` produces chunks of the `aion:stream-delta` artifact, as LangGraph's automatic `messages` stream mode does. A section ends with `last_chunk=true`: on its last chunk when langchain-core marks it (`chunk_position="last"`), or else on an empty chunk after it, sent when a full `AIMessage` follows the chunks or the run ends. The text is never sent again; when the task stops, the server joins it into one part. The task keeps the last section, and the streamed text never becomes a message:
 
 ```python
 def streaming_node(state: dict, writer: StreamWriter):
@@ -260,12 +268,14 @@ async def my_node(state: dict):
 
 | Trigger | Client receives |
 |---|---|
-| LLM output chunk (automatic via `messages` stream) | `TaskArtifactUpdateEvent(aion:stream-delta, last_chunk=false)` |
+| LLM output chunk (automatic via `messages` stream) | `TaskArtifactUpdateEvent(aion:stream-delta)`, `last_chunk=true` on the chunk langchain-core marks last |
+| End of a streamed section whose last chunk was not marked | `TaskArtifactUpdateEvent(aion:stream-delta, append=true, last_chunk=true)` with one empty text part |
 | `emit_message(AIMessage)` | `TaskStatusUpdateEvent(working, message=...)` |
-| `emit_message(AIMessage, ephemeral=True)` | `TaskArtifactUpdateEvent(EPHEMERAL_MESSAGE)` |
 | `emit_message(AIMessageChunk)` | `TaskArtifactUpdateEvent(aion:stream-delta)` |
+| `emit_thinking(text)` / `thread.thinking(text)` | `TaskArtifactUpdateEvent(aion:thinking-delta)`, one part per thought |
 | `emit_message(AIMessage, metadata=...)` | `TaskStatusUpdateEvent(working, message=..., metadata=...)` |
-| `emit_artifact(url_artifact(...))` / `emit_artifact(data_artifact(...))` | `TaskArtifactUpdateEvent` |
-| `thread.reply` / `thread.post` | `TaskStatusUpdateEvent(working, message=...)` |
+| `emit_artifact(url_artifact(...))` / `emit_artifact(data_artifact(...))` / `emit_artifact(text_artifact(...))` | `TaskArtifactUpdateEvent` |
+| `thread.reply` / `thread.post` with text or a message | `TaskStatusUpdateEvent(working, message=...)` |
+| `thread.reply` / `thread.post` with an `Artifact` | `TaskArtifactUpdateEvent` |
 
 For the complete mapping reference, see [Message Mapping](https://docs.aion.to/sdk/python/frameworks/langgraph/message-mapping).

@@ -4,7 +4,12 @@ from langchain_core.messages import AIMessage, AIMessageChunk
 from aion.core.a2a.artifacts import file_artifact, url_artifact, data_artifact
 from aion.langgraph.authoring.invocation.thread import Thread
 from aion.langgraph.authoring.invocation.message import Message
-from aion.langgraph.authoring.events.custom_events import ArtifactCustomEvent, CardCustomEvent, MessageCustomEvent
+from aion.langgraph.authoring.events.custom_events import (
+    ArtifactCustomEvent,
+    CardCustomEvent,
+    MessageCustomEvent,
+    ThinkingCustomEvent,
+)
 
 from .helpers import (
     make_mock_context,
@@ -386,39 +391,41 @@ class TestThreadReply:
         assert result.reply_to_message_id == "msg-xyz"
 
 
-class TestThreadTyping:
-    async def test_typing_string_emits_ephemeral(self):
-        # string content is emitted as an ephemeral (stream-only) message
+class TestThreadThinking:
+    async def test_thinking_string_emits_a_thought(self):
+        # string content is emitted as one thought, not as a message
         writer = MagicMock()
         thread = make_thread()
         with patch(_GET_STREAM_WRITER, return_value=writer):
-            await thread.typing("Processing...")
+            await thread.thinking("Processing...", metadata={"step": "lookup"})
 
+        writer.assert_called_once()
         event = writer.call_args[0][0]
-        assert isinstance(event, MessageCustomEvent)
-        assert event.ephemeral is True
+        assert isinstance(event, ThinkingCustomEvent)
+        assert event.text == "Processing..."
+        assert event.metadata == {"step": "lookup"}
 
-    async def test_typing_aimessage_is_rejected(self):
-        # typing() only accepts str; AIMessage is rejected with a warning, no emission
+    async def test_thinking_aimessage_is_rejected(self):
+        # thinking() only accepts str; AIMessage is rejected with a warning, no emission
         writer = MagicMock()
         thread = make_thread()
         with patch(_GET_STREAM_WRITER, return_value=writer):
-            await thread.typing(AIMessage(content="Working..."))
+            await thread.thinking(AIMessage(content="Working..."))
         writer.assert_not_called()
 
-    async def test_typing_unsupported_type_does_nothing(self):
+    async def test_thinking_unsupported_type_does_nothing(self):
         # unsupported type logs a warning and produces no emission
         writer = MagicMock()
         thread = make_thread()
         with patch(_GET_STREAM_WRITER, return_value=writer):
-            await thread.typing({"not": "supported"})
+            await thread.thinking({"not": "supported"})
 
         writer.assert_not_called()
 
-    async def test_typing_returns_early_when_no_writer(self):
-        # typing silently does nothing when no stream writer is available
+    async def test_thinking_returns_early_when_no_writer(self):
+        # thinking silently does nothing when no stream writer is available
         thread = make_thread()
         with patch(_GET_STREAM_WRITER, side_effect=RuntimeError("no writer")):
-            result = await thread.typing("Processing...")
+            result = await thread.thinking("Processing...")
 
         assert result is None

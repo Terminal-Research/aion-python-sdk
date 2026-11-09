@@ -12,7 +12,7 @@ try:
         default_adk_runtime_context,
     )
     from .models import aion_lite_llm
-    from .invocation.emitters import emit_artifact, emit_card, emit_reaction, emit_message
+    from .invocation.emitters import emit_artifact, emit_card, emit_reaction, emit_message, emit_thinking
 except ModuleNotFoundError as exc:
     if is_own_module(exc.name):
         raise
@@ -27,4 +27,5 @@ __all__ = [
     "emit_card",
     "emit_reaction",
     "emit_message",
+    "emit_thinking",
 ]

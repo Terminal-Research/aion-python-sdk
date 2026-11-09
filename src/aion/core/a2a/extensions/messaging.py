@@ -7,6 +7,9 @@ and action payloads for routing message responses through distribution channels.
 from datetime import datetime, timedelta
 from typing import Any, ClassVar, Dict, Literal, Optional
 
+from a2a.types import Artifact, Part
+from google.protobuf import json_format, struct_pb2
+from google.protobuf.json_format import MessageToDict
 from pydantic import Field, field_validator
 
 from aion.core.a2a import A2ABaseModel
@@ -14,6 +17,7 @@ from aion.core.constants.a2a import (
     COMMAND_EVENT_PAYLOAD_SCHEMA_V1,
     COMMAND_EVENT_TYPE_V1,
     FILE_ACTION_PAYLOAD_SCHEMA_V1,
+    MESSAGE_ACTION_PAYLOAD_SCHEMA_V1,
     MESSAGING_EXTENSION_URI_V1,
     MESSAGE_EVENT_PAYLOAD_SCHEMA_V1,
     MESSAGE_EVENT_TYPE_V1,
@@ -124,7 +128,13 @@ class SourceSystemEventPayload(A2ABaseModel):
 
 
 class MessageActionPayload(A2ABaseModel):
-    """Routing target for an outbound message sent to a distribution."""
+    """Routing target for an outbound message or artifact sent to a distribution.
+
+    It travels as one data part beside the content it routes (:meth:`to_part`),
+    and the message or artifact declares the messaging extension.
+    """
+
+    SCHEMA_URI: ClassVar[str] = MESSAGE_ACTION_PAYLOAD_SCHEMA_V1
 
     trajectory: MessageActionTrajectory = Field(
         description=(
@@ -144,6 +154,29 @@ class MessageActionPayload(A2ABaseModel):
         default=None,
         description="Provider message id being replied to; required when trajectory is 'reply'.",
     )
+
+    def to_part(self) -> Part:
+        """The data part that carries this target, its schema marked in the part's metadata."""
+        value = struct_pb2.Value()
+        json_format.ParseDict(self.model_dump(by_alias=True, exclude_none=True), value)
+        return Part(data=value, metadata={MESSAGING_EXTENSION_URI_V1: {"schema": self.SCHEMA_URI}})
+
+    @classmethod
+    def is_part(cls, part: Part) -> bool:
+        """Whether ``part`` is a routing target rather than content."""
+        if not part.HasField("metadata"):
+            return False
+        marker = MessageToDict(part.metadata).get(MESSAGING_EXTENSION_URI_V1)
+        return isinstance(marker, dict) and marker.get("schema") == cls.SCHEMA_URI
+
+    def route(self, artifact: Artifact) -> Artifact:
+        """A copy of ``artifact`` that carries this target: its part added, the extension declared."""
+        routed = Artifact()
+        routed.CopyFrom(artifact)
+        routed.parts.append(self.to_part())
+        if MESSAGING_EXTENSION_URI_V1 not in routed.extensions:
+            routed.extensions.append(MESSAGING_EXTENSION_URI_V1)
+        return routed
 
 
 class FileActionPayload(A2ABaseModel):

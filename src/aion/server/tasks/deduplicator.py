@@ -26,12 +26,12 @@ import logging
 import copy
 from typing import Any
 
+from a2a.server.tasks.task_manager import append_artifact_to_task
 from a2a.types import Artifact, Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf.struct_pb2 import Struct
 from aion.core.a2a.metadata import is_platform_metadata_key
 from aion.server.a2a.utils import task_history_message_ids
-from aion.server.a2a.constants import TRANSIENT_ARTIFACT_IDS
 
 __all__ = ["A2ATaskDeduplicator"]
 
@@ -125,10 +125,18 @@ class A2ATaskDeduplicator:
                 self._known_message_ids.add(item.status.message.message_id)
 
         elif isinstance(item, TaskArtifactUpdateEvent):
-            if item.artifact.artifact_id in TRANSIENT_ARTIFACT_IDS:
-                return
-
-            self._original_task.artifacts.append(copy.deepcopy(item.artifact))
+            # Applied the way the task manager applies it, so the chunks of a
+            # streamed artifact extend one artifact rather than piling up
+            # copies of it. The cache can start from a task the consumer has
+            # not written the artifact's first chunk to yet, so a chunk that
+            # extends an artifact the cache does not hold starts it here.
+            applied = copy.deepcopy(item)
+            if applied.append and not any(
+                artifact.artifact_id == applied.artifact.artifact_id
+                for artifact in self._original_task.artifacts
+            ):
+                applied.append = False
+            append_artifact_to_task(self._original_task, applied)
             if item.artifact.artifact_id:
                 self._known_artifact_ids.add(item.artifact.artifact_id)
 
@@ -174,8 +182,10 @@ class A2ATaskDeduplicator:
     def deduplicate_message(self, message: Message) -> Message | None:
         """Normalize a message relative to the original task.
 
-        The message is rewritten to reference the original task. Messages are
-        deduplicated strictly by `message_id`. If a message does not have an
+        The message is rewritten to belong to the original task: its task and
+        context ids become the task's. Its ``reference_task_ids`` name other
+        tasks and stay as the sender set them. Messages are deduplicated
+        strictly by `message_id`. If a message does not have an
         identifier, it is always treated as unique.
 
         Args:
@@ -192,11 +202,10 @@ class A2ATaskDeduplicator:
         return normalized
 
     def _normalize_message(self, message: Message) -> Message:
-        """Return a copy of the message rewritten to reference the original task."""
+        """Return a copy of the message rewritten to belong to the original task."""
         normalized = copy.deepcopy(message)
         normalized.task_id = self._original_task.id
         normalized.context_id = self._original_task.context_id
-        self._normalize_reference_task_ids(normalized, self._original_task.id)
         self._sanitize_struct_field(normalized, "metadata")
         return normalized
 
@@ -454,23 +463,6 @@ class A2ATaskDeduplicator:
         new_struct = Struct()
         ParseDict(sanitized, new_struct)
         getattr(message, field_name).CopyFrom(new_struct)
-
-    @classmethod
-    def _normalize_reference_task_ids(cls, message: Message, original_task_id: str) -> None:
-        """Ensure the original task ID is present once in the reference list."""
-        reference_task_ids: list[str] = [original_task_id]
-        reference_task_ids.extend(message.reference_task_ids)
-
-        deduplicated: list[str] = []
-        seen: set[str] = set()
-        for task_id in reference_task_ids:
-            if not task_id or task_id in seen:
-                continue
-            deduplicated.append(task_id)
-            seen.add(task_id)
-
-        del message.reference_task_ids[:]
-        message.reference_task_ids.extend(deduplicated)
 
     def _message_is_duplicate(self, message: Message) -> bool:
         """Return `True` when a message ID is already represented by the task."""

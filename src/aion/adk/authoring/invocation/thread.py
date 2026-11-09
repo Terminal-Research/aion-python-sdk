@@ -1,15 +1,16 @@
 """ADK thread abstraction for streaming agent responses.
 
 Provides a context-aware Thread class that emits messages, cards, artifacts,
-and ephemeral typing indicators via the ADK event emitter set up by the
-invocation context.
+and the agent's thoughts via the ADK event emitter set up by the invocation
+context.
 """
 
 from __future__ import annotations
 import logging
 
 from a2a.types import Artifact as A2AArtifact
-from aion.adk.authoring.invocation import emit_artifact, emit_card, emit_message
+from aion.adk.authoring.constants import AION_ROUTING_KEY
+from aion.adk.authoring.invocation import emit_artifact, emit_card, emit_message, emit_thinking
 from aion.core.a2a.extensions.messaging import MessageActionPayload
 from aion.core.agent import BaseThread
 from aion.core.agent.invocation.card import Card
@@ -61,7 +62,7 @@ class Thread(BaseThread):
         """Post a message via the ADK event emitter.
 
         Supports str, Card, a2a.types.Artifact, google.adk.events.Event,
-        or an async iterator yielding str chunks. Returns the emitted Event,
+        or an async iterator yielding str or google.adk.events.Event chunks. Returns the emitted Event,
         or None when the emitter is not available or the content type is unsupported.
 
         When target is provided, the MessageActionPayload is embedded in
@@ -94,19 +95,32 @@ class Thread(BaseThread):
         logger.warning(
             "Thread.post() received unsupported content type: %s. "
             "Supported types: str, Card, a2a.types.Artifact, "
-            "google.adk.events.Event, async iterator of str.",
+            "google.adk.events.Event, async iterator of str or google.adk.events.Event.",
             type(content).__name__,
         )
         return None
 
     @staticmethod
-    def _build_partial_text_event(text: str, metadata: dict | None = None) -> Event:
-        """Build a partial (streaming) ADK Event for a text chunk."""
+    def _build_partial_text_event(
+            text: str,
+            metadata: dict | None = None,
+            routing: Optional[MessageActionPayload] = None,
+            *,
+            last: bool = False,
+    ) -> Event:
+        """Build a partial (streaming) ADK Event for a text chunk, with its routing target under aion:routing.
+
+        ``last`` marks the section's last chunk with ``turn_complete``.
+        """
+        meta = dict(metadata) if metadata else {}
+        if routing is not None:
+            meta[AION_ROUTING_KEY] = routing.model_dump(by_alias=True, exclude_none=True)
         return Event(
             author="agent",
-            content=types.Content(parts=[types.Part(text=text)], role="model"),
+            content=types.Content(parts=[types.Part(text=text)], role="model") if text else None,
             partial=True,
-            custom_metadata=metadata or None,
+            turn_complete=True if last else None,
+            custom_metadata=meta or None,
         )
 
     async def _stream_from_async_iterator(
@@ -116,17 +130,38 @@ class Thread(BaseThread):
             routing: Optional[MessageActionPayload] = None,
             metadata: dict | None = None,
     ) -> Event | None:
-        """Stream chunks as partial ADK Events, then emit a durable final event."""
+        """Stream chunks as partial ADK Events, then the whole text as a complete one.
+
+        The partial events are the chunks of a section of
+        ``aion:stream-delta``, and the complete event ends the section, as
+        ADK's own streaming does; its text is not sent again. The streamed
+        text is the task's answer, not a message. The ADK session keeps it as
+        what the agent said. Every event carries ``routing``; the section
+        takes it on its first chunk.
+
+        A chunk is a ``str``, or an ADK ``Event`` whose text is the chunk: one
+        that sets ``turn_complete`` is the section's last, which then needs
+        no end mark - as a LangGraph ``AIMessageChunk`` with
+        ``chunk_position="last"``.
+        """
         accumulated = ""
         try:
             async for chunk in iterator:
                 if isinstance(chunk, str):
-                    emitter(self._build_partial_text_event(chunk, metadata=metadata))
+                    emitter(self._build_partial_text_event(chunk, metadata=metadata, routing=routing))
                     accumulated += chunk
+                elif isinstance(chunk, Event):
+                    text = "".join(
+                        part.text or "" for part in (chunk.content.parts if chunk.content else []) or []
+                    )
+                    emitter(self._build_partial_text_event(
+                        text, metadata=metadata, routing=routing, last=bool(chunk.turn_complete)
+                    ))
+                    accumulated += text
                 else:
                     logger.warning(
                         "Thread async iterator yielded unsupported type: %s. "
-                        "Expected str.",
+                        "Expected str or google.adk.events.Event.",
                         type(chunk).__name__,
                     )
         except Exception as e:
@@ -142,15 +177,15 @@ class Thread(BaseThread):
 
         return None
 
-    async def typing(self, content: str, *, metadata: dict | None = None) -> None:
-        """Emit an ephemeral typing/progress indicator.
+    async def thinking(self, content: str, *, metadata: dict | None = None) -> None:
+        """Add one thought to the task's ``aion:thinking-delta`` artifact.
 
-        Produces a complete event with aion:output hint that routes it to
-        EPHEMERAL_MESSAGE artifact — shown in real time, never persisted.
+        See ``emit_thinking``: the thought is not a message and stays out of
+        the ADK session.
         """
         if not isinstance(content, str):
             logger.warning(
-                "Thread.typing() received unsupported content type: %s. "
+                "Thread.thinking() received unsupported content type: %s. "
                 "Supported type: str.",
                 type(content).__name__,
             )
@@ -160,4 +195,4 @@ class Thread(BaseThread):
         if emitter is None:
             return
 
-        emit_message(emitter, content, ephemeral=True, metadata=metadata)
+        emit_thinking(emitter, content, metadata=metadata)

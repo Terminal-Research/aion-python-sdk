@@ -24,9 +24,17 @@ from aion.adk.server.constants import DEFAULT_USER_ID
 from aion.adk.server.session import SessionServiceFactory
 from aion.adk.server.transformers.a2a_to_adk import ADKTransformer
 from aion.server.a2a.utils import empty_input_warning, extract_input_preview
+from aion.core.exceptions import TaskFailedError
+
 from .event_converter import ADKToA2AEventConverter
+from .pause import CREDENTIAL_CALL, reply_content, waiting_call
 from .result_handler import ADKExecutionResultHandler
 from .stream_executor import ADKStreamExecutor, ADKStreamResult
+
+CREDENTIALS_UNSUPPORTED = (
+    "The agent asked for credentials to continue, and this server cannot take them yet."
+)
+"""Why a task fails when its ADK run asks for credentials (``adk_request_credential``)."""
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
@@ -74,6 +82,24 @@ class ADKExecutor(AgentFrameworkExecutor):
         Yields:
             A2A events converted directly from ADK Events
         """
+        async for a2a_event in self._run(context, config, resuming=False):
+            yield a2a_event
+
+    async def _run(
+            self,
+            context: "RequestContext",
+            config: Optional[ExecutionConfig],
+            *,
+            resuming: bool,
+    ) -> AsyncIterator[AgentEvent]:
+        """Run one turn of the agent, and finish it the way the run ended.
+
+        A turn that resumes a task paused on a long-running tool call answers
+        that call: the user's message becomes its function response, and the
+        agent that made the call runs on in the invocation the call belongs
+        to, as ADK's own Runner resumes it. Any other turn is the user's
+        message, run by the root agent in a new invocation.
+        """
         task_id = context.task_id or str(uuid.uuid4())
         context_id = ADKTransformer.to_session_id(config) or str(uuid.uuid4())
         converter = ADKToA2AEventConverter(task_id=task_id, context_id=context_id)
@@ -90,12 +116,22 @@ class ADKExecutor(AgentFrameworkExecutor):
             logger.debug(f"Input preview: {extract_input_preview(context.message)!r}")
 
             session = await self._get_or_create_session(config, context_id)
-            user_content = ADKTransformer.transform_context(context)
+            waiting = waiting_call(session.events) if resuming else None
+            if waiting is not None:
+                user_content = reply_content(waiting, context.message)
+                agent = self.agent.find_agent(waiting.author) or self.agent
+                invocation_id = waiting.invocation_id or str(uuid.uuid4())
+                logger.info(f"Answering the paused call {waiting.name} of {agent.name}: context_id={context_id}")
+            else:
+                user_content = ADKTransformer.transform_context(context)
+                agent = self.agent
+                invocation_id = str(uuid.uuid4())
 
             # IMPORTANT: Add user message to session BEFORE creating invocation context
             # ADK expects user messages to be in session.events, not just in user_content
             user_event = Event(
                 author="user",
+                invocation_id=invocation_id,
                 content=user_content,
                 partial=False,
             )
@@ -105,10 +141,17 @@ class ADKExecutor(AgentFrameworkExecutor):
             invocation_context = self._invocation_context_factory.create(
                 session=session,
                 user_content=user_content,
+                invocation_id=invocation_id,
+                agent=agent,
             )
 
+            if waiting is not None:
+                # As ADK's Runner resumes an invocation: the agents read back
+                # where they stopped from the states the paused run recorded.
+                invocation_context.populate_invocation_agent_states()
+
             converter._ctx = invocation_context
-            stream_exec = ADKStreamExecutor(self.agent, self._session_service, converter)
+            stream_exec = ADKStreamExecutor(agent, self._session_service, converter)
             async for a2a_event in stream_exec.execute(invocation_context, session):
                 yield a2a_event
 
@@ -134,13 +177,31 @@ class ADKExecutor(AgentFrameworkExecutor):
             task_id: str,
             context_id: str,
     ) -> AsyncIterator[AgentEvent]:
-        """Emit result events and the terminal complete event."""
+        """Close a streaming section the run left open, then emit result events and the turn's end.
+
+        The end is ``INPUT_REQUIRED`` when the run paused on a long-running
+        tool call, and ``COMPLETED`` otherwise. A request for credentials
+        fails the task instead: the server cannot take credentials yet.
+
+        Raises:
+            TaskFailedError: The run paused on ``adk_request_credential``.
+        """
+        paused_on = stream_result.paused_on
+        if paused_on is not None and paused_on.name == CREDENTIAL_CALL:
+            raise TaskFailedError(CREDENTIALS_UNSUPPORTED)
+
+        for a2a_event in converter.finalize_stream():
+            yield a2a_event
+
         for a2a_event in self._result_handler.handle(
                 stream_result, converter, session, context, task_id, context_id
         ):
             yield a2a_event
 
-        yield converter.generate_complete()
+        if paused_on is not None:
+            yield converter.generate_pause(paused_on)
+        else:
+            yield converter.generate_complete()
 
     async def delete_state(self, config: ExecutionConfig) -> None:
         """Delete the context's ADK session and the artifacts saved under it.
@@ -211,12 +272,11 @@ class ADKExecutor(AgentFrameworkExecutor):
     ) -> AsyncIterator[AgentEvent]:
         """Resume ADK agent execution with new user input.
 
-        For ADK, resuming means continuing the conversation with the same session.
-        The session already contains the conversation history, and we simply
-        stream with new user inputs.
-
-        NOTE: ADK doesn't have explicit interrupt/pause states. Resume is just
-        continuing the conversation.
+        A task waits for input when its run paused on a long-running tool
+        call; the message answers that call, and the agent that made it runs
+        on (``_run``). A task left waiting without one - an outbox Task set
+        the state - goes on with the message as an ordinary turn in the same
+        session.
 
         Args:
             context: A2A request context with message, metadata, and task information
@@ -235,7 +295,7 @@ class ADKExecutor(AgentFrameworkExecutor):
         try:
             logger.info(f"Resuming ADK execution for context: {config.context_id}")
 
-            async for event in self.stream(context, config):
+            async for event in self._run(context, config, resuming=True):
                 yield event
 
         except Exception as e:

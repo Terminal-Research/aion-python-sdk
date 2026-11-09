@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Optional, TypedDict
+from typing import Annotated, TypedDict
 
-from aion.core.a2a import A2AOutbox
+from aion.langgraph.authoring import A2AOutboxField
 from langchain_core.messages import BaseMessage
 from langgraph.graph import add_messages
 
@@ -21,4 +21,4 @@ class ScenarioState(TypedDict, total=False):
     messages: Annotated[list[BaseMessage], add_messages]
     text: str
     handler: str
-    a2a_outbox: Optional[A2AOutbox]
+    a2a_outbox: A2AOutboxField

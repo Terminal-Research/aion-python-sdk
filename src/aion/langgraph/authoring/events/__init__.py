@@ -6,6 +6,7 @@ from .custom_events import (
     CardCustomEvent,
     MessageCustomEvent,
     ReactionCustomEvent,
+    ThinkingCustomEvent,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "CardCustomEvent",
     "MessageCustomEvent",
     "ReactionCustomEvent",
+    "ThinkingCustomEvent",
 ]

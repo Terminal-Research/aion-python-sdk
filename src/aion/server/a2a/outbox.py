@@ -6,6 +6,11 @@ the server does with it is not a framework's business, so it is defined once
 here and both framework adapters call it — a second adapter that grows its own
 reading of the outbox is how the two drifted apart before.
 
+What a Task in the outbox holds is the agent's: its state, the reason it
+gives, its history and its artifacts. The server stamps its own ids, keeps
+its own metadata keys and stores the files, and builds no answer of its own
+for such a turn (``aion.server.agent.execution.assistant_answer``).
+
 Two decisions live in this module.
 
 *The object is handed on as itself.* A `Message` stays a `Message` and a `Task`
@@ -79,8 +84,14 @@ def outbox_task(
                               A patch that could set them could point the
                               answer at another task.
             status          — the patch's when it set one, otherwise the
-                              current one. The turn's terminal event follows
-                              and has the last word either way.
+                              current one. A state that decides the turn -
+                              a terminal one, or a wait for input - is the
+                              turn's outcome: the event pipeline drops what
+                              the turn yields after it, the executor's own
+                              end of the turn included. A task left waiting
+                              this way is continued by the next message as
+                              an ordinary turn; telling an answer from a new
+                              request is then the agent's to do.
             history         — current, then the patch's, each of the patch's
                               messages re-stamped with the server's ids.
             artifacts       — current, then the patch's.

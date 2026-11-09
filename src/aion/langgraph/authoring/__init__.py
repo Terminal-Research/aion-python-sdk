@@ -4,8 +4,9 @@ Provides abstractions for building Aion-powered LangGraph agents:
 - Event routing: Aion event dispatcher for graph nodes
 - Models: LangChain chat model factory configured for Aion
 - Threading: Thread and Message abstractions for agent-side streaming
-- Emission: Helper functions for emitting events (messages, cards, artifacts, reactions)
+- Emission: Helper functions for emitting events (messages, thoughts, cards, artifacts, reactions)
 - MCP tools: LangGraph-native MCP resolver and client factory
+- State: the type of the ``a2a_outbox`` field the server reads
 """
 
 from aion.core.utils.optional_deps import is_own_module, missing_extra_error
@@ -26,7 +27,9 @@ try:
         emit_artifact,
         emit_card,
         emit_message,
+        emit_thinking,
     )
+    from .state import A2AOutboxField
 except ModuleNotFoundError as exc:
     if is_own_module(exc.name):
         raise
@@ -35,6 +38,7 @@ except ModuleNotFoundError as exc:
     ) from exc
 
 __all__ = [
+    "A2AOutboxField",
     "AionEventRouter",
     "create_event_router",
     "AionLangGraphMcpResolver",
@@ -46,5 +50,6 @@ __all__ = [
     "emit_artifact",
     "emit_card",
     "emit_message",
+    "emit_thinking",
     "load_aion_mcp_tools",
 ]

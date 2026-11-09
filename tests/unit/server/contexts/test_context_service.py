@@ -172,15 +172,18 @@ class TestReads:
 
         assert [message.message_id for message in view.history] == ["m1", "m2"]
 
-    async def test_artifacts_are_qualified_by_task_newest_first_without_deltas(self, world):
-        first = await world.send("alice", "ctx", artifacts=(Artifact(artifact_id="report"),))
+    async def test_artifacts_are_every_one_of_the_page_tasks_newest_first(self, world):
+        """The streamed answer and the thoughts come with the rest; a client matches them to messages by task."""
+        first = await world.send("alice", "ctx", _message("m1"), artifacts=(Artifact(artifact_id="report"),))
         second = await world.send(
             "alice",
             "ctx",
+            _message("m2"),
+            _message("m3", role=Role.ROLE_AGENT),
             artifacts=(
-                Artifact(artifact_id="report"),
                 Artifact(artifact_id=ArtifactId.STREAM_DELTA.value),
                 Artifact(artifact_id=ArtifactId.THINKING_DELTA.value),
+                Artifact(artifact_id="report"),
             ),
         )
 
@@ -188,8 +191,26 @@ class TestReads:
 
         assert [(item.task_id, item.artifact.artifact_id) for item in view.artifacts] == [
             (second.id, "report"),
+            (second.id, ArtifactId.THINKING_DELTA.value),
+            (second.id, ArtifactId.STREAM_DELTA.value),
             (first.id, "report"),
         ]
+
+    async def test_artifacts_follow_the_page_of_history(self, world):
+        """A task none of whose messages are on the page contributes no artifact to it."""
+        first = await world.send("alice", "ctx", _message("m1"), artifacts=(Artifact(artifact_id="draft"),))
+        second = await world.send(
+            "alice", "ctx", _message("m2"), _message("m3"), artifacts=(Artifact(artifact_id="report"),)
+        )
+
+        async def page(**params) -> list[tuple[str, str]]:
+            view = await world.read("alice", "ctx", **params)
+            return [(item.task_id, item.artifact.artifact_id) for item in view.artifacts]
+
+        assert await page(history_length=2) == [(second.id, "report")]
+        assert await page(history_length=1, history_offset=2) == [(first.id, "draft")]
+        assert await page(history_length=2, history_offset=1) == [(second.id, "report"), (first.id, "draft")]
+        assert await page(history_length=0) == []
 
     async def test_status_is_the_latest_tasks(self, world):
         await world.send("alice", "ctx", _message("m1"))

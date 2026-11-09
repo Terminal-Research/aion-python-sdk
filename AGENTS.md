@@ -270,8 +270,8 @@ was run. There is no need to run every suite for a documentation-only edit.
   a2a-sdk's `task_versions` and `task_events` tables.
 - `aion.server`: generic A2A app, plugin discovery, the executor pool, task
   and file lifecycle, platform link, extensions and their executors, push
-  notifications, and observability. Response and thinking deltas remain live-only artifacts
-  outside durable task storage.
+  notifications, and observability. The streamed answer and the agent's thoughts are
+  artifacts the task stores like any other.
 - `aion.proxy`: public multi-agent proxy and streaming response handling.
 - `aion.langgraph.server` and `aion.adk.server`: framework plugins and
   adapters for execution, state, streams, and A2A conversion.

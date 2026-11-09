@@ -6,7 +6,9 @@ from a2a.server.events import Event, EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
 
+from aion.core.a2a.enums import ArtifactId
 from aion.core.exceptions import AionError
+from aion.server.agent.execution.assistant_answer import AssistantAnswer
 from aion.server.agent.execution.scope import get_task_manager as exec_scope_get_task_manager
 from aion.server.files.a2a import A2AFileTransformer
 from aion.server.files.storage import UploadFailure
@@ -14,7 +16,6 @@ from aion.server.tasks import A2ATaskDeduplicator
 from aion.server.a2a.constants import NON_ACTIVE_TASK_STATES, TERMINAL_TASK_STATES
 from aion.server.a2a.response_extensions import ResponseServiceParameters
 from aion.server.a2a.utils import (
-    is_ephemeral_status_event,
     is_message_in_task_history,
     is_same_message,
     task_history_message_ids,
@@ -22,6 +23,18 @@ from aion.server.a2a.utils import (
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+SILENT_SAVE_WAIT = 5.0
+"""Seconds a Task or Message the pipeline saves itself waits for the queue to catch up.
+
+The event consumer applies what goes through the queue - the task a request
+opens with, then the status and artifact updates - and the pipeline writes a
+Task or Message to the store directly. A direct write that comes first lands
+out of order: it creates a new task the consumer then refuses as a second
+one, or goes in before a reply the agent sent earlier, or under a state an
+update still queued then overwrites. So it waits until the store holds the
+task and the consumer has applied every update the pipeline queued before it.
+After this long it is written anyway, with a warning."""
 
 
 class OutboundFileNotStoredError(AionError):
@@ -75,12 +88,27 @@ class AionEventPipeline:
 
     A new task opens as ``SUBMITTED`` and moves to ``WORKING`` with the first
     event of its turn that reaches the client or the task. A status update
-    that is kept in the task states the task's state itself, so it carries
-    that move. Anything else - an artifact, a live-only status or delta, a
-    message or task snapshot the pipeline stores without streaming it - is
-    preceded by a ``WORKING`` status: the task is never ``SUBMITTED`` while
-    its output reaches the client, and a turn that opens with a status of
-    its own gets no status without a message or details in front of it.
+    states the task's state itself, so it carries that move. Anything else -
+    an artifact, a message or task snapshot the pipeline stores without
+    streaming it - is preceded by a ``WORKING`` status: the task is never
+    ``SUBMITTED`` while its output reaches the client, and a turn that opens
+    with a status of its own gets no status without a message or details in
+    front of it.
+
+    A turn has one outcome, the first one it reports: a terminal state or a
+    wait for input, whether a status update of the executor states it or a
+    Task the agent handed over through its outbox. Whatever the turn yields
+    after that is dropped - the executor's own end of a turn whose outbox
+    already decided it among them - so the task is not reopened, completed
+    over a failure, or answered after the fact.
+
+    Two things of the SDK's own artifacts happen here, the same for every
+    executor:
+
+    - every thought is added to the task's thoughts: the first one of the
+      task creates the artifact, the rest extend it;
+    - a task that completes without having produced anything but messages
+      gets the last one as its answer (``AssistantAnswer``).
     """
 
     def __init__(
@@ -91,6 +119,7 @@ class AionEventPipeline:
             task_started: bool = False,
             response_parameters: ResponseServiceParameters = ResponseServiceParameters(),
             prior_message_ids: frozenset[str] = frozenset(),
+            queued_before: int = 0,
     ):
         """
         Args:
@@ -102,15 +131,23 @@ class AionEventPipeline:
                 executor makes a resumed task before its turn runs.
             response_parameters: Verified activation for this invocation only.
             prior_message_ids: Existing history/status messages to preserve.
+            queued_before: Status updates the caller queued for the turn
+                before this pipeline took over - the ``WORKING`` a resumed
+                turn opens with - which a direct write waits for too.
         """
         self._queue = event_queue
         self._task_updater = task_updater
         self._file_transformer = file_transformer
         self._task_started = task_started
+        self._task_is_new = not task_started
+        self._queued = queued_before
+        self._outcome: Optional[int] = None
         self._terminal_seen = False
         self._response_parameters = response_parameters
         self._prior_message_ids = prior_message_ids
         self._deduplicator: Optional[A2ATaskDeduplicator] = None
+        self._answer = AssistantAnswer()
+        self._task_has_thoughts: Optional[bool] = None
 
     @property
     def _task_manager(self):
@@ -130,12 +167,22 @@ class AionEventPipeline:
     async def process(self, event) -> None:
         """Prepare one agent event and deliver what is left of it.
 
+        An event that comes after the turn's outcome is dropped unread, its
+        files included: the task has its answer for this turn already.
+
         Raises:
             OutboundFileNotStoredError: The event carried a file that could
                 not be stored. The rest of the event has been delivered by
                 then, so an answer sent alongside the file reaches the client
                 before the task fails.
         """
+        if self._outcome is not None:
+            logger.debug(
+                "The turn already has its outcome (%s); dropping %s",
+                TaskState.Name(self._outcome),
+                _event_debug_info(event),
+            )
+            return
         produced = event
         event, failures = await self._prepare_event(event)
         if event is not None:
@@ -154,8 +201,19 @@ class AionEventPipeline:
 
         await self._start_task(event)
 
+        if self._is_thought(event):
+            await self._add_thought(event)
+        elif self._completes(event):
+            answer = self._answer.for_completion(event, await self._stored_task())
+            if answer is not None:
+                await self._emit_to_client(answer)
+        self._answer.observe(event)
+
         # Task and Message events are persisted silently (not streamed to client)
         if isinstance(event, (Task, Message)):
+            # Before anything is read from the stored task for this write:
+            # the reply a queued update carries is not in it until applied.
+            await self._catch_up(event)
             if isinstance(event, Task):
                 await self._flush_pending_status_message(event)
             await self._save_silently(event)
@@ -163,13 +221,42 @@ class AionEventPipeline:
             # All other events are streamed to client
             await self._emit_to_client(event)
 
-        self._note_terminal_state(event)
+        self._note_outcome(event)
 
-        # An ephemeral event never reaches the task record, so folding it into
-        # the deduplicator's cache would leave that cache describing a history
-        # the database does not have.
-        if self._deduplicator is not None and not is_ephemeral_status_event(event):
+        if self._deduplicator is not None:
             self._deduplicator.apply_processed_item(event)
+
+    @staticmethod
+    def _is_thought(event) -> bool:
+        return (
+            isinstance(event, TaskArtifactUpdateEvent)
+            and event.artifact.artifact_id == ArtifactId.THINKING_DELTA.value
+        )
+
+    @staticmethod
+    def _completes(event) -> bool:
+        return (
+            isinstance(event, (Task, TaskStatusUpdateEvent))
+            and event.status.state == TaskState.TASK_STATE_COMPLETED
+        )
+
+    async def _add_thought(self, event: TaskArtifactUpdateEvent) -> None:
+        """Make the thought extend the task's thoughts, or start them when it is the task's first."""
+        if self._task_has_thoughts is None:
+            stored = await self._stored_task()
+            self._task_has_thoughts = stored is not None and any(
+                artifact.artifact_id == ArtifactId.THINKING_DELTA.value for artifact in stored.artifacts
+            )
+        event.append = self._task_has_thoughts
+        event.last_chunk = False
+        self._task_has_thoughts = True
+
+    async def _stored_task(self) -> Optional[Task]:
+        try:
+            task_manager = self._task_manager
+        except RuntimeError:
+            return None
+        return await task_manager.get_task() if task_manager is not None else None
 
     @staticmethod
     def _declares_outcome(event) -> bool:
@@ -179,12 +266,11 @@ class AionEventPipeline:
             and event.status.state in NON_ACTIVE_TASK_STATES
         )
 
-    def _note_terminal_state(self, event) -> None:
-        """Record that this event closed the task, whatever shape it arrived in."""
-        if isinstance(event, (Task, TaskStatusUpdateEvent)):
-            self._terminal_seen = (
-                self._terminal_seen or event.status.state in TERMINAL_TASK_STATES
-            )
+    def _note_outcome(self, event) -> None:
+        """Record that this event decided the turn - and whether it closed the task - whatever shape it arrived in."""
+        if self._declares_outcome(event):
+            self._outcome = event.status.state
+            self._terminal_seen = self._terminal_seen or event.status.state in TERMINAL_TASK_STATES
 
     async def _flush_pending_status_message(self, incoming_task: Task) -> None:
         """Move pending status.message from current task into incoming task's history.
@@ -222,13 +308,33 @@ class AionEventPipeline:
         """Persist event to database without emitting to client.
 
         Task and Message events bypass the event queue and are saved
-        directly to the database without being streamed to the client.
+        directly to the database without being streamed to the client, once
+        the queue has caught up with them (``_catch_up``).
         """
         task_manager = self._task_manager
         if task_manager:
             await task_manager.process(event)
         else:
             logger.warning("Cannot process event silently: task_manager is not initialized.")
+
+    async def _catch_up(self, event: Task | Message) -> None:
+        """Wait until the store holds the task and every update queued before ``event`` is applied.
+
+        Gives up after ``SILENT_SAVE_WAIT`` seconds, with a warning, and the
+        write goes ahead.
+        """
+        task_manager = self._task_manager
+        if task_manager is None:
+            return
+        caught_up = (
+            not self._task_is_new or await task_manager.wait_until_stored(SILENT_SAVE_WAIT)
+        ) and await task_manager.wait_until_applied(self._queued, SILENT_SAVE_WAIT)
+        if not caught_up:
+            logger.warning(
+                "The queue has not caught up after %ss; saving %s anyway",
+                SILENT_SAVE_WAIT,
+                _event_debug_info(event),
+            )
 
     async def _emit_to_client(self, event) -> None:
         """Put the event on the queue, for the consumer to deliver and persist.
@@ -237,36 +343,34 @@ class AionEventPipeline:
         """
         event_copy = copy.deepcopy(event)
         await self._queue.enqueue_event(event_copy)
+        self._queued += 1
 
     async def _start_task(self, event) -> None:
-        """Move the task to ``WORKING`` ahead of the first event that does not move it itself.
-
-        The ``WORKING`` written here is stamped no later than a live-only
-        status it precedes, which carries the time it was made, so the
-        statuses keep the order of the turn.
-        """
+        """Move the task to ``WORKING`` ahead of the first event that does not move it itself."""
         if self._task_started:
             return
         self._task_started = True
         if self._starts_the_task(event):
             return
-
-        timestamp = None
-        if isinstance(event, TaskStatusUpdateEvent) and event.status.HasField("timestamp"):
-            timestamp = event.status.timestamp.ToJsonString()
-        await self._task_updater.update_status(TaskState.TASK_STATE_WORKING, timestamp=timestamp)
+        await self._task_updater.update_status(TaskState.TASK_STATE_WORKING)
+        self._queued += 1
 
     @staticmethod
     def _starts_the_task(event) -> bool:
         """Whether delivering the event moves a ``SUBMITTED`` task out of that state.
 
-        Only a status update the task keeps does. A ``Message`` or ``Task``
-        is stored silently, under the state the task already has, and the
-        ``WORKING`` written before it is also what moves a message left in
-        ``status.message`` into the history when the event consumer applies
-        it.
+        A status update does, and so does a whole ``Task`` that declares
+        the turn's outcome: it is stored silently with that state, and a
+        ``WORKING`` queued before it would be applied by the event consumer
+        after the write and undo it. A ``Message``, or a ``Task`` that leaves
+        the state as it is, is stored silently under the state the task
+        already has, and the ``WORKING`` written before it is also what moves
+        a message left in ``status.message`` into the history when the event
+        consumer applies it.
         """
-        return isinstance(event, TaskStatusUpdateEvent) and not is_ephemeral_status_event(event)
+        return isinstance(event, TaskStatusUpdateEvent) or (
+            isinstance(event, Task) and AionEventPipeline._declares_outcome(event)
+        )
 
     async def _prepare_event(self, event) -> tuple[object, list[UploadFailure]]:
         """Return the event ready for delivery and the files it could not keep.

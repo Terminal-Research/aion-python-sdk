@@ -2,17 +2,12 @@
 
 from __future__ import annotations
 
-import uuid
 from typing import Any, TYPE_CHECKING
 
 from a2a.types import (
     Message,
-    Part,
-    Role,
     Task,
     TaskArtifactUpdateEvent,
-    TaskState,
-    TaskStatus,
     TaskStatusUpdateEvent,
 )
 
@@ -35,8 +30,7 @@ class ExecutionResultHandler:
     outbox is defined — for this adapter and the ADK one alike. The outbox
     comes from the run's own updates, not from the graph's final state: the
     checkpoint keeps the last value written in the context, and the next
-    turn would otherwise answer with it again. If this run wrote no outbox,
-    falls back to streaming accumulated text.
+    turn would otherwise answer with it again.
 
     Subclass and override `handle` to extend or replace the default logic.
     """
@@ -56,7 +50,8 @@ class ExecutionResultHandler:
             snapshot: The graph's state after the run, LangGraph's own
                 ``StateSnapshot`` from ``aget_state``. A non-empty
                 ``interrupts`` means the graph stopped on ``interrupt()``
-                and waits for input.
+                and waits for input. Unused by the default logic and kept
+                for subclasses that override this method.
             context: A2A request context (current_task, task_id, etc.).
             task_id: Current task ID (used to construct A2A events).
             context_id: Current context ID (used to construct A2A events).
@@ -69,22 +64,6 @@ class ExecutionResultHandler:
             result = self._handle_outbox(outbox, context, task_id, context_id)
             if result is not None:
                 return result
-
-        # Fallback: no outbox or outbox type not yet handled
-        if stream_result.delta_text and not snapshot.interrupts:
-            msg = Message(
-                context_id=context_id,
-                task_id=task_id,
-                message_id=str(uuid.uuid4()),
-                role=Role.ROLE_AGENT,
-                parts=[Part(text=stream_result.delta_text)],
-            )
-            return [TaskStatusUpdateEvent(
-                task_id=task_id,
-                context_id=context_id,
-                    status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=msg),
-            )]
-
         return []
 
     def _handle_outbox(
@@ -96,8 +75,7 @@ class ExecutionResultHandler:
     ) -> list[AgentEvent] | None:
         """Route outbox to the appropriate handler based on type.
 
-        Returns None if the outbox type is not recognized — caller
-        falls through to fallback logic.
+        Returns None if the outbox type is not recognized.
         """
         if not isinstance(outbox, A2AOutbox):
             return None

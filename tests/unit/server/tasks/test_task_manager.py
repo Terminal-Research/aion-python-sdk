@@ -11,11 +11,13 @@ rather than to every write.
 
 import pytest
 from a2a.types import (
+    Artifact,
     Message,
     Part,
     Role,
     SendMessageConfiguration,
     Task,
+    TaskArtifactUpdateEvent,
     TaskState,
     TaskStatus,
     TaskStatusUpdateEvent,
@@ -23,6 +25,9 @@ from a2a.types import (
 from a2a.utils.task import apply_history_length
 from unittest.mock import AsyncMock, Mock, patch
 
+from aion.core.a2a.deltas import stream_delta_chunk, stream_delta_end, thinking_delta
+from aion.core.a2a.enums import ArtifactId
+from aion.core.a2a.extensions.messaging import MessageActionPayload
 from aion.server.tasks.contexts import conversation_of
 from aion.server.tasks.task_manager import AionTaskManager
 
@@ -368,6 +373,101 @@ class TestMessagePlacement:
         task = await task_manager.get_task()
         assert [m.message_id for m in task.history] == ["msg-user"]
         assert not task.status.HasField("message")
+
+
+def _artifact_update(artifact_id: str, text: str, *, append: bool = False) -> TaskArtifactUpdateEvent:
+    return TaskArtifactUpdateEvent(
+        task_id=TASK_ID,
+        context_id=CONTEXT_ID,
+        artifact=Artifact(artifact_id=artifact_id, parts=[Part(text=text)]),
+        append=append,
+    )
+
+
+def _stored_parts(task: Task) -> dict[str, list[str]]:
+    return {artifact.artifact_id: [part.text for part in artifact.parts] for artifact in task.artifacts}
+
+
+class TestTheSDKsOwnArtifacts:
+    """The streamed answer, the thoughts and the reaction are stored like any other artifact."""
+
+    @pytest.mark.anyio
+    async def test_the_streamed_answer_is_stored_as_it_streams(self):
+        manager, store = _built(TaskState.TASK_STATE_WORKING)
+        chunks = [
+            stream_delta_chunk(task_id=TASK_ID, context_id=CONTEXT_ID, parts=[Part(text="Hel")], append=False),
+            stream_delta_chunk(task_id=TASK_ID, context_id=CONTEXT_ID, parts=[Part(text="lo")], append=True),
+        ]
+
+        for chunk in chunks:
+            assert await manager.process(chunk) is chunk
+        assert _stored_parts(store.task) == {ArtifactId.STREAM_DELTA.value: ["Hel", "lo"]}
+
+        await manager.process(stream_delta_end(task_id=TASK_ID, context_id=CONTEXT_ID))
+        assert _stored_parts(store.task) == {ArtifactId.STREAM_DELTA.value: ["Hel", "lo", ""]}
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize("state", [
+        TaskState.TASK_STATE_COMPLETED,
+        TaskState.TASK_STATE_INPUT_REQUIRED,
+        TaskState.TASK_STATE_FAILED,
+        TaskState.TASK_STATE_CANCELED,
+    ])
+    async def test_a_task_that_stops_keeps_its_streamed_answer_in_one_part(self, state):
+        """The text is never sent again; the task joins what the chunks said when it stops."""
+        manager, store = _built(TaskState.TASK_STATE_WORKING)
+        routing = MessageActionPayload(trajectory="conversation", context_id="C1")
+        await manager.process(stream_delta_chunk(
+            task_id=TASK_ID, context_id=CONTEXT_ID, parts=[Part(text="Hel")], append=False, routing=routing,
+        ))
+        await manager.process(stream_delta_chunk(task_id=TASK_ID, context_id=CONTEXT_ID, parts=[Part(text="lo")], append=True))
+        await manager.process(stream_delta_end(task_id=TASK_ID, context_id=CONTEXT_ID))
+
+        with patch("aion.server.tasks.task_manager.set_task_status", Mock()):
+            await manager.process(_status(state, _message("msg-final")))
+
+        [streamed] = [a for a in store.task.artifacts if a.artifact_id == ArtifactId.STREAM_DELTA.value]
+        assert streamed.parts[0].text == "Hello"
+        assert [MessageActionPayload.is_part(part) for part in streamed.parts] == [False, True]
+
+    @pytest.mark.anyio
+    async def test_every_thought_is_stored(self):
+        manager, store = _built(TaskState.TASK_STATE_WORKING)
+        first = thinking_delta(task_id=TASK_ID, context_id=CONTEXT_ID, text="reading the logs")
+        first.append = False
+
+        await manager.process(first)
+        await manager.process(thinking_delta(task_id=TASK_ID, context_id=CONTEXT_ID, text="found it"))
+
+        assert _stored_parts(store.task) == {ArtifactId.THINKING_DELTA.value: ["reading the logs", "found it"]}
+
+    @pytest.mark.anyio
+    async def test_the_latest_reaction_is_stored(self):
+        manager, store = _built(TaskState.TASK_STATE_WORKING)
+
+        await manager.process(_artifact_update(ArtifactId.REACTION.value, "eyes"))
+        await manager.process(_artifact_update(ArtifactId.REACTION.value, "thumbs-up"))
+
+        assert _stored_parts(store.task) == {ArtifactId.REACTION.value: ["thumbs-up"]}
+
+    @pytest.mark.anyio
+    async def test_the_sdks_artifacts_sit_beside_the_agents_own(self):
+        manager, store = _built(TaskState.TASK_STATE_WORKING)
+
+        await manager.process(_artifact_update("report", "page 1"))
+        await manager.process(stream_delta_chunk(task_id=TASK_ID, context_id=CONTEXT_ID, parts=[Part(text="Here ")], append=False))
+        await manager.process(stream_delta_chunk(task_id=TASK_ID, context_id=CONTEXT_ID, parts=[Part(text="it is")], append=True))
+        await manager.process(stream_delta_end(task_id=TASK_ID, context_id=CONTEXT_ID))
+        await manager.process(_artifact_update(ArtifactId.THINKING_DELTA.value, "done"))
+        with patch("aion.server.tasks.task_manager.set_task_status", Mock()):
+            await manager.process(_status(TaskState.TASK_STATE_COMPLETED, _message("msg-final")))
+
+        assert _stored_parts(store.task) == {
+            "report": ["page 1"],
+            ArtifactId.STREAM_DELTA.value: ["Here it is"],
+            ArtifactId.THINKING_DELTA.value: ["done"],
+        }
+        assert store.task.status.state == TaskState.TASK_STATE_COMPLETED
 
 
 def _task(state: TaskState) -> Task:
@@ -719,3 +819,23 @@ class TestWrittenOutcome:
         await manager.save_task_event(_task(TaskState.TASK_STATE_INPUT_REQUIRED))
 
         assert manager.written_outcome is None
+
+
+class TestWaitUntilStored:
+    """A write that comes before the consumer stores a new task would create the task itself."""
+
+    async def test_a_task_the_store_does_not_hold_yet_is_waited_for(self):
+        manager, store = _built(TaskState.TASK_STATE_SUBMITTED, task_id="not-yet-stored")
+
+        assert await manager.wait_until_stored(0.01) is False
+
+        await manager.save_task_event(Task(id="not-yet-stored", context_id=CONTEXT_ID, status=TaskStatus(state=TaskState.TASK_STATE_SUBMITTED)))
+
+        assert await manager.wait_until_stored(0.01) is True
+
+    async def test_a_task_read_back_from_the_store_is_there(self):
+        manager, _ = _built(TaskState.TASK_STATE_WORKING)
+
+        await manager.get_task()
+
+        assert await manager.wait_until_stored(0.01) is True

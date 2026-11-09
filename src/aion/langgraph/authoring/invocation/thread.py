@@ -1,7 +1,7 @@
 """LangGraph thread abstraction for streaming agent responses.
 
 Provides a context-aware Thread class that emits messages, cards, artifacts,
-and ephemeral typing indicators via LangGraph's streaming mechanism.
+and the agent's thoughts via LangGraph's streaming mechanism.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from .emitters import (
     emit_artifact,
     emit_card,
     emit_message,
+    emit_thinking,
 )
 from .message import Message
 
@@ -109,14 +110,22 @@ class Thread(BaseThread):
             metadata: dict | None = None,
             routing: Optional[MessageActionPayload] = None,
     ) -> Optional[AIMessage]:
+        """Stream chunks of the answer, then the full message that ends them.
+
+        The chunks are a section of ``aion:stream-delta``, and the full
+        message after them ends the section, as a model's streaming does;
+        its text is not sent again. The streamed text is the task's answer,
+        not a message. Every chunk carries ``routing``; the section takes it
+        on its first chunk.
+        """
         accumulated = ""
         try:
             async for chunk in iterator:
                 if isinstance(chunk, str):
-                    emit_message(writer, AIMessageChunk(content=chunk), metadata=metadata)
+                    emit_message(writer, AIMessageChunk(content=chunk), routing=routing, metadata=metadata)
                     accumulated += chunk
                 elif isinstance(chunk, AIMessageChunk):
-                    emit_message(writer, chunk, metadata=metadata)
+                    emit_message(writer, chunk, routing=routing, metadata=metadata)
                     if chunk.content:
                         accumulated += chunk.content
                 else:
@@ -139,14 +148,15 @@ class Thread(BaseThread):
 
         return None
 
-    async def typing(self, content: str, *, metadata: dict | None = None) -> None:
-        """Emit a stream-only ephemeral typing/progress indicator.
+    async def thinking(self, content: str, *, metadata: dict | None = None) -> None:
+        """Add one thought to the task's ``aion:thinking-delta`` artifact.
 
-        For full control over message parameters, use post() with an AIMessage instead.
+        See ``emit_thinking``: the thought is not a message and does not
+        enter the graph's state.
         """
         if not isinstance(content, str):
             logger.warning(
-                "Thread.typing() received unsupported content type: %s. "
+                "Thread.thinking() received unsupported content type: %s. "
                 "Supported type: str.",
                 type(content).__name__,
             )
@@ -156,5 +166,4 @@ class Thread(BaseThread):
         if writer is None:
             return
 
-        msg = AIMessage(content=content)
-        emit_message(writer, msg, ephemeral=True, metadata=metadata)
+        emit_thinking(writer, content, metadata=metadata)

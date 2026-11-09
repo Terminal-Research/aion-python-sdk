@@ -119,8 +119,10 @@ class LangGraphExecutor(AgentFrameworkExecutor):
             snapshot = await self._graph_state(config)
 
             if not snapshot.interrupts:
-                logger.warning(
-                    f"Attempted to resume non-interrupted execution: {config.context_id}"
+                # The task waits without an interrupt - an outbox Task left it
+                # waiting for input - so the message is the next turn of it.
+                logger.info(
+                    f"Task waits without an interrupt; the message runs as a new turn: {config.context_id}"
                 )
                 user_input = context.get_user_input()
                 if not user_input:
@@ -234,7 +236,10 @@ class LangGraphExecutor(AgentFrameworkExecutor):
             context: "RequestContext",
             converter: LangGraphA2AConverter,
     ) -> AsyncIterator[AgentEvent]:
-        """Emit result events and the terminal complete or interrupt event."""
+        """Close a streaming section the run left open, then emit result events and the terminal complete or interrupt event."""
+        for a2a_event in converter.close_stream():
+            yield a2a_event
+
         snapshot = await self._graph_state(config)
 
         for a2a_event in self._result_handler.handle(

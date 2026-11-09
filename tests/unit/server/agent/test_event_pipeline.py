@@ -3,7 +3,10 @@
 Every event either framework produces passes through this one object, and it
 is the object that decides four things nobody else decides: whether the task
 has started working, whether the event is a duplicate, whether it reaches the
-client or only the database, and whether the task has already been closed.
+client or only the database, and whether the task has already been closed. It
+also fills the SDK's own artifacts the same way for every executor: it joins
+the chunks of the streamed answer, adds each thought to the task's thoughts,
+and gives a task that completes with nothing but messages its answer.
 
 None of that had a test of its own. The pipeline was patched out in the tests
 of its own caller, so the caller's tests state that it was constructed and
@@ -15,6 +18,7 @@ stored task, not about a call that happened.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from unittest.mock import AsyncMock, patch
 
@@ -33,9 +37,11 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
+from aion.core.a2a.deltas import stream_delta_chunk, stream_delta_end, thinking_delta
+from aion.core.a2a.enums import ArtifactId
 from aion.server.a2a.outbox import outbox_task
 from aion.server.a2a.response_extensions import ResponseServiceParameters
-from aion.server.a2a.utils import mark_status_event_ephemeral
+from aion.server.agent.execution import event_pipeline as event_pipeline_module
 from aion.server.agent.execution.event_pipeline import (
     AionEventPipeline,
     OutboundFileNotStoredError,
@@ -71,6 +77,12 @@ class ReplacingTransformer:
         if isinstance(event, TaskStatusUpdateEvent) and event.status.HasField("message"):
             event.status.message.parts[0].text = "transformed"
         return Transform(event, TransformReport())
+
+
+@pytest.fixture(autouse=True)
+def _short_silent_save_wait(monkeypatch):
+    """No event consumer runs here, so a direct write that waits for one gives up quickly."""
+    monkeypatch.setattr(event_pipeline_module, "SILENT_SAVE_WAIT", 0.05)
 
 
 @pytest.fixture(autouse=True)
@@ -110,7 +122,12 @@ def queue() -> RecordingQueue:
     return RecordingQueue()
 
 
-def _pipeline(queue: RecordingQueue, *, task_started: bool = False, transformer=None):
+def _pipeline(
+    queue: RecordingQueue,
+    *,
+    task_started: bool = False,
+    transformer=None,
+):
     """A pipeline wired the way `AionRequestExecutor` wires one."""
     updater = TaskUpdater(queue, TASK_ID, CONTEXT_ID)
     return AionEventPipeline(queue, updater, transformer, task_started=task_started)
@@ -131,14 +148,10 @@ def _status(
     *,
     state: TaskState = TaskState.TASK_STATE_WORKING,
     message: Message | None = None,
-    ephemeral: bool = False,
 ) -> TaskStatusUpdateEvent:
     carried = message if message is not None else (_message(text) if text else None)
     status = TaskStatus(state=state, message=carried) if carried else TaskStatus(state=state)
-    event = TaskStatusUpdateEvent(task_id=TASK_ID, context_id=CONTEXT_ID, status=status)
-    if ephemeral:
-        mark_status_event_ephemeral(event)
-    return event
+    return TaskStatusUpdateEvent(task_id=TASK_ID, context_id=CONTEXT_ID, status=status)
 
 
 def _artifact_update(text: str, *, artifact_id: str = "art-1") -> TaskArtifactUpdateEvent:
@@ -162,6 +175,28 @@ def _task(*, state: TaskState = TaskState.TASK_STATE_WORKING, history=()) -> Tas
 
 def _status_events(queue: RecordingQueue) -> list[TaskStatusUpdateEvent]:
     return [e for e in queue.events if isinstance(e, TaskStatusUpdateEvent)]
+
+
+def _artifact_events(queue: RecordingQueue, artifact_id: str) -> list[TaskArtifactUpdateEvent]:
+    return [
+        e for e in queue.events
+        if isinstance(e, TaskArtifactUpdateEvent) and e.artifact.artifact_id == artifact_id
+    ]
+
+
+def _texts(artifact: Artifact) -> list[str]:
+    return [part.text for part in artifact.parts]
+
+
+def _stored_artifact(task: Task, artifact_id: str) -> Artifact:
+    (artifact,) = [a for a in task.artifacts if a.artifact_id == artifact_id]
+    return artifact
+
+
+async def _consume(manager: AionTaskManager, queue: RecordingQueue) -> None:
+    """Store what reached the queue, as the event consumer on its far side does."""
+    for event in queue.events:
+        await manager.process(event)
 
 
 # --------------------------------------------------------------------------
@@ -231,28 +266,6 @@ async def test_a_first_artifact_is_preceded_by_working_once(submitted, queue) ->
     assert isinstance(queue.events[1], TaskArtifactUpdateEvent)
 
 
-async def test_a_first_live_only_status_is_preceded_by_working(submitted, queue) -> None:
-    """An ephemeral status never reaches the task, so it cannot move it."""
-    pipeline = _pipeline(queue)
-
-    await pipeline.process(_status("typing", ephemeral=True))
-
-    assert len(queue.events) == 2
-    assert queue.events[0] is _bare_working(queue)[0]
-
-
-async def test_the_move_is_no_later_than_the_event_it_precedes(submitted, queue) -> None:
-    """A WORKING put in front of a stamped event keeps the order of the turn."""
-    pipeline = _pipeline(queue)
-    live = _status("typing", ephemeral=True)
-    live.status.timestamp.FromJsonString("2026-10-16T08:00:00Z")
-
-    await pipeline.process(live)
-
-    working, delivered = queue.events
-    assert working.status.timestamp.ToNanoseconds() <= delivered.status.timestamp.ToNanoseconds()
-
-
 @pytest.mark.parametrize("first", ["message", "task"])
 async def test_a_first_event_stored_silently_is_preceded_by_working(submitted, queue, first) -> None:
     """A message or task snapshot the pipeline stores itself does not reach the stream.
@@ -269,6 +282,20 @@ async def test_a_first_event_stored_silently_is_preceded_by_working(submitted, q
 
     assert len(queue.events) == 1
     assert queue.events[0] is _bare_working(queue)[0]
+
+
+@pytest.mark.parametrize(
+    "outcome", [TaskState.TASK_STATE_FAILED, TaskState.TASK_STATE_INPUT_REQUIRED, TaskState.TASK_STATE_COMPLETED]
+)
+async def test_a_first_task_that_decides_the_turn_moves_the_task_itself(submitted, queue, store, call_context, outcome) -> None:
+    """No WORKING is queued before it: the event consumer would apply that after the write and undo the outcome."""
+    pipeline = _pipeline(queue)
+
+    await pipeline.process(_task(state=outcome))
+
+    assert queue.events == []
+    stored = await store.get(TASK_ID, call_context)
+    assert stored.status.state == outcome
 
 
 async def test_a_resumed_task_announces_nothing(manager, queue) -> None:
@@ -311,6 +338,60 @@ async def test_a_task_is_persisted_without_reaching_the_client(manager, queue, s
     assert queue.events == []
     stored = await store.get(TASK_ID, call_context)
     assert [m.parts[0].text for m in stored.history] == ["from the agent"]
+
+
+async def test_a_direct_write_waits_for_the_updates_queued_before_it(manager, queue, store, call_context, monkeypatch) -> None:
+    """A message saved directly goes in after the reply the agent queued first, not before it."""
+    monkeypatch.setattr(event_pipeline_module, "SILENT_SAVE_WAIT", 5.0)
+    pipeline = _pipeline(queue, task_started=True)
+    await manager.save_task_event(_task())
+    await pipeline.process(_status("first"))
+
+    saving = asyncio.create_task(pipeline.process(_message("second")))
+    await asyncio.sleep(0.05)
+    assert not saving.done(), "the direct write did not wait for the queued reply"
+
+    await _consume(manager, queue)
+    await asyncio.wait_for(saving, 1)
+    stored = await store.get(TASK_ID, call_context)
+    texts = [m.parts[0].text for m in stored.history] + (
+        [stored.status.message.parts[0].text] if stored.status.HasField("message") else []
+    )
+    assert texts.index("first") < texts.index("second")
+
+
+@pytest.mark.parametrize(
+    ("outcome", "closes_the_task"),
+    [(TaskState.TASK_STATE_FAILED, True), (TaskState.TASK_STATE_INPUT_REQUIRED, False)],
+)
+async def test_what_a_turn_yields_after_an_outbox_outcome_is_dropped(
+    manager, queue, store, call_context, outcome, closes_the_task
+) -> None:
+    """A Task that decides the turn is its outcome: the executor's own end after it never lands.
+
+    Without this the COMPLETED every executor closes a turn with would
+    complete a task the agent failed, or reopen one it left waiting.
+    """
+    pipeline = _pipeline(queue, task_started=True)
+
+    await pipeline.process(_task(state=outcome))
+    await pipeline.process(_message("too late"))
+    await pipeline.process(_status(state=TaskState.TASK_STATE_COMPLETED))
+
+    assert queue.events == []
+    assert pipeline.terminal_seen is closes_the_task
+    stored = await store.get(TASK_ID, call_context)
+    assert stored.status.state == outcome
+    assert "too late" not in [m.parts[0].text for m in stored.history]
+
+
+async def test_what_a_turn_yields_after_its_outcome_status_is_dropped(manager, queue) -> None:
+    pipeline = _pipeline(queue, task_started=True)
+
+    await pipeline.process(_status(state=TaskState.TASK_STATE_COMPLETED))
+    await pipeline.process(_artifact_update("late"))
+
+    assert [type(event) for event in queue.events] == [TaskStatusUpdateEvent]
 
 
 async def test_a_message_is_persisted_without_reaching_the_client(manager, queue, store, call_context) -> None:
@@ -373,8 +454,7 @@ async def test_a_reply_emitted_twice_before_the_task_is_stored_reaches_the_clien
 
     A LangGraph node that sends a reply and returns it in its state emits the
     same message twice. Nothing consumes the queue here, so the task is never
-    stored: the repeat is still dropped, and the reply is normalized against
-    the task like any other.
+    stored: the repeat is still dropped.
     """
     pipeline = _pipeline(queue)
     reply = _message("which environment?", message_id="m-1")
@@ -385,7 +465,6 @@ async def test_a_reply_emitted_twice_before_the_task_is_stored_reaches_the_clien
     assert await store.get(TASK_ID, call_context) is None
     carried = [e.status.message for e in _status_events(queue) if e.status.HasField("message")]
     assert [m.message_id for m in carried] == ["m-1"]
-    assert list(carried[0].reference_task_ids) == [TASK_ID]
 
 
 async def test_every_artifact_chunk_is_streamed(manager, queue) -> None:
@@ -403,21 +482,306 @@ async def test_every_artifact_chunk_is_streamed(manager, queue) -> None:
     assert [c.artifact.parts[0].text for c in chunks] == ["Hel", "lo"]
 
 
-async def test_an_ephemeral_status_does_not_claim_its_message_was_stored(manager, queue) -> None:
-    """An ephemeral event never reaches the task, so it cannot mask a later one.
+async def test_an_artifact_of_the_turn_extends_the_artifact_the_store_has_not_written_yet(manager, queue) -> None:
+    """The task the deduplicator starts from may not hold this turn's first chunk yet.
 
-    Folding it into the deduplicator's cache would leave that cache believing
-    the task holds a message the database never received - and the durable
-    event carrying it would then be dropped as a duplicate.
+    The consumer stores events on the far side of the queue, and the agent
+    can be quicker: a chunk that extends an artifact the stored task does not
+    show yet is delivered like any other.
     """
     pipeline = _pipeline(queue, task_started=True)
-    carried = _message("the same message", message_id="m-2")
+    first = _artifact_update("Hel")
+    first.append = False
 
-    await pipeline.process(_status(message=carried, ephemeral=True))
-    await pipeline.process(_status(message=_message("the same message", message_id="m-2")))
+    await pipeline.process(first)
+    await pipeline.process(_status("still going"))
+    await pipeline.process(_artifact_update("lo"))
 
-    delivered = [e for e in _status_events(queue) if e.status.HasField("message")]
-    assert len(delivered) == 2, "the durable event was dropped as a duplicate of an ephemeral one"
+    assert [_texts(e.artifact) for e in _artifact_events(queue, "art-1")] == [["Hel"], ["lo"]]
+
+
+# --------------------------------------------------------------------------
+# The streamed answer
+# --------------------------------------------------------------------------
+
+def _chunk(text: str, *, append: bool = True) -> TaskArtifactUpdateEvent:
+    return stream_delta_chunk(task_id=TASK_ID, context_id=CONTEXT_ID, parts=[Part(text=text)], append=append)
+
+
+def _end() -> TaskArtifactUpdateEvent:
+    return stream_delta_end(task_id=TASK_ID, context_id=CONTEXT_ID)
+
+
+async def test_every_chunk_goes_out_as_the_agent_produced_it(manager, queue) -> None:
+    pipeline = _pipeline(queue, task_started=True)
+
+    for chunk in (_chunk("Hel", append=False), _chunk("lo, "), _chunk("world")):
+        await pipeline.process(chunk)
+
+    assert [(_texts(e.artifact), e.append) for e in queue.events] == [
+        (["Hel"], False), (["lo, "], True), (["world"], True),
+    ]
+
+
+async def test_the_task_keeps_every_chunk_until_the_section_ends(manager, queue, store, call_context) -> None:
+    pipeline = _pipeline(queue, task_started=True)
+
+    for chunk in (_chunk("Hel", append=False), _chunk("lo, "), _chunk("world")):
+        await pipeline.process(chunk)
+    await _consume(manager, queue)
+
+    stored = await store.get(TASK_ID, call_context)
+    assert _texts(_stored_artifact(stored, ArtifactId.STREAM_DELTA.value)) == ["Hel", "lo, ", "world"]
+
+
+async def test_a_section_ends_with_the_end_mark_and_its_text_is_not_sent_again(manager, queue, store, call_context) -> None:
+    pipeline = _pipeline(queue, task_started=True)
+
+    await pipeline.process(_chunk("Hel", append=False))
+    await pipeline.process(_chunk("lo"))
+    await pipeline.process(_end())
+    await pipeline.process(_status("done", state=TaskState.TASK_STATE_COMPLETED))
+    await _consume(manager, queue)
+
+    delivered = _artifact_events(queue, ArtifactId.STREAM_DELTA.value)
+    assert [(_texts(e.artifact), e.append, e.last_chunk) for e in delivered] == [
+        (["Hel"], False, False), (["lo"], True, False), ([""], True, True),
+    ]
+    stored = await store.get(TASK_ID, call_context)
+    assert _texts(_stored_artifact(stored, ArtifactId.STREAM_DELTA.value)) == ["Hello"]
+
+
+async def test_a_chunk_starts_the_task(submitted, queue) -> None:
+    """The task moves to WORKING right before the first chunk reaches the client."""
+    pipeline = _pipeline(queue)
+
+    await pipeline.process(_chunk("Hel", append=False))
+
+    assert len(_bare_working(queue)) == 1
+    assert queue.events[0] is _bare_working(queue)[0]
+    assert _texts(queue.events[1].artifact) == ["Hel"]
+
+
+# --------------------------------------------------------------------------
+# The agent's thoughts
+# --------------------------------------------------------------------------
+
+def _thought(text: str) -> TaskArtifactUpdateEvent:
+    return thinking_delta(task_id=TASK_ID, context_id=CONTEXT_ID, text=text)
+
+
+async def test_the_first_thought_of_a_task_starts_its_thoughts(manager, queue, store, call_context) -> None:
+    """The first thought creates the artifact, every later one adds a part to it."""
+    pipeline = _pipeline(queue, task_started=True)
+
+    for text in ("reading the logs", "found it", "checking the fix"):
+        await pipeline.process(_thought(text))
+    await _consume(manager, queue)
+
+    thoughts = _artifact_events(queue, ArtifactId.THINKING_DELTA.value)
+    assert [(t.append, t.last_chunk) for t in thoughts] == [(False, False), (True, False), (True, False)]
+    stored = await store.get(TASK_ID, call_context)
+    assert _texts(_stored_artifact(stored, ArtifactId.THINKING_DELTA.value)) == [
+        "reading the logs", "found it", "checking the fix",
+    ]
+
+
+async def test_a_thought_of_a_later_turn_extends_the_stored_thoughts(manager, queue, store, call_context) -> None:
+    """A new turn does not start the thoughts over: the task already holds some."""
+    earlier = _thought("from the first turn")
+    earlier.append = False
+    await manager.process(earlier)
+    pipeline = _pipeline(queue, task_started=True)
+
+    await pipeline.process(_thought("from this turn"))
+    await _consume(manager, queue)
+
+    (thought,) = _artifact_events(queue, ArtifactId.THINKING_DELTA.value)
+    assert thought.append is True
+    stored = await store.get(TASK_ID, call_context)
+    assert _texts(_stored_artifact(stored, ArtifactId.THINKING_DELTA.value)) == [
+        "from the first turn", "from this turn",
+    ]
+
+
+async def test_the_server_decides_append_whatever_the_thought_says(manager, queue) -> None:
+    pipeline = _pipeline(queue, task_started=True)
+    stated = [_thought("one"), _thought("two")]
+    stated[0].append, stated[1].append = True, False
+    stated[1].last_chunk = True
+
+    for thought in stated:
+        await pipeline.process(thought)
+
+    thoughts = _artifact_events(queue, ArtifactId.THINKING_DELTA.value)
+    assert [(t.append, t.last_chunk) for t in thoughts] == [(False, False), (True, False)]
+
+
+async def test_thoughts_around_a_status_extend_one_artifact(manager, queue) -> None:
+    """A status between two thoughts does not make the second one start them over."""
+    pipeline = _pipeline(queue, task_started=True)
+
+    await pipeline.process(_thought("one"))
+    await pipeline.process(_status("a reply"))
+    await pipeline.process(_thought("two"))
+
+    thoughts = _artifact_events(queue, ArtifactId.THINKING_DELTA.value)
+    assert [t.append for t in thoughts] == [False, True]
+
+
+# --------------------------------------------------------------------------
+# The answer of a task that only talked
+# --------------------------------------------------------------------------
+
+def _answers(queue: RecordingQueue) -> list[TaskArtifactUpdateEvent]:
+    return _artifact_events(queue, ArtifactId.ASSISTANT_ANSWER.value)
+
+
+def _result(artifact_id: str = "report") -> TaskArtifactUpdateEvent:
+    return TaskArtifactUpdateEvent(
+        task_id=TASK_ID,
+        context_id=CONTEXT_ID,
+        artifact=Artifact(artifact_id=artifact_id, parts=[Part(text="content")]),
+        append=False,
+        last_chunk=True,
+    )
+
+
+@pytest.mark.parametrize("carrier", ["status", "message"])
+async def test_a_task_that_only_talked_gets_its_last_message_as_its_answer(manager, queue, carrier) -> None:
+    """Every part of the last agent message, delivered right before COMPLETED."""
+    pipeline = _pipeline(queue, task_started=True)
+    last = _message("here is the report")
+    last.parts.append(Part(url="https://files.example/report.pdf", filename="report.pdf"))
+
+    await pipeline.process(_status("looking"))
+    await pipeline.process(_status(message=last) if carrier == "status" else last)
+    await pipeline.process(_status(state=TaskState.TASK_STATE_COMPLETED))
+
+    answer, completed = queue.events[-2:]
+    assert answer.artifact.artifact_id == ArtifactId.ASSISTANT_ANSWER.value
+    assert list(answer.artifact.parts) == list(last.parts)
+    assert (answer.append, answer.last_chunk) == (False, True)
+    assert completed.status.state == TaskState.TASK_STATE_COMPLETED
+
+
+async def test_a_task_an_outbox_completes_gets_no_answer_of_the_servers(manager, queue, store, call_context) -> None:
+    """A whole task is the agent's, stored as it is: the server adds no answer to it."""
+    pipeline = _pipeline(queue, task_started=True)
+    outbox = _task(state=TaskState.TASK_STATE_COMPLETED, history=[_message("all set")])
+
+    await pipeline.process(outbox)
+
+    stored = await store.get(TASK_ID, call_context)
+    assert [artifact.artifact_id for artifact in stored.artifacts] == []
+    assert _answers(queue) == []
+
+
+async def test_the_message_on_the_completed_status_is_the_answer(manager, queue) -> None:
+    pipeline = _pipeline(queue, task_started=True)
+
+    await pipeline.process(_status("looking"))
+    await pipeline.process(_status("done", state=TaskState.TASK_STATE_COMPLETED))
+
+    (answer,) = _answers(queue)
+    assert _texts(answer.artifact) == ["done"]
+    assert queue.events[-2] is answer
+
+
+async def test_a_reply_repeated_on_the_completed_status_is_answered_once(manager, queue) -> None:
+    pipeline = _pipeline(queue, task_started=True)
+    reply = _message("done", message_id="m-1")
+
+    await pipeline.process(_status(message=reply))
+    await pipeline.process(_status(message=_message("done", message_id="m-1"), state=TaskState.TASK_STATE_COMPLETED))
+
+    (answer,) = _answers(queue)
+    assert _texts(answer.artifact) == ["done"]
+
+
+@pytest.mark.parametrize("result", ["artifact", "streamed answer"])
+async def test_a_task_with_a_result_gets_no_answer(manager, queue, result) -> None:
+    pipeline = _pipeline(queue, task_started=True)
+
+    await pipeline.process(_result() if result == "artifact" else _chunk("Hello", append=False))
+    await pipeline.process(_status("done", state=TaskState.TASK_STATE_COMPLETED))
+
+    assert _answers(queue) == []
+
+
+@pytest.mark.parametrize("artifact_id", [ArtifactId.THINKING_DELTA.value, ArtifactId.REACTION.value])
+async def test_thoughts_and_reactions_are_not_results(manager, queue, artifact_id) -> None:
+    pipeline = _pipeline(queue, task_started=True)
+
+    await pipeline.process(_result(artifact_id))
+    await pipeline.process(_status("done", state=TaskState.TASK_STATE_COMPLETED))
+
+    (answer,) = _answers(queue)
+    assert _texts(answer.artifact) == ["done"]
+
+
+async def test_a_result_of_an_earlier_turn_counts(manager, queue) -> None:
+    await manager.process(_result())
+    pipeline = _pipeline(queue, task_started=True)
+
+    await pipeline.process(_status("done", state=TaskState.TASK_STATE_COMPLETED))
+
+    assert _answers(queue) == []
+
+
+async def test_an_answer_of_an_earlier_turn_is_replaced(manager, queue, store, call_context) -> None:
+    """A copied answer is not a result: the next completed turn copies its own last message over it."""
+    earlier = _result(ArtifactId.ASSISTANT_ANSWER.value)
+    earlier.artifact.parts[0].text = "first answer"
+    await manager.process(earlier)
+    pipeline = _pipeline(queue, task_started=True)
+
+    await pipeline.process(_status("second answer", state=TaskState.TASK_STATE_COMPLETED))
+    await _consume(manager, queue)
+
+    stored = await store.get(TASK_ID, call_context)
+    assert _texts(_stored_artifact(stored, ArtifactId.ASSISTANT_ANSWER.value)) == ["second answer"]
+
+
+async def test_a_completed_task_without_a_message_gets_no_answer(manager, queue, caplog) -> None:
+    """Nothing to copy: the server only says so in its log."""
+    pipeline = _pipeline(queue, task_started=True)
+
+    with caplog.at_level("WARNING", logger="aion.server.agent.execution.assistant_answer"):
+        await pipeline.process(_status(state=TaskState.TASK_STATE_COMPLETED))
+
+    assert _answers(queue) == []
+    assert "completed without a result or a message" in caplog.text
+
+
+@pytest.mark.parametrize("state", [
+    TaskState.TASK_STATE_FAILED,
+    TaskState.TASK_STATE_CANCELED,
+    TaskState.TASK_STATE_REJECTED,
+    TaskState.TASK_STATE_INPUT_REQUIRED,
+])
+async def test_a_task_that_does_not_complete_gets_no_answer(manager, queue, state) -> None:
+    """The last message of a failed, cancelled or interrupted turn is not its answer."""
+    pipeline = _pipeline(queue, task_started=True)
+
+    await pipeline.process(_status("looking"))
+    await pipeline.process(_status("stopped here", state=state))
+
+    assert _answers(queue) == []
+
+
+async def test_streamed_chunks_are_a_result(manager, queue) -> None:
+    """A task that streamed its answer needs no copied answer, even when the section never ended."""
+    pipeline = _pipeline(queue, task_started=True)
+
+    await pipeline.process(_chunk("Hel", append=False))
+    await pipeline.process(_chunk("lo"))
+    await pipeline.process(_status("done", state=TaskState.TASK_STATE_COMPLETED))
+
+    assert _answers(queue) == []
+    assert [type(e).__name__ for e in queue.events] == [
+        "TaskArtifactUpdateEvent", "TaskArtifactUpdateEvent", "TaskStatusUpdateEvent",
+    ]
 
 
 # --------------------------------------------------------------------------
@@ -824,3 +1188,4 @@ def test_empty_task_does_not_fabricate_a_message():
     result = ResponseServiceParameters(('urn:cron',)).annotate(Task(id='task'), frozenset())
     assert not result.history
     assert not result.status.HasField('message')
+

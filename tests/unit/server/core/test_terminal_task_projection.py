@@ -580,7 +580,7 @@ class TestDeliveryIsReported:
         assert len(lines) == 7
         assert lines[1] == (
             "Stream event #2 sent to client — TaskArtifactUpdateEvent "
-            "artifact=aion:stream-delta (streaming text chunk)"
+            "artifact=aion:stream-delta (streamed answer)"
         )
         assert lines[5].endswith("last_chunk=True")
 
@@ -604,7 +604,7 @@ class TestDeliveryIsReported:
 
     @pytest.mark.anyio
     async def test_non_delta_artifacts_are_reported_the_same_way(self, caplog):
-        """An ephemeral hint or a real artifact reads like any other event."""
+        """One of the SDK's own artifacts or the agent's reads like any other event."""
         store = _store(_task(TaskState.TASK_STATE_COMPLETED))
         projection = TerminalTaskProjection(task_store=store, call_context=Mock())
 
@@ -612,12 +612,12 @@ class TestDeliveryIsReported:
             await _collect(
                 projection,
                 _task(TaskState.TASK_STATE_SUBMITTED),
-                _artifact(ArtifactId.EPHEMERAL_MESSAGE.value, last_chunk=True),
+                _artifact(ArtifactId.ASSISTANT_ANSWER.value, last_chunk=True),
                 _artifact("report-diff", last_chunk=True),
             )
 
         lines = _delivery_lines(caplog)
-        assert "(ephemeral, not persisted)" in lines[1]
+        assert "(answer from the last message)" in lines[1]
         assert "artifact=report-diff" in lines[2]
 
     @pytest.mark.anyio

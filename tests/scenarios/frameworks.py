@@ -127,8 +127,8 @@ NATIVE_UNSUPPORTED: dict[tuple[str, str], str] = {
     # UNSUPPORTED for the native scenarios, which drive a framework's own
     # features rather than commands: a scenario names the feature with
     # @pytest.mark.capability(key) and skips on the framework listed here.
-    ("adk", "interrupt"): (
-        "ADK has no interrupt/pause primitive; a tool cannot suspend the run for input"
+    ("langgraph", "credential-request"): (
+        "LangGraph has no credential request of its own; a graph would ask through interrupt()"
     ),
     ("langgraph", "artifact-service"): (
         "LangGraph has no artifact service; a graph emits artifacts through the Aion API"
@@ -151,13 +151,6 @@ def native_unsupported_reason(framework: str, capability: str) -> str | None:
 
 UNSUPPORTED: dict[tuple[str, str], str] = {
     # (framework name, command key) -> why this pair is skipped.
-    ("adk", "artifacts"): (
-        "the ADK artifact service stores one part per artifact, so the SDK refuses "
-        "the two-part data artifact this command emits (aion.adk emit_artifact)"
-    ),
-    ("adk", "ask"): "ADK has no interrupt/pause primitive; resume is a plain message send",
-    ("adk", "ask-twice"): "ADK has no interrupt/pause primitive; resume is a plain message send",
-    ("adk", "ask-fail"): "ADK has no interrupt/pause primitive; resume is a plain message send",
 }
 
 

@@ -1,8 +1,6 @@
 """Context visibility, reads and the deletion lifecycle over the task stores."""
 
 from .catalog import (
-    ARTIFACT_WINDOW,
-    EXCLUDED_ARTIFACT_IDS,
     ContextActivity,
     ContextCatalog,
     ContextPage,
@@ -17,8 +15,6 @@ from .memory import InMemoryContextCatalog
 from .postgres import PostgresContextCatalog
 
 __all__ = [
-    "ARTIFACT_WINDOW",
-    "EXCLUDED_ARTIFACT_IDS",
     "ContextActivity",
     "ContextCatalog",
     "ContextPage",

@@ -218,6 +218,12 @@ class AionJsonRpcDispatcher(JsonRpcDispatcher):
     async def _handle_method_extension(self, body: dict, request: Request) -> Response:
         """Validate, parse, and dispatch a call to an Aion method extension."""
         request_id = body.get('id')
+        # A response may echo only a string, an integer or null; a bool is an
+        # int in Python but not in JSON-RPC.
+        if isinstance(request_id, bool) or (
+            request_id is not None and not isinstance(request_id, str | int)
+        ):
+            request_id = None
         method = body.get('method')
         binding = AION_JSONRPC_METHOD_EXTENSION_BINDINGS[method]
 
@@ -237,6 +243,11 @@ class AionJsonRpcDispatcher(JsonRpcDispatcher):
                 return self._generate_error_response(
                     request_id,
                     InvalidRequestError(message="Invalid request: 'jsonrpc' must be exactly '2.0'"),
+                )
+            if isinstance(base_request._id, bool):  # noqa: SLF001
+                return self._generate_error_response(
+                    request_id,
+                    InvalidRequestError(message='Invalid request: id must be a string, integer, or null'),
                 )
             request_id = base_request._id  # noqa: SLF001
         except Exception as e:

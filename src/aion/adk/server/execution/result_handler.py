@@ -40,8 +40,6 @@ class ADKExecutionResultHandler:
     `Message` or one `Task`, handed on as itself for the execution pipeline
     to save into the task record.
 
-    Falls back to streaming accumulated text if no outbox is present.
-
     Subclass and override `handle` to extend or replace the default logic.
     """
 
@@ -58,12 +56,14 @@ class ADKExecutionResultHandler:
 
         Checks the `a2a_outbox` written during this run. If present and
         parseable as a Task or Message, returns that object for the pipeline to
-        merge into the task. Otherwise falls back to closing any pending
-        STREAM_DELTA and emitting accumulated delta text.
+        merge into the task. A section of the streamed answer the run left
+        open is already closed when this runs.
 
         Args:
             stream_result: Accumulated state from the stream cycle.
-            converter: Active converter holding stream state for this execution.
+            converter: Active converter of this execution. Unused by the
+                default logic and kept for subclasses that override this
+                method.
             session: ADK Session after stream completion. Unused by the
                 default logic and kept for subclasses that override this
                 method.
@@ -83,9 +83,7 @@ class ADKExecutionResultHandler:
             if result is not None:
                 logger.debug("Result via outbox: %d event(s)", len(result))
                 return result
-
-        logger.debug("Result via stream fallback")
-        return converter.finalize_stream(stream_result.delta_text)
+        return []
 
     def _handle_outbox(
             self,
@@ -96,8 +94,7 @@ class ADKExecutionResultHandler:
     ) -> list[AgentEvent] | None:
         """Route outbox to the appropriate handler based on type.
 
-        Returns None if the outbox type is not recognized — caller
-        falls through to fallback logic.
+        Returns None if the outbox type is not recognized.
         """
         if not isinstance(outbox, dict):
             return None

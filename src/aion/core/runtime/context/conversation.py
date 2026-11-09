@@ -15,8 +15,13 @@ from typing import Optional
 from a2a.types import Artifact, Task, TaskArtifactUpdateEvent
 
 from aion.core.a2a.artifacts import ARTIFACT_VERSION_KEY
+from aion.core.a2a.enums import ArtifactId
 
 __all__ = ["ArtifactVersion", "ConversationHistory"]
+
+
+_SDK_ARTIFACT_IDS = frozenset(artifact_id.value for artifact_id in ArtifactId)
+"""The artifacts the SDK fills, one per task."""
 
 
 @dataclass(frozen=True)
@@ -106,10 +111,12 @@ class ConversationHistory(ABC):
         """Write the number the task writes the event's artifact under into its ``metadata["version"]``.
 
         Every chunk and replacement of an artifact id in the turn carries the
-        same number; the store is asked once per id.
+        same number; the store is asked once per id. The artifacts the SDK
+        fills itself - the streamed answer, the thoughts - are one per task,
+        not versions of an artifact in the context, and get no number.
         """
         artifact_id = event.artifact.artifact_id
-        if not artifact_id:
+        if not artifact_id or artifact_id in _SDK_ARTIFACT_IDS:
             return
         if artifact_id not in self._numbers:
             self._numbers[artifact_id] = await self.artifact_version_to_write(artifact_id)

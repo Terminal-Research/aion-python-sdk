@@ -3,23 +3,26 @@
 import logging
 import asyncio
 import contextlib
+from collections import deque
 from collections.abc import AsyncIterator, AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
+from aion.adk.authoring.invocation.event_metadata import stays_out_of_session
 from aion.adk.authoring.invocation.context_vars import (
     reset_adk_ctx,
     reset_adk_emitter,
     set_adk_ctx,
     set_adk_emitter,
 )
-from aion.core.a2a import ArtifactId, A2AOutbox
+from aion.core.a2a import A2AOutbox
 from google.adk.events import Event
 
 from .event_converter import ADKToA2AEventConverter
 from .event_queue import ADKEventConsumer, ADKEventQueue
+from .pause import PendingCall, paused_on
 
 logger = logging.getLogger(__name__)
 
@@ -30,18 +33,17 @@ AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 class ADKStreamResult:
     """Accumulated state after one ADK stream cycle.
 
-    delta_text — concatenated text extracted from STREAM_DELTA chunks.
-        Non-empty only when the agent streamed partial events without a
-        subsequent non-partial event to confirm the full message.
     outbox — the last `a2a_outbox` an event's state_delta carried during
         this cycle, serialized, or None when none did. Taken from the
         cycle's own events rather than from the session state: the session
         keeps the key across turns, and the next turn in the context would
         read it back.
+    paused_on — the long-running tool call the run paused on, or None
+        when the run went to its end.
     """
 
-    delta_text: str
     outbox: Any = None
+    paused_on: Optional[PendingCall] = None
 
 
 class ADKStreamExecutor:
@@ -72,14 +74,14 @@ class ADKStreamExecutor:
         self._agent = agent
         self._session_service = session_service
         self._converter = converter
-        self._delta_text: str = ""
         self._outbox: Any = None
         self._persisted: set[str] = set()
+        self._last_agent_events: deque[Event] = deque(maxlen=2)
 
     @property
     def result(self) -> ADKStreamResult:
         """Accumulated state. Valid after execute() iteration is complete."""
-        return ADKStreamResult(delta_text=self._delta_text, outbox=self._outbox)
+        return ADKStreamResult(outbox=self._outbox, paused_on=paused_on(list(self._last_agent_events)))
 
     async def execute(
         self,
@@ -154,7 +156,9 @@ class ADKStreamExecutor:
         """
         try:
             async for event in self._agent.run_async(invocation_context):
-                await self._persist(event, invocation_context, session)
+                await self._persist(event, invocation_context, session, from_agent=True)
+                if not event.partial:
+                    self._last_agent_events.append(event)
                 queue.enqueue_event(event)
         except Exception as exc:
             # Handed on through the queue and raised where the stream is read;
@@ -170,7 +174,7 @@ class ADKStreamExecutor:
         invocation_context: Any,
         session: Any,
     ) -> AsyncIterator[AgentEvent]:
-        """Persist if not yet persisted, then convert, track and yield A2A events."""
+        """Persist if not yet persisted, then convert and yield A2A events."""
         if event.id not in self._persisted:
             await self._persist(event, invocation_context, session)
 
@@ -185,20 +189,42 @@ class ADKStreamExecutor:
                     logger.debug("Tool response: %s", fr.name)
 
         for a2a_event in await self._converter.convert(event):
-            self._track(a2a_event)
             yield a2a_event
 
-    async def _persist(self, event: Event, invocation_context: Any, session: Any) -> None:
+    async def _persist(
+        self,
+        event: Event,
+        invocation_context: Any,
+        session: Any,
+        *,
+        from_agent: bool = False,
+    ) -> None:
         """Stamp one event and append it to the session, once.
 
         Events from agent.run_async() are persisted by the agent task before
         they are forwarded; events the thread emits reach the queue directly
-        and are persisted when the consumer takes them.
+        and are persisted when the consumer takes them. A thought, or an
+        artifact published as it is, is never persisted
+        (``stays_out_of_session``).
+
+        An agent's event keeps the author, branch and invocation ADK gave it,
+        as ADK's own Runner keeps them: ADK shows a model another author's
+        replies as quoted data, never as instructions, and leaves another
+        branch's events out, so a sub-agent's or a remote agent's words stay
+        theirs. Only what the event leaves empty is filled in. An event the
+        thread emits is the SDK's own and is stamped as the root agent's.
         """
-        # Looked up before stamping, which drops an outbox written as None:
+        if stays_out_of_session(event):
+            return
+        # Looked up before serializing, which drops an outbox written as None:
         # that write still clears one made earlier in the same run.
         wrote_outbox = event.actions is not None and "a2a_outbox" in event.actions.state_delta
-        self._stamp_event(event, invocation_context)
+        if from_agent:
+            event.invocation_id = event.invocation_id or invocation_context.invocation_id
+            event.author = event.author or invocation_context.agent.name
+        else:
+            self._stamp_event(event, invocation_context)
+        self._serialize_outbox(event)
         if wrote_outbox:
             self._outbox = event.actions.state_delta.get("a2a_outbox")
         await self._session_service.append_event(session, event)
@@ -206,11 +232,14 @@ class ADKStreamExecutor:
 
     @staticmethod
     def _stamp_event(event: Event, ctx: Any) -> None:
-        """Stamp invocation metadata and normalize state_delta for serialization."""
+        """Stamp an event the thread emitted with the invocation and the root agent."""
         event.invocation_id = ctx.invocation_id
         event.branch = ctx.branch
         event.author = ctx.agent.name
 
+    @staticmethod
+    def _serialize_outbox(event: Event) -> None:
+        """Store an outbox in the state delta as plain data, which the session can serialize."""
         if event.actions and event.actions.state_delta:
             outbox = event.actions.state_delta.pop("a2a_outbox", None)
             if outbox:
@@ -218,19 +247,6 @@ class ADKStreamExecutor:
                     event.actions.state_delta["a2a_outbox"] = outbox.model_dump()
                 else:
                     logger.warning("Unexpected a2a_outbox type: %s", type(outbox))
-
-    def _track(self, a2a_event: AgentEvent) -> None:
-        """Maintain delta_text accumulator from outgoing A2A events."""
-        if isinstance(a2a_event, TaskArtifactUpdateEvent):
-            if a2a_event.artifact.artifact_id == ArtifactId.STREAM_DELTA.value:
-                for part in a2a_event.artifact.parts:
-                    if part.text:
-                        self._delta_text += part.text
-            return
-
-        if isinstance(a2a_event, TaskStatusUpdateEvent):
-            if a2a_event.status.message is not None:
-                self._delta_text = ""
 
 
 __all__ = ["ADKStreamExecutor", "ADKStreamResult"]

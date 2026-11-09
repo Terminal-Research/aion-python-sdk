@@ -6,7 +6,6 @@ export const TRACEABILITY_EXTENSION_URI_V1 =
 	"https://docs.aion.to/a2a/extensions/aion/traceability/1.0.0";
 export const STREAM_DELTA_ARTIFACT_ID = "aion:stream-delta";
 export const THINKING_DELTA_ARTIFACT_ID = "aion:thinking-delta";
-export const EPHEMERAL_MESSAGE_ARTIFACT_ID = "aion:ephemeral-message";
 
 export interface MetadataOptions {
 	agentName?: string;

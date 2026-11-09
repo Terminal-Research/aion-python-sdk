@@ -1,9 +1,9 @@
 """Tests for TerminalTaskPushSender.
 
-The wrapper owns the outbound contract on the push channel: it carries what
-the task stores and nothing live-only, and a task must leave the active states
-through exactly one webhook delivery — the full Task — never through a bare
-status update. It mirrors TerminalTaskProjection, which does the same for the
+The wrapper owns the outbound contract on the push channel: it carries every
+event the task stores, and a task must leave the active states through
+exactly one webhook delivery — the full Task — never through a bare status
+update. It mirrors TerminalTaskProjection, which does the same for the
 streaming/unary channels.
 """
 
@@ -23,7 +23,6 @@ from a2a.types import (
 from unittest.mock import AsyncMock, Mock, patch
 
 from aion.core.a2a.enums import ArtifactId
-from aion.server.a2a.utils import mark_status_event_ephemeral
 from aion.server.agent.execution import AionActiveTaskRegistry
 from aion.server.agent.execution.scope import clear_execution_scope, init_execution_scope
 from aion.server.tasks.terminal_push_sender import TerminalTaskPushSender
@@ -197,42 +196,20 @@ class TestTerminalTaskPushSender:
         assert [m.message_id for m in event.history] == ["msg-a"]
 
 
-class TestOnlyWhatTheTaskStoresIsPushed:
-    """Live-only events never reach a webhook: the task does not store them."""
+class TestEveryStoredEventIsPushed:
+    """The task stores every event of the run, the SDK's own artifacts among them, and a webhook gets each."""
 
     @pytest.mark.parametrize("artifact_id", [
         ArtifactId.STREAM_DELTA.value,
         ArtifactId.THINKING_DELTA.value,
-        ArtifactId.EPHEMERAL_MESSAGE.value,
         ArtifactId.REACTION.value,
+        ArtifactId.ASSISTANT_ANSWER.value,
+        "report",
     ])
     @pytest.mark.anyio
-    async def test_a_live_only_artifact_is_not_sent(self, artifact_id):
+    async def test_an_artifact_update_is_sent_as_it_is(self, artifact_id):
         artifact = TaskArtifactUpdateEvent(
-            task_id=TASK_ID, context_id=CONTEXT_ID, artifact=Artifact(artifact_id=artifact_id)
-        )
-        inner = _inner()
-        sender = TerminalTaskPushSender(inner=inner, task_manager=_manager(None))
-
-        await sender.send_notification(TASK_ID, artifact)
-
-        inner.send_notification.assert_not_awaited()
-
-    @pytest.mark.anyio
-    async def test_an_ephemeral_status_update_is_not_sent(self):
-        progress = _status(TaskState.TASK_STATE_WORKING, _message())
-        mark_status_event_ephemeral(progress)
-        inner = _inner()
-        sender = TerminalTaskPushSender(inner=inner, task_manager=_manager(None))
-
-        await sender.send_notification(TASK_ID, progress)
-
-        inner.send_notification.assert_not_awaited()
-
-    @pytest.mark.anyio
-    async def test_a_durable_artifact_is_sent(self):
-        artifact = TaskArtifactUpdateEvent(
-            task_id=TASK_ID, context_id=CONTEXT_ID, artifact=Artifact(artifact_id="report")
+            task_id=TASK_ID, context_id=CONTEXT_ID, artifact=Artifact(artifact_id=artifact_id), append=True
         )
         inner = _inner()
         sender = TerminalTaskPushSender(inner=inner, task_manager=_manager(None))

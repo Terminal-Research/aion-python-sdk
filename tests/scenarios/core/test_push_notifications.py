@@ -1,10 +1,12 @@
 """Push notification delivery to a real HTTP callback.
 
 The A2A protocol lets a client register a callback URL on a task so the
-server POSTs every state change there.  These scenarios start a local HTTP
-callback server in a background thread, register it as the push target,
-drive a task to completion, and verify that the callback received the
-terminal notification.
+server POSTs every change the task stores there.  These scenarios start a
+local HTTP callback server in a background thread, register it as the push
+target, drive a task to completion, and verify that the callback received
+the terminal notification - and, before it, every artifact update the
+stream carried, the SDK's own artifacts included: the streamed answer, the
+thoughts, a reaction and the answer of a task that only talked.
 
 A callback that answers 200 to anything says nothing about how the delivery
 was authenticated, so the authenticated scenarios run against a callback that
@@ -25,17 +27,23 @@ import pytest
 import pytest_asyncio
 from google.protobuf.timestamp_pb2 import Timestamp
 
-from tests.scenarios.commands import TYPING_INDICATOR, ask_question, typing_text
+from tests.scenarios.commands import ask_question, echo_text, react_text, stream_text, think_text, thoughts_texts
 from tests.scenarios.harness import (
+    ASSISTANT_ANSWER_ARTIFACT_ID,
     AUTHORIZATION_HEADER,
     NOTIFICATION_TOKEN_HEADER,
+    REACTION_ARTIFACT_ID,
+    STREAM_DELTA_ARTIFACT_ID,
+    THINKING_DELTA_ARTIFACT_ID,
     CallbackServer,
+    Ev,
     Notification,
     PushAuth,
     ScenarioClient,
     ServeProcess,
     ServeVariant,
     final_task,
+    message_event,
 )
 
 pytestmark = pytest.mark.lifecycle
@@ -69,14 +77,45 @@ def _task_from_notification(notification: Notification) -> dict[str, Any]:
 
 
 def _task_id_from_notification(notification: Notification) -> str | None:
-    """The task id from either a task or a statusUpdate notification."""
+    """The task id from a task, statusUpdate or artifactUpdate notification."""
     task = notification.body.get("task")
     if task:
         return task.get("id")
-    status_update = notification.body.get("statusUpdate")
-    if status_update:
-        return status_update.get("taskId")
+    update = notification.body.get("statusUpdate") or notification.body.get("artifactUpdate")
+    if update:
+        return update.get("taskId")
     return None
+
+
+def _pushed_artifact_updates(notifications: list[Notification]) -> list[tuple]:
+    """Each artifactUpdate notification as (artifact id, part texts, append, lastChunk), in order."""
+    updates = []
+    for notification in notifications:
+        update = notification.body.get("artifactUpdate")
+        if update:
+            artifact = update["artifact"]
+            texts = tuple(part["text"] for part in artifact.get("parts", []) if "text" in part)
+            updates.append(
+                (artifact["artifactId"], texts, update.get("append", False), update.get("lastChunk", False))
+            )
+    return updates
+
+
+def _streamed_artifact_updates(events: list[Ev]) -> list[tuple]:
+    """Each artifact update of a stream, in the form ``_pushed_artifact_updates`` gives."""
+    return [
+        (event.artifact_id, event.texts, event.append, event.last_chunk)
+        for event in events
+        if event.kind == "artifact"
+    ]
+
+
+def _pushed_artifact_texts(notification: Notification, artifact_id: str) -> list[str]:
+    """The part texts of one artifact of the Task a notification carries."""
+    for artifact in _task_from_notification(notification).get("artifacts", []):
+        if artifact["artifactId"] == artifact_id:
+            return [part["text"] for part in artifact.get("parts", []) if "text" in part]
+    raise AssertionError(f"the pushed task holds no {artifact_id}: {notification.body}")
 
 
 def _status_time(notification: Notification) -> int:
@@ -202,25 +241,89 @@ async def test_push_notification_reaches_callback(
     assert all(status.get("timestamp") for status in working_statuses)
 
 
+async def _push_turn(client: ScenarioClient, callback: CallbackServer, text: str, **send) -> tuple:
+    """Send one turn with the callback registered, and wait for its terminal notification."""
+    events = await client.send(text, push_notification_url=callback.url, **send)
+    assert final_task(events).state == "COMPLETED"
+    notifications = await _wait_for_terminal(callback)
+    terminal = _find_terminal(notifications)
+    assert terminal is not None, f"no terminal notification among {len(notifications)} received"
+    return events, notifications[: notifications.index(terminal)], terminal
+
+
 @pytest.mark.variant("push")
-@pytest.mark.command("typing")
-async def test_an_ephemeral_indicator_is_streamed_but_not_pushed(
+@pytest.mark.command("stream")
+async def test_a_streamed_answer_is_pushed_as_it_was_streamed(
     push_client: ScenarioClient,
     callback: CallbackServer,
 ) -> None:
-    """The callback receives what the task stores; the live-only indicator is not stored."""
-    events = await push_client.send(
-        "typing",
-        push_notification_url=callback.url,
+    """Every stream-delta update the stream carried reaches the callback, in order; the task pushed last holds the whole text."""
+    events, before, terminal = await _push_turn(push_client, callback, "stream 3")
+
+    streamed = _streamed_artifact_updates(events)
+    assert streamed, "the stream carried no artifact update"
+    assert {update[0] for update in streamed} == {STREAM_DELTA_ARTIFACT_ID}
+    assert _pushed_artifact_updates(before) == streamed
+    assert _pushed_artifact_texts(terminal, STREAM_DELTA_ARTIFACT_ID) == [stream_text(3)]
+
+
+@pytest.mark.variant("push")
+@pytest.mark.command("think")
+async def test_thoughts_are_pushed(
+    push_client: ScenarioClient,
+    callback: CallbackServer,
+) -> None:
+    """Each thought reaches the callback as the update it was on the stream; the task pushed last holds them all."""
+    events, before, terminal = await _push_turn(push_client, callback, "think 3")
+
+    assert _pushed_artifact_updates(before) == _streamed_artifact_updates(events)
+    assert _pushed_artifact_texts(terminal, THINKING_DELTA_ARTIFACT_ID) == list(thoughts_texts(3))
+    assert _pushed_artifact_texts(terminal, ASSISTANT_ANSWER_ARTIFACT_ID) == [think_text()]
+
+
+@pytest.mark.variant("push")
+@pytest.mark.command("react")
+async def test_a_reaction_is_pushed(
+    push_client: ScenarioClient,
+    callback: CallbackServer,
+) -> None:
+    """The reaction reaches the callback as it reached the stream, and the task pushed last keeps it."""
+    envelope = message_event()
+    events, before, terminal = await _push_turn(
+        push_client,
+        callback,
+        "react",
+        message_metadata=envelope.message_metadata,
+        data=[envelope.data],
+        extensions=[envelope.extension_uri],
     )
-    assert final_task(events).state == "COMPLETED"
 
-    notifications = await _wait_for_terminal(callback)
-    assert _find_terminal(notifications) is not None, "no terminal notification received"
+    pushed = _pushed_artifact_updates(before)
+    assert pushed == _streamed_artifact_updates(events)
+    assert REACTION_ARTIFACT_ID in [update[0] for update in pushed]
+    reactions = [
+        artifact
+        for artifact in _task_from_notification(terminal).get("artifacts", [])
+        if artifact["artifactId"] == REACTION_ARTIFACT_ID
+    ]
+    assert len(reactions) == 1
+    assert _pushed_artifact_texts(terminal, ASSISTANT_ANSWER_ARTIFACT_ID) == [react_text()]
 
-    pushed = json.dumps([notification.body for notification in notifications])
-    assert typing_text() in pushed
-    assert TYPING_INDICATOR not in pushed
+
+@pytest.mark.variant("push")
+@pytest.mark.command("echo")
+async def test_the_answer_of_a_task_that_only_talked_is_pushed(
+    push_client: ScenarioClient,
+    callback: CallbackServer,
+) -> None:
+    """The ``aion:assistant-answer`` update reaches the callback before the completed task, which holds it."""
+    events, before, terminal = await _push_turn(push_client, callback, "echo pushed answer")
+
+    assert _pushed_artifact_updates(before) == [
+        (ASSISTANT_ANSWER_ARTIFACT_ID, (echo_text("pushed answer"),), False, True)
+    ]
+    assert _pushed_artifact_updates(before) == _streamed_artifact_updates(events)
+    assert _pushed_artifact_texts(terminal, ASSISTANT_ANSWER_ARTIFACT_ID) == [echo_text("pushed answer")]
 
 
 @pytest.mark.variant("push")

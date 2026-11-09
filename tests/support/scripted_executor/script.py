@@ -15,9 +15,9 @@ An output is an A2A event, anything else a unit test wants yielded, or its
 JSON form, which a scenario sends:
 
 * ``{"kind": "status", "state": "working", "text": ..., "data": {...},
-  "metadata": {...}, "ephemeral": false}`` - a status update; ``state`` is
-  the A2A state in lower case (``input-required``), ``text`` and ``data``
-  make its message, ``metadata`` goes to the event;
+  "metadata": {...}}`` - a status update; ``state`` is the A2A state in
+  lower case (``input-required``), ``text`` and ``data`` make its message,
+  ``metadata`` goes to the event;
 * ``{"kind": "artifact", "id": ..., "text": ..., "append": false,
   "last_chunk": true, "metadata": {...}}`` - an artifact update;
 * ``{"kind": "error", "code": ..., "message": ..., "retryable": false,
@@ -46,7 +46,6 @@ from google.protobuf import json_format, struct_pb2
 from pydantic import BaseModel, ConfigDict
 
 from aion.core.a2a.errors import error_parts
-from aion.core.a2a.metadata import mark_status_event_ephemeral
 from aion.core.exceptions import ExtensionRejection
 
 from .contract import SCRIPT_EVENT_TYPE, SCRIPT_SCHEMA, URI, script_contract
@@ -221,8 +220,6 @@ def event_of(output: Any, *, uri: str, task_id: str, context_id: str) -> Any:
     event = TaskStatusUpdateEvent(task_id=task_id, context_id=context_id, status=status)
     if output.get("metadata"):
         event.metadata.CopyFrom(_struct(output["metadata"]))
-    if output.get("ephemeral"):
-        mark_status_event_ephemeral(event)
     return event
 
 

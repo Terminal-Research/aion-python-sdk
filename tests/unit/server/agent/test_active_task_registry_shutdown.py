@@ -63,7 +63,12 @@ async def _registry_holding(state: TaskState, push_sender=None):
             context_id=CONTEXT_ID,
         )
 
-    return registry, store, active_task_cls.return_value
+    # What the real ActiveTask keeps from its constructor; the registry's
+    # cleanup reads both.
+    active_task = active_task_cls.return_value
+    active_task.task_id = TASK_ID
+    active_task._task_manager = active_task_cls.call_args.kwargs["task_manager"]
+    return registry, store, active_task
 
 
 def _settled(store: AsyncMock) -> Task:
@@ -144,9 +149,9 @@ class TestShutdownSettlement:
     @pytest.mark.anyio
     async def test_finished_task_is_no_longer_tracked(self, execution_scope):
         """A task cleaned up during the run must not be revisited at shutdown."""
-        registry, store, _ = await _registry_holding(TaskState.TASK_STATE_WORKING)
+        registry, store, active_task = await _registry_holding(TaskState.TASK_STATE_WORKING)
 
-        await registry._remove_task(TASK_ID)
+        await registry._remove_task(active_task)
         await registry.aclose()
 
         store.save.assert_not_awaited()

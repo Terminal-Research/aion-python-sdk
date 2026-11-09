@@ -22,7 +22,7 @@ from tests.scenarios.agents.native_script import (
 )
 from tests.scenarios.conftest import serve_for
 from tests.scenarios.frameworks import PREBUILT_AGENTS, Framework
-from tests.scenarios.harness import ScenarioClient, ServeVariant, final_task, reply_texts
+from tests.scenarios.harness import ScenarioClient, ServeVariant, final_task, section_texts
 
 pytestmark = [pytest.mark.native, pytest.mark.capability("prebuilt-agent")]
 
@@ -39,7 +39,7 @@ async def test_a_turn_with_a_tool_completes(prebuilt: ScenarioClient) -> None:
     events = await prebuilt.send("weather Kyiv")
 
     assert final_task(events).state == "COMPLETED"
-    assert reply_texts(events) == [WEATHER_PREAMBLE, weather_answer("Kyiv")]
+    assert section_texts(events) == [WEATHER_PREAMBLE, weather_answer("Kyiv")]
 
 
 async def test_the_next_turn_remembers(prebuilt: ScenarioClient) -> None:
@@ -47,7 +47,7 @@ async def test_the_next_turn_remembers(prebuilt: ScenarioClient) -> None:
 
     events = await prebuilt.send("recall", context_id=first.context_id)
 
-    assert reply_texts(events) == [RECALL_PREFIX + "say hello"]
+    assert section_texts(events) == [RECALL_PREFIX + "say hello"]
 
 
 async def test_a_tool_can_pause_for_the_user(prebuilt: ScenarioClient) -> None:
@@ -57,4 +57,4 @@ async def test_a_tool_can_pause_for_the_user(prebuilt: ScenarioClient) -> None:
     events = await prebuilt.send("yes", task_id=opened.task_id, context_id=opened.context_id)
 
     assert final_task(events).state == "COMPLETED"
-    assert reply_texts(events) == [confirmed_answer("yes")]
+    assert section_texts(events) == [confirmed_answer("yes")]

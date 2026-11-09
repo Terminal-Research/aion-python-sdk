@@ -26,13 +26,11 @@ from typing import Optional, Protocol
 
 from a2a.types import Artifact, Message, Task, TaskStatus
 
-from aion.core.a2a import A2AMetadataKey, ArtifactId, MessageType
+from aion.core.a2a import A2AMetadataKey, MessageType
 from aion.server.a2a.utils import is_same_message
 from aion.server.tasks.admission import ContextHolder
 
 __all__ = [
-    "ARTIFACT_WINDOW",
-    "EXCLUDED_ARTIFACT_IDS",
     "ContextActivity",
     "ContextCatalog",
     "ContextPage",
@@ -43,12 +41,6 @@ __all__ = [
     "conversation_of",
     "is_conversation_message",
 ]
-
-ARTIFACT_WINDOW = 50
-"""Most artifacts ``GetContext`` returns: the latest ones, newest first."""
-
-EXCLUDED_ARTIFACT_IDS = frozenset({ArtifactId.STREAM_DELTA.value, ArtifactId.THINKING_DELTA.value})
-"""Streaming artifacts that are progress, not results, and never appear in a context."""
 
 
 def is_conversation_message(message: Message) -> bool:
@@ -96,8 +88,9 @@ class ContextPage:
 
     Attributes:
         history: The selected page of conversation messages, chronological.
-        artifacts: ``(task_id, artifact)`` pairs, newest first, at most
-            :data:`ARTIFACT_WINDOW`.
+        artifacts: ``(task_id, artifact)`` pairs of the tasks the page of
+            history comes from, every artifact of each - the streamed answer
+            and the thoughts included - newest first.
         status: Status of the most recently active task; an empty status
             when the context has no task yet.
         last_activity_at: Latest task activity, or the caller's binding

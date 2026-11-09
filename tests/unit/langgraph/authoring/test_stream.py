@@ -8,12 +8,14 @@ from aion.langgraph.authoring.invocation.emitters import (
     emit_card,
     emit_message,
     emit_reaction,
+    emit_thinking,
 )
 from aion.langgraph.authoring.events.custom_events import (
     ArtifactCustomEvent,
     CardCustomEvent,
     MessageCustomEvent,
     ReactionCustomEvent,
+    ThinkingCustomEvent,
 )
 from aion.core.agent.invocation.card import Card
 from aion.core.a2a.artifacts import file_artifact, url_artifact, data_artifact
@@ -102,15 +104,10 @@ class TestEmitMessage:
         assert isinstance(event, MessageCustomEvent)
         assert event.message is chunk
 
-    def test_ephemeral_false_by_default(self, writer):
-        # messages are durable (not ephemeral) unless explicitly requested
-        emit_message(writer, AIMessage(content="Hi"))
-        assert writer.call_args[0][0].ephemeral is False
-
-    def test_ephemeral_true_propagates(self, writer):
-        # ephemeral=True is forwarded to the event
-        emit_message(writer, AIMessage(content="Hi"), ephemeral=True)
-        assert writer.call_args[0][0].ephemeral is True
+    def test_metadata_propagates(self, writer):
+        # user metadata is forwarded to the event unchanged
+        emit_message(writer, AIMessage(content="Hi"), metadata={"trace_id": "abc"})
+        assert writer.call_args[0][0].metadata == {"trace_id": "abc"}
 
     def test_routing_propagates(self, writer):
         # explicit routing target is attached to the event
@@ -123,6 +120,26 @@ class TestEmitMessage:
         # routing is None when not specified (uses distribution default)
         emit_message(writer, AIMessage(content="Hi"))
         assert writer.call_args[0][0].routing is None
+
+
+class TestEmitThinking:
+    def test_exported_from_the_authoring_package(self):
+        # the README imports it from the package itself
+        from aion.langgraph.authoring import emit_thinking as exported
+        assert exported is emit_thinking
+
+    def test_emits_thinking_custom_event(self, writer):
+        # the thought is wrapped in ThinkingCustomEvent and passed to writer
+        emit_thinking(writer, "Looking up the account")
+        writer.assert_called_once()
+        event = writer.call_args[0][0]
+        assert isinstance(event, ThinkingCustomEvent)
+        assert event.text == "Looking up the account"
+        assert event.metadata is None
+
+    def test_metadata_propagates(self, writer):
+        emit_thinking(writer, "Looking up the account", metadata={"step": "lookup"})
+        assert writer.call_args[0][0].metadata == {"step": "lookup"}
 
 
 class TestEmitReaction:

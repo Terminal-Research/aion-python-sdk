@@ -7,6 +7,7 @@ from aion.langgraph.authoring.events.custom_events import (
     ArtifactCustomEvent,
     MessageCustomEvent,
     ReactionCustomEvent,
+    ThinkingCustomEvent,
 )
 from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 
@@ -42,12 +43,12 @@ class TestArtifactCustomEvent:
 
 class TestMessageCustomEvent:
     def test_valid_with_aimessage(self):
-        # AIMessage is accepted; ephemeral and routing default to safe values
+        # AIMessage is accepted; routing and metadata default to None
         msg = AIMessage(content="Hello")
         event = MessageCustomEvent(message=msg)
         assert event.message is msg
-        assert event.ephemeral is False
         assert event.routing is None
+        assert event.metadata is None
 
     def test_valid_with_chunk(self):
         # AIMessageChunk is accepted (union type — both are valid)
@@ -55,16 +56,27 @@ class TestMessageCustomEvent:
         event = MessageCustomEvent(message=chunk)
         assert event.message is chunk
 
-    def test_ephemeral_flag(self):
-        # ephemeral=True marks the message as stream-only (not persisted)
-        msg = AIMessage(content="Hi")
-        event = MessageCustomEvent(message=msg, ephemeral=True)
-        assert event.ephemeral is True
-
     def test_missing_message_raises(self):
         # message is a required field
         with pytest.raises(ValidationError):
             MessageCustomEvent()
+
+
+class TestThinkingCustomEvent:
+    def test_valid_construction(self):
+        # the thought's text is required; metadata defaults to None
+        event = ThinkingCustomEvent(text="Looking up the account")
+        assert event.text == "Looking up the account"
+        assert event.metadata is None
+        assert event.event_type == "thinking"
+
+    def test_metadata_is_kept(self):
+        event = ThinkingCustomEvent(text="Looking up the account", metadata={"step": "lookup"})
+        assert event.metadata == {"step": "lookup"}
+
+    def test_missing_text_raises(self):
+        with pytest.raises(ValidationError):
+            ThinkingCustomEvent()
 
 
 class TestReactionCustomEvent:

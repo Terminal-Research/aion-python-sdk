@@ -29,8 +29,11 @@ __all__ = [
     "DEFAULT_SLOW_SECONDS",
     "stream_chunks",
     "stream_text",
-    "TYPING_INDICATOR",
-    "typing_text",
+    "thought_text",
+    "thoughts_texts",
+    "think_text",
+    "REACTION_KEY",
+    "react_text",
     "step_text",
     "steps_texts",
     "ids_text",
@@ -70,6 +73,9 @@ __all__ = [
     "OUTBOX_TASK_ARTIFACT_NAME",
     "OUTBOX_TASK_ARTIFACT_TEXT",
     "OUTBOX_TASK_METADATA",
+    "OUTBOX_FAILED_REASON",
+    "OUTBOX_PAUSE_QUESTION",
+    "OUTBOX_PREFACE_TEXT",
     "FAIL_MODES",
     "FAIL_REPLY_TEXT",
     "FAIL_MESSAGE",
@@ -183,8 +189,10 @@ class Command:
 COMMANDS: tuple[Command, ...] = (
     Command("help", "Show this menu", tags=("smoke",)),
     Command("echo", "Reply with the argument, unchanged", "<text>", ("smoke", "events")),
-    Command("stream", "Reply in n chunks of one message", "<n>", ("streaming",)),
-    Command("typing", "Send an ephemeral typing status, then a reply", tags=("streaming", "events")),
+    Command("stream", "Stream an answer in n chunks", "<n>", ("streaming",)),
+    Command("stream-marked", "Stream an answer in n chunks, marking the last one", "<n>", ("streaming",)),
+    Command("think", "Think n thoughts, then reply", "<n>", ("streaming",)),
+    Command("react", "React to the inbound message, then reply", tags=("events",)),
     Command("steps", "Emit n working statuses, then complete", "<n>", ("events",)),
     Command("slow", "Reply after n seconds", "<sec>", ("lifecycle",)),
     Command("artifacts", "Emit a two-part data artifact, an inline file and a url",
@@ -194,6 +202,16 @@ COMMANDS: tuple[Command, ...] = (
     Command("card", "Emit one card", tags=("artifacts",)),
     Command("outbox-task", "Return an A2A Task through the outbox", tags=("events",)),
     Command("outbox-message", "Return an A2A Message through the outbox", tags=("events",)),
+    Command("outbox-history", "Return an A2A Task through the outbox that only adds a message",
+            tags=("events",)),
+    Command("outbox-failed", "Fail the task through an A2A Task in the outbox, with a reason",
+            tags=("events", "terminal_states")),
+    Command("outbox-pause", "Leave the task waiting for input through an A2A Task in the outbox",
+            tags=("events", "interrupts")),
+    Command("outbox-after-reply", "Reply through the thread, then return an A2A Message through the outbox",
+            tags=("events",)),
+    Command("outbox-failed-after-reply", "Reply through the thread, then fail through an A2A Task in the outbox",
+            tags=("events", "terminal_states")),
     Command("ask", "Ask a question, then quote the answer", tags=("interrupts",)),
     Command("ask-twice", "Ask two questions in a row", tags=("interrupts",)),
     Command("ask-fail", "Ask a question, then fail on the answer", tags=("interrupts", "errors")),
@@ -282,25 +300,42 @@ def slow_text(seconds: float) -> str:
 
 
 def stream_chunks(count: int) -> tuple[str, ...]:
-    """The chunks ``stream <n>`` sends, in order."""
+    """The chunks ``stream <n>`` streams, in order."""
     return tuple(f"[chunk {index}/{count}]" for index in range(1, count + 1))
 
 
 def stream_text(count: int) -> str:
-    """The whole message ``stream <n>`` adds up to."""
+    """The whole answer ``stream <n>`` adds up to."""
     return "".join(stream_chunks(count))
 
 
-# What ``typing`` sends, in order: the ephemeral indicator, then the durable
-# answer. Two different texts, so a scenario reading the stream can say which
-# of the two it is looking at - and reading the stored task, which of the two
-# was kept.
-TYPING_INDICATOR = "still working on it"
+# What ``think <n>`` sends, in order: n thoughts, then a reply. The reply is a
+# text no thought has, so a scenario reading the stream or the stored task can
+# tell the thoughts from what the agent said.
+def thought_text(index: int, count: int) -> str:
+    """The text of one thought ``think <n>`` sends."""
+    return f"thought {index}/{count}"
 
 
-def typing_text() -> str:
-    """The durable reply ``typing`` sends once the indicator is out."""
-    return "finished thinking"
+def thoughts_texts(count: int) -> tuple[str, ...]:
+    """Every thought ``think <n>`` sends, in order."""
+    return tuple(thought_text(index, count) for index in range(1, count + 1))
+
+
+def think_text() -> str:
+    """The reply ``think <n>`` sends after its thoughts."""
+    return "done thinking"
+
+
+# What ``react`` does with the message event it arrives on: one reaction to
+# that message, then a reply. Without an event there is no message to react
+# to, and only the reply goes out.
+REACTION_KEY = "thumbsup"
+
+
+def react_text() -> str:
+    """The reply ``react`` sends after its reaction."""
+    return "reacted"
 
 
 def step_text(index: int, count: int) -> str:
@@ -456,6 +491,13 @@ OUTBOX_TASK_HISTORY_TEXT = "outbox task history"
 OUTBOX_TASK_ARTIFACT_NAME = "outbox-artifact"
 OUTBOX_TASK_ARTIFACT_TEXT = "outbox artifact content"
 OUTBOX_TASK_METADATA = {"scenario": "outbox-task"}
+# The reason `outbox-failed` states in the status of the Task it hands over,
+# and the question `outbox-pause` asks in its own.
+OUTBOX_FAILED_REASON = "outbox failure reason"
+OUTBOX_PAUSE_QUESTION = "outbox question?"
+# What `outbox-after-reply` and `outbox-failed-after-reply` say through the
+# thread before the outbox: it has to stay in the history, before the outbox.
+OUTBOX_PREFACE_TEXT = "said before the outbox"
 
 
 # How `fail <mode>` fails: before saying anything, or with a reply already

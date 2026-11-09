@@ -4,15 +4,13 @@ from a2a.server.request_handlers.default_request_handler import TERMINAL_TASK_ST
 from a2a.types import TaskState
 
 from aion.core.a2a.enums import ArtifactId
-from aion.core.a2a.metadata import EPHEMERAL_STATUS_METADATA_KEY
 
 __all__ = [
     "ACTIVE_TASK_STATES",
     "INTERRUPT_TASK_STATES",
     "TERMINAL_TASK_STATES",
-    "TRANSIENT_ARTIFACT_IDS",
+    "NON_RESULT_ARTIFACT_IDS",
     "NON_ACTIVE_TASK_STATES",
-    "EPHEMERAL_STATUS_METADATA_KEY",
 ]
 
 
@@ -36,11 +34,12 @@ ACTIVE_TASK_STATES = frozenset(
     if state not in NON_ACTIVE_TASK_STATES and state != TaskState.TASK_STATE_UNSPECIFIED
 )
 
-# Artifacts that are sent to the client for live UX only and must not be
-# persisted into the durable task state.
-TRANSIENT_ARTIFACT_IDS = frozenset({
-    ArtifactId.STREAM_DELTA.value,
+# Artifacts a task keeps that are not what the task produced: the agent's
+# thoughts, its reactions, and the answer the server copies from the last
+# message when nothing else is. A completed task without any other artifact
+# gets an `aion:assistant-answer`.
+NON_RESULT_ARTIFACT_IDS = frozenset({
     ArtifactId.THINKING_DELTA.value,
-    ArtifactId.EPHEMERAL_MESSAGE.value,
     ArtifactId.REACTION.value,
+    ArtifactId.ASSISTANT_ANSWER.value,
 })

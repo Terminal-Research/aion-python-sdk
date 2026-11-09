@@ -18,7 +18,10 @@ import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 
+from fastapi.openapi.models import APIKey, APIKeyIn
 from google.adk.agents import LlmAgent
+from google.adk.auth.auth_credential import AuthCredential, AuthCredentialTypes
+from google.adk.auth.auth_tool import AuthConfig
 from google.adk.models import BaseLlm, LlmRequest, LlmResponse
 from google.adk.tools import ToolContext
 from google.genai import types
@@ -170,12 +173,43 @@ def remember(note: str, tool_context: ToolContext) -> str:
     return "remembered"
 
 
+def confirm_action(action: str, tool_context: ToolContext) -> str:
+    """Ask the user to confirm an action, and report what they answered.
+
+    ADK's own confirmation: the first call asks and the run pauses; ADK
+    calls the tool again with the user's answer once it arrives.
+
+    Args:
+        action: What is about to be done.
+    """
+    confirmation = tool_context.tool_confirmation
+    if confirmation is None:
+        tool_context.request_confirmation(hint=f"Proceed with {action}?")
+        return "waiting for confirmation"
+    return "yes" if confirmation.confirmed else "no"
+
+
+def sign_in(service: str, tool_context: ToolContext) -> str:
+    """Sign in to a service, asking the user for its key.
+
+    Args:
+        service: The service to sign in to.
+    """
+    tool_context.request_credential(
+        AuthConfig(
+            auth_scheme=APIKey(**{"in": APIKeyIn.header, "name": "X-Api-Key"}),
+            raw_auth_credential=AuthCredential(auth_type=AuthCredentialTypes.API_KEY, api_key=""),
+        )
+    )
+    return f"waiting for a key to {service}"
+
+
 def create_agent() -> LlmAgent:
     """Build the agent: a model, its tools, and an answer kept in state."""
     return LlmAgent(
         name=AGENT_NAME,
         model=ScriptedLlm(),
         instruction=INSTRUCTION,
-        tools=[get_weather, ticker, save_report, remember, count_call],
+        tools=[get_weather, ticker, save_report, remember, count_call, confirm_action, sign_in],
         output_key=LAST_ANSWER_KEY,
     )

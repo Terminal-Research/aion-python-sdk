@@ -1,3 +1,5 @@
+from typing import Optional
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from a2a.server.agent_execution import RequestContext
@@ -23,7 +25,8 @@ from a2a.utils.errors import (
     TaskNotFoundError,
 )
 
-from aion.core.a2a.enums import A2AMetadataKey
+from aion.core.a2a.deltas import stream_delta_chunk
+from aion.core.a2a.enums import A2AMetadataKey, ArtifactId
 from aion.core.constants.a2a import DAEMON_EXTENSION_URI_V1
 from aion.core.runtime import aion_a2a_extension_registry
 from aion.server.agent.execution.pool import EXTENSION_ROUTE_STATE_KEY
@@ -724,7 +727,53 @@ class TestStatusTimesFollowTheTurn:
 
         await executor.execute(context, queue)
 
-        assert [type(event) for event in queue.events] == [Task, TaskStatusUpdateEvent, TaskStatusUpdateEvent]
+        # The reply is the turn's only output, so it also comes back as the
+        # task's answer, right before the COMPLETED.
+        assert [type(event) for event in queue.events] == [
+            Task, TaskStatusUpdateEvent, TaskArtifactUpdateEvent, TaskStatusUpdateEvent,
+        ]
         assert queue.events[1].status.message.message_id == "msg-reply"
+        assert queue.events[2].artifact.artifact_id == ArtifactId.ASSISTANT_ANSWER.value
         times = await self._consume(context, queue.events)
         assert times == sorted(times)
+
+
+class TestInterruptedStream:
+    """A streamed answer cut short stays as far as it got: no event closes its section."""
+
+    @staticmethod
+    def _streaming(*texts: str, then: Optional[BaseException] = None):
+        async def agent_stream(context):
+            task = context.current_task
+            for position, text in enumerate(texts):
+                yield stream_delta_chunk(
+                    task_id=task.id, context_id=task.context_id, parts=[Part(text=text)], append=position > 0
+                )
+            if then is not None:
+                raise then
+
+        return agent_stream
+
+    @staticmethod
+    def _chunk_texts(queue: RecordingQueue) -> list[list[str]]:
+        return [
+            [part.text for part in event.artifact.parts]
+            for event in queue.events
+            if isinstance(event, TaskArtifactUpdateEvent)
+        ]
+
+    @pytest.mark.anyio
+    async def test_a_crash_mid_section_leaves_every_chunk_sent_and_fails_the_task(self):
+        stream = self._streaming("Hel", "lo", "!", then=RuntimeError("producer exploded"))
+        executor = request_executor(FakeFrameworkExecutor(stream=stream))
+        queue = RecordingQueue()
+        init_execution_scope()
+
+        await executor.execute(_request_context({}), queue)
+
+        assert self._chunk_texts(queue) == [["Hel"], ["lo"], ["!"]]
+        assert not any(
+            event.last_chunk for event in queue.events if isinstance(event, TaskArtifactUpdateEvent)
+        )
+        assert isinstance(queue.events[-2], TaskArtifactUpdateEvent)
+        assert queue.events[-1].status.state == TaskState.TASK_STATE_FAILED

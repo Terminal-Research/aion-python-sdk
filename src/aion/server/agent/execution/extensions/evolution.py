@@ -25,7 +25,8 @@ logic, only what connects the toolkit to the server:
   which the toolkit masks in what it reports, and the lookup of the
   context's ``evolution-spec`` artifact, the plan a run may start from;
 * the version number of every artifact the run writes in the context
-  (``metadata["version"]``).
+  (``metadata["version"]``), but the SDK's own artifacts - the run's
+  thoughts among them - which are one per task rather than versions.
 
 What the wrapper reads of the context - its generation, its unfinished
 evolution task, its artifact versions - comes from the turn's history

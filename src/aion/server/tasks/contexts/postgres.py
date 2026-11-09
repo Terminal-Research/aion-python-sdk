@@ -24,8 +24,6 @@ from aion.server.a2a.constants import TERMINAL_TASK_STATES
 from aion.server.tasks.admission import ACTIVE, DELETED, DELETING, holder_of_record
 
 from .catalog import (
-    ARTIFACT_WINDOW,
-    EXCLUDED_ARTIFACT_IDS,
     ContextActivity,
     ContextPage,
     ContextTaskState,
@@ -133,7 +131,7 @@ class PostgresContextCatalog:
 
                 newest_first = (
                     await session.execute(
-                        select(TaskMessageModel.payload)
+                        select(TaskMessageModel.task_id, TaskMessageModel.payload)
                         .join(TaskRecordModel, TaskRecordModel.id == TaskMessageModel.task_id)
                         .where(
                             in_context,
@@ -147,25 +145,25 @@ class PostgresContextCatalog:
                         .limit(history_length)
                         .offset(history_offset)
                     )
-                ).scalars().all()
+                ).all()
 
+                # The artifacts of the tasks the page of history comes from.
+                page_tasks = {task_id for task_id, _ in newest_first}
                 artifacts = (
                     await session.execute(
                         select(TaskArtifactModel.task_id, TaskArtifactModel.payload)
-                        .join(TaskRecordModel, TaskRecordModel.id == TaskArtifactModel.task_id)
-                        .where(in_context, TaskArtifactModel.artifact_id.notin_(EXCLUDED_ARTIFACT_IDS))
+                        .where(TaskArtifactModel.task_id.in_(page_tasks))
                         .order_by(
                             desc(TaskArtifactModel.updated_at),
                             desc(TaskArtifactModel.task_id),
                             desc(TaskArtifactModel.artifact_id),
                         )
-                        .limit(ARTIFACT_WINDOW)
                     )
-                ).all()
+                ).all() if page_tasks else []
 
         return ContextPage(
             context_id=context_id,
-            history=list(reversed(newest_first)),
+            history=[payload for _, payload in reversed(newest_first)],
             artifacts=[(str(task_id), payload) for task_id, payload in artifacts],
             status=TaskStatus() if latest is None else latest.status,
             last_activity_at=bound_at if latest is None else latest.updated_at,

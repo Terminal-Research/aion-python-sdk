@@ -51,6 +51,8 @@ def _registered(registry: AionActiveTaskRegistry) -> MagicMock:
     """Register a stand-in ActiveTask under both of the registry's keys."""
     active_task = MagicMock(task_id=TASK_ID, aclose=AsyncMock())
     active_task._is_finished = asyncio.Event()
+    # The SDK's public flag reads that event; a bare mock attribute is truthy.
+    type(active_task).is_finished = property(lambda self: self._is_finished.is_set())
     # A consumer with nothing left to handle.
     active_task._event_queue_agent.queue.join = AsyncMock()
     registry._active_tasks[TASK_ID] = active_task
@@ -70,7 +72,7 @@ async def test_interrupted_task_is_closed_and_forgotten() -> None:
     active_task.aclose.assert_awaited_once()
 
     # The SDK reports cleanup by callback; that is what empties the maps.
-    await registry._remove_task_for_incarnation(active_task)
+    await registry._remove_task(active_task)
     assert TASK_ID not in registry._active_tasks
     assert TASK_ID not in registry._task_managers
 

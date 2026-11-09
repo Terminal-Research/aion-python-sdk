@@ -334,6 +334,7 @@ class AionAgentRequestExecutor(AgentExecutor):
                 [message.message_id for message in task.history]
                 + ([task.status.message.message_id] if task.status.HasField('message') else [])
             ),
+            queued_before=0 if is_new_task else 1,
         )
         turn = _Turn(executor, config)
         self._turns[task.id] = turn

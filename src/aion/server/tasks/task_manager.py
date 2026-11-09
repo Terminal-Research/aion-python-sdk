@@ -11,16 +11,16 @@ from a2a.server.cluster.task_store import (
 )
 from a2a.server.events import Event
 from a2a.server.tasks import TaskManager
-from a2a.types import Message, Task, TaskState, TaskStatus, TaskStatusUpdateEvent
+from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskState, TaskStatus, TaskStatusUpdateEvent
 from aion.server.a2a.constants import (
     INTERRUPT_TASK_STATES,
     NON_ACTIVE_TASK_STATES,
     TERMINAL_TASK_STATES,
 )
 from aion.server.a2a.utils import (
-    is_ephemeral_event,
     is_message_recorded,
     is_task_interrupted,
+    join_streamed_answer,
     record_closing_message,
 )
 from aion.server.agent.execution.scope import set_task_status
@@ -88,6 +88,13 @@ class AionTaskManager(TaskManager):
         # events ``AionEventPipeline`` saves itself. Each write names the
         # version the previous one left, so they take turns.
         self._write_lock = asyncio.Lock()
+        # Set once the store holds the task: read back from it, or written by
+        # this manager. See ``wait_until_stored``.
+        self._stored = asyncio.Event()
+        # How many status and artifact updates the SDK consumer has applied
+        # from the queue. See ``wait_until_applied``.
+        self._applied = 0
+        self._applied_changed = asyncio.Condition()
 
     @property
     def written_outcome(self) -> TaskState | None:
@@ -101,6 +108,21 @@ class AionTaskManager(TaskManager):
         a2a-sdk's producer writes directly when the agent raises.
         """
         return self._written_outcome
+
+    async def wait_until_stored(self, timeout: float) -> bool:
+        """Wait until the store holds the task; False when ``timeout`` seconds ran out first.
+
+        A new task is written by the SDK consumer when it takes the Task the
+        request opened with off the queue. A Task or Message the producer
+        saves before that write creates the task in the store, and the
+        consumer then refuses the opening Task as a second one, with an
+        error in the log.
+        """
+        try:
+            await asyncio.wait_for(self._stored.wait(), timeout)
+        except asyncio.TimeoutError:
+            return False
+        return True
 
     @override
     def invalidate(self) -> None:
@@ -138,6 +160,8 @@ class AionTaskManager(TaskManager):
         the manager's own cache, which already carries whatever this turn has
         written.
         """
+        if task is not None:
+            self._stored.set()
         if task is not None and self._persisted_state is None:
             self._persisted_state = task.status.state
 
@@ -156,7 +180,8 @@ class AionTaskManager(TaskManager):
         Every write passes through here, whichever path built the task, so
         this is also where a task that stops - with an outcome or on an
         interrupt - gets the message it stops on added to its history
-        (``record_closing_message``).
+        (``record_closing_message``) and its streamed answer joined into one
+        part (``join_streamed_answer``).
 
         A task the store holds as terminal is final. The version check alone
         does not ensure that: the SDK consumer rereads the task when another
@@ -196,7 +221,9 @@ class AionTaskManager(TaskManager):
             if not task.status.HasField("timestamp"):
                 task.status.timestamp.GetCurrentTime()
             record_closing_message(task)
+            join_streamed_answer(task)
             await super()._save_task(task)
+            self._stored.set()
 
             state = task.status.state
             self._persisted_state = state
@@ -217,32 +244,56 @@ class AionTaskManager(TaskManager):
         If the event is task-related (`Task`, `TaskStatusUpdateEvent`, `TaskArtifactUpdateEvent`),
         the internal task state is updated and persisted.
 
-        Missing status timestamps are assigned before persistence and delivery,
-        including ephemeral updates. Streams, push notifications and stored Task
-        snapshots therefore share one time instead of each receiver inventing it.
-        Explicit timestamps are preserved.
+        Missing status timestamps are assigned before persistence and delivery.
+        Streams, push notifications and stored Task snapshots therefore share
+        one time instead of each receiver inventing it. Explicit timestamps are
+        preserved.
 
         Args:
             event: The event object received from the agent.
 
         Returns:
-            The same event object that was processed (or skipped).
+            The same event object that was processed.
         """
-        if isinstance(event, Message):
-            event = await self._wrap_message_as_status_event(event)
+        # Status and artifact updates reach this method only from the queue;
+        # what the producer saves itself is a Task or a Message.
+        queued = isinstance(event, (TaskStatusUpdateEvent, TaskArtifactUpdateEvent))
+        try:
+            if isinstance(event, Message):
+                event = await self._wrap_message_as_status_event(event)
 
-        if isinstance(event, TaskStatusUpdateEvent) and not event.status.HasField("timestamp"):
-            event.status.timestamp.GetCurrentTime()
+            if isinstance(event, TaskStatusUpdateEvent) and not event.status.HasField("timestamp"):
+                event.status.timestamp.GetCurrentTime()
 
-        if self._check_process_skip_event(event):
-            return event
+            event = await self._carry_pending_message(event)
+            await self._forget_recorded_status_message(event)
 
-        event = await self._carry_pending_message(event)
-        await self._forget_recorded_status_message(event)
+            result = await super().process(event)
+            self._track_task_status(event)
+            return result
+        finally:
+            if queued:
+                async with self._applied_changed:
+                    self._applied += 1
+                    self._applied_changed.notify_all()
 
-        result = await super().process(event)
-        self._track_task_status(event)
-        return result
+    async def wait_until_applied(self, count: int, timeout: float) -> bool:
+        """Wait until the SDK consumer has applied ``count`` status and artifact updates; False when time ran out.
+
+        The producer's own writes of a Task or Message go to the store
+        directly, while its status and artifact updates go through the queue.
+        A direct write that overtakes an update still queued lands out of
+        order: before a reply the agent sent first, or under a state the
+        update then overwrites.
+        """
+        async with self._applied_changed:
+            try:
+                await asyncio.wait_for(
+                    self._applied_changed.wait_for(lambda: self._applied >= count), timeout
+                )
+            except asyncio.TimeoutError:
+                return False
+        return True
 
     @override
     def update_with_message(self, message: Message, task: Task) -> Task:
@@ -353,31 +404,6 @@ class AionTaskManager(TaskManager):
 
         state = event.status.state
         set_task_status(state.value if hasattr(state, 'value') else state)
-
-    @staticmethod
-    def _check_process_skip_event(event: Event) -> bool:
-        """Checks if an event should be skipped from processing and storage.
-
-        Response and thinking delta artifacts are filtered out to prevent
-        persisting intermediate chunks, keeping durable artifacts in storage.
-
-        Status updates flagged ephemeral are skipped the same way: the client
-        still receives them off the event stream (this method only gates
-        persistence), but they never become task.status.message and so are never
-        folded into history — the milestone-only history policy for live
-        progress (running commands, intermediate agent messages).
-
-        Both kinds are recognised by ``is_ephemeral_event``, the predicate the
-        push channel filters by as well, so what is pushed and what is stored
-        cannot drift apart.
-
-        Args:
-            event: The event to check.
-
-        Returns:
-            True if the event should be skipped, False otherwise.
-        """
-        return is_ephemeral_event(event)
 
     async def auto_discover_and_assign_task(self, interrupted: bool = False) -> Task | None:
         """

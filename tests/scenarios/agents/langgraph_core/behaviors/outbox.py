@@ -15,14 +15,25 @@ from aion.core.a2a import A2AOutbox
 
 from tests.scenarios.agents.langgraph_core.invocation import Invocation
 from tests.scenarios.commands import (
+    OUTBOX_FAILED_REASON,
     OUTBOX_MESSAGE_TEXT,
+    OUTBOX_PAUSE_QUESTION,
+    OUTBOX_PREFACE_TEXT,
     OUTBOX_TASK_ARTIFACT_NAME,
     OUTBOX_TASK_ARTIFACT_TEXT,
     OUTBOX_TASK_HISTORY_TEXT,
     OUTBOX_TASK_METADATA,
 )
 
-__all__ = ["outbox_message", "outbox_task"]
+__all__ = [
+    "outbox_after_reply",
+    "outbox_failed",
+    "outbox_failed_after_reply",
+    "outbox_history",
+    "outbox_message",
+    "outbox_pause",
+    "outbox_task",
+]
 
 
 async def outbox_message(invocation: Invocation) -> dict:
@@ -67,3 +78,52 @@ async def outbox_task(invocation: Invocation) -> dict:
             )
         )
     }
+
+
+def _agent_message(text: str) -> Message:
+    return Message(message_id=uuid4().hex, role=Role.ROLE_AGENT, parts=[Part(text=text)])
+
+
+async def outbox_history(invocation: Invocation) -> dict:
+    """Return a `Task` patch that only adds a message, with no artifact of its own."""
+    return {"a2a_outbox": A2AOutbox(task=Task(history=[_agent_message(OUTBOX_TASK_HISTORY_TEXT)]))}
+
+
+async def outbox_failed(invocation: Invocation) -> dict:
+    """Fail the task as an agent building its own Task does: a FAILED status that says why."""
+    return {
+        "a2a_outbox": A2AOutbox(
+            task=Task(
+                status=TaskStatus(
+                    state=TaskState.TASK_STATE_FAILED,
+                    message=_agent_message(OUTBOX_FAILED_REASON),
+                )
+            )
+        )
+    }
+
+
+async def outbox_pause(invocation: Invocation) -> dict:
+    """Leave the task waiting for input without an interrupt: an INPUT_REQUIRED status that asks."""
+    return {
+        "a2a_outbox": A2AOutbox(
+            task=Task(
+                status=TaskStatus(
+                    state=TaskState.TASK_STATE_INPUT_REQUIRED,
+                    message=_agent_message(OUTBOX_PAUSE_QUESTION),
+                )
+            )
+        )
+    }
+
+
+async def outbox_after_reply(invocation: Invocation) -> dict:
+    """Say something through the thread first, then hand over a `Message`."""
+    await invocation.thread.reply(OUTBOX_PREFACE_TEXT)
+    return await outbox_message(invocation)
+
+
+async def outbox_failed_after_reply(invocation: Invocation) -> dict:
+    """Explain through the thread first, then fail through the outbox."""
+    await invocation.thread.reply(OUTBOX_PREFACE_TEXT)
+    return await outbox_failed(invocation)

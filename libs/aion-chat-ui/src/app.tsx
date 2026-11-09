@@ -100,7 +100,6 @@ import {
 	formatProtocolPayloadAsJson
 } from "./lib/protocolOutput.js";
 import {
-	EPHEMERAL_MESSAGE_ARTIFACT_ID,
 	STREAM_DELTA_ARTIFACT_ID,
 	THINKING_DELTA_ARTIFACT_ID
 } from "./lib/a2aMetadata.js";

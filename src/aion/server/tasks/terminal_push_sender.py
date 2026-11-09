@@ -1,31 +1,24 @@
-"""Per-task push-notification decorator: durable events only, outcomes as the full Task."""
+"""Per-task push-notification decorator: every event the task stores, outcomes as the full Task."""
 
 import logging
 from a2a.server.tasks.push_notification_sender import PushNotificationEvent, PushNotificationSender
 from a2a.types import Task, TaskState, TaskStatusUpdateEvent
 
 from aion.server.a2a.constants import NON_ACTIVE_TASK_STATES
-from aion.server.a2a.utils import is_ephemeral_event
 from aion.server.tasks.protocols import AionTaskManagerProtocol
 
 logger = logging.getLogger(__name__)
 
 
 class TerminalTaskPushSender(PushNotificationSender):
-    """Shapes the push channel of one task: what the task stores, and nothing else.
+    """Shapes the push channel of one task: what the task stores.
 
     The event consumer dispatches every event it handles to the webhooks (see
-    ``EventConsumer._update_task_state`` in a2a-sdk), so this wrapper decides
-    what a receiver gets:
-
-    * An ephemeral event - a stream delta, an ephemeral message or reaction,
-      a status update flagged ephemeral - is not sent. The task manager does
-      not store it, and the push channel carries exactly what the task
-      stores; ``is_ephemeral_event`` is the one predicate both go by.
-    * A non-active status update is replaced by the Task snapshot, mirroring
-      ``TerminalTaskProjection``: a task leaves the active states through
-      exactly one event - the full Task.
-    * Every other event is sent as it is.
+    ``EventConsumer._update_task_state`` in a2a-sdk), and the task manager
+    stores every one of them, so a receiver gets the events as they are,
+    with one exception: a non-active status update is replaced by the Task
+    snapshot, mirroring ``TerminalTaskProjection``. A task leaves the active
+    states through exactly one event - the full Task.
 
     An outcome can also be written without an event the consumer pushes: when
     the agent raises, a2a-sdk's producer writes ``FAILED`` into the store
@@ -49,9 +42,6 @@ class TerminalTaskPushSender(PushNotificationSender):
         self._pushed_outcome: TaskState | None = None
 
     async def send_notification(self, task_id: str, event: PushNotificationEvent) -> None:
-        if is_ephemeral_event(event):
-            return
-
         if self._is_non_active_status(event):
             event = await self._outcome_snapshot(task_id, event)
 

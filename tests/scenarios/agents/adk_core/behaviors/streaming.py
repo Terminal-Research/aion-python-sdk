@@ -1,19 +1,23 @@
-"""Replies that arrive in pieces."""
+"""Answers that arrive in pieces, and the thoughts before an answer."""
 
 from __future__ import annotations
 
 from typing import AsyncIterator
 
-from tests.scenarios.agents.adk_core.invocation import Invocation
-from tests.scenarios.commands import TYPING_INDICATOR, stream_chunks, typing_text
+from google.adk.events import Event
+from google.genai import types
 
-__all__ = ["stream", "typing_indicator"]
+from tests.scenarios.agents.adk_core.invocation import Invocation
+from tests.scenarios.commands import stream_chunks, think_text, thoughts_texts
+
+__all__ = ["stream", "stream_marked", "think"]
 
 DEFAULT_CHUNKS = 3
+DEFAULT_THOUGHTS = 3
 
 
 async def stream(invocation: Invocation) -> None:
-    """Send one message as ``n`` chunks."""
+    """Stream one answer as ``n`` chunks."""
     count = invocation.command.int_argument(DEFAULT_CHUNKS)
 
     async def chunk_source() -> AsyncIterator[str]:
@@ -23,11 +27,24 @@ async def stream(invocation: Invocation) -> None:
     await invocation.thread.reply(chunk_source())
 
 
-async def typing_indicator(invocation: Invocation) -> None:
-    """Show an ephemeral indicator, then answer durably.
+async def stream_marked(invocation: Invocation) -> None:
+    """Stream ``n`` chunks of the agent's own generation, the last marked as the last (``turn_complete``)."""
+    chunks = stream_chunks(invocation.command.int_argument(DEFAULT_CHUNKS))
 
-    Named for what it sends rather than for the command key: ``typing`` is
-    also the standard library module this package imports from.
-    """
-    await invocation.thread.typing(TYPING_INDICATOR)
-    await invocation.thread.reply(typing_text())
+    async def chunk_source() -> AsyncIterator[Event]:
+        for index, chunk in enumerate(chunks):
+            yield Event(
+                author="scenario_agent",
+                content=types.Content(role="model", parts=[types.Part(text=chunk)]),
+                partial=True,
+                turn_complete=True if index == len(chunks) - 1 else None,
+            )
+
+    await invocation.thread.reply(chunk_source())
+
+
+async def think(invocation: Invocation) -> None:
+    """Think ``n`` thoughts, one at a time, then reply."""
+    for thought in thoughts_texts(invocation.command.int_argument(DEFAULT_THOUGHTS)):
+        await invocation.thread.thinking(thought)
+    await invocation.thread.reply(think_text())

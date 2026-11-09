@@ -11,6 +11,8 @@ import time
 from a2a.types import Artifact
 from aion.adk.authoring.transformers import convert_a2a_part_to_genai_part
 from aion.core.db import DbManagerProtocol
+from aion.core.runtime.context.conversation import ConversationHistory
+from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.core.exceptions import AionError
 from aion.db.postgres.repositories.adk_artifact_versions import AdkArtifactVersionsRepository
 from aion.db.postgres.repositories.tasks.repository import TasksRepository
@@ -36,6 +38,30 @@ class ArtifactVersionConflictError(AionError):
 class _ArtifactEntry:
     data: types.Part
     artifact_version: ArtifactVersion
+    task_id: Optional[str] = None
+    """The task of the turn that wrote it, or None outside a turn."""
+    seq: int = 0
+    """Order of writes in this service, published parts included."""
+
+
+@dataclasses.dataclass
+class _PublishedEntry:
+    """The first part of an artifact ``emit_artifact`` published, held until its task is stored."""
+
+    data: types.Part
+    task_id: Optional[str]
+    seq: int
+
+
+def _turn_history() -> Optional[ConversationHistory]:
+    """The conversation history the server installed for the current turn, or None outside one."""
+    context = AionRuntimeContextRegistry.get_current_context()
+    return context.conversation if context is not None else None
+
+
+def _turn_task_id() -> Optional[str]:
+    history = _turn_history()
+    return history.task_id if history is not None else None
 
 
 class A2AArtifactService(BaseArtifactService):
@@ -62,6 +88,15 @@ class A2AArtifactService(BaseArtifactService):
 
     ADK's session_id maps to context_id on the DB side. Versions are zero-based
     integers and stored as strings in artifact metadata.
+
+    The tasks' artifacts are read by name - with a database through the tasks
+    table, without one through the conversation history the server installs
+    for each turn, which reaches the turn's own context - so an artifact the
+    agent published with ``emit_artifact`` is found the same way as one it
+    saved here. Memory holds what the store does not hold yet: the latest
+    version of a name is the newest one written in the current turn, the
+    first part of an artifact published this turn included
+    (``remember_published``), and otherwise the newest one the store holds.
     """
 
     def __init__(
@@ -82,6 +117,8 @@ class A2AArtifactService(BaseArtifactService):
         self._artifacts: dict[str, list[_ArtifactEntry]] = {}
         self._timestamps: dict[str, float] = {}
         self._version_offsets: dict[str, int] = {}
+        self._published: dict[str, _PublishedEntry] = {}
+        self._seq = 0
         self._cleanup_task: Optional[asyncio.Task] = None
 
     @staticmethod
@@ -196,7 +233,10 @@ class A2AArtifactService(BaseArtifactService):
             artifact_version.custom_metadata = custom_metadata
         artifact_version.mime_type = self._mime_type_for(artifact)
 
-        entries.append(_ArtifactEntry(data=artifact, artifact_version=artifact_version))
+        self._seq += 1
+        entries.append(_ArtifactEntry(
+            data=artifact, artifact_version=artifact_version, task_id=_turn_task_id(), seq=self._seq
+        ))
         self._timestamps[path] = time.monotonic()
         self._ensure_cleanup_task()
         return logical_version
@@ -242,6 +282,39 @@ class A2AArtifactService(BaseArtifactService):
             f"{VERSION_ATTEMPTS} times in a row"
         )
 
+    def remember_published(
+            self,
+            *,
+            app_name: str,
+            user_id: str,
+            filename: str,
+            part: types.Part,
+            session_id: Optional[str] = None,
+    ) -> None:
+        """Hold the first part of an artifact the agent published this turn, as the latest of its name.
+
+        A published artifact reaches the store with its task, after the
+        tools of the same turn may already look for it; until then this is
+        what ``load_artifact`` and ``list_artifact_keys`` answer with.
+        """
+        path = self._artifact_path(app_name, user_id, filename, session_id)
+        self._seq += 1
+        self._published[path] = _PublishedEntry(data=part, task_id=_turn_task_id(), seq=self._seq)
+        self._timestamps[path] = time.monotonic()
+        self._ensure_cleanup_task()
+
+    def _written_this_turn(self, path: str) -> Optional[types.Part]:
+        """The newest part written under ``path`` in the current turn - saved or published - or None."""
+        task_id = _turn_task_id()
+        candidates: list[tuple[int, types.Part]] = []
+        entries = self._artifacts.get(path)
+        if entries and entries[-1].task_id == task_id:
+            candidates.append((entries[-1].seq, entries[-1].data))
+        published = self._published.get(path)
+        if published is not None and published.task_id == task_id:
+            candidates.append((published.seq, published.data))
+        return max(candidates, key=lambda candidate: candidate[0])[1] if candidates else None
+
     @staticmethod
     def _entry(entries: list[_ArtifactEntry], version: int) -> Optional[_ArtifactEntry]:
         """The entry in memory holding ``version``, if this service saved it."""
@@ -259,21 +332,32 @@ class A2AArtifactService(BaseArtifactService):
     ) -> Optional[types.Part]:
         """Returns the artifact data for the given version (or latest if version is None).
 
-        Serves from memory when possible; falls back to DB for evicted or pre-offset versions.
-        Returns None for empty/placeholder artifacts.
+        The latest is the newest part written in the current turn, else the
+        newest the store holds, else the newest in memory. A given version is
+        served from memory when possible, and from the store for evicted or
+        pre-offset versions. Returns None for empty/placeholder artifacts.
         """
         path = self._artifact_path(app_name, user_id, filename, session_id)
         entries = self._artifacts.get(path)
         offset = self._version_offsets.get(path, 0)
+
+        if version is None:
+            current = self._written_this_turn(path)
+            if current is None:
+                stored = await self._load_from_db(app_name=app_name, user_id=user_id,
+                    session_id=session_id, filename=filename, version=None
+                )
+                if stored is not None or not entries:
+                    return stored
+                current = entries[-1].data
+            return None if self._is_placeholder(current) else current
 
         if not entries:
             return await self._load_from_db(app_name=app_name, user_id=user_id, 
                 session_id=session_id, filename=filename, version=version
             )
 
-        if version is None:
-            entry = entries[-1]
-        elif version < offset:
+        if version < offset:
             return await self._load_from_db(app_name=app_name, user_id=user_id, 
                 session_id=session_id, filename=filename, version=version
             )
@@ -284,14 +368,16 @@ class A2AArtifactService(BaseArtifactService):
                     session_id=session_id, filename=filename, version=version
                 )
 
-        data = entry.data
-        if (
+        return None if self._is_placeholder(entry.data) else entry.data
+
+    @staticmethod
+    def _is_placeholder(data: types.Part) -> bool:
+        """Whether a stored part is empty: a placeholder rather than content."""
+        return (
                 data == types.Part()
                 or data == types.Part(text="")
-                or (data.inline_data and not data.inline_data.data)
-        ):
-            return None
-        return data
+                or bool(data.inline_data and not data.inline_data.data)
+        )
 
     @override
     async def list_artifact_keys(
@@ -305,7 +391,7 @@ class A2AArtifactService(BaseArtifactService):
         usernamespace_prefix = f"{app_name}/{user_id}/user/"
         session_prefix = f"{app_name}/{user_id}/{session_id}/" if session_id else None
         filenames: set[str] = set()
-        for path in self._artifacts:
+        for path in [*self._artifacts, *self._published]:
             if session_prefix and path.startswith(session_prefix):
                 filenames.add(path.removeprefix(session_prefix))
             elif path.startswith(usernamespace_prefix):
@@ -465,7 +551,9 @@ class A2AArtifactService(BaseArtifactService):
         version 3 is not asking for the latest.
         """
         if not self._is_db_available():
-            return []
+            return await self._fetch_turn_artifacts(
+                session_id=session_id, filename=filename, version=version, latest_only=latest_only
+            )
         assert self._db_manager is not None
         try:
             if version is not None:
@@ -487,10 +575,43 @@ class A2AArtifactService(BaseArtifactService):
             logger.warning(f"DB fetch failed for '{filename}': {e}", exc_info=True)
             return []
 
+    @staticmethod
+    async def _fetch_turn_artifacts(
+            *,
+            session_id: str,
+            filename: Optional[str] = None,
+            version: Optional[int] = None,
+            latest_only: bool = False,
+    ) -> List[Artifact]:
+        """The artifacts of the context's tasks, read through the turn's conversation history; newest first.
+
+        Without a database the tasks are reached only through the history the
+        server installs for a turn, so only the turn's own context answers.
+        It selects as ``_fetch_db_artifacts`` does: by name, by version, or
+        the newest one alone.
+        """
+        history = _turn_history()
+        if history is None or history.context_id != session_id:
+            return []
+        try:
+            tasks = await history.tasks()
+        except Exception as e:
+            logger.warning(f"Reading the context's tasks failed for '{filename}': {e}", exc_info=True)
+            return []
+        found: List[Artifact] = []
+        for task in reversed(tasks):
+            for artifact in reversed(task.artifacts):
+                if filename is not None and artifact.name != filename:
+                    continue
+                if version is not None and A2AArtifactService._parse_versions_from_db([artifact]) != [version]:
+                    continue
+                found.append(artifact)
+        return found[:1] if latest_only and version is None else found
+
     async def _fetch_db_artifact_keys(self, *, app_name: str, user_id: str, session_id: str) -> list[str]:
         """Returns distinct artifact names stored in DB for this session."""
         if not self._is_db_available():
-            return []
+            return [artifact.name for artifact in await self._fetch_turn_artifacts(session_id=session_id) if artifact.name]
         assert self._db_manager is not None
         try:
             async with self._db_manager.get_session() as db_session:
@@ -623,6 +744,7 @@ class A2AArtifactService(BaseArtifactService):
             self._artifacts.pop(path, None)
             self._timestamps.pop(path, None)
             self._version_offsets.pop(path, None)
+            self._published.pop(path, None)
             logger.debug(f"Evicted artifact from memory: {path}")
 
     async def close(self) -> None:
