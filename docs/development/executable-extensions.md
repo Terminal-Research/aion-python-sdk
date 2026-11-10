@@ -126,12 +126,14 @@ The executor yields `TaskStatusUpdateEvent` and `TaskArtifactUpdateEvent`
 and writes them whole; the server does not translate them:
 
 - the Event extension's markup of its messages (`type`, `source`, `id`);
-- its object under its URI in the event's metadata, written whole on every
-  update that changes it: a2a-sdk merges event metadata into the task with
-  `Struct.MergeFrom`, which replaces a key's value rather than merging into
-  it. `AionTaskManager` keeps the current status message on a `WORKING`
-  update with no message, so a details update does not blank the status
-  line. A later turn reads the object from `context.current_task`;
+- its state for clients, when it keeps one, as an artifact of its own: one
+  data part with the Event extension's schema markup (`{uri}#Name`), written
+  whole (`append` false) on every update that changes it, so the task holds
+  the last one written and the context one version of it per task, like the
+  extension's other artifacts (evolution's `evolution-run`). Its input comes
+  the same way, as a schema-tagged data part of the request message, so the
+  extension's contract is one schema in and one out, as in every Aion
+  extension. A later turn reads the state from `context.current_task`;
 - the masking of secret values in everything it reports, and any limits of
   its own;
 - a thought of the run as `thinking_delta(...)` (`aion.core.a2a.deltas`),
@@ -151,10 +153,10 @@ only in the announcement.
 
 ### Numbers
 
-A payload and the executor's object travel as protobuf `Struct` values - a
-data part of a message, `task.metadata` - and a `Struct` holds every number
+A payload and the executor's state travel as protobuf `Struct` values - a
+data part of a message or of an artifact - and a `Struct` holds every number
 as a double: an integer a client sends in a directive, or one the executor
-wrote into its object, arrives as `3.0`. A payload model declares an integer
+wrote into its state, arrives as `3.0`. A payload model declares an integer
 field as `int`, which pydantic (in its default, non-strict mode) fills from
 `3.0` and refuses for `1.5`, and a fractional one as `float`. Numbers are
 never sent as strings.
@@ -254,8 +256,9 @@ deployment leaves it unset. A value that names no provider stops the server.
   reports, and the lookup of the context's `evolution-spec`. The toolkit
   yields the run's A2A events; the wrapper numbers the artifacts among them.
 - **A cancel or a shutdown** reaches the toolkit's `cancel(task_id,
-  within=)`: the run rescues its work and reports its closing in a `WORKING`
-  update, and the server writes the final status.
+  within=)`: the run rescues its work and reports its final `evolution-run`
+  report and its closing in a `WORKING` update, and the server writes the
+  final status.
 - **A further message** never reaches the toolkit: an evolution never waits
   for input, the server refuses a message into its running task with
   `task_busy`, and a finished task takes none. One that reaches a task left
