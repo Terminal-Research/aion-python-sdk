@@ -83,7 +83,6 @@ class ScriptedExecutor(ExtensionExecutor):
             task_id=config.task_id,
             context_id=config.context_id,
             state=_state_of(context.current_task),
-            find_artifact=history.find_artifact if history is not None else None,
         )
         async for event in events:
             if history is not None and isinstance(event, TaskArtifactUpdateEvent):
@@ -100,10 +99,10 @@ class ScriptedExecutor(ExtensionExecutor):
         return self.script
 
 
-def _history() -> Optional[conversation.ConversationHistory]:
+def _history() -> Optional[conversation.Conversation]:
     """The turn's history; None for a turn run without one."""
     try:
-        return conversation.history()
+        return conversation.current()
     except conversation.ConversationUnavailableError:
         return None
 

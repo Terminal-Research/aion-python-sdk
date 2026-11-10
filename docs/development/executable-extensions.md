@@ -31,11 +31,13 @@ extensions.
 | `src/aion/server/agent/execution/extensions/executable.py` | `ExtensionExecutor`, `ExecutableExtensionDescriptor`, `parse_options`. |
 | `src/aion/server/agent/execution/extensions/registration.py` | `EXECUTABLE_EXTENSIONS`, `register_extensions` and `create_extension_executors`, the two steps of `AppFactory`. |
 | `src/aion/server/agent/execution/extensions/model_service.py`, `secret_values.py` | Access to the Aion model service on a caller's behalf, and the deployment's secret values. |
-| `src/aion/core/agent/conversation.py`, `src/aion/core/runtime/context/conversation.py` | The history of a turn's conversation, which every executor reads: its tasks, its generation, the versions of an artifact and the number a task writes one under. |
-| `src/aion/server/tasks/conversation.py` | `StoredConversations`: the history of each turn over the server's stores, installed on the turn's runtime context. |
+| `src/aion/core/agent/conversation.py`, `src/aion/core/runtime/context/conversation.py` | The conversation of a turn, which every executor reads: its messages, its tasks, its artifacts and their files, its generation, and the number a task writes an artifact under. |
+| `src/aion/core/a2a/content.py` | Reading a message, an artifact or a task: its text, data and file parts, the messages a task adds to its conversation, the text a task answered with. |
+| `src/aion/core/agent/testing.py` | `InMemoryConversation` and `use_conversation`: a conversation for the tests of code that reads one, without a server. |
+| `src/aion/server/tasks/conversation.py` | `StoredConversations`: the conversation of each turn over the server's stores, installed on the turn's runtime context. |
 | `src/aion/server/agent/execution/extensions/evolution.py` | `EvolutionExecutor`, its options (`EvolutionOptions`) and its descriptor. |
 | `src/aion/core/a2a/codes.py`, `src/aion/core/a2a/errors.py` | The codes the server reserves and the A2A shape of an extension's error; in core, so an executor that needs only the SDK base uses them. |
-| `src/aion/server/tasks/context_artifacts.py`, `context_runs.py` | The readers of an artifact's versions, and of who holds a context, its generation and its tasks, over the in-memory store or PostgreSQL. |
+| `src/aion/server/tasks/context_artifacts.py`, `context_runs.py` | The readers of an artifact's versions, and of who holds a context, when it was created and its tasks, over the in-memory store or PostgreSQL. |
 | `tests/support/scripted_executor/`, `tests/support/executors.py` | The executors the SDK's own tests drive the server with, and a stand-in for the evolution toolkit; see [Testing](#testing). |
 
 ## Registration and creation
@@ -50,7 +52,7 @@ extensions.
 2. `create_extension_executors(enabled)`, once the agent is built: each
    enabled executable extension's executor is created with its options. The
    pool is the agent's framework executor plus these, and the request
-   executor is built over it, with the history of each turn over the stores
+   executor is built over it, with the conversation of each turn over the stores
    (`StoredConversations`).
 
 An executor that cannot be created - options it refuses, a package, a
@@ -91,7 +93,7 @@ extension, concurrently. `stream(context, config)` and
 `resume(context, config)` get the a2a `RequestContext` - the message, the
 call context with the caller (`verified_caller`), the task - and the
 `ExecutionConfig` of the turn; the request's runtime context, with its
-extensions, callback attribution and the history of the turn's conversation,
+extensions, callback attribution and the turn's conversation,
 is current while the turn runs (`AionRuntimeContextRegistry`).
 `cancel(config, within=)` stops the turn; see [Cancel](#cancel) and
 [Stopping](#stopping).
@@ -101,8 +103,9 @@ Everything particular to the extension is the executor's own:
 - **its payload** - read from the message with a `MessagesCollector` over its
   payload models;
 - **who may call it, what it may run** - checked when the turn starts;
-- **one task per context**, if it needs it - `conversation.tasks(unfinished=True)`
-  lists the context's tasks without an outcome, oldest first, whoever owns
+- **one task per context**, if it needs it -
+  `conversation.list_tasks(states=UNFINISHED_TASK_STATES)` (the set is in
+  `aion.core.a2a`) lists the context's tasks without an outcome, oldest first, whoever owns
   them, and the executor picks its own by their route
   (`routed_extension_of`); the read holds across the servers of the agent,
   and nothing locks the context between it and the task's first write;
@@ -163,15 +166,18 @@ never sent as strings.
 
 ### The conversation of a turn
 
-The request executor installs the history of every turn it runs on the
+The request executor installs the conversation of every turn it runs on the
 turn's runtime context (`AionRuntimeContext.conversation`), for the
 framework executor and an extension's alike: `StoredConversations.for_turn`
 over the task store, `ContextRuns` and `ContextArtifacts`. An executor - or
 an agent's own code - reads it with `aion.core.agent.conversation`, whose
-functions take the current turn's history; outside a turn they raise
-`ConversationUnavailableError`. `conversation.history()` returns the history
-object itself, so an executor can hand its bound methods on, as the
-evolution wrapper hands `find_artifact` to its toolkit.
+functions take the current turn's conversation; outside a turn they raise
+`ConversationUnavailableError`, and `conversation.is_available()` asks
+first. `conversation.current()` returns the conversation object itself.
+Code an executor calls within its turn reads the same conversation with the
+same functions, so an executor hands no lookup on: the
+evolution toolkit finds the context's `evolution-spec` artifact with
+`conversation.get_artifact` itself.
 
 Every read is of the turn's context, for the holder the caller was admitted
 as (`holder_of`): a private context's tasks are its user's, a shared
@@ -181,13 +187,83 @@ or one another holder presents under the same id, reads as empty. This is
 the holder, not the task owner. Every read is a query, not a cache, so any
 server of the agent answers from what the store holds.
 
+Tasks and messages come oldest first, artifacts newest first, and a `limit`
+always counts from the newest end. The names follow the A2A methods
+(`ListTasks`, `GetTask`): `list_*` answers with a list, narrowed by its
+arguments, and `get_*` with one object, or None without it.
+
 | Read | Answer |
 | --- | --- |
-| `current_task()`, `get_task(task_id)` | A task of the context as the store holds it, with its history and artifacts; None for any other task. |
-| `tasks(unfinished=False)` | The context's tasks, oldest first; with `unfinished`, those without an outcome. |
-| `generation()` | An opaque marker of this use of the context id: new when a deleted context's id is taken again. |
-| `find_artifact(id)`, `artifact_versions(id)` | The newest version of an artifact in the context, or all of them, newest task first, as `ArtifactVersion` (`task_id`, `artifact`, `version`, `updated_at`). |
+| `list_messages(role=, task_id=, limit=, offset=)` | The conversation messages of the context's tasks, of one `a2a.types.Role` with `role` - history plus a running task's current message, without the events an agent keeps for itself (`is_conversation_message`). `offset` skips the newest ones, to page backwards. |
+| `get_task(task_id)`, `get_current_task()` | A task of the context as the store holds it, with its history and artifacts - one by its id, or the turn's own; None for any other task. |
+| `list_tasks(states=, limit=)` | The context's tasks: in the given `TaskState` values, the newest `limit` of them. `aion.core.a2a` names the groups of states - `TERMINAL_TASK_STATES`, `INTERRUPT_TASK_STATES`, `ACTIVE_TASK_STATES` and `UNFINISHED_TASK_STATES`, a task without an outcome. |
+| `list_artifacts(name=, task_id=, all_versions=, include_sdk=, limit=)` | The latest version of every artifact of the context, as `ArtifactVersion`: with one name, of one task, the newest `limit` of them; the artifacts the SDK fills itself for every task (`ArtifactId`) only with `include_sdk`. |
+| `get_artifact(id, version=)`, `list_artifact_versions(id)` | One artifact by its id - its newest version, or the one with the given number, the newest of those when several tasks hold it - or all of an id's versions, newest task first. |
 | `artifact_version_to_write(id)` | The number the turn's task writes an artifact under. |
+
+The conversation object (`conversation.current()`) also says when its
+context was created: `get_created_at()`, the time the server reserved the
+context's id. A context that is deleted and taken again under the same id is
+created anew, so the time tells one use of the id from another.
+
+`Conversation` (`aion.core.runtime.context.conversation`) asks a
+subclass for four reads - when the context was created, one task, the tasks, the versions
+of an artifact id - and builds the others on them; a subclass over a store
+that can answer one with a query of its own overrides it. The server's
+conversation overrides them all: the tasks are read in three queries however many
+there are (`PostgresContextRuns.tasks`), the messages page in SQL over
+`task_messages`, the artifacts are one query over `task_artifacts`. The
+selection itself - which state, which role, the latest version of an id - is
+shared code (`select_tasks`, `select_messages`, `select_artifacts`), so the
+in-memory and the PostgreSQL stores answer alike.
+
+An `ArtifactVersion` gives its content by kind: `text`, `data`, and `files`,
+a `ConversationFile` per file part. A file reaches a task inline or, once
+the server stored it, as an address: `read()` returns the bytes either way
+and keeps them on the object. A stored file is downloaded through a link,
+with no credentials added and never named by its address in an error or a
+log - the address is a download link that carries its own access.
+`aion.core.a2a` reads the parts of any message or artifact the same way
+(`text_of`, `data_of`, and `files_of` for its files as `ConversationFile`),
+and `answer_text(task)` gives the text a task answered with, wherever the
+task keeps it.
+
+### Stored files and their links
+
+The link a stored part holds in `url` stops working long before the file is
+removed: an hour against thirty days, with the Aion backend's defaults. So
+a part the server stores also names the file. Under `aion:file` in the
+part's metadata (`aion.core.a2a.files.StoredFile`) the file transformer
+writes `fileId`, `fileVersionId`, `accessExpiresAt` and
+`retentionExpiresAt`, whenever the storage backend's receipt names the file
+and its version; the stub backend names no version, and its parts carry the
+link alone. The key is the server's: `FilePartPreprocessor` removes it from
+every part of a message a caller sends, since the server later issues links
+for the file it names with the deployment's own rights.
+
+`StoredFileLinks` (`aion.server.files.links`) issues the link again, through
+`FileStorageBackend.renew_link`, which the Aion backend answers with a new
+read grant for the same version:
+
+| Where | What happens |
+| --- | --- |
+| An answer of `AionRequestHandler` - `GetTask`, `ListTasks`, `SendMessage`, a stream event, `CancelTask`, `SubscribeToTask`, `GetContext` | Every link that has expired, or will within five minutes, is replaced in a copy of what is sent. |
+| A push delivery (`AionPushNotificationSender`) | The same, before the event is posted. |
+| An agent's read (`ConversationFile.read`, `ConversationFile.link`) | The part's own link while it works, a new one afterwards. |
+
+The stored task is never rewritten: it keeps the link and the expiry it was
+written with, and a new link lives in the copy that leaves and in the
+process's memory, where everything that asks for the same file version
+reuses it until five minutes before it expires. Issuing is best effort. A
+backend that issues no links, a refusal, no answer within five seconds or a
+file past its retention leaves the part with the link it has - what a
+reader got before the link expired - and a file version whose link was not
+issued is not asked about again for a minute. The scope a new link is asked
+in is the open question recorded as `file-link-authority` in
+[open-items.md](open-items.md).
+
+A handler method that answers with a task, a message or an event passes it
+through `_with_working_links`; one added later must do the same.
 
 ### Artifact versions
 
@@ -251,10 +327,13 @@ deployment leaves it unset. A value that names no provider stops the server.
   model service's base URL, a token minted for every call and the caller's
   attribution header; the custom endpoint, with its key read at every call
   when it has one; nothing for `local_session` - and hands the toolkit the
-  context's generation (`conversation.generation()`), the deployment's
+  context's generation - the time the context was created
+  (`Conversation.get_created_at`), new when a deleted context's id is taken
+  again - and the deployment's
   secret values (`deployment_secret_values`), which it masks in what it
-  reports, and the lookup of the context's `evolution-spec`. The toolkit
-  yields the run's A2A events; the wrapper numbers the artifacts among them.
+  reports. The toolkit finds the context's `evolution-spec`, the plan a run
+  may start from, in the turn's conversation itself. It yields the run's
+  A2A events; the wrapper numbers the artifacts among them.
 - **A cancel or a shutdown** reaches the toolkit's `cancel(task_id,
   within=)`: the run rescues its work and reports its final `evolution-run`
   report and its closing in a `WORKING` update, and the server writes the
@@ -479,7 +558,7 @@ before it yields anything, crash after some outputs, look an artifact up in
 its context, or wait for `cancel()` - writing on a tick meanwhile, and then
 reporting the `within` it was given as `stopped_within` in its object and
 ending without an outcome, ending `COMPLETED`, or not ending at all. It
-numbers and looks up its artifacts with the turn's history
+numbers and looks up its artifacts with the turn's conversation
 (`aion.core.agent.conversation`), as an extension's executor does; a turn it
 runs without one, outside the request executor, neither numbers nor finds. A script with `report` has a turn say what the
 executor was handed: how the turn began, its task, the object the task held
@@ -497,7 +576,8 @@ the SDK's CI.
 | unit | `tests/unit/server/agent/test_turns.py` | the turn for every executor: outcome, refusal, crash, resume, cancel and its grace period, a turn torn down, a run without a consumer, the route, a message into a running task by the executor's `message_to_busy_task`, the conversation every turn reads, shutdown |
 | unit | `tests/unit/server/agent/test_request_executor.py`, `tests/unit/server/core/test_preprocessor_ordering.py` | the pool's routing in `execute` and `cancel`, the route of a new and a continued task |
 | unit | `tests/unit/server/agent/extensions/` | registration, creating the executors and the options of `aion.yaml`; artifact versions and their lookup; the evolution wrapper with the stand-in toolkit and without it |
-| unit | `tests/unit/server/tasks/test_conversation.py` | the conversation of a turn: its tasks, oldest first and unfinished, its generation, artifact versions, a caller that does not hold the context, a context being deleted, a read outside a turn |
+| unit | `tests/unit/server/tasks/test_conversation.py` | the conversation of a turn over the server's stores: its tasks by state and count, its messages by role, task and count, its artifacts, its generation, artifact versions, a caller that does not hold the context, a context being deleted, a read outside a turn |
+| unit | `tests/unit/core/agent/test_conversation_reads.py`, `tests/unit/core/a2a/test_content.py` | the reads every conversation builds on its four store reads, the content of an artifact and a message, reading and downloading a file, the answer of a task, the conversation a test installs |
 | unit | `tests/unit/server/test_server.py`, `tests/unit/server/test_shutdown.py` | the order of a shutdown, `AION_SHUTDOWN_TIMEOUT` and its division among the steps |
 | unit | `tests/unit/server/tasks/test_abandoned.py`, `tests/unit/server/core/test_request_handlers.py` | what is abandoned and what its settlement writes, a message into an abandoned task |
 | integration | `tests/integration/server/tasks/test_extension_admission_postgres.py` | a refusal closes its task `REJECTED`; a message into a running extension task refused on every server; a message into an extension's task on a server without the extension refused; an abandoned task settled by a message, the server still running it stopping at its next write |

@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-234 scenarios in 42 files, 519 runs across 2 frameworks: 506 run, 12 skipped, 1 independent of the framework.
+235 scenarios in 42 files, 521 runs across 2 frameworks: 508 run, 12 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -14,15 +14,15 @@ A status cell reads `✓` when it runs, `skip` when `frameworks.UNSUPPORTED`, `f
 
 |  | Covered | Not yet |
 |---|---|---|
-| Commands | 29 of 29: `help`, `echo`, `stream`, `stream-marked`, `think`, `react`, `steps`, `slow`, `artifacts`, `send-file`, `card`, `outbox-task`, `outbox-message`, `outbox-history`, `outbox-failed`, `outbox-pause`, `outbox-after-reply`, `outbox-failed-after-reply`, `ask`, `ask-twice`, `ask-fail`, `fail`, `ext`, `whoami`, `event`, `config`, `ids`, `big`, `parts` | — |
+| Commands | 30 of 30: `help`, `echo`, `stream`, `stream-marked`, `think`, `react`, `steps`, `slow`, `artifacts`, `send-file`, `card`, `outbox-task`, `outbox-message`, `outbox-history`, `outbox-failed`, `outbox-pause`, `outbox-after-reply`, `outbox-failed-after-reply`, `ask`, `ask-twice`, `ask-fail`, `fail`, `ext`, `whoami`, `event`, `config`, `ids`, `history`, `big`, `parts` | — |
 | Suites | 18 of 18: `smoke`, `streaming`, `events`, `terminal_states`, `interrupts`, `errors`, `artifacts`, `files`, `extensions`, `daemon`, `authentication`, `config`, `lifecycle`, `contexts`, `evolution`, `persistence`, `distributed`, `native` | — |
 
 ## Frameworks
 
 | Framework | Agent package | Entry | SDK extras | Commands implemented |
 |---|---|---|---|---|
-| langgraph | `tests.scenarios.agents.langgraph_core` | `graph.py:create_graph` | `langgraph-server` | 29 of 29 |
-| adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 29 of 29 |
+| langgraph | `tests.scenarios.agents.langgraph_core` | `graph.py:create_graph` | `langgraph-server` | 30 of 30 |
+| adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 30 of 30 |
 
 The `native` suite runs a second agent per framework instead: an ordinary agent on the framework's own path - a model, a tool, the framework's loop and memory - with no Aion authoring API and no part of the command contract. Its cells name the agent.
 
@@ -54,7 +54,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 |---|---|---|---|
 | `smoke` | agent answers at all: card, health, help, echo | 9 | `make tests-scenarios TAGS=smoke` |
 | `streaming` | streamed answers, thoughts, unary send | 18 | `make tests-scenarios TAGS=streaming` |
-| `events` | event order, ids, outbox, get_task agreement | 29 | `make tests-scenarios TAGS=events` |
+| `events` | event order, ids, outbox, get_task agreement | 30 | `make tests-scenarios TAGS=events` |
 | `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 11 | `make tests-scenarios TAGS=terminal_states` |
 | `interrupts` | INPUT_REQUIRED and resume | 10 | `make tests-scenarios TAGS=interrupts` |
 | `errors` | failures that must stay reported, not crash the server | 10 | `make tests-scenarios TAGS=errors` |
@@ -205,13 +205,14 @@ The shape of a turn: which events arrive, in which order, under which ids.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [A plain turn is: Task SUBMITTED, the reply as WORKING, the reply as the answer, the terminal Task.](core/test_events.py#L29 "test_a_turn_opens_with_submitted_and_closes_with_the_task") | `events` | `echo` | `default` | ✓ | ✓ |
-| [`steps <n>` reports each step once, in order, before completing.](core/test_events.py#L50 "test_working_statuses_arrive_in_order") | `events` | `steps` | `default` | ✓ | ✓ |
-| [Every status of a turn, the opening SUBMITTED included, is no earlier than the one before it.](core/test_events.py#L72 "test_status_times_follow_the_turn") | `events` | `steps` | `default` | ✓ | ✓ |
-| [The task and context the agent reports are the ones on the wire.](core/test_events.py#L87 "test_the_agent_sees_the_ids_the_client_sees") | `events` | `ids` | `default` | ✓ | ✓ |
-| [Reusing a context keeps it and starts a fresh task under it.](core/test_events.py#L99 "test_a_second_message_in_a_context_starts_a_new_task") | `events` | `ids` | `default` | ✓ | ✓ |
-| [Reading the task back gives the state and the text the stream ended on.](core/test_events.py#L109 "test_get_task_agrees_with_the_closing_event") | `events` | `echo` | `default` | ✓ | ✓ |
-| [Nothing follows the closing Task, and the stream ends there.](core/test_events.py#L126 "test_the_stream_carries_nothing_after_the_terminal_task") | `events` | `echo` | `default` | ✓ | ✓ |
+| [A plain turn is: Task SUBMITTED, the reply as WORKING, the reply as the answer, the terminal Task.](core/test_events.py#L39 "test_a_turn_opens_with_submitted_and_closes_with_the_task") | `events` | `echo` | `default` | ✓ | ✓ |
+| [`steps <n>` reports each step once, in order, before completing.](core/test_events.py#L60 "test_working_statuses_arrive_in_order") | `events` | `steps` | `default` | ✓ | ✓ |
+| [Every status of a turn, the opening SUBMITTED included, is no earlier than the one before it.](core/test_events.py#L82 "test_status_times_follow_the_turn") | `events` | `steps` | `default` | ✓ | ✓ |
+| [The task and context the agent reports are the ones on the wire.](core/test_events.py#L97 "test_the_agent_sees_the_ids_the_client_sees") | `events` | `ids` | `default` | ✓ | ✓ |
+| [Reusing a context keeps it and starts a fresh task under it.](core/test_events.py#L109 "test_a_second_message_in_a_context_starts_a_new_task") | `events` | `ids` | `default` | ✓ | ✓ |
+| [A later turn reads the earlier turns' messages, tasks, answers, artifacts and a file's content.](core/test_events.py#L119 "test_a_turn_reads_what_its_conversation_already_holds") | `events` | `history` | `default` | ✓ | ✓ |
+| [Reading the task back gives the state and the text the stream ended on.](core/test_events.py#L142 "test_get_task_agrees_with_the_closing_event") | `events` | `echo` | `default` | ✓ | ✓ |
+| [Nothing follows the closing Task, and the stream ends there.](core/test_events.py#L159 "test_the_stream_carries_nothing_after_the_terminal_task") | `events` | `echo` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_evolution.py`
 
@@ -634,5 +635,6 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | `event` | Report the event this turn carried | `extensions`, `events` | 4 | ✓ | ✓ |
 | `config <key>` | Report one configuration value | `config` | 8 | ✓ | ✓ |
 | `ids` | Report task and context ids | `events`, `lifecycle` | 2 | ✓ | ✓ |
+| `history` | Report what the conversation already holds | `events` | 1 | ✓ | ✓ |
 | `big <kb>` | Reply with n KB of text | `errors` | 3 | ✓ | ✓ |
 | `parts` | Report the kinds of parts the inbound message carried | `files` | 7 | ✓ | ✓ |

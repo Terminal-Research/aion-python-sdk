@@ -8,7 +8,7 @@ content that was never written.
 from __future__ import annotations
 
 import logging
-from typing import Iterable, Sequence
+from typing import Iterable, Optional, Sequence
 
 from .backends.base import FileStorageBackend
 from .context import UploadContext
@@ -131,6 +131,28 @@ class FileUploadManager:
         """
         outcomes = await self.store_many([upload], context=context)
         return outcomes[0]
+
+    async def renew_link(
+        self,
+        file_id: str,
+        version_id: str,
+        *,
+        context: Optional[UploadContext] = None,
+    ) -> Optional[UploadOutcome]:
+        """Ask the backend for a new download link to a file version stored earlier.
+
+        Args:
+            file_id: The file, as its receipt named it.
+            version_id: The exact version.
+            context: Callback scope of the request asking, when it has one.
+
+        Returns:
+            A receipt with the new link, a failure, or None when the backend
+            issues no links; see :meth:`FileStorageBackend.renew_link`.
+        """
+        if self._closed:
+            return UploadFailure(FileUploadErrorCode.STORAGE_CLOSED)
+        return await self._backend.renew_link(file_id, version_id, context=context)
 
     async def discard(self, receipts: Iterable[UploadReceipt]) -> None:
         """Compensate uploads whose request was rejected afterwards.

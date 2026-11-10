@@ -55,6 +55,7 @@ from aion.server.agent.execution import AionActiveTaskRegistry
 from aion.server.agent.execution.pool import EXTENSION_ROUTE_STATE_KEY, refusal_data
 from aion.server.a2a.constants import ACTIVE_TASK_STATES, TERMINAL_TASK_STATES
 from aion.server.auth import has_individual_access
+from aion.server.files.links import StoredFileLinks
 from aion.server.tasks.abandoned import AbandonedTasks
 from aion.server.tasks.admission import ContextAdmission, InMemoryContextAdmission, holder_of
 from aion.server.tasks.stores import BaseTaskStore
@@ -101,6 +102,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             admission: ContextAdmission | None = None,
             context_catalog: ContextCatalog | None = None,
             abandoned_tasks: AbandonedTasks | None = None,
+            file_links: StoredFileLinks | None = None,
             **kwargs,
     ) -> None:
         """Build the handler over a2a-sdk's own, with Aion's registry.
@@ -120,8 +122,15 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         longer than ``AION_STALE_TASK_TIMEOUT``: one a message names
         (``_setup_active_task``) and, in the background, every one of the
         agent's (:meth:`sweep_abandoned_tasks`); omitted, none is settled.
+
+        ``file_links`` keeps the download links of stored files working in
+        everything this handler answers with: a task, a list of tasks, a
+        stream event or a context leaves with a new link in place of each
+        expired one (``aion.server.files.links``). Omitted, an answer
+        carries the links its task was stored with.
         """
         super().__init__(*args, **kwargs)
+        self._file_links = file_links
         self._active_task_registry = AionActiveTaskRegistry(
             agent_executor=self.agent_executor,
             task_store=self._versioned_store,
@@ -419,18 +428,39 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         ResponseServiceParameters(verified.activated_uris).record(call_context)
         return verified
 
+    async def _with_working_links(self, content):
+        """``content`` as a client gets it: the expired links of its stored files replaced.
+
+        Every answer that carries a task, a message or an event passes
+        through here. The stored task is not changed.
+        """
+        if content is None or self._file_links is None:
+            return content
+        return await self._file_links.refresh(content)
+
     @override
     async def on_get_task(self, params: GetTaskRequest, context: ServerCallContext) -> Task | None:
         """The caller's own task; a caller without individual access has none."""
         _require_individual_access(context, params.id)
-        return await super().on_get_task(params, context)
+        return await self._with_working_links(await super().on_get_task(params, context))
 
     @override
     async def on_list_tasks(self, params: ListTasksRequest, context: ServerCallContext) -> ListTasksResponse:
         """The caller's own tasks; a caller without individual access lists none."""
         if not has_individual_access(context):
             return ListTasksResponse()
-        return await super().on_list_tasks(params, context)
+        response = await super().on_list_tasks(params, context)
+        if self._file_links is None or not response.tasks:
+            return response
+        tasks = list(response.tasks)
+        fresh = await self._file_links.refresh_many(tasks)
+        if all(after is before for after, before in zip(fresh, tasks)):
+            return response
+        answer = ListTasksResponse()
+        answer.CopyFrom(response)
+        del answer.tasks[:]
+        answer.tasks.extend(fresh)
+        return answer
 
     @override
     async def on_create_task_push_notification_config(
@@ -490,7 +520,26 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         Raises:
             ContextNotFound: The caller cannot see the context.
         """
-        return await self._contexts.get_context(params, context)
+        return await self._context_with_working_links(await self._contexts.get_context(params, context))
+
+    async def _context_with_working_links(self, view: ContextView) -> ContextView:
+        """The context view with the expired links of its messages and artifacts replaced."""
+        if self._file_links is None:
+            return view
+        messages = list(view.history)
+        artifacts = [item.artifact for item in view.artifacts]
+        fresh = await self._file_links.refresh_many([*messages, *artifacts, view.status])
+        if all(after is before for after, before in zip(fresh, [*messages, *artifacts, view.status])):
+            return view
+        fresh_artifacts = fresh[len(messages):len(messages) + len(artifacts)]
+        return view.model_copy(update={
+            "history": fresh[:len(messages)],
+            "artifacts": [
+                item.model_copy(update={"artifact": artifact})
+                for item, artifact in zip(view.artifacts, fresh_artifacts)
+            ],
+            "status": fresh[-1],
+        })
 
     async def on_delete_context(
             self,
@@ -566,7 +615,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         """
         result = await super().on_message_send(params, context)
         if isinstance(result, Task):
-            return result
+            return await self._with_working_links(result)
 
         task_id = result.task_id or params.message.task_id
         # The store is read directly: ActiveTask.get_task() waits on a flag that
@@ -585,7 +634,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
                 message="Agent answered with a Message instead of a Task."
             )
 
-        return apply_history_length(task, params.configuration)
+        return await self._with_working_links(apply_history_length(task, params.configuration))
 
     async def on_message_send_stream(
             self,
@@ -614,7 +663,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             task_transform=lambda task: apply_history_length(task, params.configuration),
         )
         async for event in projection.project(super().on_message_send_stream(params, context)):
-            yield event
+            yield await self._with_working_links(event)
 
     @override
     async def on_cancel_task(
@@ -633,7 +682,8 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         """
         _require_individual_access(context, params.id)
         async with self._cancelling(params.id):
-            return await super().on_cancel_task(params, context)
+            cancelled = await super().on_cancel_task(params, context)
+        return await self._with_working_links(cancelled)
 
     @override
     async def _write_cancel(
@@ -726,7 +776,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             task_id=params.id,
         )
         async for event in projection.project(source):
-            yield event
+            yield await self._with_working_links(event)
 
     @staticmethod
     async def _while_cancelling(task: Task, cancels: list[asyncio.Event]) -> AsyncGenerator[Event]:

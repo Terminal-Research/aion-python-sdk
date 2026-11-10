@@ -8,6 +8,7 @@ from typing import Any
 
 from a2a.types import SendMessageRequest, SubscribeToTaskRequest
 from a2a.utils.errors import InternalError, InvalidParamsError
+from aion.core.a2a.files import forget_stored_file
 from aion.core.runtime.context import AionRuntimeContext
 from aion.server.agent.execution.context.attribution import callback_attribution
 from aion.server.files.a2a import A2AFileTransformer
@@ -34,6 +35,11 @@ class FilePartPreprocessor:
     nor the agent ever sees raw bytes. An inbound file that cannot be stored
     rejects the request instead of degrading: nothing was saved, and the client
     can simply send it again.
+
+    A caller's parts never keep a reference to a stored file (``aion:file``):
+    the server writes that key for the files it stores itself, and reads it
+    back to issue download links with the deployment's own rights. One taken
+    from a caller would name a file of the caller's choosing.
 
     Receipts produced during ``process`` are tracked per async context, so
     concurrent requests compensate only their own uploads.
@@ -68,10 +74,16 @@ class FilePartPreprocessor:
         if not isinstance(request_obj, (SendMessageRequest, SubscribeToTaskRequest)):
             return
 
-        if not request_obj.message or not self._transformer.upload_manager:
+        if not request_obj.message:
             return
 
         message = request_obj.message
+        for part in message.parts:
+            forget_stored_file(part)
+
+        if not self._transformer.upload_manager:
+            return
+
         runtime = AionRuntimeContext(extensions=context.extensions)
         runtime = runtime.replace(callback_attribution=callback_attribution(context.call_context, runtime))
         resolution = resolve_upload_context(

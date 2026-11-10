@@ -11,7 +11,7 @@ client that uploads past the server, which is not a flow this SDK has.
 
 from abc import ABC, abstractmethod
 import logging
-from typing import Iterable, Sequence
+from typing import Iterable, Optional, Sequence
 
 from ..context import UploadContext
 from ..contracts import FileUpload, UploadOutcome, UploadReceipt
@@ -63,6 +63,34 @@ class FileStorageBackend(ABC):
         """
         outcomes = await self.store_many([upload], context=context)
         return outcomes[0]
+
+    async def renew_link(
+        self,
+        file_id: str,
+        version_id: str,
+        *,
+        context: Optional[UploadContext] = None,
+    ) -> Optional[UploadOutcome]:
+        """Issue a new download link to a file version stored earlier.
+
+        A stored part keeps the link it was stored with, and that link stops
+        working before the file is removed. A backend that can vouch for the
+        same version again overrides this; the default has no link to give,
+        and the part keeps the one it has.
+
+        Args:
+            file_id: The file, as its receipt named it.
+            version_id: The exact version; never substituted with a newer one.
+            context: Callback scope of the request asking, when it has one.
+                Without it the link is asked for in the scope the call runs
+                in: an agent's turn, or the deployment itself.
+
+        Returns:
+            A receipt for the same file and version with the new link and
+            its expiry, a failure saying why none was issued, or None when
+            the backend issues no links.
+        """
+        return None
 
     async def discard(self, receipts: Iterable[UploadReceipt]) -> None:
         """Withdraw files stored for work that was rejected afterwards.

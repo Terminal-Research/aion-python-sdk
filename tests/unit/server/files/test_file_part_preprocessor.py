@@ -396,3 +396,55 @@ class TestFailingCompensation:
         await pre.rollback()
 
         assert attempts == [1]
+
+
+class TestStoredFileReference:
+    """``aion:file`` is the server's key: never taken from a caller, written for what the server stores."""
+
+    @staticmethod
+    def forged() -> Part:
+        part = Part(url="https://example.test/any.pdf", filename="any.pdf")
+        part.metadata.update({
+            "aion:file": {"fileId": "someone-elses-file", "fileVersionId": "v-1"},
+            "note": "kept",
+        })
+        return part
+
+    async def test_a_callers_reference_is_removed(self):
+        processor, _ = preprocessor()
+        req = request(self.forged())
+
+        await processor.process(req, preprocessing_context(distribution_payload(principal()), carrier="signed"))
+
+        (part,) = req.message.parts
+        assert "aion:file" not in part.metadata
+        assert part.metadata["note"] == "kept" and part.url == "https://example.test/any.pdf"
+
+    async def test_it_is_removed_without_a_storage_backend_too(self):
+        processor = FilePartPreprocessor(A2AFileTransformer(upload_manager=None))
+        req = request(self.forged())
+
+        await processor.process(req, preprocessing_context())
+
+        assert "aion:file" not in req.message.parts[0].metadata
+
+    async def test_a_stored_inbound_file_names_the_file_the_server_stored(self):
+        from aion.core.a2a.files import StoredFile
+
+        stored = UploadReceipt(
+            uri="https://files.test/content?grant=g",
+            file_id="file-9",
+            version_id="v-3",
+            access_expires_at="2026-11-10T13:00:00Z",
+            retention_expires_at="2026-12-10T12:00:00Z",
+        )
+        processor, _ = preprocessor(OutcomeBackend([stored]))
+        inline = raw_part()
+        inline.metadata.update({"aion:file": {"fileId": "someone-elses-file", "fileVersionId": "v-1"}})
+        req = request(inline)
+
+        await processor.process(req, preprocessing_context(distribution_payload(principal()), carrier="signed"))
+
+        reference = StoredFile.of(req.message.parts[0])
+        assert (reference.file_id, reference.version_id) == ("file-9", "v-3")
+        assert list(req.message.parts[0].metadata) == ["aion:file"]

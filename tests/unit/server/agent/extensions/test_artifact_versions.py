@@ -119,7 +119,7 @@ class Context:
     async def found(self, task_id: str = "reader", user: str = "alice", artifact_id: str = SPEC):
         """What the lookup answers in a turn of a task read by `user`."""
         await self.write(task_id, COMPLETED, user=user)
-        return await conversation.find_artifact(artifact_id)
+        return await conversation.get_artifact(artifact_id)
 
 
 def _config(task: Task) -> ExecutionConfig:
@@ -215,7 +215,7 @@ async def test_outside_a_turn_there_is_no_conversation_to_number_or_find_in() ->
     with pytest.raises(conversation.ConversationUnavailableError):
         await conversation.artifact_version_to_write(SPEC)
     with pytest.raises(conversation.ConversationUnavailableError):
-        await conversation.find_artifact(SPEC)
+        await conversation.get_artifact(SPEC)
 
 
 # -- finding the latest version --------------------------------------------------------
@@ -263,4 +263,4 @@ async def test_a_caller_without_a_holder_finds_nothing() -> None:
     )
     install(nobody.for_turn(_caller("alice"), Task(id="reader", context_id=CONTEXT_ID)))
 
-    assert await conversation.find_artifact(SPEC) is None
+    assert await conversation.get_artifact(SPEC) is None

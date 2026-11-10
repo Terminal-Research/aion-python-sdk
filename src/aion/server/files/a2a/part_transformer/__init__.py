@@ -4,6 +4,7 @@ from .transformer import (
     Retention,
     Transform,
     TransformReport,
+    part_fields,
 )
 from .rules import (
     PartSkipRule,
@@ -18,6 +19,7 @@ __all__ = [
     "Retention",
     "Transform",
     "TransformReport",
+    "part_fields",
     "PartSkipRule",
     "CardPartSkipRule",
     "CompositePartSkipRule",

@@ -9,7 +9,7 @@ from a2a.types import Artifact, Part, Task
 from google.genai import types
 
 from aion.adk.server.artifacts.backends.a2a import A2AArtifactService
-from aion.core.runtime.context.conversation import ArtifactVersion, ConversationHistory
+from aion.core.runtime.context.conversation import ArtifactVersion, Conversation
 from aion.core.runtime.context.models import AionRuntimeContext
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.agent.execution.context.providers import RequestScopeRuntimeContextProvider
@@ -17,23 +17,23 @@ from aion.server.agent.execution.context.providers import RequestScopeRuntimeCon
 APP, USER, CONTEXT = "agent", "owner", "ctx-1"
 
 
-class _History(ConversationHistory):
+class _History(Conversation):
     """A context's tasks as a turn's conversation history serves them, oldest first."""
 
     def __init__(self, *, task_id: str, tasks: list[Task]) -> None:
         super().__init__(context_id=CONTEXT, task_id=task_id)
         self._tasks = tasks
 
-    async def generation(self) -> Optional[str]:
+    async def get_created_at(self):
         return None
 
     async def get_task(self, task_id: str) -> Optional[Task]:
         return next((task for task in self._tasks if task.id == task_id), None)
 
-    async def tasks(self, *, unfinished: bool = False) -> list[Task]:
+    async def list_tasks(self, *, states=None, limit=None) -> list[Task]:
         return list(self._tasks)
 
-    async def artifact_versions(self, artifact_id: str) -> list[ArtifactVersion]:
+    async def list_artifact_versions(self, artifact_id: str) -> list[ArtifactVersion]:
         return []
 
 

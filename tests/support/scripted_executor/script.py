@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Optional
 
@@ -46,6 +46,7 @@ from google.protobuf import json_format, struct_pb2
 from pydantic import BaseModel, ConfigDict
 
 from aion.core.a2a.errors import error_parts
+from aion.core.agent import conversation
 from aion.core.exceptions import ExtensionRejection
 
 from .contract import SCRIPT_EVENT_TYPE, SCRIPT_SCHEMA, URI, script_contract
@@ -249,9 +250,6 @@ def scripted_message(
     return message
 
 
-ArtifactFinder = Callable[[str], Awaitable[Any]]
-
-
 class ScriptRunner:
     """Runs the scripts of one executor and records the cancels it is asked for.
 
@@ -279,7 +277,6 @@ class ScriptRunner:
             task_id: str,
             context_id: str,
             state: Optional[Mapping[str, Any]] = None,
-            find_artifact: Optional[ArtifactFinder] = None,
             report: Optional[Mapping[str, Any]] = None,
     ) -> AsyncIterator[Any]:
         """The turn the script describes.
@@ -299,7 +296,7 @@ class ScriptRunner:
             }
             yield self._event({"kind": "status", "data": data}, task_id, context_id)
         if script.find_artifact is not None:
-            yield await self._found(script.find_artifact, find_artifact, task_id, context_id)
+            yield await self._found(script.find_artifact, task_id, context_id)
         for index, output in enumerate(script.outputs):
             if script.crash_after is not None and index >= script.crash_after:
                 raise RuntimeError("scripted crash")
@@ -333,16 +330,15 @@ class ScriptRunner:
                 context_id,
             )
 
-    async def _found(
-            self, artifact_id: str, find: Optional[ArtifactFinder], task_id: str, context_id: str
-    ) -> Any:
-        found = await find(artifact_id) if find is not None else None
+    async def _found(self, artifact_id: str, task_id: str, context_id: str) -> Any:
+        """What the turn's conversation holds under ``artifact_id``; nothing outside a turn."""
+        found = await conversation.get_artifact(artifact_id) if conversation.is_available() else None
         data: dict[str, Any] = {"found": found is not None}
         if found is not None:
             data.update(
                 task_id=found.task_id,
                 version=found.version,
-                text="".join(part.text for part in found.artifact.parts if part.HasField("text")),
+                text=found.text,
             )
         return self._event({"kind": "status", "data": data}, task_id, context_id)
 

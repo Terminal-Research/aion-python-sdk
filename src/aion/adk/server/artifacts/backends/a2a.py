@@ -11,7 +11,7 @@ import time
 from a2a.types import Artifact
 from aion.adk.authoring.transformers import convert_a2a_part_to_genai_part
 from aion.core.db import DbManagerProtocol
-from aion.core.runtime.context.conversation import ConversationHistory
+from aion.core.runtime.context.conversation import Conversation
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.core.exceptions import AionError
 from aion.db.postgres.repositories.adk_artifact_versions import AdkArtifactVersionsRepository
@@ -53,7 +53,7 @@ class _PublishedEntry:
     seq: int
 
 
-def _turn_history() -> Optional[ConversationHistory]:
+def _turn_history() -> Optional[Conversation]:
     """The conversation history the server installed for the current turn, or None outside one."""
     context = AionRuntimeContextRegistry.get_current_context()
     return context.conversation if context is not None else None
@@ -594,18 +594,15 @@ class A2AArtifactService(BaseArtifactService):
         if history is None or history.context_id != session_id:
             return []
         try:
-            tasks = await history.tasks()
+            stored = await history.list_artifacts(name=filename, all_versions=True, include_sdk=True)
         except Exception as e:
-            logger.warning(f"Reading the context's tasks failed for '{filename}': {e}", exc_info=True)
+            logger.warning(f"Reading the context's artifacts failed for '{filename}': {e}", exc_info=True)
             return []
-        found: List[Artifact] = []
-        for task in reversed(tasks):
-            for artifact in reversed(task.artifacts):
-                if filename is not None and artifact.name != filename:
-                    continue
-                if version is not None and A2AArtifactService._parse_versions_from_db([artifact]) != [version]:
-                    continue
-                found.append(artifact)
+        found = [
+            entry.artifact
+            for entry in stored
+            if version is None or A2AArtifactService._parse_versions_from_db([entry.artifact]) == [version]
+        ]
         return found[:1] if latest_only and version is None else found
 
     async def _fetch_db_artifact_keys(self, *, app_name: str, user_id: str, session_id: str) -> list[str]:

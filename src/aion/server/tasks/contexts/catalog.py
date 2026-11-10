@@ -26,8 +26,7 @@ from typing import Optional, Protocol
 
 from a2a.types import Artifact, Message, Task, TaskStatus
 
-from aion.core.a2a import A2AMetadataKey, MessageType
-from aion.server.a2a.utils import is_same_message
+from aion.core.a2a.content import conversation_messages, is_conversation_message
 from aion.server.tasks.admission import ContextHolder
 
 __all__ = [
@@ -43,35 +42,8 @@ __all__ = [
 ]
 
 
-def is_conversation_message(message: Message) -> bool:
-    """Whether a stored message is part of the conversation rather than an internal event.
-
-    Messages carrying an ``aion:messageType`` other than ``message`` -
-    framework events, LangGraph values - are history the agent keeps for
-    itself, not turns of the conversation.
-    """
-    if not message.HasField("metadata"):
-        return True
-    key = A2AMetadataKey.MESSAGE_TYPE.value
-    if key not in message.metadata:
-        return True
-    return message.metadata[key] == MessageType.MESSAGE.value
-
-
-def conversation_of(task: Task) -> list[Message]:
-    """The conversation messages one task contributes to its context, in order.
-
-    Its history plus the message attached to its status when the history
-    does not end with it already - a running task's current message is only
-    in its status, the message a task stopped on is in both - filtered by
-    :func:`is_conversation_message`.
-    """
-    messages = list(task.history)
-    if task.status.HasField("message"):
-        current = task.status.message
-        if not messages or not is_same_message(messages[-1], current):
-            messages.append(current)
-    return [message for message in messages if is_conversation_message(message)]
+conversation_of = conversation_messages
+"""The conversation messages one task contributes to its context (``aion.core.a2a.content``)."""
 
 
 @dataclass(frozen=True)

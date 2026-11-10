@@ -41,6 +41,7 @@ from a2a.types import (
 )
 from aion.core.runtime.context import get_aion_runtime_context
 from aion.core.a2a.extensions.messaging import FileActionPayload
+from aion.core.a2a.files import StoredFile
 from aion.core.constants.a2a import MESSAGING_EXTENSION_URI_V1
 from aion.server.files.storage import (
     FileRetentionDefault,
@@ -174,6 +175,12 @@ class A2AFileTransformer:
         A part without a filename of its own is uploaded under its artifact's
         name, which is where ``file_artifact()`` puts it.
 
+        A stored part carries the download link in ``url`` and, when the
+        storage service names the file and its version, the reference to the
+        file under ``aion:file`` in its metadata (``aion.core.a2a.files``),
+        from which the link is issued again after it expires
+        (``aion.server.files.links``).
+
         Args:
             event: Message, task, status update or artifact update.
             retention: Leave each file's retention to its own request, or set
@@ -189,7 +196,7 @@ class A2AFileTransformer:
         if self._upload_manager is None:
             return Transform(event, TransformReport())
 
-        fields = _part_fields(event)
+        fields = part_fields(event)
         if not any(self._is_convertible(part) for parts, _ in fields for part in parts):
             return Transform(event, TransformReport())
 
@@ -208,7 +215,7 @@ class A2AFileTransformer:
 
         new_event = copy.deepcopy(event)
         remaining = iter(results)
-        for parts, _ in _part_fields(new_event):
+        for parts, _ in part_fields(new_event):
             kept = [part for part in islice(remaining, len(parts)) if part is not None]
             del parts[:]
             parts.extend(kept)
@@ -287,6 +294,9 @@ class A2AFileTransformer:
                         parts[index].metadata if retention is PartRetention.REQUESTED else None
                     ),
                 )
+                reference = _reference(outcome)
+                if reference is not None:
+                    reference.write_to(stored[index])
                 continue
             # One line per file with the reason in brief and no traceback: a
             # refusal the storage service answered with has none worth reading.
@@ -333,6 +343,23 @@ class A2AFileTransformer:
         )
 
 
+def _reference(receipt: UploadReceipt) -> StoredFile | None:
+    """What the stored part records of the file besides its link.
+
+    A storage service that names the file and its exact version lets the
+    link be issued again once it has expired; one that names neither leaves
+    the part with its link alone.
+    """
+    if not receipt.file_id or not receipt.version_id:
+        return None
+    return StoredFile.create(
+        receipt.file_id,
+        receipt.version_id,
+        access_expires_at=receipt.access_expires_at,
+        retention_expires_at=receipt.retention_expires_at,
+    )
+
+
 def _requested_retention(part: Part) -> datetime | None | FileRetentionDefault:
     """The retention a part's own ``FileActionPayload`` asks for, else the provider's."""
     payload = MessageToDict(part.metadata).get(MESSAGING_EXTENSION_URI_V1)
@@ -341,7 +368,7 @@ def _requested_retention(part: Part) -> datetime | None | FileRetentionDefault:
     return FileRetentionDefault.PROVIDER
 
 
-def _part_fields(event: Event) -> list[tuple[Any, str | None]]:
+def part_fields(event: Event) -> list[tuple[Any, str | None]]:
     """Every part list of an event, each with its default filename.
 
     A part list is the repeated ``parts`` field itself, so the caller can

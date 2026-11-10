@@ -21,9 +21,9 @@ logic, only what connects the toolkit to the server:
 * the run's context: the model access the provider gives this caller (the
   Aion model service on the caller's behalf, a fresh token for every call; a
   custom endpoint with its key, when it has one; none for the operator's own
-  Codex login), the context's generation, the deployment's secret values,
-  which the toolkit masks in what it reports, and the lookup of the
-  context's ``evolution-spec`` artifact, the plan a run may start from;
+  Codex login), the context's generation - a marker of this use of the
+  context's id, the time the context was created - and the deployment's secret
+  values, which the toolkit masks in what it reports;
 * the version number of every artifact the run writes in the context
   (``metadata["version"]``), but the SDK's own artifacts - the run's
   thoughts among them - which are one per task rather than versions.
@@ -31,6 +31,9 @@ logic, only what connects the toolkit to the server:
 What the wrapper reads of the context - its generation, its unfinished
 evolution task, its artifact versions - comes from the turn's history
 (``aion.core.agent.conversation``), which the server installs for every turn.
+The toolkit reads the same history itself for what a run needs of the
+context - the ``evolution-spec`` artifact, the plan a run may start from -
+so the wrapper hands it no lookup.
 
 The toolkit is imported lazily: a server that does not enable the extension
 never imports it. The toolkit yields the A2A events of a run itself; the
@@ -65,6 +68,7 @@ from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from pydantic import BaseModel, ConfigDict, Field
 
 from aion.core.a2a import codes
+from aion.core.a2a.states import UNFINISHED_TASK_STATES
 from aion.core.agent import conversation
 from aion.core.constants.a2a import BEHAVIOR_EVOLUTION_EXTENSION_URI_V1, DAEMON_EXTENSION_URI_V1
 from aion.core.exceptions import AionError, ConfigurationError, ExtensionRejection
@@ -204,17 +208,16 @@ class EvolutionExecutor(ExtensionExecutor):
             ExtensionRejection: The request is refused before the run starts
                 (see the module's docstring).
         """
-        history = conversation.history()
+        history = conversation.current()
         request, model = await self._admit(context, config, history)
         toolkit = _toolkit_module()
         run = toolkit.EvolutionRun(
             task_id=config.task_id,
             context_id=config.context_id,
             turn_id=context.message.message_id,
-            context_generation=await history.generation(),
+            context_generation=await _context_generation(history),
             model=model,
             secret_values=tuple(deployment_secret_values()),
-            find_artifact=history.find_artifact,
         )
         async for event in self._toolkit.start(request, run):
             if isinstance(event, TaskArtifactUpdateEvent):
@@ -241,7 +244,7 @@ class EvolutionExecutor(ExtensionExecutor):
     # -- internals ------------------------------------------------------------
 
     async def _admit(
-            self, context: "RequestContext", config: ExecutionConfig, history: conversation.ConversationHistory
+            self, context: "RequestContext", config: ExecutionConfig, history: conversation.Conversation
     ) -> tuple[Any, Any]:
         """The toolkit's request and the run's model access; refuses what may not run.
 
@@ -271,7 +274,7 @@ class EvolutionExecutor(ExtensionExecutor):
         blocking = next(
             (
                 task.id
-                for task in await history.tasks(unfinished=True)
+                for task in await history.list_tasks(states=UNFINISHED_TASK_STATES)
                 if routed_extension_of(task) == URI and task.id != config.task_id
             ),
             None,
@@ -337,6 +340,12 @@ class EvolutionExecutor(ExtensionExecutor):
                 retryable=codes.RETRYABLE[codes.CALLER_NOT_ALLOWED],
             )
         return toolkit.ModelEndpoint(base_url=access.base_url, secret=access.token, attribution=access.attribution)
+
+
+async def _context_generation(history: conversation.Conversation) -> Optional[str]:
+    """The marker the toolkit tells one use of the context's id from another by: when the context was created."""
+    created_at = await history.get_created_at()
+    return created_at.isoformat() if created_at is not None else None
 
 
 def _toolkit_module() -> ModuleType:
