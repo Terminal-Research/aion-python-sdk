@@ -37,6 +37,7 @@ A part with the reference, as a task holds it:
 
 from __future__ import annotations
 
+import mimetypes
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Union
@@ -50,8 +51,10 @@ from aion.core.a2a.enums import A2AMetadataKey
 __all__ = [
     "DEFAULT_MAX_FILE_BYTES",
     "STORED_FILE_KEY",
+    "GENERIC_MEDIA_TYPE",
     "ConversationFile",
     "StoredFile",
+    "media_type_of",
     "files_of",
     "forget_stored_file",
 ]
@@ -62,7 +65,27 @@ DEFAULT_MAX_FILE_BYTES = 64 * 1024 * 1024
 STORED_FILE_KEY = A2AMetadataKey.FILE.value
 """The part metadata key the reference to a stored file is kept under."""
 
+GENERIC_MEDIA_TYPE = "application/octet-stream"
+"""The media type that says only "some bytes"; a client sends it when it does not know the file's kind."""
+
 Timestamp = Union[datetime, str, None]
+
+
+def media_type_of(part: Part) -> str:
+    """The media type of a file part: the one it names, else the one its filename implies.
+
+    ``application/octet-stream`` names no kind, so a part that carries it is
+    read by its filename too - a client that does not know ``.pdf`` sends a
+    PDF that way, and a model takes a file by its kind. A part that names no
+    type and has no telling filename is ``application/octet-stream``.
+    """
+    if part.media_type and part.media_type != GENERIC_MEDIA_TYPE:
+        return part.media_type
+    if part.filename:
+        guessed, _ = mimetypes.guess_type(part.filename)
+        if guessed:
+            return guessed
+    return GENERIC_MEDIA_TYPE
 
 
 @dataclass(frozen=True)

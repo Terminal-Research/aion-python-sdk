@@ -22,6 +22,7 @@ import uuid
 from collections.abc import AsyncIterator, Sequence
 from typing import Any, Optional
 
+from aion.langgraph.authoring import inline_files
 from langchain.agents import create_agent
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
@@ -64,7 +65,7 @@ def _parts(message: HumanMessage) -> tuple[dict[str, Any], ...]:
             described.append({"type": "text", "text": block})
         elif block.get("type") == "text":
             described.append({"type": "text", "text": block["text"]})
-        elif block.get("type") == "file":
+        elif block.get("type") in ("file", "image", "audio", "video"):
             entry: dict[str, Any] = {"type": "file", "mime_type": block.get("mime_type")}
             if block.get("base64") is not None:
                 entry["size"] = len(base64.b64decode(block["base64"]))
@@ -182,11 +183,25 @@ def create_prebuilt_agent():
 
 def create_graph() -> StateGraph:
     """Build the agent: model, tools, and the loop between them."""
+    return _build_graph(inline=False)
+
+
+def create_file_inlining_graph() -> StateGraph:
+    """The same agent, sending the files of its messages to the model by their content.
+
+    The one call of Aion's a graph with its own model makes for that:
+    ``inline_files`` on the messages it hands the model.
+    """
+    return _build_graph(inline=True)
+
+
+def _build_graph(*, inline: bool) -> StateGraph:
     tools = _tools()
     model = ScriptedChatModel().bind_tools(tools)
 
     async def call_model(state: MessagesState) -> dict:
-        return {"messages": [await model.ainvoke(state["messages"])]}
+        messages = await inline_files(state["messages"]) if inline else state["messages"]
+        return {"messages": [await model.ainvoke(messages)]}
 
     builder = StateGraph(MessagesState)
     builder.add_node("model", call_model)

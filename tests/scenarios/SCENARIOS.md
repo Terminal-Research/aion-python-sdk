@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-244 scenarios in 44 files, 539 runs across 2 frameworks: 519 run, 19 skipped, 1 independent of the framework.
+246 scenarios in 45 files, 543 runs across 2 frameworks: 523 run, 19 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -61,7 +61,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `interrupts` | INPUT_REQUIRED and resume | 10 | `make tests-scenarios TAGS=interrupts` |
 | `errors` | failures that must stay reported, not crash the server | 10 | `make tests-scenarios TAGS=errors` |
 | `artifacts` | artifact and card emission | 11 | `make tests-scenarios TAGS=artifacts` |
-| `files` | inline file parts: stored, rejected, or passed through | 12 | `make tests-scenarios TAGS=files` |
+| `files` | inline file parts: stored, rejected, or passed through | 14 | `make tests-scenarios TAGS=files` |
 | `extensions` | extension activation and payload delivery | 12 | `make tests-scenarios TAGS=extensions` |
 | `daemon` | daemon extension identity and environment | 7 | `make tests-scenarios TAGS=daemon` |
 | `authentication` | bearer tokens: required, verified, and naming the caller | 6 | `make tests-scenarios TAGS=authentication` |
@@ -71,7 +71,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `evolution` | the evolution extension through the SDK's wrapper and a stand-in toolkit: the standard path, refusals as REJECTED tasks, a cancel | 15 | `make tests-scenarios TAGS=evolution` |
 | `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 21 | `make tests-scenarios-persistence` |
 | `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 19 | `make tests-scenarios-distributed` |
-| `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 39 | `make tests-scenarios TAGS=native` |
+| `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 41 | `make tests-scenarios TAGS=native` |
 
 ## Scenarios by file
 
@@ -561,6 +561,15 @@ The native scenarios run the native agent, and the one the run asked for.
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
 | [The deployment the server was started from names the native agent.](native/test_selection.py#L13 "test_the_server_runs_the_native_agent_of_this_framework") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+
+### `tests/scenarios/native/test_stored_files.py`
+
+A stored file reaches the model by its content.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [An image and a document, each with every byte and no address left in the request.](native/test_stored_files.py#L68 "test_the_model_receives_the_bytes_of_a_file_the_server_stored") | `native`, `files` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [Content goes into the model request only: what is stored is the address.](native/test_stored_files.py#L79 "test_the_task_still_holds_the_address_and_no_bytes") | `native`, `files` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
 
 ### `tests/scenarios/native/test_subgraph.py`
 

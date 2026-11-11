@@ -7,6 +7,7 @@ from typing import Any
 
 from aion.api import aion_openai_config
 from aion.api.callback_errors import reraise_callback_error
+from aion.core.agent.model_files import place_held_documents
 from aion.api.model_service_client import (
     aion_model_api_key,
     aion_model_request_headers,
@@ -36,6 +37,7 @@ def _aion_lite_llm_client(base_client_type: type[Any]) -> Any:
                 request_kwargs.get("extra_headers")
             )
             request_kwargs.setdefault("num_retries", 0)
+            messages = place_held_documents(messages)
             try:
                 result = litellm.completion(
                     model=model, messages=messages, tools=tools, **request_kwargs,
@@ -64,6 +66,7 @@ def _aion_lite_llm_client(base_client_type: type[Any]) -> Any:
                 request_kwargs.get("extra_headers")
             )
             request_kwargs.setdefault("num_retries", 0)
+            messages = place_held_documents(messages)
             try:
                 result = await litellm.acompletion(
                     model=model, messages=messages, tools=tools, **request_kwargs,
@@ -114,7 +117,10 @@ def aion_lite_llm(
         **kwargs: Additional keyword arguments passed to ADK's ``LiteLlm``.
 
     Returns:
-        A Google ADK ``LiteLlm`` instance backed by Aion's model proxy.
+        A Google ADK ``LiteLlm`` instance backed by Aion's model proxy. It
+        sends the files of a request by their content: a part that carries a
+        file by its address is replaced with the file's content in every
+        request (``aion.adk.authoring.files``).
 
     Raises:
         ImportError: If ``google-adk`` or ``litellm`` is not installed. The
@@ -134,7 +140,36 @@ def aion_lite_llm(
     model_kwargs.pop("api_key", None)
     model_kwargs["llm_client"] = _aion_lite_llm_client(LiteLLMClient)
     model_kwargs.update(kwargs)
-    return LiteLlm(model=model, **model_kwargs)
+    return _file_inlining_lite_llm(LiteLlm)(model=model, **model_kwargs)
+
+
+def _file_inlining_lite_llm(lite_llm: type) -> type:
+    """``LiteLlm`` that sends the files of a request by their content."""
+    built = _file_inlining_classes.get(lite_llm)
+    if built is not None:
+        return built
+
+    from aion.adk.authoring.files import inline_files
+    from aion.core.agent.model_files import holding_documents
+
+    class AionLiteLlm(lite_llm):
+        """ADK's ``LiteLlm`` behind Aion's model service; files go to the model by their content."""
+
+        async def generate_content_async(self, llm_request, stream=False):
+            # Documents are held here and put into the request's body by the
+            # client that sends it (`AionLiteLlmClient`): LiteLlm would upload
+            # them to the provider's Files API otherwise.
+            with holding_documents() as documents:
+                await inline_files(llm_request, documents=documents)
+                async for response in super().generate_content_async(llm_request, stream):
+                    yield response
+
+    _file_inlining_classes[lite_llm] = AionLiteLlm
+    return AionLiteLlm
+
+
+_file_inlining_classes: dict[type, type] = {}
+"""The subclass built for each ``LiteLlm`` class this module was given."""
 
 
 __all__ = ["aion_lite_llm"]

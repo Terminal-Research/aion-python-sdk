@@ -18,6 +18,7 @@ import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 
+from aion.adk.authoring import inline_files_before_model
 from fastapi.openapi.models import APIKey, APIKeyIn
 from google.adk.agents import LlmAgent
 from google.adk.auth.auth_credential import AuthCredential, AuthCredentialTypes
@@ -41,7 +42,7 @@ from tests.scenarios.agents.native_script import (
     tokens,
 )
 
-__all__ = ["ScriptedLlm", "create_agent"]
+__all__ = ["ScriptedLlm", "create_agent", "create_file_inlining_agent"]
 
 AGENT_NAME = "native_agent"
 
@@ -217,10 +218,24 @@ def sign_in(service: str, tool_context: ToolContext) -> str:
 
 def create_agent() -> LlmAgent:
     """Build the agent: a model, its tools, and an answer kept in state."""
+    return _build_agent()
+
+
+def create_file_inlining_agent() -> LlmAgent:
+    """The same agent, sending the files of a request to the model by their content.
+
+    The one thing of Aion's an agent with its own model needs for that: the
+    ``inline_files_before_model`` callback.
+    """
+    return _build_agent(before_model_callback=inline_files_before_model)
+
+
+def _build_agent(**kwargs: Any) -> LlmAgent:
     return LlmAgent(
         name=AGENT_NAME,
         model=ScriptedLlm(),
         instruction=INSTRUCTION,
         tools=[get_weather, ticker, save_report, remember, count_call, confirm_action, sign_in],
         output_key=LAST_ANSWER_KEY,
+        **kwargs,
     )

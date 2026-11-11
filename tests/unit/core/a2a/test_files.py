@@ -109,3 +109,30 @@ def test_forgetting_the_only_key_leaves_the_part_without_metadata() -> None:
     forget_stored_file(part)
 
     assert not part.HasField("metadata")
+
+
+class TestMediaTypeOf:
+    """A file's media type: the one its part names, else the one its filename implies."""
+
+    def test_a_named_type_is_the_type(self):
+        from aion.core.a2a.files import media_type_of
+
+        assert media_type_of(Part(url="https://files.test/f", media_type="image/png", filename="notes.txt")) == "image/png"
+
+    def test_a_part_without_a_type_is_read_by_its_filename(self):
+        from aion.core.a2a.files import media_type_of
+
+        assert media_type_of(Part(url="https://files.test/f", filename="report.pdf")) == "application/pdf"
+
+    def test_a_generic_type_is_read_by_the_filename_too(self):
+        """``application/octet-stream`` names no kind: a client that does not know ``.pdf`` sends a PDF that way."""
+        from aion.core.a2a.files import media_type_of
+
+        part = Part(raw=b"%PDF", media_type="application/octet-stream", filename="report.pdf")
+        assert media_type_of(part) == "application/pdf"
+
+    def test_nothing_to_go_by_is_generic(self):
+        from aion.core.a2a.files import media_type_of
+
+        assert media_type_of(Part(raw=b"bytes")) == "application/octet-stream"
+        assert media_type_of(Part(raw=b"bytes", media_type="application/octet-stream", filename="blob")) == "application/octet-stream"

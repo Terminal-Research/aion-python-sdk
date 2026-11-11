@@ -8,6 +8,7 @@ from typing import Any
 
 from a2a.types import SendMessageRequest, SubscribeToTaskRequest
 from a2a.utils.errors import InternalError, InvalidParamsError
+from aion.core.a2a.file_contents import content_key, file_contents
 from aion.core.a2a.files import forget_stored_file
 from aion.core.runtime.context import AionRuntimeContext
 from aion.server.agent.execution.context.attribution import callback_attribution
@@ -43,6 +44,11 @@ class FilePartPreprocessor:
 
     Receipts produced during ``process`` are tracked per async context, so
     concurrent requests compensate only their own uploads.
+
+    The bytes of a file stored here are kept in memory for a while
+    (``aion.core.a2a.file_contents``): the turn this request starts, and later
+    turns on this server, read the file without downloading what the server
+    has just uploaded.
     """
 
     def __init__(self, file_transformer: A2AFileTransformer) -> None:
@@ -92,6 +98,12 @@ class FilePartPreprocessor:
             task_id=message.task_id or None,
         )
 
+        inline = {
+            index: bytes(part.raw)
+            for index, part in enumerate(message.parts)
+            if part.WhichOneof("content") == "raw"
+        }
+
         # The caller's files are kept for the provider's default: a request
         # does not get to book storage the deployment pays for.
         transform = await self._transformer.transform(
@@ -109,6 +121,22 @@ class FilePartPreprocessor:
             return
 
         request_obj.message.CopyFrom(transform.event)
+        self._keep_contents(request_obj.message.parts, inline)
+
+    @staticmethod
+    def _keep_contents(parts: Any, inline: dict[int, bytes]) -> None:
+        """Keep the bytes of the files just stored under the identity their parts now carry.
+
+        The transformer replaces a part in place, so a part that was inline
+        and now holds an address is the same file.
+        """
+        contents = file_contents()
+        for index, content in inline.items():
+            if index >= len(parts):
+                continue
+            key = content_key(parts[index])
+            if key is not None:
+                contents.put(key, content, url=parts[index].url)
 
     async def rollback(self) -> None:
         """Compensate uploads made for a request that was rejected afterwards."""

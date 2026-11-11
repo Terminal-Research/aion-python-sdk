@@ -1,10 +1,10 @@
 """Transforms A2A RequestContext and ExecutionConfig into ADK format."""
 
 import json
-import mimetypes
 from typing import Optional, TYPE_CHECKING
 
 from a2a.types import Part
+from aion.core.a2a.files import media_type_of
 from aion.server.agent.adapters import ExecutionConfig
 from google.genai import types
 from google.protobuf import json_format
@@ -47,20 +47,20 @@ class ADKTransformer:
                     parts.append(types.Part(text=part.text))
 
                 elif part.raw:
-                    mime_type = part.media_type or "application/octet-stream"
                     parts.append(types.Part(
                         inline_data=types.Blob(
-                            mime_type=mime_type,
+                            mime_type=media_type_of(part),
                             data=part.raw,
+                            display_name=part.filename or None,
                         )
                     ))
 
                 elif part.url:
-                    mime_type = ADKTransformer._detect_mime_type_from_part(part)
                     parts.append(types.Part(
                         file_data=types.FileData(
-                            mime_type=mime_type,
+                            mime_type=media_type_of(part),
                             file_uri=part.url,
+                            display_name=part.filename or None,
                         )
                     ))
 
@@ -74,19 +74,6 @@ class ADKTransformer:
                 parts = [types.Part(text=user_input)]
 
         return types.Content(role="user", parts=parts)
-
-    @staticmethod
-    def _detect_mime_type_from_part(part: Part) -> str:
-        """Detect MIME type: explicit media_type > guess from filename > fallback."""
-        if part.media_type:
-            return part.media_type
-
-        if part.filename:
-            guessed, _ = mimetypes.guess_type(part.filename)
-            if guessed:
-                return guessed
-
-        return "application/octet-stream"
 
 
 __all__ = ["ADKTransformer"]

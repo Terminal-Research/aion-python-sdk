@@ -21,6 +21,7 @@ __all__ = [
     "PREBUILT_AGENTS",
     "SUBGRAPH_AGENTS",
     "PARALLEL_AGENTS",
+    "FILE_INLINING_AGENTS",
     "NATIVE_UNSUPPORTED",
     "native_unsupported_reason",
     "UNSUPPORTED",
@@ -146,6 +147,25 @@ PARALLEL_AGENTS: dict[str, Framework] = {
         name="adk",
         agent_package="tests.scenarios.agents.adk_parallel",
         agent_entry="agent.py:create_agent",
+        sdk_extras=("adk-server",),
+    ),
+}
+
+
+FILE_INLINING_AGENTS: dict[str, Framework] = {
+    # The native agent with the one Aion call that sends the files of a
+    # conversation to its model by their content, served as its own agent:
+    # `native/test_stored_files.py`, on a deployment that stores files.
+    "langgraph": Framework(
+        name="langgraph",
+        agent_package="tests.scenarios.agents.langgraph_native",
+        agent_entry="graph.py:create_file_inlining_graph",
+        sdk_extras=("langgraph-server",),
+    ),
+    "adk": Framework(
+        name="adk",
+        agent_package="tests.scenarios.agents.adk_native",
+        agent_entry="agent.py:create_file_inlining_agent",
         sdk_extras=("adk-server",),
     ),
 }

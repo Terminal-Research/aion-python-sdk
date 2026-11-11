@@ -15,6 +15,7 @@ answers do not depend on the store.
 
 from __future__ import annotations
 
+import asyncio
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
@@ -27,6 +28,7 @@ from a2a.types import Artifact, Message, Part, Role, Task, TaskArtifactUpdateEve
 from aion.core.a2a.artifacts import ARTIFACT_VERSION_KEY
 from aion.core.a2a.content import conversation_messages, data_of, text_of
 from aion.core.a2a.enums import ArtifactId
+from aion.core.a2a.file_contents import content_key, file_contents
 from aion.core.a2a.files import DEFAULT_MAX_FILE_BYTES, ConversationFile, files_of
 from aion.core.exceptions import ConversationFileError, ConversationUnavailableError
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
@@ -325,6 +327,13 @@ class Conversation(ABC):
         self.context_id = context_id
         self.task_id = task_id
         self._numbers: dict[str, int] = {}
+        self._file_parts: Optional[dict[str, Part]] = None
+        # The event loop the turn runs on: code of the turn that runs in a
+        # worker thread - a synchronous graph node, say - hands its reads to it.
+        try:
+            self.loop: Optional[asyncio.AbstractEventLoop] = asyncio.get_running_loop()
+        except RuntimeError:
+            self.loop = None
 
     # -- what a subclass reads from its store ---------------------------------
 
@@ -486,7 +495,9 @@ class Conversation(ABC):
         An inline file is returned as it is. A stored file is downloaded
         through :meth:`file_link`: the link its part holds, or a new one
         once that has expired. A file that is no longer stored, or one whose
-        link cannot be issued again, cannot be read.
+        link cannot be issued again, cannot be read. What was downloaded, and
+        what this server stored itself, is kept in memory for a while
+        (``aion.core.a2a.file_contents``), so the file is downloaded once.
 
         Args:
             part: A part that carries a file, ``raw`` or ``url``.
@@ -502,9 +513,50 @@ class Conversation(ABC):
             return bytes(part.raw)
         if kind != "url":
             raise ConversationFileError("The part carries no file to read.")
-        return await fetch_file(
-            await self.file_link(part), label=part.filename or "file", max_bytes=max_bytes
-        )
+        label = part.filename or "file"
+
+        async def download() -> bytes:
+            return await fetch_file(await self.file_link(part), label=label, max_bytes=max_bytes)
+
+        content = await file_contents().load(content_key(part), download, url=part.url)
+        if max_bytes is not None and len(content) > max_bytes:
+            raise ConversationFileError(f"File {label!r} is larger than the {max_bytes} bytes this read allows.")
+        return content
+
+    async def read_file_at(
+            self, url: str, *, name: Optional[str] = None, max_bytes: Optional[int] = DEFAULT_MAX_FILE_BYTES
+    ) -> bytes:
+        """The bytes of the file a message of the conversation carries at ``url``.
+
+        For a reader that holds only the address - a model request names a
+        file that way. The address is that of a file part of one of the
+        conversation's messages; the part is what is read (:meth:`read_file`),
+        so an address whose link has expired still reads the file. An address
+        no message carries is fetched as it is.
+
+        Args:
+            url: The address a file part holds.
+            name: How errors name the file when no part gives it a name.
+            max_bytes: The largest file to take; None for no limit.
+
+        Raises:
+            ConversationFileError: As :meth:`read_file`.
+        """
+        content = file_contents().get_by_url(url)
+        if content is None:
+            if self._file_parts is None:
+                self._file_parts = {}
+                for message in await self.list_messages():
+                    for part in message.parts:
+                        if part.WhichOneof("content") == "url":
+                            self._file_parts.setdefault(part.url, part)
+            part = self._file_parts.get(url) or Part(url=url, filename=name or "")
+            return await self.read_file(part, max_bytes=max_bytes)
+        if max_bytes is not None and len(content) > max_bytes:
+            raise ConversationFileError(
+                f"File {name or 'file'!r} is larger than the {max_bytes} bytes this read allows."
+            )
+        return content
 
     # -- numbering the artifacts a task writes --------------------------------
 
