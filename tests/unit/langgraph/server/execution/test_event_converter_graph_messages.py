@@ -7,6 +7,11 @@ ends with ``lastChunk`` - on the chunk langchain-core marks last, or on an
 empty end mark - and its text is never sent again, nor made a message. The inputs here are the real LangChain message types a
 tool-calling agent produces, not mocks: what matters is how the converter
 treats each of them.
+
+Model calls that run at once - parallel nodes, subgraphs side by side - send
+their chunks interleaved. The task has one streamed answer at a time, so the
+streams take turns: the one that started first goes out live, the others
+wait and follow as sections of their own.
 """
 
 from __future__ import annotations
@@ -47,6 +52,11 @@ def _converter() -> LangGraphA2AConverter:
 
 def _chunk(text: str, message_id: str) -> AIMessageChunk:
     return AIMessageChunk(content=text, id=message_id)
+
+
+def _last(message_id: str) -> AIMessageChunk:
+    """The empty chunk langchain-core ends every model stream with."""
+    return AIMessageChunk(content="", id=message_id, chunk_position="last")
 
 
 def _deltas(events) -> list[tuple[str, bool, bool]]:
@@ -123,17 +133,19 @@ def test_one_model_call_streams_as_one_section() -> None:
     assert _messages(events) == []
 
 
-def test_a_chunk_under_a_new_id_ends_the_previous_section() -> None:
+def test_a_chunk_under_a_new_id_after_the_last_chunk_opens_a_new_section() -> None:
     """Two calls in one turn - before and after a tool - are two sections.
 
-    LangGraph does not repeat a message whose chunks went out, so the first
-    call's section ends where the second call's chunks begin.
+    LangGraph does not repeat a message whose chunks went out: the first
+    call's section ends on its marked last chunk, and the second call's
+    chunks open a new one.
     """
     converter = _converter()
 
     events = []
     events += converter.convert("messages", _chunk("Let me ", "run-1"))
     events += converter.convert("messages", _chunk("check.", "run-1"))
+    events += converter.convert("messages", _last("run-1"))
     events += converter.convert(
         "messages", ToolMessage(content="72F", tool_call_id="call-1", name="weather")
     )
@@ -173,6 +185,7 @@ def test_a_finished_message_of_another_call_ends_the_section_and_is_a_message() 
 
     events = []
     events += converter.convert("messages", _chunk("Checking.", "run-1"))
+    events += converter.convert("messages", _last("run-1"))
     events += converter.convert("messages", AIMessage(content="It is sunny.", id="run-2"))
 
     assert _deltas(events) == [("Checking.", False, False), ("", True, True)]
@@ -188,6 +201,7 @@ def test_a_model_call_that_streamed_only_a_tool_call_leaves_no_message() -> None
     )
 
     events = converter.convert("messages", call)
+    events += converter.convert("messages", _last("run-1"))
     events += converter.convert("messages", _chunk("Sunny.", "run-2"))
 
     assert _messages(events) == []
@@ -234,6 +248,7 @@ def test_a_nodes_message_ends_the_graph_section_and_stays_a_message() -> None:
 
     events = []
     events += converter.convert("messages", _chunk("Checking.", "run-1"))
+    events += converter.convert("messages", _last("run-1"))
     events += converter.convert("custom", MessageCustomEvent(message=AIMessage(content="Done.", id="m-1")))
 
     assert _deltas(events) == [("Checking.", False, False), ("", True, True)]
@@ -246,10 +261,141 @@ def test_a_nodes_artifact_ends_the_graph_section() -> None:
 
     events = []
     events += converter.convert("messages", _chunk("Checking.", "run-1"))
+    events += converter.convert("messages", _last("run-1"))
     events += converter.convert("custom", ArtifactCustomEvent(artifact=artifact))
 
     assert _artifact_ids(events) == [ArtifactId.STREAM_DELTA.value, ArtifactId.STREAM_DELTA.value, "report"]
     assert _deltas(events)[-1] == ("", True, True)
+
+
+def _feed(converter: LangGraphA2AConverter, *items) -> list:
+    """Convert ("messages" | "custom", data) pairs in order."""
+    events = []
+    for event_type, data in items:
+        events += converter.convert(event_type, data)
+    return events
+
+
+def test_two_model_calls_at_once_go_out_one_after_the_other() -> None:
+    """The first to start streams live; the other waits and follows as its own section."""
+    converter = _converter()
+
+    events = _feed(
+        converter,
+        ("messages", _chunk("left0 ", "run-L")),
+        ("messages", _chunk("right0 ", "run-R")),
+        ("messages", _chunk("left1", "run-L")),
+        ("messages", _chunk("right1", "run-R")),
+        ("messages", _last("run-L")),
+        ("messages", _last("run-R")),
+    )
+
+    assert _deltas(events) == [
+        ("left0 ", False, False),
+        ("left1", True, False),
+        ("", True, True),
+        ("right0 ", False, False),
+        ("right1", True, False),
+        ("", True, True),
+    ]
+    assert _messages(events) == []
+
+
+def test_a_waiting_call_still_running_becomes_the_live_one() -> None:
+    """What it said so far goes out when its turn comes, and the rest as it arrives."""
+    converter = _converter()
+
+    events = _feed(
+        converter,
+        ("messages", _chunk("left ", "run-L")),
+        ("messages", _chunk("right0 ", "run-R")),
+        ("messages", _last("run-L")),
+    )
+    assert _deltas(events) == [("left ", False, False), ("", True, True), ("right0 ", False, False)]
+
+    events = _feed(converter, ("messages", _chunk("right1", "run-R")), ("messages", _last("run-R")))
+    assert _deltas(events) == [("right1", True, False), ("", True, True)]
+
+
+def test_three_calls_at_once_go_out_in_the_order_they_started() -> None:
+    converter = _converter()
+
+    events = _feed(
+        converter,
+        ("messages", _chunk("a", "run-A")),
+        ("messages", _chunk("b", "run-B")),
+        ("messages", _chunk("c", "run-C")),
+        ("messages", _last("run-C")),
+        ("messages", _last("run-B")),
+        ("messages", _last("run-A")),
+    )
+
+    assert [text for text, _, _ in _deltas(events) if text] == ["a", "b", "c"]
+    assert [append for text, append, _ in _deltas(events) if text] == [False, False, False]
+
+
+def test_a_call_left_waiting_goes_out_when_the_run_ends() -> None:
+    """A live stream that never ended does not swallow the one behind it."""
+    converter = _converter()
+
+    events = _feed(converter, ("messages", _chunk("left", "run-L")), ("messages", _chunk("right", "run-R")))
+    events += converter.close_stream()
+
+    assert _deltas(events) == [("left", False, False), ("", True, True), ("right", False, False), ("", True, True)]
+
+
+def test_a_message_beside_a_running_stream_leaves_its_section_alone() -> None:
+    """A node next to the streaming one replies: a message at once, and the section goes on."""
+    converter = _converter()
+
+    events = _feed(
+        converter,
+        ("messages", _chunk("It ", "run-1")),
+        ("custom", MessageCustomEvent(message=AIMessage(content="Meanwhile.", id="m-1"))),
+        ("messages", AIMessage(content="Also.", id="run-2")),
+        ("messages", _chunk("is sunny.", "run-1")),
+        ("messages", _last("run-1")),
+    )
+
+    assert _deltas(events) == [("It ", False, False), ("is sunny.", True, False), ("", True, True)]
+    assert _messages(events) == ["Meanwhile.", "Also."]
+
+
+def test_a_thread_stream_beside_a_model_call_waits_with_what_the_thread_sends_after_it() -> None:
+    """The thread's stream follows the model's section, and its later message keeps its place after it."""
+    converter = _converter()
+
+    events = _feed(
+        converter,
+        ("messages", _chunk("model ", "run-1")),
+        ("custom", MessageCustomEvent(message=AIMessageChunk(content="thread"))),
+        ("custom", MessageCustomEvent(message=AIMessage(content="thread", id="m-1"))),
+        ("custom", MessageCustomEvent(message=AIMessage(content="Afterwards.", id="m-2"))),
+        ("messages", _chunk("answer", "run-1")),
+    )
+    assert _deltas(events) == [("model ", False, False), ("answer", True, False)]
+    assert _messages(events) == []
+
+    events = _feed(converter, ("messages", _last("run-1")))
+    assert _deltas(events) == [("", True, True), ("thread", False, False), ("", True, True)]
+    assert _messages(events) == ["Afterwards."]
+
+
+def test_a_model_call_beside_a_thread_stream_waits_for_the_message_that_closes_it() -> None:
+    converter = _converter()
+
+    events = _feed(
+        converter,
+        ("custom", MessageCustomEvent(message=AIMessageChunk(content="thread "))),
+        ("messages", _chunk("model", "run-1")),
+        ("messages", _last("run-1")),
+        ("custom", MessageCustomEvent(message=AIMessageChunk(content="reply"))),
+    )
+    assert _deltas(events) == [("thread ", False, False), ("reply", True, False)]
+
+    events = _feed(converter, ("custom", MessageCustomEvent(message=AIMessage(content="thread reply", id="m-1"))))
+    assert _deltas(events) == [("", True, True), ("model", False, False), ("", True, True)]
+    assert _messages(events) == []
 
 
 def test_a_thread_stream_after_a_thread_reply_opens_a_new_section() -> None:
@@ -368,6 +514,55 @@ async def test_a_nostream_model_whose_result_is_kept_as_data_stays_internal() ->
     events = await _run_graph(("planner", planner))
 
     assert events == []
+
+
+async def test_a_graph_a_node_runs_for_itself_stays_internal_the_same_way() -> None:
+    """The README's way holds one level down: the inner model is ``nostream`` and its result stays data."""
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
+
+    internal = FakeListChatModel(responses=["internal plan"]).with_config(tags=["nostream"])
+
+    async def think(state):
+        return {"plan": (await internal.ainvoke(state["messages"])).text}
+
+    class _Inner(MessagesState):
+        plan: str
+
+    inner = StateGraph(_Inner)
+    inner.add_node("think", think)
+    inner.add_edge(START, "think")
+    planner_graph = inner.compile()
+
+    async def planner(state):
+        result = await planner_graph.ainvoke({"messages": state["messages"]})
+        return {"messages": [AIMessage(content=f"Plan: {result['plan']}", id="answer-1")]}
+
+    events = await _run_graph(("planner", planner))
+
+    assert _deltas(events) == []
+    assert _messages(events) == ["Plan: internal plan"]
+
+
+async def test_a_graph_a_node_runs_for_itself_streams_its_model_otherwise() -> None:
+    """Without ``nostream`` the inner model's answer reaches the client, like any node's."""
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
+
+    async def think(state):
+        return {"messages": [await FakeListChatModel(responses=["inner"]).ainvoke(state["messages"])]}
+
+    inner = StateGraph(MessagesState)
+    inner.add_node("think", think)
+    inner.add_edge(START, "think")
+    planner_graph = inner.compile()
+
+    async def planner(state):
+        await planner_graph.ainvoke({"messages": state["messages"]})
+        return {"messages": [AIMessage(content="outer", id="answer-1")]}
+
+    events = await _run_graph(("planner", planner))
+
+    assert "".join(text for text, _, _ in _deltas(events)) == "inner"
+    assert _messages(events) == ["outer"]
 
 
 async def test_nostream_alone_still_sends_the_returned_message() -> None:

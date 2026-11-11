@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-235 scenarios in 42 files, 521 runs across 2 frameworks: 508 run, 12 skipped, 1 independent of the framework.
+244 scenarios in 44 files, 539 runs across 2 frameworks: 519 run, 19 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -38,6 +38,8 @@ Features a framework's native agent does not have; a native scenario driving one
 | langgraph | `credential-request` | LangGraph has no credential request of its own; a graph would ask through interrupt() |
 | langgraph | `artifact-service` | LangGraph has no artifact service; a graph emits artifacts through the Aion API |
 | adk | `prebuilt-agent` | ADK's LlmAgent is already its one standard way to build an agent; the rest of the native group runs it |
+| adk | `subgraph` | ADK has no graphs inside graphs; it composes agents as sub_agents, which is a feature of its own |
+| langgraph | `error-response` | a LangChain chat model has no error response; it reports a failed call by raising, which `fail-after` drives |
 | langgraph | `session-state` | LangGraph has no output_key or tool-written session state; its state is the graph's own channels |
 
 An authoring surface only some adapters have; a scenario about it `skip`s on the rest:
@@ -69,7 +71,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `evolution` | the evolution extension through the SDK's wrapper and a stand-in toolkit: the standard path, refusals as REJECTED tasks, a cancel | 15 | `make tests-scenarios TAGS=evolution` |
 | `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 21 | `make tests-scenarios-persistence` |
 | `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 19 | `make tests-scenarios-distributed` |
-| `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 30 | `make tests-scenarios TAGS=native` |
+| `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 39 | `make tests-scenarios TAGS=native` |
 
 ## Scenarios by file
 
@@ -478,13 +480,15 @@ A native agent failing or being cancelled halfway through its work.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The chunks already streamed reach the client before the outcome, which is FAILED on the wire.](native/test_failure_and_cancel.py#L60 "test_a_model_failing_after_its_first_chunks_fails_the_task") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [``tasks/get`` agrees: FAILED, the partial answer in the stream-delta artifact, none of it in the history.](native/test_failure_and_cancel.py#L74 "test_the_failed_task_keeps_the_partial_answer_as_its_artifact") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [The failed run does not go on behind the outcome and answer later.](native/test_failure_and_cancel.py#L90 "test_nothing_arrives_after_the_failure") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [What the model had fully said arrived whole; the task keeps the section it failed in.](native/test_failure_and_cancel.py#L102 "test_a_section_ended_before_the_failure_reached_the_client_whole") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [The model's stream stops: the progress it writes per word stops growing.](native/test_failure_and_cancel.py#L167 "test_a_cancel_stops_the_model_mid_stream") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [The tool the framework is running stops too, not only the stream.](native/test_failure_and_cancel.py#L178 "test_a_cancel_stops_the_running_tool") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [The context is not left broken: the saved state of the cancelled run](native/test_failure_and_cancel.py#L189 "test_the_next_turn_after_a_cancel_is_answered") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The chunks already streamed reach the client before the outcome, which is FAILED on the wire.](native/test_failure_and_cancel.py#L64 "test_a_model_failing_after_its_first_chunks_fails_the_task") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [``tasks/get`` agrees: FAILED, the partial answer in the stream-delta artifact, none of it in the history.](native/test_failure_and_cancel.py#L78 "test_the_failed_task_keeps_the_partial_answer_as_its_artifact") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The failed run does not go on behind the outcome and answer later.](native/test_failure_and_cancel.py#L94 "test_nothing_arrives_after_the_failure") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [What the model had fully said arrived whole; the task keeps the section it failed in.](native/test_failure_and_cancel.py#L106 "test_a_section_ended_before_the_failure_reached_the_client_whole") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [A response that is an error and nothing else: FAILED, saying which error, and no answer.](native/test_failure_and_cancel.py#L134 "test_a_model_answering_with_an_error_fails_the_task_with_the_reason") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+| [The words streamed before the error arrived and stay in the task; they are not its answer.](native/test_failure_and_cancel.py#L150 "test_a_response_cut_off_by_an_error_fails_the_task_and_keeps_what_was_streamed") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+| [The model's stream stops: the progress it writes per word stops growing.](native/test_failure_and_cancel.py#L207 "test_a_cancel_stops_the_model_mid_stream") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The tool the framework is running stops too, not only the stream.](native/test_failure_and_cancel.py#L218 "test_a_cancel_stops_the_running_tool") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The context is not left broken: the saved state of the cancelled run](native/test_failure_and_cancel.py#L229 "test_the_next_turn_after_a_cancel_is_answered") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
 
 ### `tests/scenarios/native/test_framework_features.py`
 
@@ -521,6 +525,15 @@ An ordinary agent's answer, tool call and inputs, through `aion serve`.
 | [The model's reasoning streams first and is left out: a LangGraph reasoning](native/test_model_and_tools.py#L153 "test_the_models_reasoning_is_not_sent") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
 | [The model asks once, and the tool runs once.](native/test_model_and_tools.py#L164 "test_the_tool_runs_once_per_request") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
 
+### `tests/scenarios/native/test_parallel_streams.py`
+
+Two models streaming at once.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [One section per branch, never a word of the other's in it, and nothing sent twice.](native/test_parallel_streams.py#L43 "test_two_models_streaming_at_once_each_arrive_whole") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The stored stream-delta is the section that ended last.](native/test_parallel_streams.py#L52 "test_the_task_keeps_the_last_of_two_streamed_answers_whole") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+
 ### `tests/scenarios/native/test_persistence.py`
 
 A native agent's memory and pause live in the database, not in the process.
@@ -548,6 +561,18 @@ The native scenarios run the native agent, and the one the run asked for.
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
 | [The deployment the server was started from names the native agent.](native/test_selection.py#L13 "test_the_server_runs_the_native_agent_of_this_framework") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+
+### `tests/scenarios/native/test_subgraph.py`
+
+An agent whose work happens inside a subgraph.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The model's words arrive as they are produced, as one section, and are not sent again as a message.](native/test_subgraph.py#L44 "test_a_model_inside_a_subgraph_streams_its_answer") | `native` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
+| [The streamed answer of a subgraph is the tasks answer](native/test_subgraph.py#L54 "test_the_streamed_answer_of_a_subgraph_is_the_tasks_answer") | `native` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
+| [``thread.reply`` one level down: the message arrives and is the task's answer.](native/test_subgraph.py#L64 "test_a_reply_from_a_node_of_a_subgraph_reaches_the_client") | `native` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
+| [A thought from a node of a subgraph reaches the client](native/test_subgraph.py#L77 "test_a_thought_from_a_node_of_a_subgraph_reaches_the_client") | `native` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
+| [Two subgraphs answer side by side: one section each, never a word of the other's in it.](native/test_subgraph.py#L83 "test_two_subgraphs_streaming_at_once_each_arrive_whole") | `native` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
 
 ### `tests/scenarios/persistence/test_database_migrations.py`
 

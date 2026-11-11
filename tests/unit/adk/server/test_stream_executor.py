@@ -9,6 +9,9 @@ where ADK's Runner would persist each one before the agent resumes. The
 executor keeps that ordering, for every event but a thought: the next model
 request is built from the session, and the model would read a thought back
 as something it said.
+
+A run also reports the error its events carried (``Event.error_code``), which
+is how an ADK model says its response was blocked or cut short.
 """
 
 from __future__ import annotations
@@ -25,7 +28,7 @@ from google.genai import types
 
 from aion.adk.authoring.invocation import emit_thinking
 from aion.adk.server.execution.event_converter import ADKToA2AEventConverter
-from aion.adk.server.execution.stream_executor import ADKStreamExecutor
+from aion.adk.server.execution.stream_executor import ADKStreamExecutor, ErrorResponse
 from aion.core.a2a import A2AOutbox, ArtifactId
 
 
@@ -286,3 +289,59 @@ async def test_a_run_that_ends_on_a_long_running_call_reports_the_pause() -> Non
         pass
 
     assert executor.result.paused_on.question == "Which city?"
+
+
+async def test_a_run_reports_the_error_an_event_carried() -> None:
+    """An event with an error code is the run's error, with or without content beside it."""
+    cut_off = Event(
+        author="agent",
+        invocation_id="inv-1",
+        content=types.Content(role="model", parts=[types.Part(text="half an")]),
+        error_code=types.FinishReason.MAX_TOKENS,
+        error_message="Maximum tokens reached",
+    )
+    executor, _ = _recording_executor(_Agent(("yield", cut_off)))
+
+    async for _ in executor.execute(_CONTEXT, session=None):
+        pass
+
+    assert executor.result.error == ErrorResponse(types.FinishReason.MAX_TOKENS, "Maximum tokens reached")
+
+
+async def test_a_run_reports_the_last_error_and_goes_on_after_one() -> None:
+    """The run is not stopped at an error event: later events are still written and forwarded."""
+    first = Event(author="agent", invocation_id="inv-1", error_code="SAFETY")
+    after = _event({"n": 1})
+    last = Event(author="agent", invocation_id="inv-1", error_message="the second step failed")
+    executor, appended = _recording_executor(_Agent(("yield", first), ("yield", after), ("yield", last)))
+
+    async for _ in executor.execute(_CONTEXT, session=None):
+        pass
+
+    assert after.id in appended
+    assert executor.result.error == ErrorResponse(None, "the second step failed")
+
+
+async def test_a_run_without_an_error_event_reports_none() -> None:
+    executor, _ = _recording_executor(_Agent(("yield", _event({"n": 1}))))
+
+    async for _ in executor.execute(_CONTEXT, session=None):
+        pass
+
+    assert executor.result.error is None
+
+
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [
+        (
+            ErrorResponse(types.FinishReason.MAX_TOKENS, "Maximum tokens reached"),
+            "The agent reported an error (MAX_TOKENS): Maximum tokens reached",
+        ),
+        (ErrorResponse("UNKNOWN_ERROR", None), "The agent reported an error: UNKNOWN_ERROR"),
+        (ErrorResponse(types.BlockedReason.SAFETY, None), "The agent reported an error: SAFETY"),
+        (ErrorResponse(None, "the node failed"), "The agent reported an error: the node failed"),
+    ],
+)
+def test_the_reason_names_the_code_and_the_message(error: ErrorResponse, reason: str) -> None:
+    assert error.reason == reason

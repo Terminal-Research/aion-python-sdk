@@ -30,6 +30,30 @@ AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent
 
 
 @dataclass(frozen=True)
+class ErrorResponse:
+    """The error an event of the run reported (``Event.error_code``, ``Event.error_message``).
+
+    ADK's models report a response that was blocked, cut short or malformed
+    this way instead of raising: the event carries the code - a finish or
+    block reason - beside whatever content arrived before it, or alone.
+
+    code — the event's ``error_code``, an enum member or a string, or None.
+    message — the event's ``error_message``, or None.
+    """
+
+    code: Any = None
+    message: Optional[str] = None
+
+    @property
+    def reason(self) -> str:
+        """The sentence the failed task gives its caller."""
+        code = getattr(self.code, "name", None) or (str(self.code) if self.code else "")
+        if code and self.message:
+            return f"The agent reported an error ({code}): {self.message}"
+        return f"The agent reported an error: {code or self.message}"
+
+
+@dataclass(frozen=True)
 class ADKStreamResult:
     """Accumulated state after one ADK stream cycle.
 
@@ -40,10 +64,13 @@ class ADKStreamResult:
         read it back.
     paused_on — the long-running tool call the run paused on, or None
         when the run went to its end.
+    error — the error the run's events reported, the last one when several
+        did, or None.
     """
 
     outbox: Any = None
     paused_on: Optional[PendingCall] = None
+    error: Optional[ErrorResponse] = None
 
 
 class ADKStreamExecutor:
@@ -77,11 +104,16 @@ class ADKStreamExecutor:
         self._outbox: Any = None
         self._persisted: set[str] = set()
         self._last_agent_events: deque[Event] = deque(maxlen=2)
+        self._error: Optional[ErrorResponse] = None
 
     @property
     def result(self) -> ADKStreamResult:
         """Accumulated state. Valid after execute() iteration is complete."""
-        return ADKStreamResult(outbox=self._outbox, paused_on=paused_on(list(self._last_agent_events)))
+        return ADKStreamResult(
+            outbox=self._outbox,
+            paused_on=paused_on(list(self._last_agent_events)),
+            error=self._error,
+        )
 
     async def execute(
         self,
@@ -153,12 +185,19 @@ class ADKStreamExecutor:
         request from the session, and a function response still waiting in
         the queue would be missing from it - the model would ask for the
         same tool again.
+
+        An event that reports an error is remembered and the run goes on, as
+        it does under ADK's own Runner: what the run does after such an event
+        is the agent's to decide, and the turn's outcome is settled once the
+        run has ended.
         """
         try:
             async for event in self._agent.run_async(invocation_context):
                 await self._persist(event, invocation_context, session, from_agent=True)
                 if not event.partial:
                     self._last_agent_events.append(event)
+                if event.error_code or event.error_message:
+                    self._error = ErrorResponse(code=event.error_code, message=event.error_message)
                 queue.enqueue_event(event)
         except Exception as exc:
             # Handed on through the queue and raised where the stream is read;
@@ -249,4 +288,4 @@ class ADKStreamExecutor:
                     logger.warning("Unexpected a2a_outbox type: %s", type(outbox))
 
 
-__all__ = ["ADKStreamExecutor", "ADKStreamResult"]
+__all__ = ["ADKStreamExecutor", "ADKStreamResult", "ErrorResponse"]

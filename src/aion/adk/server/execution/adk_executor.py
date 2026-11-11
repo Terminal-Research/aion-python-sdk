@@ -180,17 +180,24 @@ class ADKExecutor(AgentFrameworkExecutor):
         """Close a streaming section the run left open, then emit result events and the turn's end.
 
         The end is ``INPUT_REQUIRED`` when the run paused on a long-running
-        tool call, and ``COMPLETED`` otherwise. A request for credentials
-        fails the task instead: the server cannot take credentials yet.
+        tool call, and ``COMPLETED`` otherwise. A run whose events reported
+        an error (``Event.error_code``) fails the task with that error, as
+        ADK's own A2A executor ends such a run: a blocked or cut-off model
+        response is not an answer. A request for credentials fails the task
+        too: the server cannot take credentials yet.
 
         Raises:
-            TaskFailedError: The run paused on ``adk_request_credential``.
+            TaskFailedError: An event of the run reported an error, or the
+                run paused on ``adk_request_credential``.
         """
+        if stream_result.error is not None:
+            raise TaskFailedError(stream_result.error.reason)
+
         paused_on = stream_result.paused_on
         if paused_on is not None and paused_on.name == CREDENTIAL_CALL:
             raise TaskFailedError(CREDENTIALS_UNSUPPORTED)
 
-        for a2a_event in converter.finalize_stream():
+        for a2a_event in await converter.finalize_stream():
             yield a2a_event
 
         for a2a_event in self._result_handler.handle(

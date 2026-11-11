@@ -49,24 +49,43 @@ logger = logging.getLogger(__name__)
 
 SKIP_EVENTS = ("values", "updates")
 
+THREAD_STREAM = "aion:thread"
+"""Key of the stream ``Thread.reply()`` makes of an async iterator; a model call's key is its message id."""
+
 
 class LangGraphA2AConverter:
     """Converts LangGraph events directly to A2A protocol events.
 
     Single converter that handles all LangGraph event types and produces
     A2A events without an intermediate ExecutionEvent representation.
+
+    A task has one streamed answer at a time: ``aion:stream-delta`` is one
+    artifact with one open section. Streams that run at once - the model
+    calls of parallel nodes or subgraphs, a ``Thread.reply()`` iterator
+    beside them - therefore take turns. The stream that started first is
+    live and its chunks go out as they come; the chunks of every other
+    stream are held, and once the live one has ended the next goes out as a
+    section of its own, in the order the streams started. Each answer
+    reaches the client whole, and the task keeps the section that ended
+    last, as it does after model calls made one after another.
     """
 
     def __init__(self, task_id: str, context_id: str):
         self._task_id = task_id
         self._context_id = context_id
         # The open section of `aion:stream-delta`, and whether its last chunk
-        # already said so. The section comes from the graph's "messages"
-        # stream, a model call identified by `_graph_stream_id`, or from the
-        # thread, when `_graph_stream_id` is None.
+        # already said so.
         self._section_open = False
         self._section_ended = False
-        self._graph_stream_id: Optional[str] = None
+        # The live stream: a model call of the graph's "messages" stream, by
+        # its message id, or the thread's (THREAD_STREAM); None when no
+        # stream is running. A model call's stream is done once its last
+        # chunk arrived; the thread's is done with the message that closes it.
+        self._live: Optional[str] = None
+        self._live_done = False
+        # What the streams that wait for the live one sent, by stream, in the
+        # order the streams started.
+        self._waiting: dict[str, list[Any]] = {}
         # Ids of the messages that ended a section. A node that keeps such a
         # message in the graph's state makes LangGraph send it again on the
         # "messages" stream; that copy is the same answer, not a new reply.
@@ -83,9 +102,9 @@ class LangGraphA2AConverter:
             List of A2A events (may be empty for skipped event types).
         """
         if event_type == "messages":
-            return self._convert_graph_message(event_data)
+            return self._convert_graph_message(event_data) + self._release_waiting()
         elif event_type == "custom":
-            return self._convert_custom(event_data)
+            return self._convert_custom(event_data) + self._release_waiting()
         elif event_type in SKIP_EVENTS:
             return []
         else:
@@ -93,8 +112,47 @@ class LangGraphA2AConverter:
             return []
 
     def close_stream(self) -> list[A2AAgentEvent]:
-        """End a section of the streamed answer the run left open."""
-        return self._close_section()
+        """End a section of the streamed answer the run left open.
+
+        A stream still waiting behind one that never ended goes out first,
+        each as its own section.
+        """
+        events = self._close_section()
+        while self._waiting:
+            events.extend(self._replay_next_waiting())
+            events.extend(self._close_section())
+        return events
+
+    def _held(self) -> bool:
+        """Whether a stream is live and has not ended, so that another has to wait."""
+        return self._live is not None and not self._live_done
+
+    def _release_waiting(self) -> list[A2AAgentEvent]:
+        """Let the next waiting streams out once the live one has ended.
+
+        A stream that ended while it waited goes out whole and gives way to
+        the one after it; one that is still running becomes the live stream.
+        """
+        events: list[A2AAgentEvent] = []
+        while self._waiting and not self._held():
+            if self._live is not None and self._live != THREAD_STREAM:
+                # The call's own closing message, should LangGraph send one
+                # later, is the answer its section already carried.
+                self._section_closer_ids.add(self._live)
+            events.extend(self._close_section())
+            events.extend(self._replay_next_waiting())
+        return events
+
+    def _replay_next_waiting(self) -> list[A2AAgentEvent]:
+        """Convert what the stream that waited longest sent, as if it arrived now."""
+        key = next(iter(self._waiting))
+        events: list[A2AAgentEvent] = []
+        for item in self._waiting.pop(key):
+            if key == THREAD_STREAM:
+                events.extend(self._convert_node_event_in_turn(item))
+            else:
+                events.extend(self._convert_graph_message(item))
+        return events
 
     def _convert_graph_message(self, message: Any) -> list[A2AAgentEvent]:
         """Convert a message from the graph's "messages" stream.
@@ -109,8 +167,11 @@ class LangGraphA2AConverter:
         The chunks of a model call are a section of ``aion:stream-delta``.
         Every call to a model streams under its own message id, and LangGraph
         does not repeat the finished message once its chunks went out. So a
-        chunk under a new id is where the previous model call ended: its
-        section ends, and the new call opens a new one. A finished message
+        chunk under a new id, after the last chunk of the call before it, is
+        where the next model call starts: the earlier section ends, and the
+        new call opens a new one. A chunk under a new id while the live
+        stream has not ended is a call running beside it: it waits its turn
+        (see the class docstring). A finished message
         under the open section's id is that call's own closing message: it
         ends the section, and its text, which the chunks carried already, is
         not sent again. A finished message of a call that did not stream is
@@ -120,28 +181,43 @@ class LangGraphA2AConverter:
         the "custom" stream and ends the section with the whole message. A
         node that returns that message into the graph's state gets it sent
         once more here, as LangGraph does with every message a node returns;
-        a message that already ended a section produces no event.
+        a message that already ended a section produces no event. A finished
+        message of a call that did not stream, arriving while a stream is
+        live, is a message beside it and leaves the section alone.
         """
         if not isinstance(message, AIMessage):
             return []
-        if not isinstance(message, AIMessageChunk) and message.id in self._section_closer_ids:
+        is_chunk = isinstance(message, AIMessageChunk)
+        if not is_chunk and message.id in self._section_closer_ids:
             return []
 
-        events: list[A2AAgentEvent] = []
-        if self._graph_stream_id is not None and message.id != self._graph_stream_id:
-            events.extend(self._close_section())
+        key = message.id or ""
+        if key in self._waiting:
+            self._waiting[key].append(message)
+            return []
 
-        if isinstance(message, AIMessageChunk):
-            if self._graph_stream_id is None:
-                events.extend(self._close_section())
-                self._graph_stream_id = message.id
-            events.extend(self._convert_streaming_chunk(message))
-            return events
+        if is_chunk:
+            if self._live == key:
+                return self._convert_live_chunk(message)
+            if self._held():
+                self._waiting[key] = [message]
+                return []
+            events = self._close_section()
+            self._live = key
+            return events + self._convert_live_chunk(message)
 
-        if self._graph_stream_id is not None:
-            events.extend(self._close_section_with(message))
-        else:
-            events.extend(self._convert_full_message(message))
+        if self._live == key:
+            return self._close_section_with(message)
+        if self._held():
+            return self._convert_full_message(message)
+        events = self._close_section() if self._live is not None else []
+        return events + self._convert_full_message(message)
+
+    def _convert_live_chunk(self, message: AIMessageChunk) -> list[A2AAgentEvent]:
+        """Send a chunk of the live model call, and note when it is the call's last."""
+        events = self._convert_streaming_chunk(message)
+        if getattr(message, "chunk_position", None) == "last":
+            self._live_done = True
         return events
 
     def _convert_message(
@@ -200,13 +276,13 @@ class LangGraphA2AConverter:
         A section whose last chunk did not say so gets the end mark
         (``stream_delta_end``); its text is not sent again.
         """
+        self._live = None
+        self._live_done = False
         if not self._section_open:
-            self._graph_stream_id = None
             return []
         owes_end = not self._section_ended
         self._section_open = False
         self._section_ended = False
-        self._graph_stream_id = None
         if not owes_end:
             return []
         return [stream_delta_end(task_id=self._task_id, context_id=self._context_id)]
@@ -317,7 +393,11 @@ class LangGraphA2AConverter:
 
         A node emits after the model call it made has ended, so any event
         but a thought or a reaction first ends the section that call was
-        streaming.
+        streaming. An event that arrives while a stream is still running
+        comes from a node beside it: a message, card or artifact goes out at
+        once and leaves the section alone, and a ``Thread.reply()`` stream
+        waits its turn, with everything the thread emits after it, so that
+        the thread's own order holds.
         """
         if isinstance(event_data, ThinkingCustomEvent):
             return self._convert_thinking(event_data)
@@ -325,9 +405,47 @@ class LangGraphA2AConverter:
         if isinstance(event_data, ReactionCustomEvent):
             return self._convert_reaction(event_data)
 
-        events = self._close_section() if self._graph_stream_id is not None else []
+        if THREAD_STREAM in self._waiting:
+            self._waiting[THREAD_STREAM].append(event_data)
+            return []
+        return self._convert_node_event_in_turn(event_data)
+
+    def _convert_node_event_in_turn(self, event_data: SupportedCustomEvents) -> list[A2AAgentEvent]:
+        """Convert a node's event, given which stream is live."""
+        is_message = isinstance(event_data, MessageCustomEvent)
+        is_chunk = is_message and isinstance(event_data.message, AIMessageChunk)
+
+        if self._live == THREAD_STREAM:
+            events = self._convert_node_event(event_data)
+            if is_message and not is_chunk:
+                # The whole message ends the thread's stream, with or
+                # without a section its chunks opened.
+                self._live = None
+                self._live_done = False
+            return events
+
+        if is_chunk:
+            if self._held():
+                self._waiting[THREAD_STREAM] = [event_data]
+                return []
+            events = self._close_section() if self._live is not None else []
+            self._live = THREAD_STREAM
+            return events + self._convert_node_event(event_data)
+
+        if self._held():
+            if is_message:
+                return self._convert_whole_message(event_data)
+            return self._convert_node_event(event_data)
+
+        events = self._close_section() if self._live is not None else []
         events.extend(self._convert_node_event(event_data))
         return events
+
+    def _convert_whole_message(self, event: MessageCustomEvent) -> list[A2AAgentEvent]:
+        """A message a node emitted that belongs to no section: a reply, routed when it names a target."""
+        if event.routing is not None:
+            return self._convert_routed_message(event.message, event.routing, metadata=event.metadata)
+        return self._convert_full_message(event.message, metadata=event.metadata)
 
     def _convert_node_event(self, event_data: SupportedCustomEvents) -> list[A2AAgentEvent]:
         if isinstance(event_data, ArtifactCustomEvent):
@@ -378,7 +496,15 @@ class LangGraphA2AConverter:
         """
         if isinstance(message, AIMessageChunk) or self._section_open:
             return self._convert_message(message, metadata=metadata, routing=routing)
+        return self._convert_routed_message(message, routing, metadata=metadata)
 
+    def _convert_routed_message(
+            self,
+            message: AIMessage,
+            routing: MessageActionPayload,
+            metadata: dict | None = None,
+    ) -> list[A2AAgentEvent]:
+        """A whole message with its routing target beside its content."""
         a2a_parts = LcToA2AConverter.from_message(message)
         if not a2a_parts:
             return []

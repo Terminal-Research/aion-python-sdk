@@ -36,6 +36,15 @@ latest user message, the way a scenario decides what to send:
                         a scenario sees that the tool ran exactly once
     fail-after-tool <n> say ``WEATHER_PREAMBLE``, call ``get_weather``, then
                         stream <n> words of the answer and fail
+    refuse              answer with an error and no content, as a model whose
+                        response was blocked does (ADK ``error_code``)
+    cut-off <n>         stream <n> words, then end the response with an error,
+                        as a model that ran out of tokens does (ADK
+                        ``error_code``)
+
+The agents with two branches running at once (``langgraph_subgraph``,
+``adk_parallel``) take their branches' names and answers from here too:
+``BRANCHES`` and ``branch_answer``.
 
 Anything else is answered with ``UNKNOWN_REPLY``. The tools behind the last
 four are the framework's own - an interrupt, an artifact service, session
@@ -65,6 +74,11 @@ __all__ = [
     "ticker",
     "WEATHER_PREAMBLE",
     "FAILURE_TEXT",
+    "REFUSAL",
+    "BRANCHES",
+    "BRANCH_DELAY_SECONDS",
+    "branch_answer",
+    "CUT_OFF",
     "ModelFailure",
     "ModelTurn",
     "UserMessage",
@@ -94,6 +108,22 @@ WEATHER_PREAMBLE = "Checking the weather."
 RECALL_PREFIX = "You said: "
 UNKNOWN_REPLY = "I do not know that one."
 FAILURE_TEXT = "the stand-in model failed on purpose"
+REFUSAL = ("SAFETY", "The response was blocked.")
+"""The error code and message ``refuse`` answers with."""
+CUT_OFF = ("MAX_TOKENS", "Maximum tokens reached")
+"""The error code and message ``cut-off`` ends its response with."""
+
+
+BRANCHES = ("left", "right")
+"""The branches of an agent that runs two models at once."""
+BRANCH_WORDS = 4
+BRANCH_DELAY_SECONDS = 0.02
+"""Between a branch's words, so the two streams interleave."""
+
+
+def branch_answer(branch: str) -> str:
+    """What a branch's model says."""
+    return " ".join(f"{branch}{index}" for index in range(BRANCH_WORDS))
 
 
 class ModelFailure(RuntimeError):
@@ -185,6 +215,8 @@ class ModelTurn:
         delay: Seconds to wait before each word.
         progress_path: A file each word is appended to as it streams.
         thought: Reasoning the model streams before its text, if any.
+        error: ``(code, message)`` the response ends with after its text, for
+            a framework whose model reports an error in its response.
     """
 
     text: str = ""
@@ -193,6 +225,7 @@ class ModelTurn:
     delay: float = 0.0
     progress_path: Optional[str] = None
     thought: str = ""
+    error: Optional[tuple[str, str]] = None
 
 
 def tokens(text: str) -> list[str]:
@@ -266,4 +299,9 @@ def model_turn(
             count = int(argument or "1")
             return ModelTurn(text=" ".join(f"word{index}" for index in range(count + 5)), fail_after=count)
         return ModelTurn(text=WEATHER_PREAMBLE, tool_call=(WEATHER_TOOL, {"city": "Kyiv"}))
+    if command == "refuse":
+        return ModelTurn(error=REFUSAL)
+    if command == "cut-off":
+        count = int(argument or "1")
+        return ModelTurn(text=" ".join(f"word{index}" for index in range(count)), error=CUT_OFF)
     return ModelTurn(text=UNKNOWN_REPLY)

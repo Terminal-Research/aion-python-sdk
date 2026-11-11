@@ -48,7 +48,7 @@ class TestStream:
             status={"state": TaskState.TASK_STATE_WORKING},
         )
         graph = Mock()
-        graph.astream.return_value = make_astream(("custom", object()))
+        graph.astream.return_value = make_astream(((), "custom", object()))
         graph.aget_state = AsyncMock(return_value=make_graph_snapshot())
         executor = LangGraphExecutor(compiled_graph=graph, config=Mock())
 

@@ -12,9 +12,13 @@ CONTEXT_ID = "ctx-1"
 
 
 async def make_astream(*events):
-    """Async generator yielding (event_type, event_data) tuples."""
+    """Async generator yielding what astream yields with subgraphs: (namespace, event_type, event_data).
+
+    An event given as (event_type, event_data) is the parent graph's own,
+    under the empty namespace.
+    """
     for event in events:
-        yield event
+        yield event if len(event) == 3 else ((), *event)
 
 
 def make_stream_delta_event(text="chunk"):
@@ -132,3 +136,50 @@ class TestExecute:
 
         collected = [e async for e in executor.execute({}, {})]
         assert collected == [event1, event2]
+
+    async def test_the_graph_is_streamed_with_its_subgraphs(self):
+        """astream is asked for the events of subgraphs too."""
+        graph = Mock()
+        graph.astream.return_value = make_astream()
+        executor = StreamExecutor(compiled_graph=graph, converter=Mock(spec=LangGraphA2AConverter))
+
+        [e async for e in executor.execute({}, {})]
+        _, kwargs = graph.astream.call_args
+        assert kwargs["subgraphs"] is True
+
+    async def test_events_of_a_subgraph_are_converted_like_the_graphs_own(self):
+        """A custom event and a message from a subgraph's namespace reach the converter."""
+        emitted, message = object(), Mock()
+        graph = Mock()
+        graph.astream.return_value = make_astream(
+            (("worker:1",), "custom", emitted),
+            (("worker:1",), "messages", (message, {})),
+        )
+        converter = Mock(spec=LangGraphA2AConverter)
+        converter.convert.return_value = []
+        executor = StreamExecutor(compiled_graph=graph, converter=converter)
+
+        [e async for e in executor.execute({}, {})]
+        assert converter.convert.call_args_list == [(("custom", emitted),), (("messages", message),)]
+
+
+class TestOutbox:
+    """The outbox of a cycle is what a node of the parent graph wrote."""
+
+    async def _outbox_after(self, *events):
+        graph = Mock()
+        graph.astream.return_value = make_astream(*events)
+        converter = Mock(spec=LangGraphA2AConverter)
+        converter.convert.return_value = []
+        executor = StreamExecutor(compiled_graph=graph, converter=converter)
+        [e async for e in executor.execute({}, {})]
+        return executor.result.outbox
+
+    async def test_a_write_inside_a_subgraph_is_not_the_graphs_until_its_node_returns_it(self):
+        """A subgraph's own update is not the parent's; the node that runs it reports what it returned."""
+        inner, returned = object(), object()
+        assert await self._outbox_after((("worker:1",), "updates", {"inner": {"a2a_outbox": inner}})) is None
+        assert await self._outbox_after(
+            (("worker:1",), "updates", {"inner": {"a2a_outbox": inner}}),
+            ("updates", {"worker": {"a2a_outbox": returned}}),
+        ) is returned

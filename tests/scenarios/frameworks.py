@@ -19,6 +19,8 @@ __all__ = [
     "NATIVE_AGENTS",
     "NATIVE_AGENTS_BY_NAME",
     "PREBUILT_AGENTS",
+    "SUBGRAPH_AGENTS",
+    "PARALLEL_AGENTS",
     "NATIVE_UNSUPPORTED",
     "native_unsupported_reason",
     "UNSUPPORTED",
@@ -121,6 +123,34 @@ PREBUILT_AGENTS: dict[str, Framework] = {
 }
 
 
+SUBGRAPH_AGENTS: dict[str, Framework] = {
+    # A graph whose one node is a graph of its own, served as its own agent:
+    # `native/test_subgraph.py`. What runs one level down - a model call, the
+    # Aion authoring calls - reaches the adapter under the subgraph's
+    # namespace, which is a different road than a node of the parent graph.
+    "langgraph": Framework(
+        name="langgraph",
+        agent_package="tests.scenarios.agents.langgraph_subgraph",
+        agent_entry="graph.py:create_graph",
+        sdk_extras=("langgraph-server",),
+    ),
+}
+
+
+PARALLEL_AGENTS: dict[str, Framework] = {
+    # An agent with two branches whose models stream at once, served as its
+    # own agent: `native/test_parallel_streams.py`. Parallel nodes of a graph
+    # on LangGraph, the sub-agents of a ParallelAgent on ADK.
+    "langgraph": SUBGRAPH_AGENTS["langgraph"],
+    "adk": Framework(
+        name="adk",
+        agent_package="tests.scenarios.agents.adk_parallel",
+        agent_entry="agent.py:create_agent",
+        sdk_extras=("adk-server",),
+    ),
+}
+
+
 NATIVE_UNSUPPORTED: dict[tuple[str, str], str] = {
     # (framework name, capability) -> why the framework has no such thing.
     #
@@ -136,6 +166,14 @@ NATIVE_UNSUPPORTED: dict[tuple[str, str], str] = {
     ("adk", "prebuilt-agent"): (
         "ADK's LlmAgent is already its one standard way to build an agent; the "
         "rest of the native group runs it"
+    ),
+    ("adk", "subgraph"): (
+        "ADK has no graphs inside graphs; it composes agents as sub_agents, which is "
+        "a feature of its own"
+    ),
+    ("langgraph", "error-response"): (
+        "a LangChain chat model has no error response; it reports a failed call by "
+        "raising, which `fail-after` drives"
     ),
     ("langgraph", "session-state"): (
         "LangGraph has no output_key or tool-written session state; its state is the "

@@ -150,6 +150,17 @@ class ScriptedLlm(BaseLlm):
                     )
                 )
             )
+        if turn.error is not None:
+            # As ADK's own models end such a response: what was said so far,
+            # if anything, with the error beside it.
+            code, message = turn.error
+            yield LlmResponse(
+                content=types.Content(role="model", parts=final) if final else None,
+                error_code=code,
+                error_message=message,
+                partial=False,
+            )
+            return
         yield _response(final, partial=False)
 
 

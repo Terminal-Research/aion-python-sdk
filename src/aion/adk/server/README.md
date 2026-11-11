@@ -24,6 +24,8 @@ An agent has two ways to produce an artifact, side by side. `emit_artifact` (and
 
 An artifact the agent saves (`tool_context.save_artifact`) is numbered per agent, user, context and name, from 0, and the number reaches the client as the artifact's `metadata.version`. With PostgreSQL, every number is recorded in `adk_artifact_versions` as it is given, so the servers of an agent never give one number twice: a save whose number another server took meanwhile numbers again from what the database holds, and fails with `ArtifactVersionConflictError` after ten such tries. Deleting the context removes the recorded numbers with its tasks.
 
+A task has one streamed answer at a time, so agents that stream at once - the sub-agents of a `ParallelAgent` - take turns; a stream is told by its events' author and branch. The agent that started first streams live; the events of the others are held, and each follows as a section of its own once the one before it has ended, in the order they started. Every answer reaches the client whole. The task keeps the section that ended last, as it does after model calls made one after another: that is the agent that *started* last, whichever finished first. A `ParallelAgent` whose sub-agents each stream an answer should be followed by an agent that gives the turn's answer. A thought, a reaction or an artifact published as it is goes out at once, and so does the whole answer of an agent that does not stream, as a message beside the open section.
+
 An event the agent yields keeps the author, branch and invocation ADK gave it, as under ADK's own `Runner`: ADK shows a model another author's words as quoted data rather than as its own, and leaves another branch's events out. Only events the SDK emits for the agent - through `Thread` or the `emit_*` helpers - are stamped as the root agent's.
 
 `a2a_outbox` answers the run that wrote it: the executor takes it from the run's own state deltas, and the value the session keeps afterwards is not applied to later turns of the same context.
@@ -41,6 +43,8 @@ With a file storage backend configured, an inline file part (`Part(raw=...)`) an
 ## Failing a task
 
 An agent, tool or callback that raises ends the turn with the task `FAILED`, and the status message says why, the same on the stream, in the unary answer and in a later `tasks/get`. To give the caller a reason of your own, raise `aion.core.exceptions.TaskFailedError("...")`; its text is the message, as written. An SDK error that names something the deployment lacks, such as a daemon identity, gives its own sentence the same way. Any other exception is a crash: the task says the agent stopped on an unexpected error and names the task to look up in the log, and the exception's text stays in the log.
+
+A model response that ends with an error fails the task as well. ADK's models do not raise for a response that was blocked, cut short by the token limit or malformed: the event carries an `error_code` and, when the model gave one, an `error_message`, alone or beside the text that arrived before it. The run goes to its end as it does under ADK's `Runner`, and the task then closes `FAILED` with that code and message as its reason. The text streamed before the error stays in the task as its `aion:stream-delta` artifact and is not its answer.
 
 ## Installation
 

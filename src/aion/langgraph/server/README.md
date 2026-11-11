@@ -76,7 +76,11 @@ async def planner(state: State) -> dict:
     return {"plan": plan.text}  # a string, not an AIMessage
 ```
 
-Each model call streams under its own message id, and LangGraph does not repeat a message once its chunks went out. A chunk under a new id therefore ends the previous call's section of `aion:stream-delta`, and the new call opens a section of its own. The streamed text stays that artifact; it is never sent as a reply.
+Each model call streams under its own message id, and LangGraph does not repeat a message once its chunks went out. A call's section of `aion:stream-delta` ends on the chunk langchain-core marks last, and the next call opens a section of its own. The streamed text stays that artifact; it is never sent as a reply.
+
+A task has one streamed answer at a time, so model calls that run at once - parallel nodes, `Send`, subgraphs side by side - take turns. The call that started first streams live; the chunks of the others are held, and each follows as a section of its own once the one before it has ended, in the order the calls started. A `thread.reply()` stream beside a model call waits the same way. Every answer reaches the client whole. The task keeps the section that ended last, as it does after calls made one after another: that is the call that *started* last, whichever finished first. A graph whose branches each stream an answer should end in a node that gives the turn's answer, or have the branches reply with whole messages, which the task keeps all of. A message, card or artifact a node sends while another node's call is streaming goes out at once and leaves that section alone.
+
+The graph is streamed together with its subgraphs, so *whichever node* includes the nodes of a subgraph, and of a graph a node invokes itself: a model call there streams as deltas while it runs, and `thread.reply()` and the `emit_*` calls deliver from there as they do from a node of the parent graph. The `a2a_outbox` the server reads is the parent graph's: a subgraph that shares the key hands it over when its node returns.
 
 `thread.reply()` with an async iterator returns the whole message that ended its section. A node may keep it in the conversation by returning it into `messages`, as it would any reply; LangGraph then sends that message on the `messages` stream once more, and the server does not send it again.
 

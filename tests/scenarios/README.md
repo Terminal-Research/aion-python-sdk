@@ -30,7 +30,9 @@ toolkits.py     the scripted toolkit's deployment, and sending its scripts and r
 frameworks.py   the frameworks under test, and what each cannot do
 harness/        serve, client, recorder, shape, pg, and the payload builders
 agents/         one agent package per framework, all answering commands.py,
-                and one native agent per framework, answering native_script.py
+                one native agent per framework, answering native_script.py,
+                and an agent per shape that takes its own road through an
+                adapter: a prebuilt agent, a graph around a subgraph
 configs/        aion.yaml templates, one per deployment variant
 core/           the scenarios, run for every framework
 persistence/    the scenarios that need a database under the server
