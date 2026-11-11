@@ -8,9 +8,11 @@ It also provides discovery functionality to find specific objects within modules
 from __future__ import annotations
 import logging
 
+import hashlib
 import importlib
 import importlib.util
 import inspect
+import sys
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Optional, TYPE_CHECKING
@@ -111,8 +113,7 @@ class ModuleLoader:
                 f"(resolved from '{file_path}' with base_path={self.base_path})"
             )
 
-        # Create unique module name from file path
-        mod_name = module_path.stem + "_module"
+        mod_name = self._module_name(module_path)
 
         # Load module using importlib
         spec = importlib.util.spec_from_file_location(mod_name, module_path)
@@ -125,14 +126,52 @@ class ModuleLoader:
         self.logger.debug(f"Loading module from file: {module_path}")
         module = importlib.util.module_from_spec(spec)
 
+        # The module is registered before its code runs, as the import system
+        # does: dataclasses, typing.get_type_hints and pickle find a class's
+        # module in sys.modules by name. A file with postponed annotations
+        # needs that already while it defines its classes.
+        previous = sys.modules.get(mod_name)
+        sys.modules[mod_name] = module
+
         try:
             spec.loader.exec_module(module)
         except Exception as e:
+            if previous is None:
+                sys.modules.pop(mod_name, None)
+            else:
+                sys.modules[mod_name] = previous
             raise ValueError(
                 f"Failed to execute module from {module_path}: {e}"
             ) from e
 
         return module
+
+    @staticmethod
+    def _module_name(module_path: Path) -> str:
+        """Return the name a file is registered under in ``sys.modules``.
+
+        The name is the file's stem with a ``_module`` suffix. When another
+        module already holds that name, a digest of the file's path is
+        appended, so files named alike in different directories stay
+        registered side by side; loading one file again reuses its name.
+
+        Args:
+            module_path: Path of the file to load.
+
+        Returns:
+            str: Module name for the file.
+        """
+        name = module_path.stem + "_module"
+        resolved = module_path.resolve()
+
+        existing_file = getattr(sys.modules.get(name), "__file__", None)
+        if name not in sys.modules or (
+            existing_file is not None and Path(existing_file).resolve() == resolved
+        ):
+            return name
+
+        digest = hashlib.sha256(str(resolved).encode()).hexdigest()[:8]
+        return f"{name}_{digest}"
 
     def _load_from_dotted_path(self, dotted_path: str) -> ModuleType:
         """Load module from a dotted Python path.
