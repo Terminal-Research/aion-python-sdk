@@ -16,6 +16,7 @@ answers do not depend on the store.
 from __future__ import annotations
 
 import asyncio
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
@@ -54,7 +55,11 @@ SDK_ARTIFACT_IDS = frozenset(artifact_id.value for artifact_id in ArtifactId)
 FILE_READ_TIMEOUT_SECONDS = 30.0
 """How long a read waits for a file's address to connect and to send each chunk."""
 
-_MAX_REDIRECTS = 5
+MAX_FILE_REDIRECTS = 5
+"""How many redirects a file read follows; each one is checked like the address itself."""
+
+logger = logging.getLogger(__name__)
+
 
 def current_conversation() -> "Conversation":
     """The conversation the server installed for the turn running here.
@@ -185,8 +190,11 @@ async def fetch_file(url: str, *, label: str, max_bytes: Optional[int] = DEFAULT
 
     The address is fetched as it is stored, with no credentials of the
     agent's added: a stored file's address is a download link that carries
-    its own access. Errors name the file by ``label``, never by its address,
-    which may be a credential.
+    its own access. Only public addresses are fetched, every redirect
+    included (``aion.core.http.file_transport``): the address may come from
+    whoever sent the message, and the server does not reach into its own
+    network for them. Errors name the file by ``label``, never by its
+    address, which may be a credential.
 
     Args:
         url: The file's ``http`` or ``https`` address.
@@ -194,11 +202,13 @@ async def fetch_file(url: str, *, label: str, max_bytes: Optional[int] = DEFAULT
         max_bytes: The largest file to take; None for no limit.
 
     Raises:
-        ConversationFileError: The address is not ``http``/``https``, it
-            answered with an error or not at all, or the file is larger than
-            ``max_bytes``.
+        ConversationFileError: The address is not ``http``/``https`` or not
+            a public one, it answered with an error or not at all, or the
+            file is larger than ``max_bytes``.
     """
     import httpx
+
+    from aion.core.http import file_transport
 
     if urlsplit(url).scheme.lower() not in ("http", "https"):
         raise ConversationFileError(f"File {label!r} has an address that is not http or https.")
@@ -206,7 +216,11 @@ async def fetch_file(url: str, *, label: str, max_bytes: Optional[int] = DEFAULT
     size = 0
     try:
         async with httpx.AsyncClient(
-                timeout=FILE_READ_TIMEOUT_SECONDS, follow_redirects=True, max_redirects=_MAX_REDIRECTS
+                transport=file_transport.async_file_transport(),
+                trust_env=False,
+                timeout=FILE_READ_TIMEOUT_SECONDS,
+                follow_redirects=True,
+                max_redirects=MAX_FILE_REDIRECTS,
         ) as client:
             async with client.stream("GET", url) as response:
                 if response.status_code >= 400:
@@ -226,6 +240,12 @@ async def fetch_file(url: str, *, label: str, max_bytes: Optional[int] = DEFAULT
                             f"File {label!r} is larger than the {max_bytes} bytes this read allows."
                         )
                     chunks.append(chunk)
+    except file_transport.AddressNotPublicError as error:
+        logger.warning("File %r was not downloaded: %s", label, error)
+        raise ConversationFileError(
+            f"File {label!r} could not be read: its address is not a public one, "
+            "and files are downloaded from public addresses only."
+        ) from error
     except httpx.HTTPError as error:
         raise ConversationFileError(
             f"File {label!r} could not be read: {type(error).__name__}."

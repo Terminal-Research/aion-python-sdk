@@ -26,6 +26,7 @@ from aion.core.a2a.enums import ArtifactId
 from aion.core.agent import conversation
 from aion.core.agent.testing import InMemoryConversation, use_conversation
 from aion.core.a2a.files import ConversationFile
+from aion.core.http import file_transport
 from aion.core.runtime.context.conversation import fetch_file
 
 PDF_URL = "https://files.test/report.pdf"
@@ -302,14 +303,18 @@ def addresses(monkeypatch):
     table: dict[str, httpx.Response] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return table.get(str(request.url), httpx.Response(404))
+        # The download reaches the address that was checked; the host it named is in `Host`.
+        named = request.url.copy_with(host=request.headers["host"])
+        return table.get(str(named), httpx.Response(404))
 
-    client = httpx.AsyncClient
+    async def public(host: str, port: int) -> list[str]:
+        return ["93.184.216.34"]
 
-    def mocked(**kwargs):
-        return client(transport=httpx.MockTransport(handler), **kwargs)
-
-    monkeypatch.setattr(httpx, "AsyncClient", mocked)
+    monkeypatch.setattr(
+        file_transport,
+        "async_file_transport",
+        lambda: file_transport.PublicAddressAsyncTransport(httpx.MockTransport(handler), resolve=public),
+    )
     return table
 
 

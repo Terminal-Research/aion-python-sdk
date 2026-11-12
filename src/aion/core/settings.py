@@ -254,6 +254,25 @@ class FileSettings(BaseEnvSettings):
         ),
     )
 
+    file_trusted_hosts: str = Field(
+        default="",
+        alias="AION_FILE_TRUSTED_HOSTS",
+        description=(
+            "Comma-separated host names a file may be downloaded from although "
+            "they resolve to a private, loopback or other non-public address "
+            "(`aion.core.http.file_transport`). Every other host must resolve to "
+            "public addresses only; the Aion API host is always allowed. "
+            "Default: none."
+        ),
+    )
+
+    @property
+    def trusted_hosts(self) -> frozenset[str]:
+        """The host names of ``AION_FILE_TRUSTED_HOSTS``, lower-case."""
+        return frozenset(
+            host.strip().lower().rstrip(".") for host in self.file_trusted_hosts.split(",") if host.strip()
+        )
+
 
 try:
     api_settings = ApiSettings()

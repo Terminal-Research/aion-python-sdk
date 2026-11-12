@@ -118,10 +118,14 @@ def read_file_for_model_sync(url: str, *, name: Optional[str] = None) -> bytes:
 
 
 def _read_from_address(url: str, *, name: Optional[str]) -> bytes:
-    """The file from memory, or fetched from its address as it is, without ``await``."""
+    """The file from memory, or fetched from its address as it is, without ``await``.
+
+    Only public addresses are fetched, as by ``fetch_file``.
+    """
     import httpx
 
-    from aion.core.runtime.context.conversation import FILE_READ_TIMEOUT_SECONDS
+    from aion.core.http import file_transport
+    from aion.core.runtime.context.conversation import FILE_READ_TIMEOUT_SECONDS, MAX_FILE_REDIRECTS
 
     limit = file_settings.model_file_max_bytes
     label = name or "file"
@@ -131,7 +135,13 @@ def _read_from_address(url: str, *, name: Optional[str]) -> bytes:
         chunks: list[bytes] = []
         size = 0
         try:
-            with httpx.Client(timeout=FILE_READ_TIMEOUT_SECONDS, follow_redirects=True) as client:
+            with httpx.Client(
+                    transport=file_transport.file_transport(),
+                    trust_env=False,
+                    timeout=FILE_READ_TIMEOUT_SECONDS,
+                    follow_redirects=True,
+                    max_redirects=MAX_FILE_REDIRECTS,
+            ) as client:
                 with client.stream("GET", url) as response:
                     if response.status_code >= 400:
                         raise TaskFailedError(
@@ -143,6 +153,11 @@ def _read_from_address(url: str, *, name: Optional[str]) -> bytes:
                         if size > limit:
                             break
                         chunks.append(chunk)
+        except file_transport.AddressNotPublicError as error:
+            raise TaskFailedError(
+                f"File {label!r} could not be read: its address is not a public one, and files "
+                "are downloaded from public addresses only. It could not be sent to the model."
+            ) from error
         except httpx.HTTPError as error:
             raise TaskFailedError(
                 f"File {label!r} could not be read: {type(error).__name__}. It could not be sent to the model."
