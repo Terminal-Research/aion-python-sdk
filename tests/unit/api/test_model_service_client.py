@@ -106,6 +106,9 @@ def test_builds_openai_compatible_kwargs(monkeypatch, caplog):
     assert config.litellm_kwargs() == {
         "api_base": "https://api.example.test/v1",
         "api_key": api_key,
+        "extra_headers": {
+            "Accept": "application/json, text/event-stream",
+        },
     }
     assert "without principal attribution" not in caplog.text
 
@@ -129,7 +132,11 @@ def test_static_kwargs_do_not_resolve_principal(monkeypatch):
     assert openai_kwargs["default_headers"] == {
         "Accept": "application/json, text/event-stream",
     }
-    assert "extra_headers" not in litellm_kwargs
+    # The model service answers a streamed call only to a client that accepts
+    # an event stream, whichever client library sends it.
+    assert litellm_kwargs["extra_headers"] == {
+        "Accept": "application/json, text/event-stream",
+    }
 
 
 def test_langchain_kwargs_add_request_scoped_clients(monkeypatch):

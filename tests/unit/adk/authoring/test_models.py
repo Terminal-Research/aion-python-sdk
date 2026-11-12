@@ -104,6 +104,10 @@ def test_aion_lite_llm_configures_google_adk_litellm(monkeypatch):
 
     assert sync_result == "completion"
     assert async_result == "acompletion"
+    # LiteLLM takes the first segment off as the provider and sends the rest:
+    # the catalog id reaches the model service whole.
+    assert completion_calls[0]["model"] == "openai/openai/model-id"
+    assert acompletion_calls[0]["model"] == "openai/openai/model-id"
     assert completion_calls[0]["api_key"] == "fresh-jwt"
     assert acompletion_calls[0]["api_key"] == "fresh-jwt"
     assert completion_calls[0]["extra_headers"] == {
@@ -112,6 +116,20 @@ def test_aion_lite_llm_configures_google_adk_litellm(monkeypatch):
     assert acompletion_calls[0]["extra_headers"] == {
         "Aion-Principal-Selector": "aion://agent/environment/fresh-env",
     }
+
+
+@pytest.mark.parametrize(
+    ("catalog_id", "for_litellm"),
+    [
+        ("openai/gpt-test", "openai/openai/gpt-test"),
+        ("anthropic/claude-test", "openai/anthropic/claude-test"),
+        ("gpt-test", "openai/gpt-test"),
+    ],
+)
+def test_a_catalog_id_is_routed_through_litellms_openai_provider(catalog_id, for_litellm):
+    """Whatever the id looks like, LiteLLM speaks the OpenAI protocol to the
+    model service and sends the id as the catalog spells it."""
+    assert models._routed(catalog_id) == for_litellm
 
 
 def _fake_adk_modules(monkeypatch):

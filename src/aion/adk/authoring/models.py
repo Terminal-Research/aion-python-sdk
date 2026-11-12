@@ -40,7 +40,7 @@ def _aion_lite_llm_client(base_client_type: type[Any]) -> Any:
             messages = place_held_documents(messages)
             try:
                 result = litellm.completion(
-                    model=model, messages=messages, tools=tools, **request_kwargs,
+                    model=_routed(model), messages=messages, tools=tools, **request_kwargs,
                 )
                 return _callback_stream(result) if request_kwargs.get("stream") else result
             except Exception as error:
@@ -69,7 +69,7 @@ def _aion_lite_llm_client(base_client_type: type[Any]) -> Any:
             messages = place_held_documents(messages)
             try:
                 result = await litellm.acompletion(
-                    model=model, messages=messages, tools=tools, **request_kwargs,
+                    model=_routed(model), messages=messages, tools=tools, **request_kwargs,
                 )
                 return _async_callback_stream(result) if request_kwargs.get("stream") else result
             except Exception as error:
@@ -77,6 +77,17 @@ def _aion_lite_llm_client(base_client_type: type[Any]) -> Any:
                 raise
 
     return AionLiteLlmClient()
+
+
+def _routed(model: str) -> str:
+    """Name ``model`` for LiteLLM so that the model service receives the id as it is.
+
+    LiteLLM reads the first segment of a model name as the provider and
+    sends the rest. Aion's model service speaks the OpenAI protocol, and its
+    catalog ids have segments of their own (``openai/gpt-...``), so the id is
+    given the ``openai/`` provider segment for LiteLLM to take off again.
+    """
+    return f"openai/{model}"
 
 
 def _callback_stream(stream: Any) -> Iterator[Any]:

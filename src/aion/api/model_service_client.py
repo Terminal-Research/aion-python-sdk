@@ -77,8 +77,8 @@ class AionModelClientConfig:
             "api_key": self.api_key,
         }
         headers = dict(self.default_headers)
-        if headers:
-            kwargs["extra_headers"] = headers
+        headers.setdefault("Accept", "application/json, text/event-stream")
+        kwargs["extra_headers"] = headers
         return kwargs
 
     def langchain_openai_kwargs(self) -> dict[str, object]:
