@@ -55,7 +55,7 @@ from aion.server.files.a2a import Transform, TransformReport
 from aion.server.files.storage import FileUploadErrorCode, StubFileStorageBackend, UploadFailure
 from aion.server.tasks.task_manager import AionTaskManager
 from tests.unit.support.events import RecordingQueue
-from tests.unit.support.files import OutcomeBackend, StoringTransformer
+from tests.unit.support.files import OutcomeBackend, RecordingBackend, StoringTransformer
 
 TASK_ID = "task-1"
 CONTEXT_ID = "ctx-1"
@@ -1013,6 +1013,69 @@ async def test_an_outbox_task_with_an_outcome_and_a_failed_file_does_not_end_the
     assert stored.status.state == TaskState.TASK_STATE_WORKING
     assert not stored.artifacts
     assert pipeline.terminal_seen is False
+
+
+async def test_an_outcome_whose_only_file_failed_sends_no_empty_status(manager, queue) -> None:
+    """Without its outcome and its file, the update says nothing the task does not know."""
+    await manager.process(_task())
+    refused = OutcomeBackend([UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)])
+    pipeline = _pipeline(queue, task_started=True, transformer=StoringTransformer(refused))
+    only_a_file = _message("unused")
+    only_a_file.parts[0].CopyFrom(_file_part())
+
+    with pytest.raises(OutboundFileNotStoredError):
+        await pipeline.process(_status(state=TaskState.TASK_STATE_COMPLETED, message=only_a_file))
+
+    assert not queue.events
+
+
+def _reply_with_a_file(message_id: str = "R") -> Message:
+    reply = _message("here is the report", message_id=message_id)
+    reply.parts.append(_file_part())
+    return reply
+
+
+def _uploads(backend: RecordingBackend) -> int:
+    return sum(len(batch) for batch in backend.batches)
+
+
+@pytest.mark.parametrize("repeat", ["status-update", "outbox-message"])
+async def test_a_reply_emitted_again_has_its_file_stored_once(manager, queue, repeat) -> None:
+    """A LangGraph node that sends a reply and returns it in its state emits it twice.
+
+    The repeat is dropped before its file is stored, so the storage keeps one
+    copy and no second one that nothing refers to.
+    """
+    backend = RecordingBackend()
+    pipeline = _pipeline(queue, task_started=True, transformer=StoringTransformer(backend))
+
+    await pipeline.process(_status(message=_reply_with_a_file()))
+    await pipeline.process(
+        _status(message=_reply_with_a_file()) if repeat == "status-update" else _reply_with_a_file()
+    )
+
+    assert _uploads(backend) == 1
+    carried = [e.status.message for e in _status_events(queue) if e.status.HasField("message")]
+    assert [m.message_id for m in carried] == ["R"]
+
+
+async def test_an_outbox_task_ending_on_a_reply_already_sent_keeps_the_file_stored_with_it(
+    manager, in_hand, queue, store, call_context
+) -> None:
+    """The task's final message is the reply as the task holds it, its file stored when it was sent."""
+    backend = RecordingBackend()
+    pipeline = _pipeline(queue, task_started=True, transformer=StoringTransformer(backend))
+    await pipeline.process(_status(message=_reply_with_a_file()))
+    (sent,) = [part.url for part in _status_events(queue)[0].status.message.parts if part.url]
+
+    await pipeline.process(
+        outbox_task(_completed(_reply_with_a_file()), current=in_hand, task_id=TASK_ID, context_id=CONTEXT_ID)
+    )
+
+    assert _uploads(backend) == 1
+    stored = await store.get(TASK_ID, call_context)
+    assert stored.status.message.message_id == "R"
+    assert [part.url for part in stored.status.message.parts if part.url] == [sent]
 
 
 async def test_without_a_task_manager_the_stream_still_works(queue) -> None:

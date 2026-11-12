@@ -170,6 +170,10 @@ class AionEventPipeline:
         An event that comes after the turn's outcome is dropped unread, its
         files included: the task has its answer for this turn already.
 
+        What the task already holds is taken out of the event before its
+        files are stored, so a message the agent emits twice - as a reply and
+        again from its framework's state, say - has its files stored once.
+
         Raises:
             OutboundFileNotStoredError: The event carried a file that could
                 not be stored. The rest of the event has been delivered by
@@ -184,21 +188,24 @@ class AionEventPipeline:
             )
             return
         produced = event
-        event, failures = await self._prepare_event(event)
+        event = self._response_parameters.annotate(event, self._prior_message_ids)
+        event = await self._deduplicate_event(event)
+        if event is None:
+            return
+        event, failures = await self._store_files(event)
+        if event is not None and failures and self._declares_outcome(event):
+            # The FAILED that follows is the task's outcome, not the state
+            # this event declared with the file still in it. A status update
+            # left without its outcome may say nothing the task does not know.
+            event.status.state = TaskState.TASK_STATE_WORKING
+            if isinstance(event, TaskStatusUpdateEvent):
+                event = await self._deduplicate_event(event)
         if event is not None:
-            if failures and self._declares_outcome(event):
-                # The FAILED that follows is the task's outcome, not the state
-                # this event declared with the file still in it.
-                event.status.state = TaskState.TASK_STATE_WORKING
             await self._deliver(event)
         if failures:
             raise OutboundFileNotStoredError(failures, produced)
 
     async def _deliver(self, event) -> None:
-        event = await self._deduplicate_event(event)
-        if event is None:
-            return
-
         await self._start_task(event)
 
         if self._is_thought(event):
@@ -372,12 +379,11 @@ class AionEventPipeline:
             isinstance(event, Task) and AionEventPipeline._declares_outcome(event)
         )
 
-    async def _prepare_event(self, event) -> tuple[object, list[UploadFailure]]:
-        """Return the event ready for delivery and the files it could not keep.
+    async def _store_files(self, event) -> tuple[object, list[UploadFailure]]:
+        """Return the event with its inline files stored, and the files it could not keep.
 
         The event is ``None`` when nothing of it is left to deliver.
         """
-        event = self._response_parameters.annotate(event, self._prior_message_ids)
         if not self._file_transformer:
             return event, []
         transform = await self._file_transformer.transform(event)

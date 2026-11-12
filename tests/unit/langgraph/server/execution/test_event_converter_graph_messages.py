@@ -488,6 +488,35 @@ async def test_a_streamed_reply_the_node_keeps_in_state_is_not_sent_again() -> N
     assert _messages(events) == []
 
 
+async def test_a_reply_without_an_id_the_node_keeps_in_state_is_sent_under_one_id() -> None:
+    """A node replies with a message it built, then returns it into ``messages``.
+
+    LangGraph sends the returned message once more. The reply gave it an id,
+    so both carry the same one, and the server drops the copy as the message
+    the task already holds, files included, before storing anything.
+    """
+    thread = Thread(
+        context=Mock(inbox=None, event=None),
+        context_id="C123",
+        parent_context_id=None,
+        network="Slack",
+        default_reply_target="C123",
+    )
+
+    async def respond(state):
+        return {"messages": [await thread.reply(AIMessage(content="It is sunny."))]}
+
+    events = await _run_graph(("respond", respond))
+
+    carried = [
+        event.status.message
+        for event in events
+        if isinstance(event, TaskStatusUpdateEvent) and event.status.HasField("message")
+    ]
+    assert [message.parts[0].text for message in carried] == ["It is sunny.", "It is sunny."]
+    assert carried[0].message_id == carried[1].message_id
+
+
 async def test_an_internal_nodes_answer_reaches_the_client_too() -> None:
     """The contract's deliberate consequence: any node's AI message is a reply."""
 
