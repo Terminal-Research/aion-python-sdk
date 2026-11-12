@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal, Union, overload
 
 from aion.api import aion_openai_config
 from aion.api.callback_errors import reraise_callback_error
+
+if TYPE_CHECKING:
+    from langchain.chat_models.base import _ConfigurableModel
+    from langchain_openai import ChatOpenAI
 
 _RESERVED_AION_MODEL_KWARGS = frozenset(
     {
@@ -30,10 +34,28 @@ _RESERVED_AION_MODEL_KWARGS = frozenset(
 )
 
 
+@overload
+def aion_chat_model(
+    model: str,
+    *,
+    configurable_fields: None = None,
+    **kwargs: Any,
+) -> ChatOpenAI: ...
+
+
+@overload
+def aion_chat_model(
+    model: str,
+    *,
+    configurable_fields: Union[Literal["any"], list[str], tuple[str, ...]],
+    **kwargs: Any,
+) -> _ConfigurableModel: ...
+
+
 def aion_chat_model(
     model: str,
     **kwargs: Any,
-) -> Any:
+) -> Union[ChatOpenAI, _ConfigurableModel]:
     """Create a LangChain chat model configured for Aion.
 
     Args:
@@ -143,7 +165,7 @@ _file_inlining_classes: dict[type, type] = {}
 def aion_chat_openai(
     model: str,
     **kwargs: Any,
-) -> Any:
+) -> ChatOpenAI:
     """Create a ``langchain-openai`` ``ChatOpenAI`` configured for Aion.
 
     Args:

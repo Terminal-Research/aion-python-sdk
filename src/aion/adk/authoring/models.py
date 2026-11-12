@@ -2,16 +2,40 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator
-from typing import Any
+import inspect
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 from aion.api import aion_openai_config
 from aion.api.callback_errors import reraise_callback_error
 from aion.core.agent.model_files import place_held_documents
+from aion.core.exceptions import TaskFailedError
+from aion.core.runtime import AionRuntimeContext, get_aion_runtime_context
 from aion.api.model_service_client import (
     aion_model_api_key,
     aion_model_request_headers,
 )
+
+if TYPE_CHECKING:
+    from google.adk.models.lite_llm import LiteLlm
+
+ModelChoice = Callable[
+    [Optional[AionRuntimeContext]],
+    Union[Optional[str], Awaitable[Optional[str]]],
+]
+"""Picks the model of one request from the Aion runtime context of its turn.
+
+A plain function or an ``async def`` one. It receives ``None`` when the agent
+runs outside an Aion server, and returns a model ID from the catalog, or
+``None`` when the turn chooses no model.
+"""
+
+CHOSEN_PER_REQUEST = "aion-model-chosen-per-request"
+"""The model name a ``LiteLlm`` built from a ``ModelChoice`` carries.
+
+Every request is sent to the model the choice names; this name never
+reaches the model service.
+"""
 
 
 def _aion_lite_llm_client(base_client_type: type[Any]) -> Any:
@@ -118,13 +142,35 @@ async def _async_callback_stream(stream: Any) -> AsyncIterator[Any]:
 
 
 def aion_lite_llm(
-    model: str,
+    model: Union[str, ModelChoice],
     **kwargs: Any,
-) -> Any:
+) -> LiteLlm:
     """Create a Google ADK ``LiteLlm`` instance configured for Aion.
 
+    The model is a catalog ID, or a function that picks it for each request.
+    A function suits a model that is not known when the agent is built - one
+    the deployment selects in the environment's configuration, which arrives
+    with every turn:
+
+        def environment_model(runtime):
+            environment = runtime.get_environment() if runtime else None
+            return environment.get_configuration_variable("model") if environment else None
+
+        LlmAgent(name="assistant", model=aion_lite_llm(environment_model))
+
+    The function is called before every request, on the event loop, with the
+    Aion runtime context of the turn (``None`` outside an Aion server). An
+    ``async def`` function is awaited, so it may wait for I/O; a plain one
+    must not block. A model the agent's ``before_model_callback`` writes into
+    the request is kept; the function is not called for that request. ADK
+    tells what a model can do from the name the ``LiteLlm`` carries, which
+    for a function is ``CHOSEN_PER_REQUEST``: an agent with both an
+    ``output_schema`` and tools gets ADK's handling for a model that cannot
+    combine them.
+
     Args:
-        model: Model ID from the Aion control plane model catalog.
+        model: Model ID from the Aion control plane model catalog, or a
+            ``ModelChoice`` that returns one for each request.
         **kwargs: Additional keyword arguments passed to ADK's ``LiteLlm``.
 
     Returns:
@@ -137,6 +183,8 @@ def aion_lite_llm(
         ImportError: If ``google-adk`` or ``litellm`` is not installed. The
             ADK extras install litellm only on Python < 3.15, the newest it
             supports.
+        TaskFailedError: When a request is about to be sent, if the
+            ``ModelChoice`` returns no model; the request is not sent.
     """
     try:
         from google.adk.models.lite_llm import LiteLlm, LiteLLMClient
@@ -151,7 +199,23 @@ def aion_lite_llm(
     model_kwargs.pop("api_key", None)
     model_kwargs["llm_client"] = _aion_lite_llm_client(LiteLLMClient)
     model_kwargs.update(kwargs)
-    return _file_inlining_lite_llm(LiteLlm)(model=model, **model_kwargs)
+    aion_lite_llm_class = _file_inlining_lite_llm(LiteLlm)
+    if callable(model):
+        return aion_lite_llm_class(model=CHOSEN_PER_REQUEST, choose_model=model, **model_kwargs)
+    return aion_lite_llm_class(model=model, **model_kwargs)
+
+
+async def _chosen_model(choose_model: ModelChoice) -> str:
+    """The model ``choose_model`` picks for the turn running here."""
+    model = choose_model(get_aion_runtime_context())
+    if inspect.isawaitable(model):
+        model = await model
+    if not model:
+        raise TaskFailedError(
+            "No model was chosen for this request: the function given to "
+            "aion_lite_llm() returned none, so nothing was sent to the model service."
+        )
+    return model
 
 
 def _file_inlining_lite_llm(lite_llm: type) -> type:
@@ -164,9 +228,22 @@ def _file_inlining_lite_llm(lite_llm: type) -> type:
     from aion.core.agent.model_files import holding_documents
 
     class AionLiteLlm(lite_llm):
-        """ADK's ``LiteLlm`` behind Aion's model service; files go to the model by their content."""
+        """ADK's ``LiteLlm`` behind Aion's model service; files go to the model by their content.
+
+        Built from a ``ModelChoice``, it names the model of each request: ADK
+        writes the agent's model name into the request, and ``LiteLlm`` sends
+        the request to the model it names.
+        """
+
+        _choose_model: Optional[ModelChoice]
+
+        def __init__(self, *, choose_model: Optional[ModelChoice] = None, **kwargs: Any) -> None:
+            super().__init__(**kwargs)
+            self._choose_model = choose_model
 
         async def generate_content_async(self, llm_request, stream=False):
+            if self._choose_model is not None and llm_request.model in (None, self.model):
+                llm_request.model = await _chosen_model(self._choose_model)
             # Documents are held here and put into the request's body by the
             # client that sends it (`AionLiteLlmClient`): LiteLlm would upload
             # them to the provider's Files API otherwise.
@@ -183,4 +260,4 @@ _file_inlining_classes: dict[type, type] = {}
 """The subclass built for each ``LiteLlm`` class this module was given."""
 
 
-__all__ = ["aion_lite_llm"]
+__all__ = ["CHOSEN_PER_REQUEST", "ModelChoice", "aion_lite_llm"]
