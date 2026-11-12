@@ -24,6 +24,7 @@ __all__ = [
     "FILE_INLINING_AGENTS",
     "ASYNC_FACTORY_AGENTS",
     "SEQUENCE_AGENTS",
+    "TRANSFER_AGENTS",
     "NATIVE_UNSUPPORTED",
     "native_unsupported_reason",
     "UNSUPPORTED",
@@ -205,6 +206,20 @@ SEQUENCE_AGENTS: dict[str, Framework] = {
 }
 
 
+TRANSFER_AGENTS: dict[str, Framework] = {
+    # A router that hands the conversation to its sub-agents, served as its
+    # own agent: `native/test_agent_transfer.py`. Who answers the next
+    # message is ADK's Runner's to pick, which the server runs the agent
+    # through.
+    "adk": Framework(
+        name="adk",
+        agent_package="tests.scenarios.agents.adk_transfer",
+        agent_entry="agent.py:create_agent",
+        sdk_extras=("adk-server",),
+    ),
+}
+
+
 NATIVE_UNSUPPORTED: dict[tuple[str, str], str] = {
     # (framework name, capability) -> why the framework has no such thing.
     #
@@ -228,6 +243,10 @@ NATIVE_UNSUPPORTED: dict[tuple[str, str], str] = {
     ("langgraph", "agent-sequence"): (
         "LangGraph has no workflow agent; a graph's edges are its sequence, and an "
         "interrupt between its nodes is `core/test_interrupts`"
+    ),
+    ("langgraph", "agent-transfer"): (
+        "LangGraph has no transfer between agents of its own; a graph routes with its "
+        "edges and keeps who is active in its state"
     ),
     ("langgraph", "error-response"): (
         "a LangChain chat model has no error response; it reports a failed call by "

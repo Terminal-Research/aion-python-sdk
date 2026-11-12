@@ -33,7 +33,7 @@ agents/         one agent package per framework, all answering commands.py,
                 one native agent per framework, answering native_script.py,
                 and an agent per shape that takes its own road through an
                 adapter: a prebuilt agent, a graph around a subgraph, an
-                agent from an async factory
+                agent from an async factory, a router with sub-agents
 configs/        aion.yaml templates, one per deployment variant
 core/           the scenarios, run for every framework
 persistence/    the scenarios that need a database under the server

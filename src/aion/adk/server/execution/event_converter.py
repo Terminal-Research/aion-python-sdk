@@ -103,8 +103,14 @@ class ADKToA2AEventConverter:
         other events in order, the event that ends it included. A whole event
         of an agent that is not streaming goes out beside the open section
         and leaves it alone.
+
+        An event that only reports an error (``error_code`` with no content)
+        says nothing to the client: the turn's failure does. A section it
+        interrupted stays unfinished, as it does when the model raises.
         """
         if adk_event.partial and not adk_event.content:
+            return []
+        if not adk_event.content and (adk_event.error_code or adk_event.error_message):
             return []
         if not adk_event.partial and self._is_beside_the_answer(adk_event):
             return await self._convert_non_partial(adk_event)
