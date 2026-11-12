@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-246 scenarios in 45 files, 543 runs across 2 frameworks: 523 run, 19 skipped, 1 independent of the framework.
+249 scenarios in 46 files, 549 runs across 2 frameworks: 526 run, 22 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -39,6 +39,7 @@ Features a framework's native agent does not have; a native scenario driving one
 | langgraph | `artifact-service` | LangGraph has no artifact service; a graph emits artifacts through the Aion API |
 | adk | `prebuilt-agent` | ADK's LlmAgent is already its one standard way to build an agent; the rest of the native group runs it |
 | adk | `subgraph` | ADK has no graphs inside graphs; it composes agents as sub_agents, which is a feature of its own |
+| langgraph | `agent-sequence` | LangGraph has no workflow agent; a graph's edges are its sequence, and an interrupt between its nodes is `core/test_interrupts` |
 | langgraph | `error-response` | a LangChain chat model has no error response; it reports a failed call by raising, which `fail-after` drives |
 | langgraph | `session-state` | LangGraph has no output_key or tool-written session state; its state is the graph's own channels |
 
@@ -71,7 +72,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `evolution` | the evolution extension through the SDK's wrapper and a stand-in toolkit: the standard path, refusals as REJECTED tasks, a cancel | 15 | `make tests-scenarios TAGS=evolution` |
 | `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 21 | `make tests-scenarios-persistence` |
 | `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 19 | `make tests-scenarios-distributed` |
-| `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 41 | `make tests-scenarios TAGS=native` |
+| `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 44 | `make tests-scenarios TAGS=native` |
 
 ## Scenarios by file
 
@@ -561,6 +562,16 @@ The native scenarios run the native agent, and the one the run asked for.
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
 | [The deployment the server was started from names the native agent.](native/test_selection.py#L13 "test_the_server_runs_the_native_agent_of_this_framework") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+
+### `tests/scenarios/native/test_sequence_pause.py`
+
+A pause inside a sequence of agents.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The first step asking pauses the task](native/test_sequence_pause.py#L31 "test_the_first_step_asking_pauses_the_task") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+| [The step that asked finishes with the answer, and the step after it runs.](native/test_sequence_pause.py#L38 "test_the_answer_resumes_the_sequence_and_the_later_step_runs") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+| [After the resumed turn the context is not left mid-sequence: a new message starts from the first step.](native/test_sequence_pause.py#L49 "test_the_next_turn_runs_the_whole_sequence_again") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
 
 ### `tests/scenarios/native/test_stored_files.py`
 

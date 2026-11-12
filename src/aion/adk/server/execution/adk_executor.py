@@ -96,9 +96,9 @@ class ADKExecutor(AgentFrameworkExecutor):
 
         A turn that resumes a task paused on a long-running tool call answers
         that call: the user's message becomes its function response, and the
-        agent that made the call runs on in the invocation the call belongs
-        to, as ADK's own Runner resumes it. Any other turn is the user's
-        message, run by the root agent in a new invocation.
+        invocation the call belongs to runs on, as ADK's own Runner resumes
+        it (``_resuming_agent``). Any other turn is the user's message, run
+        by the root agent in a new invocation.
         """
         task_id = context.task_id or str(uuid.uuid4())
         context_id = ADKTransformer.to_session_id(config) or str(uuid.uuid4())
@@ -119,12 +119,9 @@ class ADKExecutor(AgentFrameworkExecutor):
             waiting = waiting_call(session.events) if resuming else None
             if waiting is not None:
                 user_content = reply_content(waiting, context.message)
-                agent = self.agent.find_agent(waiting.author) or self.agent
                 invocation_id = waiting.invocation_id or str(uuid.uuid4())
-                logger.info(f"Answering the paused call {waiting.name} of {agent.name}: context_id={context_id}")
             else:
                 user_content = ADKTransformer.transform_context(context)
-                agent = self.agent
                 invocation_id = str(uuid.uuid4())
 
             # IMPORTANT: Add user message to session BEFORE creating invocation context
@@ -142,13 +139,15 @@ class ADKExecutor(AgentFrameworkExecutor):
                 session=session,
                 user_content=user_content,
                 invocation_id=invocation_id,
-                agent=agent,
             )
-
+            agent = self.agent
             if waiting is not None:
-                # As ADK's Runner resumes an invocation: the agents read back
-                # where they stopped from the states the paused run recorded.
-                invocation_context.populate_invocation_agent_states()
+                agent = self._resuming_agent(invocation_context, waiting)
+                invocation_context.agent = agent
+                logger.info(
+                    f"Answering the paused call {waiting.name} of {waiting.author}, "
+                    f"resuming {agent.name}: context_id={context_id}"
+                )
 
             converter._ctx = invocation_context
             stream_exec = ADKStreamExecutor(agent, self._session_service, converter)
@@ -167,6 +166,22 @@ class ADKExecutor(AgentFrameworkExecutor):
             # failure once; this adds only how long the run lasted.
             logger.debug(f"ADK stream failed after {time.monotonic() - start:.3f}s: {e}")
             raise ExecutionError(f"Failed to stream agent: {e}") from e
+
+    def _resuming_agent(self, invocation_context: Any, waiting: Any) -> Any:
+        """The agent that runs on when a paused invocation is resumed, as ADK's own Runner picks it.
+
+        The agents read back where they stopped from the states the paused
+        run recorded. An invocation the root agent started is resumed by the
+        root agent: a workflow agent - a ``SequentialAgent``, a
+        ``LoopAgent`` - goes on from the sub-agent that paused and runs the
+        ones after it. Only an invocation the root agent has no state for,
+        one that started in a sub-agent, is resumed by the agent that made
+        the call.
+        """
+        invocation_context.populate_invocation_agent_states()
+        if self.agent.name in invocation_context.end_of_agents:
+            return self.agent
+        return self.agent.find_agent(waiting.author) or self.agent
 
     async def _finalize(
             self,

@@ -22,6 +22,7 @@ __all__ = [
     "SUBGRAPH_AGENTS",
     "PARALLEL_AGENTS",
     "FILE_INLINING_AGENTS",
+    "SEQUENCE_AGENTS",
     "NATIVE_UNSUPPORTED",
     "native_unsupported_reason",
     "UNSUPPORTED",
@@ -171,6 +172,19 @@ FILE_INLINING_AGENTS: dict[str, Framework] = {
 }
 
 
+SEQUENCE_AGENTS: dict[str, Framework] = {
+    # A sequence of agents whose first step asks the user, served as its own
+    # agent: `native/test_sequence_pause.py`. Resuming a pause inside a
+    # workflow agent is a different road than resuming a single agent.
+    "adk": Framework(
+        name="adk",
+        agent_package="tests.scenarios.agents.adk_sequence",
+        agent_entry="agent.py:create_agent",
+        sdk_extras=("adk-server",),
+    ),
+}
+
+
 NATIVE_UNSUPPORTED: dict[tuple[str, str], str] = {
     # (framework name, capability) -> why the framework has no such thing.
     #
@@ -190,6 +204,10 @@ NATIVE_UNSUPPORTED: dict[tuple[str, str], str] = {
     ("adk", "subgraph"): (
         "ADK has no graphs inside graphs; it composes agents as sub_agents, which is "
         "a feature of its own"
+    ),
+    ("langgraph", "agent-sequence"): (
+        "LangGraph has no workflow agent; a graph's edges are its sequence, and an "
+        "interrupt between its nodes is `core/test_interrupts`"
     ),
     ("langgraph", "error-response"): (
         "a LangChain chat model has no error response; it reports a failed call by "

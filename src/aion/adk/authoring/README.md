@@ -61,3 +61,8 @@ derives Aion MCP URLs, Version bearer auth, and callback attribution at runtime.
 Use `capability_references` for explicit SDK-level subject + kind + key
 references. Use `runtime_capability_references` when the subject must be
 resolved from the current request.
+
+The current request is the turn's Aion runtime context. The toolset finds it
+on the invocation behind the `readonly_context` ADK passes, where the server
+keeps it, and otherwise takes the context of the turn running in this task;
+`context_provider` replaces that lookup for an agent that keeps it elsewhere.
