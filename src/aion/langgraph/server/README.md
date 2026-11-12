@@ -8,7 +8,7 @@ Installed with `pip install "aionto-sdk[langgraph-server]"`, which also brings `
 
 ## Setup
 
-Point an agent in `aion.yaml` at the graph. Nothing declares the framework: the path must resolve to a `StateGraph` instance, a compiled `Pregel`, or a callable that returns one, and the adapter claims what it recognises:
+Point an agent in `aion.yaml` at the graph. Nothing declares the framework: the path must resolve to a `StateGraph` instance, a compiled `Pregel`, or a callable that returns one, and the adapter claims what it recognises. The callable may be an `async def`: the server awaits it once at startup, on its own event loop, so a factory can load MCP tools or open a connection while it builds the graph:
 
 ```yaml
 aion:

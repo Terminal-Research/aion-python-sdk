@@ -51,7 +51,7 @@ from tests.scenarios.agents.native_script import (
     tokens,
 )
 
-__all__ = ["ScriptedChatModel", "create_graph", "create_prebuilt_agent"]
+__all__ = ["ScriptedChatModel", "create_async_graph", "create_graph", "create_prebuilt_agent"]
 
 
 def _parts(message: HumanMessage) -> tuple[dict[str, Any], ...]:
@@ -183,6 +183,12 @@ def create_prebuilt_agent():
 
 def create_graph() -> StateGraph:
     """Build the agent: model, tools, and the loop between them."""
+    return _build_graph(inline=False)
+
+
+async def create_async_graph() -> StateGraph:
+    """The same agent from an ``async def`` factory, as one that awaits while it builds - loading MCP tools, say."""
+    await asyncio.sleep(0)
     return _build_graph(inline=False)
 
 

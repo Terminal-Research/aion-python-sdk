@@ -22,6 +22,7 @@ __all__ = [
     "SUBGRAPH_AGENTS",
     "PARALLEL_AGENTS",
     "FILE_INLINING_AGENTS",
+    "ASYNC_FACTORY_AGENTS",
     "SEQUENCE_AGENTS",
     "NATIVE_UNSUPPORTED",
     "native_unsupported_reason",
@@ -167,6 +168,25 @@ FILE_INLINING_AGENTS: dict[str, Framework] = {
         name="adk",
         agent_package="tests.scenarios.agents.adk_native",
         agent_entry="agent.py:create_file_inlining_agent",
+        sdk_extras=("adk-server",),
+    ),
+}
+
+
+ASYNC_FACTORY_AGENTS: dict[str, Framework] = {
+    # The native agent returned by an `async def` factory, served as its own
+    # agent: `native/test_async_factory.py`. The server has to await the
+    # factory before it has an agent to serve.
+    "langgraph": Framework(
+        name="langgraph",
+        agent_package="tests.scenarios.agents.langgraph_native",
+        agent_entry="graph.py:create_async_graph",
+        sdk_extras=("langgraph-server",),
+    ),
+    "adk": Framework(
+        name="adk",
+        agent_package="tests.scenarios.agents.adk_native",
+        agent_entry="agent.py:create_async_agent",
         sdk_extras=("adk-server",),
     ),
 }

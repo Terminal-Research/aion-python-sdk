@@ -95,6 +95,28 @@ class TestInitializeAgent:
             result = await self.adapter.initialize_agent(factory, self.config)
             assert result is compiled
 
+    async def test_async_factory_is_awaited_and_its_graph_compiled(self):
+        """An ``async def`` factory is awaited; the graph it returns is compiled."""
+        compiled = Mock(spec=Pregel)
+        graph = Mock(spec=StateGraph)
+
+        async def factory():
+            return graph
+
+        with patch.object(LangGraphAdapter, "_is_graph_instance", side_effect=lambda obj: obj is graph), \
+             patch.object(self.adapter, "_compile_graph", new=AsyncMock(return_value=compiled)) as mock_compile:
+            result = await self.adapter.initialize_agent(factory, self.config)
+            mock_compile.assert_called_once_with(graph, self.config)
+            assert result is compiled
+
+    async def test_async_factory_returning_non_graph_raises_type_error(self):
+        """What an ``async def`` factory returned is checked, not the coroutine."""
+        async def factory():
+            return object()
+
+        with pytest.raises(TypeError, match="Function returned object"):
+            await self.adapter.initialize_agent(factory, self.config)
+
     async def test_callable_returning_non_graph_raises_type_error(self):
         """A factory returning a non-graph object raises TypeError."""
         factory = Mock(return_value=object())

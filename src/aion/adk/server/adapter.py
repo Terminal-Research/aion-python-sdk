@@ -48,7 +48,7 @@ class ADKAdapter(AgentAdapter):
         return [BaseAgent]
 
     def can_handle(self, agent_obj: Any) -> bool:
-        """Return True for ADK agent instances and zero-arg factory callables."""
+        """Return True for ADK agent instances and zero-arg factory callables, sync or async."""
         # Check direct instance
         if self._is_adk_agent_instance(agent_obj):
             return True
@@ -60,7 +60,11 @@ class ADKAdapter(AgentAdapter):
         return False
 
     async def initialize_agent(self, agent_obj: Any, config: AgentConfig) -> Any:
-        """Resolve agent_obj to a concrete ADK agent instance, invoking it if it is a factory."""
+        """Resolve agent_obj to a concrete ADK agent instance, invoking it if it is a factory.
+
+        A factory that returns an awaitable - an ``async def`` factory - is
+        awaited on the server's event loop.
+        """
         logger.debug(f"Initializing ADK agent of type '{type(agent_obj).__name__}'")
 
         # Direct agent instance - return as-is
@@ -72,6 +76,8 @@ class ADKAdapter(AgentAdapter):
         if callable(agent_obj) and not inspect.isclass(agent_obj):
             logger.debug("Calling factory function to get ADK agent")
             agent = agent_obj()
+            if inspect.isawaitable(agent):
+                agent = await agent
             if not self._is_adk_agent_instance(agent):
                 raise TypeError(
                     f"Factory function returned {type(agent).__name__}, "

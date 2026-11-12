@@ -12,6 +12,8 @@ This subpackage provides the server-side plugin for running Google ADK agents wi
 - **Artifact storage** — Memory and A2A-backed artifact service via `ArtifactServiceFactory`
 - **Transformers** — Bidirectional A2A ↔ ADK format conversion
 
+An agent's `path` in `aion.yaml` names an ADK agent (a `BaseAgent` instance) or a callable that returns one. The callable may be an `async def`: the server awaits it once at startup, on its own event loop, so a factory can load MCP tools or open a connection while it builds the agent.
+
 ## Inbound and outbound
 
 The inbound A2A message becomes the invocation's `user_content`, part by part and in order: text as text, inline bytes as `inline_data` and a URL as `file_data`, each with its media type, and a structured data part as a text part holding its JSON. The part's metadata is not passed on.

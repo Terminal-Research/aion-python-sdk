@@ -32,7 +32,8 @@ harness/        serve, client, recorder, shape, pg, and the payload builders
 agents/         one agent package per framework, all answering commands.py,
                 one native agent per framework, answering native_script.py,
                 and an agent per shape that takes its own road through an
-                adapter: a prebuilt agent, a graph around a subgraph
+                adapter: a prebuilt agent, a graph around a subgraph, an
+                agent from an async factory
 configs/        aion.yaml templates, one per deployment variant
 core/           the scenarios, run for every framework
 persistence/    the scenarios that need a database under the server

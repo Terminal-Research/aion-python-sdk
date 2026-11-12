@@ -42,7 +42,7 @@ from tests.scenarios.agents.native_script import (
     tokens,
 )
 
-__all__ = ["ScriptedLlm", "create_agent", "create_file_inlining_agent"]
+__all__ = ["ScriptedLlm", "create_agent", "create_async_agent", "create_file_inlining_agent"]
 
 AGENT_NAME = "native_agent"
 
@@ -218,6 +218,12 @@ def sign_in(service: str, tool_context: ToolContext) -> str:
 
 def create_agent() -> LlmAgent:
     """Build the agent: a model, its tools, and an answer kept in state."""
+    return _build_agent()
+
+
+async def create_async_agent() -> LlmAgent:
+    """The same agent from an ``async def`` factory, as one that awaits while it builds - loading MCP tools, say."""
+    await asyncio.sleep(0)
     return _build_agent()
 
 
