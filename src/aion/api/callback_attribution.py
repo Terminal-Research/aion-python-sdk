@@ -1,16 +1,15 @@
-"""Transport inputs for Version-authenticated callbacks, never caller credentials."""
+"""Forward request-local usage carriers with the normal service credentials."""
 
 from collections.abc import Iterable, Mapping
 
 from aion.core.constants import AION_USAGE_ATTRIBUTION_HEADER
-from aion.core.exceptions import AionAuthenticationError, InvalidPrincipalError
-from aion.core.principal import Principal
+from aion.core.exceptions import AionAuthenticationError
 from aion.core.runtime.context import (
-    AionRuntimeContext, DirectAttribution, ForwardedAttribution, get_aion_runtime_context,
+    AionRuntimeContext, ForwardedAttribution, get_aion_runtime_context,
 )
 
-AION_CALLER_ID_HEADER = "Aion-Caller-Id"
 _SELECTOR = "Aion-Principal-Selector"
+_RETIRED_CALLER = "Aion-Caller-Id"
 
 
 def reject_callback_selector(value: object) -> None:
@@ -28,12 +27,10 @@ def callback_headers(
     usage_attribution: str | None = None,
     context: AionRuntimeContext | None = None,
 ) -> dict[str, str]:
-    """Merge exclusive callback inputs without trusting or decoding a carrier.
+    """Forward an opaque carrier without deriving attribution from a caller.
 
-    Without a runtime context or explicit attribution, send neither header.
-    Aion resolves the deployment's current daemon for self-initiated work.
-    An active runtime context must supply attribution, even for an anonymous
-    inbound caller. Missing request attribution never selects self-attribution.
+    Without a carrier, including inside an active request, send no attribution.
+    Aion resolves the deployment's current daemon and payer from its credentials.
 
     Args:
         existing: Transport headers or GraphQL pairs; duplicates are rejected.
@@ -41,28 +38,26 @@ def callback_headers(
         context: Explicit runtime context, otherwise the current request's scope.
 
     Returns:
-        Headers with at most one attribution input and unrelated fields intact.
+        Headers containing the carrier when present and unrelated fields intact.
 
     Raises:
-        AionAuthenticationError: For missing, conflicting or obsolete inputs.
+        AionAuthenticationError: For conflicting, empty, or obsolete inputs.
     """
     pairs = existing.items() if isinstance(existing, Mapping) else existing or ()
     headers: dict[str, str] = {}
-    reserved: dict[str, str] = {}
+    supplied: str | None = None
     for key, value in pairs:
         normalized = key.strip().casefold()
         if normalized == _SELECTOR.casefold():
             reject_callback_selector(value)
-        if normalized in (AION_USAGE_ATTRIBUTION_HEADER.casefold(), AION_CALLER_ID_HEADER.casefold()):
-            if normalized in reserved or not isinstance(value, str) or not value.strip():
+        if normalized == _RETIRED_CALLER.casefold():
+            raise AionAuthenticationError("Aion-Caller-Id is no longer supported.")
+        if normalized == AION_USAGE_ATTRIBUTION_HEADER.casefold():
+            if supplied is not None or not isinstance(value, str) or not value.strip():
                 raise AionAuthenticationError("Duplicate or empty callback attribution input.")
-            reserved[normalized] = value.strip()
+            supplied = value
         else:
             headers[key] = value
-    if len(reserved) > 1:
-        raise AionAuthenticationError("Signed and direct callback attribution cannot be combined.")
-    reported = reserved.get(AION_CALLER_ID_HEADER.casefold())
-    supplied = reserved.get(AION_USAGE_ATTRIBUTION_HEADER.casefold())
     if usage_attribution is not None:
         explicit = ForwardedAttribution(usage_attribution).carrier
         if supplied is not None and supplied != explicit:
@@ -70,24 +65,11 @@ def callback_headers(
         supplied = explicit
     runtime = context if context is not None else get_aion_runtime_context()
     attribution = runtime.get_callback_attribution() if runtime is not None else None
-    if reported is not None:
-        if usage_attribution is not None:
-            raise AionAuthenticationError("Signed and direct callback attribution cannot be combined.")
-        try:
-            caller = Principal.from_subject(reported)
-        except InvalidPrincipalError as error:
-            raise AionAuthenticationError("Malformed reported callback caller.") from error
-        if attribution != DirectAttribution(caller):
-            raise AionAuthenticationError("Reported caller conflicts with the current request.")
     if supplied is not None:
         explicit = ForwardedAttribution(supplied)
         if attribution is not None and attribution != explicit:
             raise AionAuthenticationError("Callback attribution conflicts with the current request.")
         attribution = explicit
-    if isinstance(attribution, ForwardedAttribution):
+    if attribution is not None:
         headers[AION_USAGE_ATTRIBUTION_HEADER] = attribution.carrier
-    elif isinstance(attribution, DirectAttribution):
-        headers[AION_CALLER_ID_HEADER] = attribution.caller.subject
-    elif runtime is not None:
-        raise AionAuthenticationError("This callback requires supported request-local attribution.")
     return headers

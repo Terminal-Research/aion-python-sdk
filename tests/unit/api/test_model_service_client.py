@@ -186,11 +186,10 @@ def test_model_rejects_retired_header_even_with_carrier(key):
         )
 
 
-def test_model_requires_attribution_within_an_inbound_request(monkeypatch):
+def test_carrierless_model_request_defers_attribution_to_the_api(monkeypatch):
     monkeypatch.setattr("aion.api.callback_attribution.get_aion_runtime_context",
                         lambda: AionRuntimeContext())
-    with pytest.raises(AionAuthenticationError, match="request-local attribution"):
-        model_service_client.aion_model_request_headers()
+    assert model_service_client.aion_model_request_headers() == {}
 
 
 def test_model_allows_self_initiated_work_without_an_inbound_request(monkeypatch):

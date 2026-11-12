@@ -447,7 +447,7 @@ def model_service(monkeypatch):
     monkeypatch.setattr(model_access, "aion_model_base_url", lambda: "https://api.example.test/v1")
 
 
-async def test_a_run_with_the_aion_provider_calls_the_model_service_on_the_callers_behalf(
+async def test_a_run_without_a_carrier_uses_deployment_model_attribution(
     fake_toolkit, model_service, runtime_provider
 ) -> None:
     evolution_executor = executor(callers=["platform"], provider="aion")
@@ -462,7 +462,7 @@ async def test_a_run_with_the_aion_provider_calls_the_model_service_on_the_calle
     assert report["provider"] == "aion"
     assert report["model"] == {
         "base_url": "https://api.example.test/v1",
-        "attribution": ["Aion-Caller-Id", caller(CredentialKind.INVOCATION).subject],
+        "attribution": None,
         "keyed": True,
     }
     assert events[-1].status.state == TaskState.TASK_STATE_COMPLETED

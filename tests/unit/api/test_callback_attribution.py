@@ -39,7 +39,7 @@ def test_self_initiated_work_preserves_bearer_without_inventing_a_caller(monkeyp
 
 
 @pytest.mark.parametrize("builder", ["mcp", "file", "model", "a2a"])
-def test_active_request_cannot_silently_become_self_initiated(monkeypatch, builder):
+def test_active_carrierless_request_uses_deployment_attribution(monkeypatch, builder):
     from aion.api.file_service_client import aion_file_authorization_headers
     from aion.api.gql.client import _with_callback_attribution
     from aion.api.model_service_client import aion_model_request_headers
@@ -53,8 +53,12 @@ def test_active_request_cannot_silently_become_self_initiated(monkeypatch, build
         "model": aion_model_request_headers,
         "a2a": lambda: _with_callback_attribution(None),
     }
-    with pytest.raises(AionAuthenticationError, match="request-local attribution"):
-        calls[builder]()
+    result = calls[builder]()
+    if builder == "a2a":
+        assert result is None
+    else:
+        assert "Aion-Usage-Attribution" not in result
+        assert "Aion-Caller-Id" not in result
 
 
 @pytest.mark.parametrize("builder", ["mcp", "file", "model"])

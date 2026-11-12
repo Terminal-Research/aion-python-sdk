@@ -236,17 +236,26 @@ async def test_http_failure_is_not_retried_and_preserves_daemon_error(auth, asyn
 
 @pytest.mark.parametrize("asynchronous", [False, True])
 @pytest.mark.asyncio
-async def test_active_request_without_attribution_does_not_fall_back_to_daemon(auth, asynchronous):
+async def test_carrierless_request_uses_service_credentials(auth, asynchronous):
     auth.context = AionRuntimeContext()
-    transport = httpx.MockTransport(lambda _: pytest.fail("Invalid attribution reached HTTP"))
-    with pytest.raises(AionAuthenticationError):
-        if asynchronous:
-            async with httpx.AsyncClient(transport=transport) as client:
-                await images.generate_images_async("image/model", "Icon", client=client)
-        else:
-            with httpx.Client(transport=transport) as client:
-                images.generate_images("image/model", "Icon", client=client)
-    assert auth.tokens == 0
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json=RESULT)
+
+    transport = httpx.MockTransport(respond)
+    if asynchronous:
+        async with httpx.AsyncClient(transport=transport) as client:
+            await images.generate_images_async("image/model", "Icon", client=client)
+    else:
+        with httpx.Client(transport=transport) as client:
+            images.generate_images("image/model", "Icon", client=client)
+    assert auth.tokens == 1
+    assert len(requests) == 1
+    assert requests[0].headers["Authorization"] == "Bearer token-1"
+    assert "Aion-Usage-Attribution" not in requests[0].headers
+    assert "Aion-Caller-Id" not in requests[0].headers
 
 
 @pytest.mark.asyncio

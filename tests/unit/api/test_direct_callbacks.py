@@ -13,26 +13,20 @@ from aion.api.callback_errors import (
     reraise_callback_error,
 )
 from aion.core.exceptions import AionAuthenticationError, AionDaemonIdentityRequired
-from aion.core.principal import Principal
-from aion.core.runtime.context import AionRuntimeContext, DirectAttribution, ForwardedAttribution
+from aion.core.runtime.context import AionRuntimeContext, ForwardedAttribution
 from aion.mcp import aion_mcp_authorization_headers
 
 
-@pytest.mark.parametrize("caller", [
-    Principal("AionUser", "00000000-0000-0000-0000-000000000001"),
-    Principal("AnonymousSession", "00000000-0000-0000-0000-000000000002"),
-    Principal("ExternalAnonymous", "external-anonymous"),
-])
-def test_direct_model_and_mcp_use_version_credentials(monkeypatch, caller):
-    context = AionRuntimeContext(callback_attribution=DirectAttribution(caller))
+def test_carrierless_model_and_mcp_use_version_credentials(monkeypatch):
+    context = AionRuntimeContext(callback_attribution=None)
     monkeypatch.setattr("aion.api.callback_attribution.get_aion_runtime_context", lambda: context)
     assert aion_mcp_authorization_headers("version-token") == {
-        "Authorization": "Bearer version-token", "Aion-Caller-Id": caller.subject,
+        "Authorization": "Bearer version-token",
     }
     request = httpx.Request("POST", "https://api.aion.test/v1/chat/completions")
     model_service_client._model_request_hook(lambda: "version-token")(request)
     assert request.headers["Authorization"] == "Bearer version-token"
-    assert request.headers["Aion-Caller-Id"] == caller.subject
+    assert "Aion-Caller-Id" not in request.headers
     assert "Aion-Usage-Attribution" not in request.headers
     assert "Aion-Principal-Selector" not in request.headers
     # Reapplying a hook must not invent a conflict for the same request.
@@ -40,13 +34,12 @@ def test_direct_model_and_mcp_use_version_credentials(monkeypatch, caller):
 
 
 def test_uncredentialed_direct_request_cannot_use_its_guest_token(monkeypatch):
-    context = AionRuntimeContext(callback_attribution=DirectAttribution(
-        Principal("ExternalAnonymous", "external-anonymous")))
+    context = AionRuntimeContext(callback_attribution=None)
     monkeypatch.setattr("aion.api.callback_attribution.get_aion_runtime_context", lambda: context)
     with pytest.raises(AionAuthenticationError, match="API token"):
         aion_mcp_authorization_headers(None)
-    with pytest.raises(AionAuthenticationError, match="conflicts"):
-        callback_headers(usage_attribution="stale-carrier")
+    with pytest.raises(AionAuthenticationError, match="no longer supported"):
+        callback_headers({"Aion-Caller-Id": "invented"})
 
 
 def test_self_initiated_model_and_mcp_keep_version_credentials(monkeypatch):

@@ -30,7 +30,6 @@ from aion.api import AionFileClient
 from aion.api.exceptions import AionAuthenticationError, AionFileStorageError
 from aion.core.exceptions import AionDaemonIdentityRequired, AionError
 from aion.core.runtime.context import (
-    DirectAttribution,
     ForwardedAttribution,
     get_aion_runtime_context,
 )
@@ -260,8 +259,8 @@ def _acting_as(context: UploadContext) -> str:
     """Name the attribution the callback headers carried, never a carrier value.
 
     The order follows the header choice: an explicit or collected signed
-    carrier, then a direct caller by its subject. Without request scope no
-    attribution header is sent and Aion acts as the deployment's daemon.
+    carrier. Without one, Aion acts as the deployment's daemon, including
+    during a request that has no usage carrier.
     """
     if context.usage_attribution:
         return "the request's signed usage attribution"
@@ -274,9 +273,7 @@ def _acting_as(context: UploadContext) -> str:
         return "conflicting request attribution"
     if isinstance(attribution, ForwardedAttribution):
         return "the request's signed usage attribution"
-    if isinstance(attribution, DirectAttribution):
-        return f"caller {attribution.caller.subject}"
-    return "no request attribution"
+    return "the deployment's daemon"
 
 
 def _summary(error: Exception) -> str:

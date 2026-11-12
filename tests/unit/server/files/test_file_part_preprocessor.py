@@ -105,11 +105,10 @@ class TestInboundStorage:
         assert req.message.parts[0].text == "hello"
         assert backend.batches == []
 
-    async def test_direct_inline_part_preserves_anonymous_caller(self):
+    async def test_carrierless_inline_part_uses_deployment_attribution(self):
         pre, backend = preprocessor()
         await pre.process(request(raw_part()), preprocessing_context(None))
-        caller = backend.contexts[0].runtime_context.get_callback_attribution().caller
-        assert caller.type == "ExternalAnonymous"
+        assert backend.contexts[0].runtime_context.get_callback_attribution() is None
         assert backend.contexts[0].organization_id is None
 
     async def test_permanent_storage_rejection_is_a_client_error(self):

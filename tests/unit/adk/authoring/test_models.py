@@ -175,7 +175,6 @@ def test_lite_llm_client_allows_deployment_initiated_work(monkeypatch):
 
 def test_lite_llm_does_not_derive_authority_from_environment_metadata(monkeypatch):
     """Routing metadata alone is not a callback authorization input."""
-    from aion.core.exceptions import AionAuthenticationError
     calls = _fake_adk_modules(monkeypatch)
     monkeypatch.setattr(models, "aion_openai_config", lambda: FakeConfig())
     monkeypatch.setattr(models, "aion_model_api_key", lambda: "fresh-jwt")
@@ -189,13 +188,10 @@ def test_lite_llm_does_not_derive_authority_from_environment_metadata(monkeypatc
 
     client = aion_lite_llm("model-id").kwargs["llm_client"]
 
-    with pytest.raises(AionAuthenticationError) as excinfo:
-        asyncio.run(
-            client.acompletion(model="openai/model-id", messages=[], tools=None)
-        )
-
-    assert "request-local attribution" in str(excinfo.value)
-    assert calls == []
+    asyncio.run(client.acompletion(model="openai/model-id", messages=[], tools=None))
+    assert len(calls) == 1
+    assert calls[0]["api_key"] == "fresh-jwt"
+    assert calls[0]["extra_headers"] == {}
 
 
 @pytest.mark.parametrize("asynchronous", [False, True])

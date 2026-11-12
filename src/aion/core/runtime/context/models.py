@@ -37,7 +37,7 @@ from aion.core.a2a.extensions import (
     TraceabilityExtensionV1,
 )
 from .extensions import AionRuntimeExtensions
-from .attribution import CallbackAttribution, ForwardedAttribution
+from .attribution import ForwardedAttribution
 from aion.core.exceptions import AionAuthenticationError
 from .conversation import ConversationHistory
 
@@ -126,7 +126,7 @@ class AionRuntimeContext:
     run - ``langgraph dev`` adds ``thread_id``. They land here instead of
     failing the run.
     """
-    callback_attribution: Optional[CallbackAttribution]
+    callback_attribution: Optional[ForwardedAttribution]
     """Transient callback mode populated from this request, never checkpoint state."""
     conversation: Optional[ConversationHistory]
     """Transient history of the turn's conversation, installed by the server for the turn, never checkpoint state.
@@ -140,7 +140,7 @@ class AionRuntimeContext:
             event: Optional[Event] = None,
             distribution_extension_payload: Optional[DistributionExtensionV1] = None,
             extensions: Optional[AionRuntimeExtensions] = None,
-            callback_attribution: Optional[CallbackAttribution] = None,
+            callback_attribution: Optional[ForwardedAttribution] = None,
             conversation: Optional[ConversationHistory] = None,
             **graph_kwargs: Any,
     ) -> None:
@@ -157,7 +157,7 @@ class AionRuntimeContext:
             extensions: Verified, per-request set of active,
                 registered extensions, produced by the collect/verify
                 pipeline.
-            callback_attribution: Transient forwarded or reported-direct callback
+            callback_attribution: Transient forwarded callback
                 input. It conveys no independent authorization to the SDK.
             conversation: The history of the turn's conversation, which the
                 server installs for every turn it runs.
@@ -188,8 +188,8 @@ class AionRuntimeContext:
         values = {field.name: getattr(self, field.name) for field in fields(self) if field.name != "graph_kwargs"}
         return AionRuntimeContext(**{**self.graph_kwargs, **values, **changes})
 
-    def get_callback_attribution(self) -> Optional[CallbackAttribution]:
-        """Return explicit callback input without inferring direct mode from absence.
+    def get_callback_attribution(self) -> Optional[ForwardedAttribution]:
+        """Return the request carrier, or no attribution for deployment-owned work.
 
         A collected usage carrier selects forwarded mode even for contexts built
         outside server execution. Conflicting explicit input is an error; missing

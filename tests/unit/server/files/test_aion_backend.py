@@ -16,7 +16,7 @@ from aion.core.a2a import FileActionPayload, file_artifact
 from aion.core.constants.a2a import MESSAGING_EXTENSION_URI_V1
 from aion.core.principal import Principal
 from aion.core.runtime.context import (
-    AionRuntimeContext, DirectAttribution, ForwardedAttribution,
+    AionRuntimeContext, ForwardedAttribution,
 )
 from aion.server.files.storage import (
     FileUpload,
@@ -124,7 +124,7 @@ class TestRequestShape:
 
     @pytest.mark.parametrize("direct", [False, True])
     async def test_direct_and_contextual_delivery_use_same_callback_for_grant(self, direct):
-        attribution = (DirectAttribution(Principal("AnonymousSession", "00000000-0000-0000-0000-000000000001"))
+        attribution = (None
                        if direct else ForwardedAttribution("signed-without-distribution"))
         context = resolve_upload_context(AionRuntimeContext(callback_attribution=attribution))
         seen = []
@@ -135,7 +135,7 @@ class TestRequestShape:
             assert request.headers["Authorization"] == "Bearer token"
             assert "Aion-Principal-Selector" not in request.headers
             if direct:
-                assert request.headers["Aion-Caller-Id"] == attribution.caller.subject
+                assert "Aion-Caller-Id" not in request.headers
                 assert "Aion-Usage-Attribution" not in request.headers
             else:
                 assert request.headers["Aion-Usage-Attribution"] == attribution.carrier
@@ -384,17 +384,16 @@ class TestPermissions:
         assert "opaque-carrier" not in str(outcome.cause)
         assert isinstance(outcome.cause.__cause__, httpx.HTTPStatusError)
 
-    async def test_a_direct_caller_is_named_by_its_subject(self):
+    async def test_a_carrierless_request_names_the_deployment_daemon(self):
         async def handle(request: httpx.Request) -> httpx.Response:
             return httpx.Response(403)
 
-        caller = Principal("AionUser", "019e4fe6-a19d-75e7-bc51-bd90004b67c9")
         context = resolve_upload_context(
-            AionRuntimeContext(callback_attribution=DirectAttribution(caller))
+            AionRuntimeContext(callback_attribution=None)
         )
         outcome = await backend(handle).store(upload(), context=context)
 
-        assert f"on behalf of caller {caller.subject} " in str(outcome.cause)
+        assert "on behalf of the deployment's daemon " in str(outcome.cause)
 
     async def test_without_request_scope_the_daemon_is_named(self):
         async def handle(request: httpx.Request) -> httpx.Response:

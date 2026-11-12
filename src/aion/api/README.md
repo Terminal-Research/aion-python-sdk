@@ -184,11 +184,11 @@ SDK callbacks keep the Version bearer and forward `Aion-Usage-Attribution`.
 Do not send `Aion-Principal-Selector` or exchange the bearer for a daemon token.
 Capability subjects still address the destination; they do not select authority.
 
-For a direct accepted SDK request, the runtime instead reports its canonical
-caller through `Aion-Caller-Id`. Anonymous sessions retain their session ID;
-an unidentified accepted caller is `ExternalAnonymous`. This value is attribution
-only. Aion resolves the deployment's current daemon and payer on each callback;
-the SDK does not cache an assignment or use the caller's bearer for these calls.
+When a request has no usage carrier, callbacks send neither attribution header.
+This also applies to anonymous sessions and application-authenticated requests.
+Aion resolves the deployment's current daemon for all three usage roles and its
+organization as payer. The SDK does not infer billing attribution from the incoming
+bearer, cache an assignment, or use the caller's bearer for these calls.
 Without deployment credentials, a guest session cannot access metered APIs.
 
 `AionDaemonIdentityRequired` (also exported from `aion.core.exceptions`) carries

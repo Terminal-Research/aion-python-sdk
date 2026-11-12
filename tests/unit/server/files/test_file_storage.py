@@ -120,10 +120,11 @@ class TestUploadContextProjection:
         assert isinstance(resolved, UploadContext)
         assert resolved.organization_id is None
 
-    def test_missing_attribution_never_selects_self_initiated_work(self):
+    def test_missing_carrier_leaves_deployment_attribution_to_the_server(self):
         resolved = resolve_upload_context(extensions(None))
-        assert isinstance(resolved, UploadFailure)
-        assert resolved.error_code is FileUploadErrorCode.NO_ATTRIBUTION
+        assert isinstance(resolved, UploadContext)
+        assert resolved.usage_attribution is None
+        assert resolved.organization_id is None
 
     def test_usage_carrier_is_projected(self):
         """The opaque signed carrier travels with the projection, uninspected."""
