@@ -8,7 +8,10 @@ puts the content into the model request and leaves the session as it is.
 
 from __future__ import annotations
 
+import base64
+
 import pytest
+from google.adk.models import lite_llm as adk_lite_llm
 from google.adk.models.llm_request import LlmRequest
 from google.genai import types
 
@@ -131,3 +134,104 @@ async def test_the_aion_model_inlines_before_it_builds_its_request() -> None:
 
     assert responses == ["response"]
     assert seen[0].data == PNG
+
+
+class TestToolMedia:
+    """A tool's media the session keeps by its address goes to the model by its content.
+
+    ADK's ``LiteLlm`` sends a tool's media only as ``inline_data`` of the
+    function response, so the content is put back there.
+    """
+
+    @staticmethod
+    def _tool_answer(url: str = PNG_URL) -> types.Content:
+        media = types.FunctionResponsePart(
+            file_data=types.FunctionResponseFileData(file_uri=url, mime_type="image/png", display_name="chart.png")
+        )
+        response = types.FunctionResponse(id="call-1", name="snapshot", response={}, parts=[media])
+        return types.Content(role="user", parts=[types.Part(function_response=response)])
+
+    async def test_a_tools_media_is_given_back_its_content(self) -> None:
+        request = LlmRequest(model="gpt-test", contents=[self._tool_answer()])
+
+        with use_conversation(_conversation()):
+            await inline_files(request)
+
+        (media,) = request.contents[0].parts[0].function_response.parts
+        assert media.file_data is None
+        assert (media.inline_data.data, media.inline_data.mime_type, media.inline_data.display_name) == (
+            PNG,
+            "image/png",
+            "chart.png",
+        )
+
+    async def test_the_session_keeps_the_address(self) -> None:
+        answer = self._tool_answer()
+        request = LlmRequest(model="gpt-test", contents=[answer])
+
+        with use_conversation(_conversation()):
+            await inline_files(request)
+
+        assert answer.parts[0].function_response.parts[0].file_data.file_uri == PNG_URL
+
+    @pytest.mark.skipif(
+        not hasattr(adk_lite_llm, "_function_response_media_parts"),
+        reason="this google-adk's LiteLlm sends no media of a tool to a model",
+    )
+    async def test_litellm_sends_the_tools_image_after_the_tools_answer(self) -> None:
+        """What LiteLlm builds from the inlined request: the tool's answer, then the image as the user's."""
+        request = LlmRequest(model="gpt-test", contents=[self._tool_answer()])
+        with use_conversation(_conversation()):
+            await inline_files(request)
+
+        tool, user = await adk_lite_llm._content_to_message_param(request.contents[0])
+
+        assert tool["role"] == "tool"
+        assert user["content"] == [
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64.b64encode(PNG).decode()}"}}
+        ]
+
+
+class TestReadingByTheStoredFile:
+    """The session names the stored file behind an address; the file is read by that name."""
+
+    class _Recording(InMemoryConversation):
+        def __init__(self) -> None:
+            super().__init__(files={PNG_URL: PNG})
+            self.read = []
+
+        async def read_file(self, part, *, max_bytes=None):
+            self.read.append(part)
+            return await super().read_file(part, max_bytes=max_bytes)
+
+    @staticmethod
+    def _session_naming(url: str):
+        from types import SimpleNamespace
+
+        from google.adk.events import Event
+
+        from aion.adk.authoring.files import STORED_FILES_KEY
+
+        event = Event(author="agent", custom_metadata={STORED_FILES_KEY: {url: {"fileId": "file-1", "fileVersionId": "ver-1"}}})
+        return SimpleNamespace(session=SimpleNamespace(events=[event]))
+
+    @pytest.mark.parametrize("where", ["message", "tool"])
+    async def test_a_file_is_read_by_the_stored_file_the_session_names(self, where: str) -> None:
+        from aion.adk.authoring.invocation import reset_adk_ctx, set_adk_ctx
+        from aion.core.a2a.files import StoredFile
+
+        content = (
+            TestToolMedia._tool_answer()
+            if where == "tool"
+            else types.Content(role="user", parts=[_file(PNG_URL, "image/png", "chart.png")])
+        )
+        conversation = self._Recording()
+        token = set_adk_ctx(self._session_naming(PNG_URL))
+        try:
+            with use_conversation(conversation):
+                await inline_files(LlmRequest(model="gpt-test", contents=[content]))
+        finally:
+            reset_adk_ctx(token)
+
+        [read] = conversation.read
+        assert StoredFile.of(read) == StoredFile.create("file-1", "ver-1")

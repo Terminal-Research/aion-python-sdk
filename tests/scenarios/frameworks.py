@@ -235,6 +235,9 @@ NATIVE_UNSUPPORTED: dict[tuple[str, str], str] = {
     ("langgraph", "artifact-service"): (
         "LangGraph has no artifact service; a graph emits artifacts through the Aion API"
     ),
+    ("langgraph", "tool-media"): (
+        "LangGraph has no function response media; a tool's image is a block of its ToolMessage"
+    ),
     ("adk", "prebuilt-agent"): (
         "ADK's LlmAgent is already its one standard way to build an agent; the "
         "rest of the native group runs it"

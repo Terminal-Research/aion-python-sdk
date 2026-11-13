@@ -41,6 +41,12 @@ latest user message, the way a scenario decides what to send:
     state-files         call ``state_files``, which describes every file the
                         framework's state holds for the conversation, then
                         answer with what it returned
+    snapshot            call ``snapshot``, which returns the image
+                        ``SNAPSHOT`` (ADK puts it into the tool's function
+                        response), then answer like ``tool-media``
+    tool-media          answer with a JSON description of the media in the
+                        function responses of the request, as the model
+                        received them
     instruction         answer with the system instruction the model received
     think <text>        think ``THOUGHT`` first, streamed as the framework's
                         reasoning, then answer with <text>
@@ -70,6 +76,7 @@ import asyncio
 import json
 import re
 from dataclasses import dataclass
+from collections.abc import Sequence
 from typing import Any, Optional
 
 __all__ = [
@@ -80,6 +87,8 @@ __all__ = [
     "ATTACHED",
     "ATTACHMENT",
     "STATE_FILES_TOOL",
+    "SNAPSHOT",
+    "SNAPSHOT_TOOL",
     "THOUGHT",
     "UNKNOWN_REPLY",
     "COUNTED_ANSWER",
@@ -132,6 +141,7 @@ SIGN_IN_TOOL = "sign_in"
 REPORT_TOOL = "save_report"
 REMEMBER_TOOL = "remember"
 STATE_FILES_TOOL = "state_files"
+SNAPSHOT_TOOL = "snapshot"
 SLOW_WORDS = 600
 SLOW_DELAY_SECONDS = 0.05
 TICKER_SECONDS = 60
@@ -142,6 +152,8 @@ NOTED = "Noted."
 ATTACHED = "Here is the file."
 ATTACHMENT = ("attached.pdf", "application/pdf", b"%PDF-1.7\n" + b"attached " * 8)
 """The file ``attach`` answers with: its name, media type and content."""
+SNAPSHOT = ("image/png", b"\x89PNG\r\n\x1a\n" + b"snapshot" * 4)
+"""The image ``snapshot`` returns: its media type and content."""
 WEATHER_PREAMBLE = "Checking the weather."
 RECALL_PREFIX = "You said: "
 UNKNOWN_REPLY = "I do not know that one."
@@ -280,6 +292,7 @@ def model_turn(
     tool_results: list[str],
     earlier_user_texts: list[str],
     instruction: str = "",
+    tool_media: Sequence[dict[str, Any]] = (),
 ) -> ModelTurn:
     """What the model answers.
 
@@ -288,6 +301,10 @@ def model_turn(
         tool_results: What tools returned since that message, in order.
         earlier_user_texts: The user's earlier messages in the context.
         instruction: The system instruction the model was given, if any.
+        tool_media: The media in the request's function responses, each
+            ``{"mime_type": ..., "size": ...}`` when its content came with
+            the request or ``{"mime_type": ..., "url": ...}`` when only its
+            address did.
     """
     # The command is the first text part: a data part arrives as text too,
     # and joined onto it would change the command.
@@ -325,6 +342,7 @@ def model_turn(
         "report": (REPORT_TOOL, {"title": argument}, lambda result: REPORT_SAVED),
         "remember": (REMEMBER_TOOL, {"note": argument}, lambda result: NOTED),
         "state-files": (STATE_FILES_TOOL, {}, lambda result: result),
+        "snapshot": (SNAPSHOT_TOOL, {}, lambda result: json.dumps(list(tool_media))),
     }
     if command in tools:
         name, args, answer = tools[command]
@@ -333,6 +351,8 @@ def model_turn(
         return ModelTurn(tool_call=(name, args))
     if command == "attach":
         return ModelTurn(text=ATTACHED, file=ATTACHMENT)
+    if command == "tool-media":
+        return ModelTurn(text=json.dumps(list(tool_media)))
     if command == "instruction":
         return ModelTurn(text=instruction)
     if command == "think":

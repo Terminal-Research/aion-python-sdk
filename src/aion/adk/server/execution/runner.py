@@ -27,7 +27,7 @@ from contextvars import ContextVar
 from typing import Any, Optional, Protocol
 
 from aion.adk.authoring.invocation import AionInvocationContext
-from aion.adk.server.execution.session_files import kept_in_session
+from aion.adk.server.execution.session_files import kept_in_session, with_content_of
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from google.adk.agents import BaseAgent
 from google.adk.agents.run_config import RunConfig, StreamingMode
@@ -93,9 +93,10 @@ class TurnSessionService(BaseSessionService):
     ``append_event``: the turn in progress is asked first (``Turn.keeps``),
     so one place decides what a session holds, whoever writes - the Runner,
     for the user's message and the agent's events, or the server, for what
-    the agent sent through the thread. The session is given a copy of the
-    event with its inline files stored and linked (``kept_in_session``); the
-    event itself goes back to the writer as it was.
+    the agent sent through the thread. The session service is given a copy
+    of the event with its inline files stored and linked
+    (``kept_in_session``); the event goes back to the writer as it was, and
+    the invocation's session goes on with its content (``with_content_of``).
     """
 
     def __init__(self, inner: BaseSessionService) -> None:
@@ -132,7 +133,10 @@ class TurnSessionService(BaseSessionService):
             return event
         kept = await kept_in_session(event)
         appended = await self._inner.append_event(session=session, event=kept)
-        return event if kept is not event else appended
+        if kept is event:
+            return appended
+        with_content_of(session, event)
+        return event
 
 
 class AionRunner(Runner):

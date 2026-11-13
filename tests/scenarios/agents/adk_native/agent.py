@@ -50,6 +50,7 @@ from tests.scenarios.agents.native_script import (
     YES_WORDS,
     FAILURE_TEXT,
     REPORT_FILENAME,
+    SNAPSHOT,
     ModelFailure,
     ModelTurn,
     UserMessage,
@@ -112,6 +113,20 @@ def _parts(content: types.Content) -> tuple[dict[str, Any], ...]:
     return tuple(described)
 
 
+def _tool_media(contents: list[types.Content]) -> list[dict[str, Any]]:
+    """The media in the function responses of a request, as ``tool-media`` describes them."""
+    described: list[dict[str, Any]] = []
+    for content in contents:
+        for part in content.parts or []:
+            response = part.function_response
+            for media in (response.parts or []) if response is not None else []:
+                if media.inline_data is not None:
+                    described.append({"mime_type": media.inline_data.mime_type, "size": len(media.inline_data.data or b"")})
+                elif media.file_data is not None:
+                    described.append({"mime_type": media.file_data.mime_type, "url": media.file_data.file_uri})
+    return described
+
+
 def _turn(request: LlmRequest) -> ModelTurn:
     """Read the request's contents the way the script needs them."""
     contents = request.contents or []
@@ -129,6 +144,7 @@ def _turn(request: LlmRequest) -> ModelTurn:
         tool_results=results,
         earlier_user_texts=[_text(content) for content in contents[:latest] if _is_user_turn(content)],
         instruction=system if isinstance(system, str) else "",
+        tool_media=_tool_media(contents),
     )
 
 
@@ -199,16 +215,21 @@ async def save_report(title: str, tool_context: ToolContext) -> str:
 
 
 def state_files(tool_context: ToolContext) -> str:
-    """Describe every file the session holds: its address, and whether its content is inline."""
-    return json.dumps(
-        [
-            {"url": part.file_data.file_uri if part.file_data else None, "inline": part.inline_data is not None}
-            for event in tool_context._invocation_context.session.events
-            if event.content is not None
-            for part in event.content.parts or []
-            if part.file_data is not None or part.inline_data is not None
-        ]
-    )
+    """Describe every file the session holds, a tool's media included: its address, and whether its content is inline."""
+    files = []
+    for event in tool_context._invocation_context.session.events:
+        for part in (event.content.parts or []) if event.content is not None else []:
+            response = part.function_response
+            for file in [part, *((response.parts or []) if response is not None else [])]:
+                if file.file_data is not None or file.inline_data is not None:
+                    files.append({"url": file.file_data.file_uri if file.file_data else None, "inline": file.inline_data is not None})
+    return json.dumps(files)
+
+
+def snapshot() -> types.Part:
+    """Take a snapshot of the screen."""
+    media_type, content = SNAPSHOT
+    return types.Part.from_bytes(data=content, mime_type=media_type)
 
 
 def remember(note: str, tool_context: ToolContext) -> str:
@@ -330,6 +351,7 @@ def _build_agent(**kwargs: Any) -> LlmAgent:
         instruction=INSTRUCTION,
         tools=[
             get_weather, ticker, save_report, remember, count_call, confirm_action, confirm_with_card, state_files,
+            snapshot,
             FunctionTool(delete_cache, require_confirmation=True),
             FunctionTool(drop_table, require_confirmation=True),
             sign_in,

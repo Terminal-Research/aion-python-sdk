@@ -9,7 +9,9 @@ the content can only have come from memory.
 
 A file the agent's model answers with is stored once: the client gets its
 address, and the framework's own state - a LangGraph checkpoint, an ADK
-session - keeps the same address, not the bytes.
+session - keeps the same address, not the bytes. So is an image an ADK tool
+returns, which never reaches the client: the session keeps its address, and
+the model is sent its content, in the same turn and in later ones.
 """
 
 from __future__ import annotations
@@ -30,7 +32,7 @@ from tests.scenarios.harness import (
     final_task,
     section_texts,
 )
-from tests.scenarios.agents.native_script import ATTACHED
+from tests.scenarios.agents.native_script import ATTACHED, SNAPSHOT
 from tests.scenarios.harness.recorder import stored_messages
 
 pytestmark = [pytest.mark.native, pytest.mark.files]
@@ -117,3 +119,24 @@ async def test_a_file_the_model_answers_with_is_kept_in_the_state_as_the_address
 
     (answer,) = section_texts(described)
     assert json.loads(answer) == [{"url": sent[0].url, "inline": False}]
+
+
+@pytest.mark.capability("tool-media")
+async def test_a_tools_image_is_kept_as_a_link_and_reaches_the_model_as_its_content(
+    storing: ScenarioClient,
+) -> None:
+    media_type, content = SNAPSHOT
+    sent_to_the_model = [{"mime_type": media_type, "size": len(content)}]
+
+    events = await _send(storing, "snapshot")
+    answered = final_task(events)
+    assert answered.state == "COMPLETED"
+    (answer,) = section_texts(events)
+    assert json.loads(answer) == sent_to_the_model, "the model sees the image in the turn the tool ran"
+
+    described = await _send(storing, "state-files", context_id=answered.context_id)
+    (kept,) = json.loads(section_texts(described)[0])
+    assert kept["inline"] is False and kept["url"].startswith(STUB_URL_PREFIX)
+
+    later = await _send(storing, "tool-media", context_id=answered.context_id)
+    assert json.loads(section_texts(later)[0]) == sent_to_the_model, "a later turn sends the model the content again"
