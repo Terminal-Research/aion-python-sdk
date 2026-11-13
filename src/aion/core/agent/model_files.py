@@ -18,16 +18,20 @@ from __future__ import annotations
 import asyncio
 import base64
 import concurrent.futures
+import logging
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Optional
+from urllib.parse import urlsplit
 
 from aion.core.a2a.file_contents import file_contents
 from aion.core.exceptions import ConversationFileError, ConversationUnavailableError, TaskFailedError
 from aion.core.settings import file_settings
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "HeldDocuments",
@@ -164,6 +168,7 @@ def _read_from_address(url: str, *, name: Optional[str]) -> bytes:
             ) from error
         if size <= limit:
             content = b"".join(chunks)
+            logger.debug("Downloaded file %r (%d bytes) from %s", label, size, urlsplit(url).hostname)
             contents.put(f"url:{url}", content, url=url)
     if content is None or len(content) > limit:
         raise TaskFailedError(

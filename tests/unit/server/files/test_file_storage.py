@@ -452,6 +452,31 @@ class TestA2AFileTransformer:
         ]
         assert [part.text for part in transform.event.status.message.parts] == ["keep"]
 
+    async def test_every_stored_file_is_logged_once_without_its_link(self, caplog):
+        """What lands in storage can be told from the log; its link, a credential, cannot."""
+        receipt = UploadReceipt(uri="https://files.test/content?grant=secret", file_id="f-1", version_id="v-1")
+
+        with caplog.at_level("INFO", logger="aion.server.files.a2a.part_transformer.transformer"):
+            await self._transformer(OutcomeBackend([receipt])).transform(
+                status_event(raw_part(data=b"12345", name="a.png")), upload_context=upload_context()
+            )
+
+        (record,) = [r for r in caplog.records if r.getMessage().startswith("Stored")]
+        assert record.levelname == "INFO"
+        assert record.getMessage() == (
+            "Stored agent file 'a.png' (image/png, 5 bytes) as file f-1 version v-1; task t-1, context ctx-1"
+        )
+
+    async def test_a_callers_file_is_logged_as_inbound(self, caplog):
+        message = Message(message_id="m", context_id="ctx-1", role=Role.ROLE_USER, parts=[raw_part()])
+
+        with caplog.at_level("INFO", logger="aion.server.files.a2a.part_transformer.transformer"):
+            await self._transformer().transform(message, upload_context=upload_context())
+
+        (record,) = [r for r in caplog.records if r.getMessage().startswith("Stored")]
+        assert record.getMessage().startswith("Stored inbound file 'a.png' (image/png, 5 bytes)")
+        assert record.getMessage().endswith("; task -, context ctx-1")
+
     async def test_one_batch_per_event(self):
         """Every inline part of one event is stored in a single call."""
         backend = RecordingBackend()

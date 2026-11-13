@@ -250,6 +250,9 @@ async def fetch_file(url: str, *, label: str, max_bytes: Optional[int] = DEFAULT
         raise ConversationFileError(
             f"File {label!r} could not be read: {type(error).__name__}."
         ) from error
+    # The host only: the address of a stored file is a download link that
+    # carries its own access.
+    logger.debug("Downloaded file %r (%d bytes) from %s", label, size, urlsplit(url).hostname)
     return b"".join(chunks)
 
 

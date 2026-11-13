@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import logging
 import socket
 import time
 
@@ -221,6 +222,24 @@ def test_a_blocking_read_for_a_model_is_checked_the_same_way(network) -> None:
     with pytest.raises(TaskFailedError, match="public addresses only"):
         model_files._read_from_address("http://inside.example.com/latest/meta-data/", name="meta")
     assert [request.headers["host"] for request in network.sent] == ["files.example.com"]
+
+
+async def test_a_download_is_logged_at_debug_by_its_host_not_its_link(network, caplog) -> None:
+    """A stored file's link carries its own access; the log names the host only."""
+    with caplog.at_level(logging.DEBUG, logger="aion.core.runtime.context.conversation"):
+        await fetch_file("https://files.example.com/report.pdf?grant=secret", label="report.pdf")
+
+    (record,) = [r for r in caplog.records if r.getMessage().startswith("Downloaded")]
+    assert record.levelno == logging.DEBUG
+    assert record.getMessage() == "Downloaded file 'report.pdf' (7 bytes) from files.example.com"
+
+
+def test_a_blocking_download_is_logged_the_same_way(network, caplog) -> None:
+    with caplog.at_level(logging.DEBUG, logger="aion.core.agent.model_files"):
+        model_files._read_from_address("https://files.example.com/blocking.pdf?grant=secret", name="blocking.pdf")
+
+    (record,) = [r for r in caplog.records if r.getMessage().startswith("Downloaded")]
+    assert record.getMessage() == "Downloaded file 'blocking.pdf' (7 bytes) from files.example.com"
 
 
 @pytest.mark.parametrize(

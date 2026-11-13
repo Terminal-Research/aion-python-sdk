@@ -35,6 +35,7 @@ from a2a.types import (
     Artifact,
     Message,
     Part,
+    Role,
     Task,
     TaskArtifactUpdateEvent,
     TaskStatus,
@@ -203,6 +204,9 @@ class A2AFileTransformer:
             resolution,
             default_filenames=[name for parts, name in fields for _ in parts],
             retention=retention,
+            origin=_origin(event),
+            task_id=task_id,
+            context_id=context_id,
         )
         if not report.changed:
             return Transform(event, report)
@@ -233,6 +237,9 @@ class A2AFileTransformer:
         *,
         default_filenames: list[str | None],
         retention: Retention,
+        origin: str,
+        task_id: str | None,
+        context_id: str | None,
     ) -> tuple[list[Part | None], TransformReport]:
         """Store every convertible part of one event in one batch.
 
@@ -245,6 +252,11 @@ class A2AFileTransformer:
 
         ``default_filenames``, aligned with ``parts`` as well, names the file
         a part without a filename of its own is uploaded under.
+
+        Every stored file is logged once at INFO: whose it is (``origin``),
+        its name, type and size, the file and version the storage service
+        gave it, and the task and context - never its link, which carries
+        its own access, nor its content.
         """
         report = TransformReport()
         indexes = [i for i, part in enumerate(parts) if carries_inline_content(part)]
@@ -284,6 +296,17 @@ class A2AFileTransformer:
         for index, upload, outcome in zip(upload_indexes, uploads, outcomes, strict=True):
             if isinstance(outcome, UploadReceipt):
                 report.receipts.append(outcome)
+                logger.info(
+                    "Stored %s file %r (%s, %d bytes) as file %s version %s; task %s, context %s",
+                    origin,
+                    upload.filename,
+                    upload.media_type,
+                    upload.byte_size,
+                    outcome.file_id or "-",
+                    outcome.version_id or "-",
+                    task_id or "-",
+                    context_id or "-",
+                )
                 stored[index] = Part(
                     url=outcome.uri,
                     media_type=upload.media_type,
@@ -340,6 +363,13 @@ class A2AFileTransformer:
             filename=filename or None,
             retention_expires_at=expires_at,
         )
+
+
+def _origin(event: Event) -> str:
+    """Whose files an event carries: a user's message brings the caller's, anything else is the agent's."""
+    if isinstance(event, Message) and event.role == Role.ROLE_USER:
+        return "inbound"
+    return "agent"
 
 
 def _reference(receipt: UploadReceipt) -> StoredFile | None:
