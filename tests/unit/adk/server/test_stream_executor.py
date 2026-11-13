@@ -188,7 +188,8 @@ async def test_an_event_before_a_failure_is_written_once_and_the_failure_surface
 
 async def test_an_event_before_a_cancel_is_written_once() -> None:
     """Cancelled while the agent is busy: what it yielded stays written once,
-    and nothing is written on the way out."""
+    and the executor writes nothing on the way out. ADK's Runner may record
+    the abort itself (``INVOCATION_ABORTED``); that record is ADK's."""
     before = _event({"n": 1})
     run = _Run(("yield", before), ("hang", None))
 
@@ -201,7 +202,9 @@ async def test_an_event_before_a_cancel_is_written_once() -> None:
     with pytest.raises(asyncio.CancelledError):
         await task
 
-    assert await run.stored_ids() == [before.id]
+    stored = await run.stored()
+    assert [event.id for event in stored].count(before.id) == 1
+    assert all(event.id == before.id or event.error_code == "INVOCATION_ABORTED" for event in stored)
 
 
 def _thought(text: str) -> Event:
