@@ -101,6 +101,24 @@ class TestInboundStorage:
         assert backend.batches[0][0].media_type == "application/pdf"
         assert file_contents().get(content_key(part)) == b"%PDF-"
 
+    async def test_a_file_sent_as_some_bytes_is_stored_as_the_kind_its_name_says(self):
+        """``application/octet-stream`` names no kind: a client that does not know ``.pdf`` sends a PDF that way."""
+        pre, backend = preprocessor()
+        req = request(Part(raw=b"%PDF-", media_type="application/octet-stream", filename="report.pdf"))
+
+        await pre.process(req, preprocessing_context(None))
+
+        assert backend.batches[0][0].media_type == "application/pdf"
+        assert req.message.parts[0].media_type == "application/pdf"
+
+    async def test_a_kind_the_client_names_is_kept(self):
+        pre, backend = preprocessor()
+        req = request(Part(raw=b"a,b", media_type="text/plain", filename="totals.csv"))
+
+        await pre.process(req, preprocessing_context(None))
+
+        assert backend.batches[0][0].media_type == "text/plain"
+
     async def test_a_data_url_that_does_not_decode_rejects_the_request(self):
         pre, _ = preprocessor()
         req = request(Part(url="data:application/pdf;base64,J"))
@@ -222,6 +240,18 @@ class TestCompensation:
         await pre.rollback()
 
         assert len(discarded[0]) == 1
+
+    async def test_a_rejected_requests_files_leave_the_file_cache(self):
+        """Nobody reads them: their content does not wait to expire."""
+        pre, _ = preprocessor(StubFileStorageBackend())
+        req = request(raw_part())
+        await pre.process(req, preprocessing_context(distribution_payload(principal())))
+        key = content_key(req.message.parts[0])
+        assert file_contents().get(key) == b"bytes"
+
+        await pre.rollback()
+
+        assert file_contents().get(key) is None
 
     async def test_rollback_without_uploads_is_a_no_op(self):
         pre, _ = preprocessor()

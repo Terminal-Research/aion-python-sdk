@@ -7,9 +7,10 @@ one turn. This cache keeps what was read, and what the server itself just
 stored, so that a server downloads a file once.
 
 It is one per process. A stored file is immutable, so an entry never goes
-stale: it leaves when it has not been read for ``ttl_seconds`` or when room is
-needed for a newer one. Another server of the agent has a cache of its own
-and downloads the file itself; the storage service is what they share.
+stale: it leaves when it has not been read for ``ttl_seconds``, when room is
+needed for a newer one, or when the file is withdrawn (``forget``). Another
+server of the agent has a cache of its own and downloads the file itself; the
+storage service is what they share.
 
 An entry is kept under the file's own identity (``content_key``) - the id of
 the stored version, or the address for a file the server did not store - and
@@ -124,12 +125,19 @@ class FileContents:
 
         Readers that ask for the same file while it loads wait for the one
         download. A failed load is not kept: the next reader tries again.
+        Content kept under another key is found by ``url`` as well: a file the
+        server stored is kept under its version, and a reader that knows only
+        its address asks under the address.
         """
         content = self.get(key)
         if content is not None:
             if url is not None:
                 self._keys_by_url[url] = key
             return content
+        if url is not None:
+            content = self.get_by_url(url)
+            if content is not None:
+                return content
         loading = self._loading.get(key)
         if loading is None:
             loading = asyncio.ensure_future(loader())
@@ -138,6 +146,10 @@ class FileContents:
         content = await asyncio.shield(loading)
         self.put(key, content, url=url)
         return content
+
+    def forget(self, key: str) -> None:
+        """Drop the content kept under ``key``, and the addresses it was found by."""
+        self._drop(key)
 
     def clear(self) -> None:
         """Forget every entry."""

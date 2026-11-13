@@ -545,6 +545,15 @@ class TestA2AFileTransformer:
         )
         assert backend.batches[0][0].filename == "art"
 
+    async def test_the_link_keeps_the_name_the_file_was_stored_under(self):
+        """The client and the agent read the file's name in its part, not in the artifact."""
+        event = (await self._transformer(RecordingBackend()).transform(
+            artifact_event(Part(raw=b"a,b", media_type="text/csv")),
+            upload_context=upload_context(),
+        )).event
+
+        assert event.artifact.parts[0].filename == "art"
+
     async def test_failed_part_is_dropped_logged_and_reported(self, caplog):
         """Never inline bytes - that is what the transformer exists to prevent.
 

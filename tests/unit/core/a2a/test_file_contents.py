@@ -67,6 +67,17 @@ def test_an_entry_not_read_for_the_ttl_is_gone_and_a_read_keeps_it() -> None:
     assert cache.size == 1
 
 
+def test_forgetting_drops_the_content_and_its_addresses() -> None:
+    cache, _ = _cache()
+    cache.put("a", b"12345", url="https://files.test/a")
+
+    cache.forget("a")
+
+    assert cache.get("a") is None
+    assert cache.get_by_url("https://files.test/a") is None
+    assert cache.size == 0
+
+
 def test_the_entry_read_longest_ago_makes_room() -> None:
     cache, clock = _cache(max_bytes=10)
     cache.put("a", b"12345", url="https://files.test/a")
@@ -114,6 +125,18 @@ async def test_readers_of_one_file_share_one_download() -> None:
     assert calls == 1
     assert await cache.load("a", download) == b"content"
     assert calls == 1
+
+
+async def test_a_load_finds_content_kept_under_another_key_by_its_address() -> None:
+    """A stored file is kept under its version; a reader that knows only its address does not download it again."""
+    cache, _ = _cache()
+    cache.put("file:f-1:v-1", b"content", url="https://files.test/f-1?grant=a")
+
+    async def download() -> bytes:
+        raise AssertionError("the file is in memory")
+
+    assert await cache.load("url:https://files.test/f-1?grant=a", download, url="https://files.test/f-1?grant=a") == b"content"
+    assert cache.size == len(b"content")
 
 
 async def test_a_failed_download_is_not_kept() -> None:

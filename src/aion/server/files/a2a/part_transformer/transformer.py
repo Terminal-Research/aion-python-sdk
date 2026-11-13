@@ -26,6 +26,7 @@ from __future__ import annotations
 import copy
 import logging
 import mimetypes
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -49,7 +50,7 @@ from a2a.types import (
 from aion.core.a2a.file_contents import content_key, file_contents
 from aion.core.runtime.context import get_aion_runtime_context
 from aion.core.a2a.extensions.messaging import FileActionPayload
-from aion.core.a2a.files import StoredFile
+from aion.core.a2a.files import GENERIC_MEDIA_TYPE, StoredFile
 from aion.core.constants.a2a import MESSAGING_EXTENSION_URI_V1
 from aion.server.files.storage import (
     FileRetentionDefault,
@@ -141,6 +142,20 @@ class A2AFileTransformer:
     def upload_manager(self) -> FileUploadManager | None:
         """The underlying upload manager, if a backend is configured."""
         return self._upload_manager
+
+    @staticmethod
+    def forget_contents(receipts: Iterable[UploadReceipt]) -> None:
+        """Drop the kept content of stored files the work they were stored for no longer needs.
+
+        Every file the transformer stores is kept in the process's file cache
+        (``aion.core.a2a.file_contents``); a file stored for a request that
+        was rejected afterwards is read by nobody, so its content leaves at
+        once instead of taking room until it expires.
+        """
+        for receipt in receipts:
+            key = content_key(_stored_part(receipt))
+            if key is not None:
+                file_contents().forget(key)
 
     async def transform(
         self,
@@ -338,17 +353,12 @@ class A2AFileTransformer:
                         outcome.version_id or "-",
                         task_id or "-",
                     )
-                stored[index] = Part(
-                    url=outcome.uri,
+                stored[index] = _stored_part(
+                    outcome,
                     media_type=upload.media_type,
-                    filename=parts[index].filename,
-                    metadata=(
-                        parts[index].metadata if retention is PartRetention.REQUESTED else None
-                    ),
+                    filename=upload.filename,
+                    metadata=parts[index].metadata if retention is PartRetention.REQUESTED else None,
                 )
-                reference = _reference(outcome)
-                if reference is not None:
-                    reference.write_to(stored[index])
                 if stored_now:
                     _keep_content(stored[index], upload.data)
                 continue
@@ -376,7 +386,9 @@ class A2AFileTransformer:
         """Build the storage request for one inline part.
 
         The part's own media type comes first, then the one its ``data:``
-        URL declares, then a guess from the file's name.
+        URL declares, then a guess from the file's name;
+        ``application/octet-stream``, which names no kind, counts as none. A
+        part without a filename of its own is stored under ``default_filename``.
 
         Raises:
             ValidationError: The part requests its own retention in a
@@ -385,7 +397,10 @@ class A2AFileTransformer:
         """
         content = inline_content(part)
         filename = part.filename or default_filename
-        media_type = part.media_type or content.media_type
+        media_type = next(
+            (declared for declared in (part.media_type, content.media_type) if declared and declared != GENERIC_MEDIA_TYPE),
+            None,
+        )
         if not media_type and filename:
             media_type, _ = mimetypes.guess_type(filename)
         expires_at = (
@@ -393,7 +408,7 @@ class A2AFileTransformer:
         )
         return FileUpload(
             data=content.data,
-            media_type=media_type or "application/octet-stream",
+            media_type=media_type or GENERIC_MEDIA_TYPE,
             filename=filename or None,
             retention_expires_at=expires_at,
         )
@@ -411,6 +426,25 @@ def _origin(event: Event) -> str:
     if isinstance(event, Message) and event.role == Role.ROLE_USER:
         return "inbound"
     return "agent"
+
+
+def _stored_part(
+        receipt: UploadReceipt,
+        *,
+        media_type: str = "",
+        filename: str | None = None,
+        metadata: Any = None,
+) -> Part:
+    """The part that stands for a stored file: its link, and the reference to it when there is one.
+
+    It carries the media type and the name the file was stored under, so a
+    file stored under its artifact's name keeps that name in the part too.
+    """
+    part = Part(url=receipt.uri, media_type=media_type, filename=filename or "", metadata=metadata)
+    reference = _reference(receipt)
+    if reference is not None:
+        reference.write_to(part)
+    return part
 
 
 def _reference(receipt: UploadReceipt) -> StoredFile | None:

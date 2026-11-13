@@ -124,6 +124,9 @@ class FilePartPreprocessor:
     async def _compensate(self) -> None:
         """Withdraw what this request stored, never raising on the way.
 
+        The files' content leaves the process's file cache at once, whether
+        or not the storage service can withdraw the files themselves.
+
         Compensation is secondary to the failure that triggered it, in both
         directions. Letting it raise out of ``process`` would replace the
         rejection the client needs to read - "the storage service rejected the
@@ -136,6 +139,7 @@ class FilePartPreprocessor:
         if not receipts:
             return
         _request_receipts.set([])
+        self._transformer.forget_contents(receipts)
 
         upload_manager = self._transformer.upload_manager
         if upload_manager is None:
