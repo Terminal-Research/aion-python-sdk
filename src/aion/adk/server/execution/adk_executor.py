@@ -18,6 +18,7 @@ from google.adk.artifacts import BaseArtifactService
 from google.adk.sessions import Session, BaseSessionService
 
 from aion.adk.server.artifacts import ArtifactServiceFactory
+from aion.adk.server.artifacts.backends.a2a import A2AArtifactService
 from aion.adk.server.constants import DEFAULT_USER_ID
 from aion.adk.server.session import SessionServiceFactory
 from aion.adk.server.transformers.a2a_to_adk import ADKTransformer
@@ -166,6 +167,26 @@ class ADKExecutor(AgentFrameworkExecutor):
             # failure once; this adds only how long the run lasted.
             logger.debug(f"ADK stream failed after {time.monotonic() - start:.3f}s: {e}")
             raise ExecutionError(f"Failed to stream agent: {e}") from e
+        finally:
+            self._forget_turn_artifacts(config, context_id)
+
+    def _forget_turn_artifacts(self, config: Optional[ExecutionConfig], session_id: str) -> None:
+        """Let the artifact service drop the bytes this turn's artifacts held in memory.
+
+        The turn has ended however it ended - the server closes the stream
+        once it has handed every event on - so its task holds what reached it.
+        """
+        service = self._artifact_service
+        if not isinstance(service, A2AArtifactService) or config is None:
+            return
+        if config.task_id is None or config.state_scope is None:
+            return
+        service.forget_turn(
+            app_name=config.state_scope.agent_id,
+            user_id=config.state_scope.state_owner,
+            session_id=session_id,
+            task_id=config.task_id,
+        )
 
     async def _finalize(
             self,
@@ -245,9 +266,10 @@ class ADKExecutor(AgentFrameworkExecutor):
         """Remove an artifact that never reached the task from the artifact service.
 
         The converter loads every artifact it emits from the artifact service,
-        which keeps the bytes in memory for a while after the run. An artifact
-        the server could not store must not be readable from there by a later
-        turn, since the client never received it.
+        which keeps the bytes in memory until the turn ends, and a user-scoped
+        artifact for a while after it. An artifact the server could not store
+        must not be readable from there by a later turn, since the client
+        never received it.
 
         ``delete_artifact`` is the only removal the ADK interface offers, and
         it takes every version of the name the service holds. In
