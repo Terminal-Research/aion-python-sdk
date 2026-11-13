@@ -29,7 +29,10 @@ from aion.core.a2a.extensions import (
     FileActionPayload,
     ServiceIdentity,
 )
+from aion.core.agent.invocation.card import Card
+from aion.core.agent.invocation.card.utils import build_card_a2a_part
 from aion.core.constants import (
+    CARDS_EXTENSION_URI_V1,
     CARDS_MEDIA_TYPE,
     DISTRIBUTION_EXTENSION_URI_V1,
     MESSAGING_EXTENSION_URI_V1,
@@ -376,15 +379,78 @@ class TestA2AFileTransformer:
             event, upload_context=upload_context()
         )).event is event
 
-    async def test_card_parts_are_never_stored(self):
-        """Cards are UI documents, not files - the skip rules keep them inline."""
+    async def test_a_card_leaves_as_a_link_that_is_still_a_card(self):
+        """The client fetches the document; type, name and schema tell it what it got."""
         backend = RecordingBackend()
-        event = status_event(Part(raw=b"<Card/>", media_type=CARDS_MEDIA_TYPE))
+        card = build_card_a2a_part(Card(jsx='<Card title="Deploy"/>'))
+
         result = (await self._transformer(backend).transform(
-            event, upload_context=upload_context()
+            status_event(card), upload_context=upload_context()
         )).event
-        assert result is event
-        assert backend.batches == []
+
+        (upload,) = backend.batches[0]
+        assert (upload.data, upload.media_type) == (b'<Card title="Deploy"/>', CARDS_MEDIA_TYPE)
+        (stored,) = result.status.message.parts
+        assert stored.url and not stored.raw
+        assert (stored.media_type, stored.filename) == (CARDS_MEDIA_TYPE, card.filename)
+        assert stored.metadata[CARDS_EXTENSION_URI_V1] == card.metadata[CARDS_EXTENSION_URI_V1]
+
+    @pytest.mark.parametrize(
+        "url, data, media_type",
+        [
+            ("data:application/pdf;base64,JVBERi0=", b"%PDF-", "application/pdf"),
+            ("data:application/pdf;base64,JVBERi0", b"%PDF-", "application/pdf"),
+            ("data:image/png;base64,iVBO%20Rw0K", b"\x89PNG\r\n", "image/png"),
+            ("data:,Hello%2C%20World", b"Hello, World", "text/plain"),
+            ("data:Text/CSV;charset=utf-8,a%2Cb", b"a,b", "text/csv"),
+            ("DATA:;base64,aGk=", b"hi", "text/plain"),
+        ],
+        ids=[
+            "base64",
+            "base64-without-padding",
+            "base64-with-whitespace",
+            "percent-encoded",
+            "type-with-parameters",
+            "no-type",
+        ],
+    )
+    async def test_a_data_url_is_stored_as_the_file_it_holds(self, url, data, media_type):
+        backend = RecordingBackend()
+
+        result = (await self._transformer(backend).transform(
+            status_event(Part(url=url, filename="f")), upload_context=upload_context()
+        )).event
+
+        (upload,) = backend.batches[0]
+        assert (upload.data, upload.media_type) == (data, media_type)
+        (stored,) = result.status.message.parts
+        assert stored.url.startswith(StubFileStorageBackend.BASE_URI)
+
+    async def test_the_parts_own_media_type_comes_before_the_data_urls(self):
+        backend = RecordingBackend()
+
+        await self._transformer(backend).transform(
+            status_event(Part(url="data:text/plain;base64,JVBERi0=", media_type="application/pdf")),
+            upload_context=upload_context(),
+        )
+
+        assert backend.batches[0][0].media_type == "application/pdf"
+
+    @pytest.mark.parametrize(
+        "url",
+        ["data:application/pdf;base64", "data:application/pdf;base64,J", "data:;base64,a$b="],
+        ids=["no-data-section", "truncated-base64", "not-base64"],
+    )
+    async def test_a_data_url_that_does_not_decode_is_dropped_and_reported(self, url):
+        """Never kept as it came: the bytes it claims to hold may be anything."""
+        transform = await self._transformer(RecordingBackend()).transform(
+            status_event(Part(text="keep"), Part(url=url)), upload_context=upload_context()
+        )
+
+        assert [failure.error_code for failure in transform.report.failures] == [
+            FileUploadErrorCode.STORAGE_REJECTED
+        ]
+        assert [part.text for part in transform.event.status.message.parts] == ["keep"]
 
     async def test_one_batch_per_event(self):
         """Every inline part of one event is stored in a single call."""
@@ -692,11 +758,18 @@ class TestInlineContentGuard:
         task = task_with(status_parts=[Part(text="hello")])
         assert strip_inline_file_content(task) is task
 
-    def test_card_parts_survive_the_guard(self):
-        """The guard follows the transformer's skip rules or it would eat cards."""
+    def test_a_card_is_stripped_like_any_file(self):
+        """Stored, a card is a link; inline in the record it is a path the transformer missed."""
         card = Part(raw=b"<Card/>", media_type=CARDS_MEDIA_TYPE)
-        task = task_with(status_parts=[card])
-        assert strip_inline_file_content(task) is task
+        guarded = strip_inline_file_content(task_with(status_parts=[Part(text="keep"), card]))
+        assert [p.text for p in guarded.status.message.parts] == ["keep"]
+
+    def test_a_data_url_is_stripped_and_an_address_is_kept(self):
+        guarded = strip_inline_file_content(task_with(status_parts=[
+            Part(url="data:text/plain,hi"),
+            Part(url="https://files.test/a.pdf"),
+        ]))
+        assert [p.url for p in guarded.status.message.parts] == ["https://files.test/a.pdf"]
 
 
 

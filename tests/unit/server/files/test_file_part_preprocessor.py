@@ -11,7 +11,8 @@ from types import SimpleNamespace
 import pytest
 from a2a.types import Message, Part, Role, SendMessageRequest
 from a2a.utils.errors import InternalError, InvalidParamsError
-from aion.core.constants import DISTRIBUTION_EXTENSION_URI_V1
+from aion.core.a2a.file_contents import content_key, file_contents
+from aion.core.constants import CARDS_MEDIA_TYPE, DISTRIBUTION_EXTENSION_URI_V1
 from aion.core.runtime.context import AionRuntimeExtensions
 from aion.server.core.app.handlers.request_preprocessors import (
     FilePartPreprocessor,
@@ -76,6 +77,38 @@ class TestInboundStorage:
 
         part = req.message.parts[0]
         assert part.url and not part.raw
+
+    async def test_a_part_typed_as_a_card_is_the_callers_file(self):
+        """Only an agent sends cards; a caller's part of that type is stored like any file."""
+        pre, backend = preprocessor()
+        req = request(Part(raw=b"%PDF-", media_type=CARDS_MEDIA_TYPE, filename="x.pdf"))
+
+        await pre.process(req, preprocessing_context(None))
+
+        part = req.message.parts[0]
+        assert part.url and not part.raw
+        assert backend.batches[0][0].data == b"%PDF-"
+
+    async def test_a_data_url_is_stored_and_its_content_kept_for_the_turn(self):
+        """The turn reads the file from memory, as it does a file sent as raw bytes."""
+        pre, backend = preprocessor()
+        req = request(Part(url="data:application/pdf;base64,JVBERi0=", filename="a.pdf"))
+
+        await pre.process(req, preprocessing_context(None))
+
+        part = req.message.parts[0]
+        assert part.url.startswith(StubFileStorageBackend.BASE_URI)
+        assert backend.batches[0][0].media_type == "application/pdf"
+        assert file_contents().get(content_key(part)) == b"%PDF-"
+
+    async def test_a_data_url_that_does_not_decode_rejects_the_request(self):
+        pre, _ = preprocessor()
+        req = request(Part(url="data:application/pdf;base64,J"))
+
+        with pytest.raises(InvalidParamsError):
+            await pre.process(req, preprocessing_context(None))
+
+        assert req.message.parts[0].url == "data:application/pdf;base64,J"
 
     async def test_projection_reaches_the_backend(self):
         """Organization and carrier arrive as explicit arguments.

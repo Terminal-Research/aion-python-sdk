@@ -13,6 +13,11 @@ from aion.core.a2a.files import forget_stored_file
 from aion.core.runtime.context import AionRuntimeContext
 from aion.server.agent.execution.context.attribution import callback_attribution
 from aion.server.files.a2a import A2AFileTransformer
+from aion.server.files.a2a.part_transformer import (
+    MalformedDataURLError,
+    carries_inline_content,
+    inline_content,
+)
 from aion.server.files.storage import (
     FileRetentionDefault,
     UploadFailure,
@@ -33,7 +38,9 @@ class FilePartPreprocessor:
     """Replaces inline file parts with URL parts on the way in.
 
     Runs before any handler or task store operation, so neither the stored task
-    nor the agent ever sees raw bytes. An inbound file that cannot be stored
+    nor the agent ever sees a file's bytes. Inline is ``raw`` bytes or a
+    ``data:`` URL, whatever media type the caller gave the part: one typed as a
+    JSX Card is the caller's file like any other. An inbound file that cannot be stored
     rejects the request instead of degrading: nothing was saved, and the client
     can simply send it again.
 
@@ -98,11 +105,7 @@ class FilePartPreprocessor:
             task_id=message.task_id or None,
         )
 
-        inline = {
-            index: bytes(part.raw)
-            for index, part in enumerate(message.parts)
-            if part.WhichOneof("content") == "raw"
-        }
+        inline = _inline_contents(message.parts)
 
         # The caller's files are kept for the provider's default: a request
         # does not get to book storage the deployment pays for.
@@ -168,6 +171,23 @@ class FilePartPreprocessor:
                 "Could not compensate %d stored file(s) for a rejected request",
                 len(receipts),
             )
+
+
+def _inline_contents(parts: Any) -> dict[int, bytes]:
+    """The file content each inline part carries, by the part's position.
+
+    A part whose ``data:`` URL does not decode has none: the transform
+    rejects the request for it.
+    """
+    contents: dict[int, bytes] = {}
+    for index, part in enumerate(parts):
+        if not carries_inline_content(part):
+            continue
+        try:
+            contents[index] = inline_content(part).data
+        except MalformedDataURLError:
+            continue
+    return contents
 
 
 def _rejection(failures: list[UploadFailure]) -> Exception:

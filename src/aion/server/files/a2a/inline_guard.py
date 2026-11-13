@@ -8,10 +8,9 @@ and strips whatever got through; whether to build the store that way is decided
 where the storage backend is installed, so the guard is armed by construction
 rather than by a setting that could disagree with what is running.
 
-It follows the transformer's skip rules rather than removing every inline part,
-so what it covers is inline *file* content. Parts the transformer deliberately
-leaves alone - JSX Cards, which are UI documents rather than files - stay
-inline here too; removing them would break the feature that emits them.
+It removes what the transformer stores: every part that carries file content
+itself, ``raw`` bytes or a ``data:`` URL, whatever its media type
+(``aion.server.files.a2a.part_transformer.inline``).
 
 Inline bytes are expensive in a way that is easy to miss. History is serialized
 with ``MessageToDict`` into JSONB, so protobuf bytes land as base64 - a third
@@ -30,27 +29,19 @@ import copy
 import logging
 
 from a2a.types import Message, Part, Task
-from aion.server.files.a2a.part_transformer.rules import (
-    PartSkipRule,
-    create_default_skip_rules,
-)
+from aion.server.files.a2a.part_transformer.inline import carries_inline_content
 
 logger = logging.getLogger(__name__)
 
 __all__ = ["strip_inline_file_content"]
 
-_SKIP_RULES: PartSkipRule = create_default_skip_rules()
-
 
 def strip_inline_file_content(task: Task) -> Task:
     """Return ``task`` with no unconverted inline file content in it.
 
-    "File content" as the transformer defines it: parts matching a skip rule
-    are left where they are, here as there.
-
-    Checks all three places raw bytes can sit - ``status.message``, ``history``
+    Checks all three places inline content can sit - ``status.message``, ``history``
     and ``artifacts`` - because they are persisted by separate writes: guarding
-    only the child tables would still let raw content into the JSONB on the
+    only the child tables would still let inline content into the JSONB on the
     head row.
 
     The input is never mutated. The same object is usually already in the task
@@ -85,7 +76,7 @@ def strip_inline_file_content(task: Task) -> Task:
 
 def _guarded(part: Part) -> bool:
     """Whether a part holds inline content the guard must remove."""
-    return bool(part.raw) and not _SKIP_RULES.should_skip(part)
+    return carries_inline_content(part)
 
 
 def _has_inline_content(task: Task) -> bool:

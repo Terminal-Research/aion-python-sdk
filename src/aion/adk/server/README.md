@@ -56,7 +56,7 @@ The user answers with an ordinary message, and the server turns it into the func
 
 A request for credentials (`tool_context.request_credential`) fails the task with a reason saying so: the server cannot take credentials yet.
 
-With a file storage backend configured, an inline file part (`Part(raw=...)`) anywhere in the outbox is stored and replaced with a URL part before the response is delivered, as every outbound file is; a file that cannot be stored fails the task. The session state still holds the outbox as the agent wrote it, bytes included; to keep file content out of session state, send the file with `thread.post(file_artifact(...))` instead.
+With a file storage backend configured, an inline file part (`Part(raw=...)`, or a `data:` URL) anywhere in the outbox is stored and replaced with a URL part before the response is delivered, as every outbound file is; a file that cannot be stored fails the task. The session state still holds the outbox as the agent wrote it, bytes included; to keep file content out of session state, send the file with `thread.post(file_artifact(...))` instead.
 
 ## Failing a task
 

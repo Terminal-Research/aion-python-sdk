@@ -6,11 +6,11 @@ from .transformer import (
     TransformReport,
     part_fields,
 )
-from .rules import (
-    PartSkipRule,
-    CardPartSkipRule,
-    CompositePartSkipRule,
-    create_default_skip_rules,
+from .inline import (
+    InlineContent,
+    MalformedDataURLError,
+    carries_inline_content,
+    inline_content,
 )
 
 __all__ = [
@@ -20,8 +20,8 @@ __all__ = [
     "Transform",
     "TransformReport",
     "part_fields",
-    "PartSkipRule",
-    "CardPartSkipRule",
-    "CompositePartSkipRule",
-    "create_default_skip_rules",
+    "InlineContent",
+    "MalformedDataURLError",
+    "carries_inline_content",
+    "inline_content",
 ]

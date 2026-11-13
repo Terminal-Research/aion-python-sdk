@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-255 scenarios in 48 files, 561 runs across 2 frameworks: 533 run, 27 skipped, 1 independent of the framework.
+256 scenarios in 48 files, 563 runs across 2 frameworks: 535 run, 27 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -63,7 +63,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `interrupts` | INPUT_REQUIRED and resume | 10 | `make tests-scenarios TAGS=interrupts` |
 | `errors` | failures that must stay reported, not crash the server | 10 | `make tests-scenarios TAGS=errors` |
 | `artifacts` | artifact and card emission | 11 | `make tests-scenarios TAGS=artifacts` |
-| `files` | inline file parts: stored, rejected, or passed through | 14 | `make tests-scenarios TAGS=files` |
+| `files` | inline file parts: stored, rejected, or passed through | 15 | `make tests-scenarios TAGS=files` |
 | `extensions` | extension activation and payload delivery | 12 | `make tests-scenarios TAGS=extensions` |
 | `daemon` | daemon extension identity and environment | 7 | `make tests-scenarios TAGS=daemon` |
 | `authentication` | bearer tokens: required, verified, and naming the caller | 6 | `make tests-scenarios TAGS=authentication` |
@@ -260,18 +260,19 @@ Inline file parts: stored on the way in and out, rejected, or passed through.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The inbox keeps the data part as it was sent, metadata included.](core/test_files.py#L105 "test_an_inbound_data_part_reaches_the_inbox_whole") | `files` | `parts` | `default` | ✓ | ✓ |
-| [The agent never sees the bytes: by the time it runs, the file is a URL.](core/test_files.py#L123 "test_an_inbound_file_reaches_the_agent_as_a_url") | `files` | `parts` | `file-storage` | ✓ | ✓ |
-| [Reading the task back returns what was persisted: a URL part, no raw content.](core/test_files.py#L142 "test_the_stored_task_holds_the_url_and_not_the_bytes") | `files` | `parts` | `file-storage` | ✓ | ✓ |
-| [Direct invocation attribution supports storage without distribution metadata.](core/test_files.py#L163 "test_a_direct_inbound_file_uses_callback_scope") | `files` | `parts` | `file-storage` | ✓ | ✓ |
-| [Missing distribution principals do not override accepted callback attribution.](core/test_files.py#L174 "test_distribution_recipients_do_not_select_file_authority") | `files` | `parts` | `file-storage` | ✓ | ✓ |
-| [Storage is a concern of file parts only; a plain message is unaffected.](core/test_files.py#L188 "test_text_only_requests_need_no_distribution") | `files` | `parts` | `file-storage` | ✓ | ✓ |
-| [Passthrough is a supported mode: no backend, the bytes reach the agent and the record.](core/test_files.py#L198 "test_without_a_backend_inline_content_passes_through") | `files` | `parts` | `default` | ✓ | ✓ |
-| [The uploaded URL preserves the file action, including explicit null retention.](core/test_files.py#L216 "test_an_outbound_file_leaves_as_a_url") | `files` | `artifacts` | `file-storage` | ✓ | ✓ |
-| [No backend, no conversion: the bytes the agent emitted are the bytes received.](core/test_files.py#L246 "test_without_a_backend_an_outbound_file_stays_inline") | `files` | `artifacts` | `default` | ✓ | ✓ |
-| [No route an agent hands the server a file by skips storage.](core/test_files.py#L278 "test_every_route_out_of_the_agent_delivers_a_file_as_a_url") | `files` | `send-file` | `file-storage` | ✓ | ✓ |
-| [No backend, no conversion, whichever route the file takes.](core/test_files.py#L306 "test_without_a_backend_every_route_delivers_the_bytes") | `files` | `send-file` | `default` | ✓ | ✓ |
-| [Selecting the Aion backend without AION_CLIENT_ID and AION_CLIENT_SECRET is a startup error.](core/test_files.py#L327 "test_the_aion_backend_does_not_serve_without_credentials") | `files` | — | `aion-no-credentials` | ✓ | ✓ |
+| [The inbox keeps the data part as it was sent, metadata included.](core/test_files.py#L113 "test_an_inbound_data_part_reaches_the_inbox_whole") | `files` | `parts` | `default` | ✓ | ✓ |
+| [The agent never sees the bytes: by the time it runs, the file is a URL.](core/test_files.py#L131 "test_an_inbound_file_reaches_the_agent_as_a_url") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [Reading the task back returns what was persisted: a URL part, no raw content.](core/test_files.py#L150 "test_the_stored_task_holds_the_url_and_not_the_bytes") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [Direct invocation attribution supports storage without distribution metadata.](core/test_files.py#L171 "test_a_direct_inbound_file_uses_callback_scope") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [Missing distribution principals do not override accepted callback attribution.](core/test_files.py#L182 "test_distribution_recipients_do_not_select_file_authority") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [Storage is a concern of file parts only; a plain message is unaffected.](core/test_files.py#L196 "test_text_only_requests_need_no_distribution") | `files` | `parts` | `file-storage` | ✓ | ✓ |
+| [Passthrough is a supported mode: no backend, the bytes reach the agent and the record.](core/test_files.py#L206 "test_without_a_backend_inline_content_passes_through") | `files` | `parts` | `default` | ✓ | ✓ |
+| [The uploaded URL preserves the file action, including explicit null retention.](core/test_files.py#L224 "test_an_outbound_file_leaves_as_a_url") | `files` | `artifacts` | `file-storage` | ✓ | ✓ |
+| [A card is a file like any other: the client fetches it, typed and tagged as a card.](core/test_files.py#L254 "test_a_card_leaves_as_a_link_to_its_document") | `files` | `card` | `file-storage` | ✓ | ✓ |
+| [No backend, no conversion: the bytes the agent emitted are the bytes received.](core/test_files.py#L274 "test_without_a_backend_an_outbound_file_stays_inline") | `files` | `artifacts` | `default` | ✓ | ✓ |
+| [No route an agent hands the server a file by skips storage.](core/test_files.py#L306 "test_every_route_out_of_the_agent_delivers_a_file_as_a_url") | `files` | `send-file` | `file-storage` | ✓ | ✓ |
+| [No backend, no conversion, whichever route the file takes.](core/test_files.py#L334 "test_without_a_backend_every_route_delivers_the_bytes") | `files` | `send-file` | `default` | ✓ | ✓ |
+| [Selecting the Aion backend without AION_CLIENT_ID and AION_CLIENT_SECRET is a startup error.](core/test_files.py#L355 "test_the_aion_backend_does_not_serve_without_credentials") | `files` | — | `aion-no-credentials` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_interrupts.py`
 
@@ -684,7 +685,7 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | `slow <sec>` | Reply after n seconds | `lifecycle` | 20 | ✓ | ✓ |
 | `artifacts` | Emit a two-part data artifact, an inline file and a url | `artifacts`, `files` | 3 | ✓ | ✓ |
 | `send-file <route>` | Send one inline file: artifact \| reply \| outbox-message \| outbox-task | `files` | 3 | ✓ | ✓ |
-| `card` | Emit one card | `artifacts` | 4 | ✓ | ✓ |
+| `card` | Emit one card | `artifacts` | 5 | ✓ | ✓ |
 | `outbox-task` | Return an A2A Task through the outbox | `events` | 6 | ✓ | ✓ |
 | `outbox-message` | Return an A2A Message through the outbox | `events` | 3 | ✓ | ✓ |
 | `outbox-history` | Return an A2A Task through the outbox that only adds a message | `events` | 1 | ✓ | ✓ |

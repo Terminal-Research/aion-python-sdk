@@ -1,18 +1,19 @@
 """Move inline file content out of A2A messages, events and tasks.
 
-Walks a message, event or task for ``Part(raw=...)`` - inline bytes - and
-replaces each one with ``Part(url=...)`` once the content is stored. Storage is
-awaited, so a URL only ever names content that exists.
+Walks a message, event or task for parts that carry file content inline -
+``raw`` bytes or a ``data:`` URL (``inline``) - and replaces each one with
+``Part(url=...)`` once the content is stored. Storage is awaited, so a URL only
+ever names content that exists. Every such part is stored, whatever its media
+type: a JSX Card the agent sends leaves as a link like any other file.
 
 Every inline part of one message, event or task is collected first and stored
 in a single batch. Sequential storage would add up the round trips; the batch
 pays only for its slowest file.
 
-Parts matching a skip rule (JSX Cards, for instance) are documents rather than
-files and are left alone. With no upload manager configured the transformer is
-a no-op and inline content passes through unchanged - the one place where
-"keep the bytes in the database" is decided, and it is decided by configuration
-rather than by a failure.
+With no upload manager configured the transformer is a no-op and inline
+content passes through unchanged - the one place where "keep the bytes in the
+database" is decided, and it is decided by configuration rather than by a
+failure.
 """
 
 from __future__ import annotations
@@ -54,7 +55,7 @@ from aion.server.files.storage import (
     resolve_upload_context,
 )
 
-from .rules import PartSkipRule, create_default_skip_rules
+from .inline import MalformedDataURLError, carries_inline_content, inline_content
 
 logger = logging.getLogger(__name__)
 
@@ -106,29 +107,22 @@ class Transform:
 
 
 class A2AFileTransformer:
-    """Rewrites ``Part(raw=...)`` into ``Part(url=...)``.
+    """Rewrites a part with inline file content into ``Part(url=...)``.
 
     If ``upload_manager`` is omitted, one is built from settings. With no
     backend configured every method is a pass-through, so the transformer can
     be constructed unconditionally.
     """
 
-    def __init__(
-        self,
-        upload_manager: FileUploadManager | None = None,
-        skip_rules: PartSkipRule | None = None,
-    ) -> None:
+    def __init__(self, upload_manager: FileUploadManager | None = None) -> None:
         """Initialize the transformer.
 
         Args:
             upload_manager: Manager to store content through. ``None`` builds
                 one from settings; still ``None`` afterwards means no backend
                 is configured and the transformer is inert.
-            skip_rules: Which parts are never stored. Defaults to the standard
-                rules.
         """
         self._upload_manager = upload_manager or FileUploadManager.from_settings()
-        self._skip_rules = skip_rules or create_default_skip_rules()
 
     @property
     def is_active(self) -> bool:
@@ -197,7 +191,7 @@ class A2AFileTransformer:
             return Transform(event, TransformReport())
 
         fields = part_fields(event)
-        if not any(self._is_convertible(part) for parts, _ in fields for part in parts):
+        if not any(carries_inline_content(part) for parts, _ in fields for part in parts):
             return Transform(event, TransformReport())
 
         context_id, task_id = _event_ids(event)
@@ -253,7 +247,7 @@ class A2AFileTransformer:
         a part without a filename of its own is uploaded under.
         """
         report = TransformReport()
-        indexes = [i for i, part in enumerate(parts) if self._is_convertible(part)]
+        indexes = [i for i, part in enumerate(parts) if carries_inline_content(part)]
         if not indexes:
             return list(parts), report
 
@@ -276,6 +270,10 @@ class A2AFileTransformer:
                 upload = self._upload_for(parts[index], default_filenames[index], retention)
             except ValidationError:
                 logger.warning("Dropping inline file part with invalid retention metadata")
+                report.failures.append(UploadFailure(FileUploadErrorCode.STORAGE_REJECTED))
+                continue
+            except MalformedDataURLError as error:
+                logger.warning("Dropping inline file part: %s", error)
                 report.failures.append(UploadFailure(FileUploadErrorCode.STORAGE_REJECTED))
                 continue
             uploads.append(upload)
@@ -316,27 +314,28 @@ class A2AFileTransformer:
         ]
         return results, report
 
-    def _is_convertible(self, part: Part) -> bool:
-        """Whether a part carries inline content this transformer should store."""
-        return bool(part.raw) and not self._skip_rules.should_skip(part)
-
     @staticmethod
     def _upload_for(part: Part, default_filename: str | None, retention: Retention) -> FileUpload:
         """Build the storage request for one inline part.
 
+        The part's own media type comes first, then the one its ``data:``
+        URL declares, then a guess from the file's name.
+
         Raises:
             ValidationError: The part requests its own retention in a
                 ``FileActionPayload`` that does not validate.
+            MalformedDataURLError: The part's ``data:`` URL does not decode.
         """
+        content = inline_content(part)
         filename = part.filename or default_filename
-        media_type = part.media_type
+        media_type = part.media_type or content.media_type
         if not media_type and filename:
             media_type, _ = mimetypes.guess_type(filename)
         expires_at = (
             _requested_retention(part) if retention is PartRetention.REQUESTED else retention
         )
         return FileUpload(
-            data=bytes(part.raw),
+            data=content.data,
             media_type=media_type or "application/octet-stream",
             filename=filename or None,
             retention_expires_at=expires_at,

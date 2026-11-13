@@ -19,12 +19,12 @@ class AppSettings(BaseEnvSettings):
         default=None,
         alias="FILE_STORAGE_BACKEND",
         description=(
-            "File storage backend for converting inline (base64) file parts to URLs. "
-            "When set, inbound and outbound file parts are stored before anything "
-            "persists them and replaced with URL references; an inbound file that "
-            "cannot be stored rejects the request, an outbound one fails the task "
-            "and is logged rather than falling back to base64. "
-            "Parts the transformer skips, such as JSX Cards, stay inline. "
+            "File storage backend for converting inline file parts - raw bytes or a "
+            "data: URL - to URLs. When set, every inbound and outbound inline file "
+            "part, JSX Cards included, is stored before anything persists it and "
+            "replaced with a URL reference; an inbound file that cannot be stored "
+            "rejects the request, an outbound one fails the task and is logged "
+            "rather than falling back to base64. "
             "Options: 'aion' (the Aion Files API; requires AION_CLIENT_ID and "
             "AION_CLIENT_SECRET, the server refuses to start without them), "
             "'stub' (development only). Default: None (disabled, base64 passthrough)."
