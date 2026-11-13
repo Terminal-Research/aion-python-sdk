@@ -38,8 +38,7 @@ def test_uncredentialed_direct_request_cannot_use_its_guest_token(monkeypatch):
     monkeypatch.setattr("aion.api.callback_attribution.get_aion_runtime_context", lambda: context)
     with pytest.raises(AionAuthenticationError, match="API token"):
         aion_mcp_authorization_headers(None)
-    with pytest.raises(AionAuthenticationError, match="no longer supported"):
-        callback_headers({"Aion-Caller-Id": "invented"})
+    assert callback_headers({"Aion-Caller-Id": "invented"}) == {}
 
 
 def test_self_initiated_model_and_mcp_keep_version_credentials(monkeypatch):

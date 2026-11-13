@@ -31,9 +31,10 @@ def callback_headers(
 
     Without a carrier, including inside an active request, send no attribution.
     Aion resolves the deployment's current daemon and payer from its credentials.
+    Retired caller-ID inputs are discarded, including duplicate or empty values.
 
     Args:
-        existing: Transport headers or GraphQL pairs; duplicates are rejected.
+        existing: Transport inputs; duplicate usage carriers are rejected.
         usage_attribution: Explicit opaque carrier, which must match this request.
         context: Explicit runtime context, otherwise the current request's scope.
 
@@ -41,7 +42,7 @@ def callback_headers(
         Headers containing the carrier when present and unrelated fields intact.
 
     Raises:
-        AionAuthenticationError: For conflicting, empty, or obsolete inputs.
+        AionAuthenticationError: For conflicting/empty carriers or selector overrides.
     """
     pairs = existing.items() if isinstance(existing, Mapping) else existing or ()
     headers: dict[str, str] = {}
@@ -51,7 +52,7 @@ def callback_headers(
         if normalized == _SELECTOR.casefold():
             reject_callback_selector(value)
         if normalized == _RETIRED_CALLER.casefold():
-            raise AionAuthenticationError("Aion-Caller-Id is no longer supported.")
+            continue
         if normalized == AION_USAGE_ATTRIBUTION_HEADER.casefold():
             if supplied is not None or not isinstance(value, str) or not value.strip():
                 raise AionAuthenticationError("Duplicate or empty callback attribution input.")

@@ -184,7 +184,10 @@ SDK callbacks keep the Version bearer and forward `Aion-Usage-Attribution`.
 Do not send `Aion-Principal-Selector` or exchange the bearer for a daemon token.
 Capability subjects still address the destination; they do not select authority.
 
-When a request has no usage carrier, callbacks send neither attribution header.
+Explicit `Aion-Caller-Id` inputs are discarded without selecting attribution.
+Malformed or conflicting usage carriers still fail; selector overrides fail too.
+
+When a request has no usage carrier, callbacks send no attribution header.
 This also applies to anonymous sessions and application-authenticated requests.
 Aion resolves the deployment's current daemon for all three usage roles and its
 organization as payer. The SDK does not infer billing attribution from the incoming

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
@@ -173,7 +173,7 @@ def aion_usage_attribution() -> str | None:
 
 
 def aion_model_request_headers(
-        existing: Mapping[str, str] | None = None,
+        existing: Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         *,
         principal_selector_provider: PrincipalSelectorProvider | None = None,
         usage_attribution_provider: UsageAttributionProvider | None = None,
@@ -256,7 +256,9 @@ def aion_model_principal_selector_value(
 
 def aion_model_request_hook(request: httpx.Request) -> None:
     """Inject exclusive callback attribution immediately before transport."""
-    request.headers.update(aion_model_request_headers(request.headers))
+    headers = aion_model_request_headers(request.headers.multi_items())
+    request.headers.pop("Aion-Caller-Id", None)
+    request.headers.update(headers)
 
 
 def aion_openai_config() -> AionModelClientConfig:

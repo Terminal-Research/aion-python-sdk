@@ -23,7 +23,10 @@ from a2a.types import Message, Part, Role, SendMessageRequest, Task, TaskState, 
 
 from aion.api import AionFileClient, CapabilitySubject
 from aion.api.gql.client import AionGqlClient
-from aion.api.gql.generated.graphql_client import A2AJsonRpcRequestGQLInput
+from aion.api.gql.generated.graphql_client import (
+    A2AJsonRpcRequestGQLInput, A2AServiceParameterGQLInput,
+    A2AServiceParametersGQLInput,
+)
 from aion.api.model_service_client import _aion_model_async_http_client
 from aion.core.constants import AION_USAGE_ATTRIBUTION_HEADER, USAGE_ATTRIBUTION_EXTENSION_URI_V1
 from aion.core.exceptions import AionDaemonIdentityRequired
@@ -354,3 +357,40 @@ async def test_model_adapters_preserve_http_200_stream_errors(api, monkeypatch, 
     _, headers = api.requests[0]
     assert headers["authorization"] == "Bearer version-token"
     assert "aion-caller-id" not in headers
+
+
+@pytest.mark.parametrize("carrier", [None, "opaque-forwarded"])
+async def test_model_transport_strips_retired_caller_before_sending(api, carrier):
+    headers = [("Aion-Caller-Id", "untrusted"), ("aion-caller-id", "")]
+    if carrier:
+        headers.append((AION_USAGE_ATTRIBUTION_HEADER, carrier))
+    async with _aion_model_async_http_client(lambda: "version-token") as model:
+        response = await model.post(api.url + "/v1/chat/completions",
+                                    json={}, headers=headers)
+    assert response.status_code == 200
+    sent = api.requests[-1][1]
+    assert "aion-caller-id" not in sent
+    assert sent.get("aion-usage-attribution") == carrier
+    assert sent["authorization"] == "Bearer version-token"
+
+
+@pytest.mark.parametrize("carrier", [None, "opaque-forwarded"])
+async def test_graphql_transport_strips_retired_caller_parameters(api, carrier):
+    pairs = [("Aion-Caller-Id", ""), ("AION-CALLER-ID", "untrusted")]
+    if carrier:
+        pairs.append((AION_USAGE_ATTRIBUTION_HEADER, carrier))
+    client = await gql_client(api)
+    try:
+        responses = [chunk async for chunk in client.a2a_stream(
+            A2AJsonRpcRequestGQLInput(jsonrpc="2.0", method="message/send"),
+            target=CapabilitySubject.environment("env-1"),
+            service_parameters=A2AServiceParametersGQLInput(additional=[
+                A2AServiceParameterGQLInput(key=key, value=value)
+                for key, value in pairs
+            ]))]
+        assert len(responses) == 1
+    finally:
+        await client.client.http_client.aclose()
+    parameters = api.subscriptions[-1][1]["serviceParameters"]
+    sent = {item["key"]: item["value"] for item in parameters["additional"]}
+    assert sent == ({AION_USAGE_ATTRIBUTION_HEADER: carrier} if carrier else {})
