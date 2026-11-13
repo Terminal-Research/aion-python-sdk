@@ -10,7 +10,7 @@ from aion.core.a2a.enums import ArtifactId
 from aion.core.exceptions import AionError
 from aion.server.agent.execution.assistant_answer import AssistantAnswer
 from aion.server.agent.execution.scope import get_task_manager as exec_scope_get_task_manager
-from aion.server.files.a2a import A2AFileTransformer
+from aion.server.files.a2a import A2AFileTransformer, TurnUploads
 from aion.server.files.storage import UploadFailure
 from aion.server.tasks import A2ATaskDeduplicator
 from aion.server.a2a.constants import NON_ACTIVE_TASK_STATES, TERMINAL_TASK_STATES
@@ -120,6 +120,7 @@ class AionEventPipeline:
             response_parameters: ResponseServiceParameters = ResponseServiceParameters(),
             prior_message_ids: frozenset[str] = frozenset(),
             queued_before: int = 0,
+            turn_uploads: Optional[TurnUploads] = None,
     ):
         """
         Args:
@@ -134,10 +135,15 @@ class AionEventPipeline:
             queued_before: Status updates the caller queued for the turn
                 before this pipeline took over - the ``WORKING`` a resumed
                 turn opens with - which a direct write waits for too.
+            turn_uploads: What the turn has stored already, shared with the
+                framework adapter that stores the files of the framework's
+                state (``aion.server.files.turn``): a file stored there is
+                not stored again, its part gets the same link.
         """
         self._queue = event_queue
         self._task_updater = task_updater
         self._file_transformer = file_transformer
+        self._turn_uploads = turn_uploads
         self._task_started = task_started
         self._task_is_new = not task_started
         self._queued = queued_before
@@ -386,7 +392,7 @@ class AionEventPipeline:
         """
         if not self._file_transformer:
             return event, []
-        transform = await self._file_transformer.transform(event)
+        transform = await self._file_transformer.transform(event, turn=self._turn_uploads)
         return transform.event, transform.report.failures
 
     async def _deduplicate_event(self, event):

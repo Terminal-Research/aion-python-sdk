@@ -27,7 +27,10 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 from urllib.parse import urlsplit
 
-from aion.core.a2a.file_contents import file_contents
+from a2a.types import Part
+
+from aion.core.a2a.file_contents import content_key, file_contents
+from aion.core.a2a.files import StoredFile
 from aion.core.exceptions import ConversationFileError, ConversationUnavailableError, TaskFailedError
 from aion.core.settings import file_settings
 
@@ -45,12 +48,19 @@ SYNC_READ_TIMEOUT_SECONDS = 120.0
 """How long a worker thread waits for the turn's event loop to read a file."""
 
 
-async def read_file_for_model(url: str, *, name: Optional[str] = None) -> bytes:
+async def read_file_for_model(
+        url: str, *, name: Optional[str] = None, stored: Optional[StoredFile] = None
+) -> bytes:
     """The bytes of the file at ``url``, to send to a model in place of the address.
 
     Args:
         url: The address a file part of the conversation holds.
         name: The file's name, for the reason given when it cannot be sent.
+        stored: The stored file the address links to, when the place that
+            holds the address keeps it too - a framework's state does
+            (``aion.server.files.turn``). The file is then read by it, through
+            a new link once ``url`` has expired, wherever the address came
+            from; without it the address is looked up in the conversation.
 
     Raises:
         TaskFailedError: The file could not be read, or is larger than a
@@ -60,6 +70,7 @@ async def read_file_for_model(url: str, *, name: Optional[str] = None) -> bytes:
 
     limit = file_settings.model_file_max_bytes
     label = name or "file"
+    part = _stored_part(url, name, stored)
     try:
         try:
             conversation = current_conversation()
@@ -69,9 +80,13 @@ async def read_file_for_model(url: str, *, name: Optional[str] = None) -> bytes:
             async def download() -> bytes:
                 return await fetch_file(url, label=label, max_bytes=limit)
 
-            content = await file_contents().load(f"url:{url}", download, url=url)
+            key = content_key(part) if part is not None else f"url:{url}"
+            content = await file_contents().load(key, download, url=url)
         else:
-            content = await conversation.read_file_at(url, name=name, max_bytes=limit)
+            if part is not None:
+                content = await conversation.read_file(part, max_bytes=limit)
+            else:
+                content = await conversation.read_file_at(url, name=name, max_bytes=limit)
     except ConversationFileError as error:
         raise TaskFailedError(f"{error} It could not be sent to the model.") from error
     if len(content) > limit:
@@ -81,7 +96,18 @@ async def read_file_for_model(url: str, *, name: Optional[str] = None) -> bytes:
     return content
 
 
-def read_file_for_model_sync(url: str, *, name: Optional[str] = None) -> bytes:
+def _stored_part(url: str, name: Optional[str], stored: Optional[StoredFile]) -> Optional[Part]:
+    """The part a stored file is read by: its address, its name and the reference to it."""
+    if stored is None:
+        return None
+    part = Part(url=url, filename=name or "")
+    stored.write_to(part)
+    return part
+
+
+def read_file_for_model_sync(
+        url: str, *, name: Optional[str] = None, stored: Optional[StoredFile] = None
+) -> bytes:
     """``read_file_for_model`` for code that cannot ``await``: a model called with ``invoke``.
 
     A framework runs such code in a worker thread while the turn's event loop
@@ -110,7 +136,7 @@ def read_file_for_model_sync(url: str, *, name: Optional[str] = None) -> bytes:
         loop = None
 
     if in_worker_thread and loop is not None and loop.is_running():
-        reading = asyncio.run_coroutine_threadsafe(read_file_for_model(url, name=name), loop)
+        reading = asyncio.run_coroutine_threadsafe(read_file_for_model(url, name=name, stored=stored), loop)
         try:
             return reading.result(timeout=SYNC_READ_TIMEOUT_SECONDS)
         except concurrent.futures.TimeoutError as error:
@@ -118,10 +144,10 @@ def read_file_for_model_sync(url: str, *, name: Optional[str] = None) -> bytes:
             raise TaskFailedError(
                 f"File {name or 'file'!r} could not be read in time. It could not be sent to the model."
             ) from error
-    return _read_from_address(url, name=name)
+    return _read_from_address(url, name=name, stored=stored)
 
 
-def _read_from_address(url: str, *, name: Optional[str]) -> bytes:
+def _read_from_address(url: str, *, name: Optional[str], stored: Optional[StoredFile] = None) -> bytes:
     """The file from memory, or fetched from its address as it is, without ``await``.
 
     Only public addresses are fetched, as by ``fetch_file``.
@@ -135,6 +161,9 @@ def _read_from_address(url: str, *, name: Optional[str]) -> bytes:
     label = name or "file"
     contents = file_contents()
     content = contents.get_by_url(url)
+    part = _stored_part(url, name, stored)
+    if content is None and part is not None:
+        content = contents.get(content_key(part))
     if content is None:
         chunks: list[bytes] = []
         size = 0
@@ -169,7 +198,7 @@ def _read_from_address(url: str, *, name: Optional[str]) -> bytes:
         if size <= limit:
             content = b"".join(chunks)
             logger.debug("Downloaded file %r (%d bytes) from %s", label, size, urlsplit(url).hostname)
-            contents.put(f"url:{url}", content, url=url)
+            contents.put(content_key(part) if part is not None else f"url:{url}", content, url=url)
     if content is None or len(content) > limit:
         raise TaskFailedError(
             f"File {label!r} is larger than the {limit} bytes a model request may carry."

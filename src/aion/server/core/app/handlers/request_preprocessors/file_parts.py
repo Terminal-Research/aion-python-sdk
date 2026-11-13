@@ -8,16 +8,10 @@ from typing import Any
 
 from a2a.types import SendMessageRequest, SubscribeToTaskRequest
 from a2a.utils.errors import InternalError, InvalidParamsError
-from aion.core.a2a.file_contents import content_key, file_contents
 from aion.core.a2a.files import forget_stored_file
 from aion.core.runtime.context import AionRuntimeContext
 from aion.server.agent.execution.context.attribution import callback_attribution
 from aion.server.files.a2a import A2AFileTransformer
-from aion.server.files.a2a.part_transformer import (
-    MalformedDataURLError,
-    carries_inline_content,
-    inline_content,
-)
 from aion.server.files.storage import (
     FileRetentionDefault,
     UploadFailure,
@@ -52,7 +46,7 @@ class FilePartPreprocessor:
     Receipts produced during ``process`` are tracked per async context, so
     concurrent requests compensate only their own uploads.
 
-    The bytes of a file stored here are kept in memory for a while
+    The transformer keeps the bytes of a file it stores in memory for a while
     (``aion.core.a2a.file_contents``): the turn this request starts, and later
     turns on this server, read the file without downloading what the server
     has just uploaded.
@@ -105,8 +99,6 @@ class FilePartPreprocessor:
             task_id=message.task_id or None,
         )
 
-        inline = _inline_contents(message.parts)
-
         # The caller's files are kept for the provider's default: a request
         # does not get to book storage the deployment pays for.
         transform = await self._transformer.transform(
@@ -124,22 +116,6 @@ class FilePartPreprocessor:
             return
 
         request_obj.message.CopyFrom(transform.event)
-        self._keep_contents(request_obj.message.parts, inline)
-
-    @staticmethod
-    def _keep_contents(parts: Any, inline: dict[int, bytes]) -> None:
-        """Keep the bytes of the files just stored under the identity their parts now carry.
-
-        The transformer replaces a part in place, so a part that was inline
-        and now holds an address is the same file.
-        """
-        contents = file_contents()
-        for index, content in inline.items():
-            if index >= len(parts):
-                continue
-            key = content_key(parts[index])
-            if key is not None:
-                contents.put(key, content, url=parts[index].url)
 
     async def rollback(self) -> None:
         """Compensate uploads made for a request that was rejected afterwards."""
@@ -171,23 +147,6 @@ class FilePartPreprocessor:
                 "Could not compensate %d stored file(s) for a rejected request",
                 len(receipts),
             )
-
-
-def _inline_contents(parts: Any) -> dict[int, bytes]:
-    """The file content each inline part carries, by the part's position.
-
-    A part whose ``data:`` URL does not decode has none: the transform
-    rejects the request for it.
-    """
-    contents: dict[int, bytes] = {}
-    for index, part in enumerate(parts):
-        if not carries_inline_content(part):
-            continue
-        try:
-            contents[index] = inline_content(part).data
-        except MalformedDataURLError:
-            continue
-    return contents
 
 
 def _rejection(failures: list[UploadFailure]) -> Exception:

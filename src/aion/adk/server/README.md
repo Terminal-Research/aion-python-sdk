@@ -20,7 +20,7 @@ The server runs an agent the way any ADK application does: through ADK's `Runner
 
 The Runner works only with what the server gives it (`execution/runner.py`):
 
-- **Sessions** are the server's session service, memory or PostgreSQL. Every write, the Runner's included, passes one point where the turn in progress decides what a session keeps (`TurnSessionService`).
+- **Sessions** are the server's session service, memory or PostgreSQL. Every write, the Runner's included, passes one point where the turn in progress decides what a session keeps (`TurnSessionService`), and where a file an event carries inline is stored and kept as a link (see [Files in the session](#files-in-the-session)).
 - **Artifacts** are the server's artifact service.
 - **Nothing else is passed**: no memory service, no credential service, no plugins, no context cache, no event compaction. The Runner creates no session on its own; the server finds or creates it first.
 - **The run configuration is fixed**: text out, streamed (`RUN_CONFIG`), and every invocation resumable.
@@ -48,6 +48,10 @@ An event the agent yields keeps the author, branch and invocation ADK gave it: A
 
 `a2a_outbox` answers the run that wrote it: the executor takes it from the run's own state deltas, and the value the session keeps afterwards is not applied to later turns of the same context.
 
+### Files in the session
+
+With a file storage backend configured, a session never holds a file's bytes. An event can carry a file inline - `inline_data` in its content, written by the agent, a callback, a model or `thread.post` - and the session service would save it for as long as the session lives. `TurnSessionService` gives the session a copy of the event with each such file stored and replaced by `file_data` holding the file's link, with the same media type and name; the files of an `a2a_outbox` in the event's state delta are kept as links the same way. A file the turn also sends to the client is stored once: the task and the session link to the same stored file, whichever of the two asks first. The event the Runner hands on is not changed, so the reply is built from the event as the agent made it; the next model call of the same invocation is built from the session and gets the file by its link, which the SDK's models read from memory (`inline_files`). Inline data that carries an A2A data part is not a file and stays as it is, and so does a file inside a function response (`FunctionResponse.parts`). A file that cannot be stored fails the task, and the session is not written with the bytes instead. Without a file storage backend, the session keeps the bytes.
+
 ## Asking the user
 
 Every invocation is resumable, as in an ADK `App` with `ResumabilityConfig(is_resumable=True)`. A run that makes a long-running tool call stops there, and the task waits in `INPUT_REQUIRED`: `request_input` (`google.adk.tools`), `tool_context.request_confirmation`, a `LongRunningFunctionTool`, or a custom agent's own long-running call. To a client this looks the way a LangGraph `interrupt()` does - one text part asking the question, and the call's id as the message's `interruptId`. The question is the `message` of `request_input`, the confirmation's `hint`, or "Agent requires input" for a call that names none.
@@ -56,7 +60,7 @@ The user answers with an ordinary message, and the server turns it into the func
 
 A request for credentials (`tool_context.request_credential`) fails the task with a reason saying so: the server cannot take credentials yet.
 
-With a file storage backend configured, an inline file part (`Part(raw=...)`, or a `data:` URL) anywhere in the outbox is stored and replaced with a URL part before the response is delivered, as every outbound file is; a file that cannot be stored fails the task. The session state still holds the outbox as the agent wrote it, bytes included; to keep file content out of session state, send the file with `thread.post(file_artifact(...))` instead.
+With a file storage backend configured, an inline file part (`Part(raw=...)`, or a `data:` URL) anywhere in the outbox is stored and replaced with a URL part before the response is delivered, as every outbound file is; a file that cannot be stored fails the task. The session state keeps the outbox with the same links (see [Files in the session](#files-in-the-session)).
 
 ## Failing a task
 

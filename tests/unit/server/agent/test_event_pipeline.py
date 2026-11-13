@@ -72,7 +72,7 @@ class ReplacingTransformer:
     def __init__(self) -> None:
         self.seen: list[object] = []
 
-    async def transform(self, event):
+    async def transform(self, event, **_):
         self.seen.append(event)
         if isinstance(event, TaskStatusUpdateEvent) and event.status.HasField("message"):
             event.status.message.parts[0].text = "transformed"
@@ -847,7 +847,7 @@ class RefusingTransformer:
     and leaves an artifact with nothing else in it unsent.
     """
 
-    async def transform(self, event):
+    async def transform(self, event, **_):
         parts = (event.status.message.parts if isinstance(event, TaskStatusUpdateEvent)
                  else event.artifact.parts)
         refused = [part for part in parts if part.raw]

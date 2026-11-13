@@ -6,6 +6,7 @@ from .transformer import (
     TransformReport,
     part_fields,
 )
+from .uploads import TurnUploads
 from .inline import (
     InlineContent,
     MalformedDataURLError,
@@ -20,6 +21,7 @@ __all__ = [
     "Transform",
     "TransformReport",
     "part_fields",
+    "TurnUploads",
     "InlineContent",
     "MalformedDataURLError",
     "carries_inline_content",

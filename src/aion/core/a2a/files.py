@@ -136,7 +136,11 @@ class StoredFile:
         """
         if part.WhichOneof("content") != "url" or STORED_FILE_KEY not in part.metadata:
             return None
-        payload = json_format.MessageToDict(part.metadata).get(STORED_FILE_KEY)
+        return cls.from_metadata(json_format.MessageToDict(part.metadata).get(STORED_FILE_KEY))
+
+    @classmethod
+    def from_metadata(cls, payload: Any) -> Optional["StoredFile"]:
+        """The reference ``to_metadata`` wrote, or None for a value that names no file."""
         if not isinstance(payload, dict):
             return None
         file_id, version_id = payload.get("fileId"), payload.get("fileVersionId")

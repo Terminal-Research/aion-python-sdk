@@ -25,6 +25,7 @@ aggregated response. See ``native_script`` for what it answers.
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
@@ -161,6 +162,9 @@ class ScriptedLlm(BaseLlm):
             raise ModelFailure(FAILURE_TEXT)
         if turn.text:
             final.append(types.Part(text=turn.text))
+        if turn.file:
+            name, media_type, content = turn.file
+            final.append(types.Part(inline_data=types.Blob(data=content, mime_type=media_type, display_name=name)))
         if turn.tool_call is not None:
             name, args = turn.tool_call
             final.append(
@@ -192,6 +196,19 @@ async def save_report(title: str, tool_context: ToolContext) -> str:
     """
     version = await tool_context.save_artifact(REPORT_FILENAME, types.Part(text=report_text(title)))
     return f"saved version {version}"
+
+
+def state_files(tool_context: ToolContext) -> str:
+    """Describe every file the session holds: its address, and whether its content is inline."""
+    return json.dumps(
+        [
+            {"url": part.file_data.file_uri if part.file_data else None, "inline": part.inline_data is not None}
+            for event in tool_context._invocation_context.session.events
+            if event.content is not None
+            for part in event.content.parts or []
+            if part.file_data is not None or part.inline_data is not None
+        ]
+    )
 
 
 def remember(note: str, tool_context: ToolContext) -> str:
@@ -312,7 +329,7 @@ def _build_agent(**kwargs: Any) -> LlmAgent:
         model=ScriptedLlm(),
         instruction=INSTRUCTION,
         tools=[
-            get_weather, ticker, save_report, remember, count_call, confirm_action, confirm_with_card,
+            get_weather, ticker, save_report, remember, count_call, confirm_action, confirm_with_card, state_files,
             FunctionTool(delete_cache, require_confirmation=True),
             FunctionTool(drop_table, require_confirmation=True),
             sign_in,

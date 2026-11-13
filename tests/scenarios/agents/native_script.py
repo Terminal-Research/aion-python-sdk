@@ -36,6 +36,11 @@ latest user message, the way a scenario decides what to send:
                         ``request_credential``)
     report <title>      call ``save_report``, which saves an ADK artifact
     remember <note>     call ``remember``, which writes the note to ADK state
+    attach              answer with ``ATTACHED`` and the file ``ATTACHMENT``,
+                        inline in the model's own answer
+    state-files         call ``state_files``, which describes every file the
+                        framework's state holds for the conversation, then
+                        answer with what it returned
     instruction         answer with the system instruction the model received
     think <text>        think ``THOUGHT`` first, streamed as the framework's
                         reasoning, then answer with <text>
@@ -72,6 +77,9 @@ __all__ = [
     "NOTED",
     "REPORT_FILENAME",
     "REPORT_SAVED",
+    "ATTACHED",
+    "ATTACHMENT",
+    "STATE_FILES_TOOL",
     "THOUGHT",
     "UNKNOWN_REPLY",
     "COUNTED_ANSWER",
@@ -123,6 +131,7 @@ REJECTED = "rejected"
 SIGN_IN_TOOL = "sign_in"
 REPORT_TOOL = "save_report"
 REMEMBER_TOOL = "remember"
+STATE_FILES_TOOL = "state_files"
 SLOW_WORDS = 600
 SLOW_DELAY_SECONDS = 0.05
 TICKER_SECONDS = 60
@@ -130,6 +139,9 @@ REPORT_SAVED = "Report saved."
 REPORT_FILENAME = "report.txt"
 THOUGHT = "The user wants a short answer."
 NOTED = "Noted."
+ATTACHED = "Here is the file."
+ATTACHMENT = ("attached.pdf", "application/pdf", b"%PDF-1.7\n" + b"attached " * 8)
+"""The file ``attach`` answers with: its name, media type and content."""
 WEATHER_PREAMBLE = "Checking the weather."
 RECALL_PREFIX = "You said: "
 UNKNOWN_REPLY = "I do not know that one."
@@ -243,6 +255,8 @@ class ModelTurn:
         thought: Reasoning the model streams before its text, if any.
         error: ``(code, message)`` the response ends with after its text, for
             a framework whose model reports an error in its response.
+        file: ``(name, media type, content)`` of a file the answer carries
+            inline after its text, if any.
     """
 
     text: str = ""
@@ -252,6 +266,7 @@ class ModelTurn:
     progress_path: Optional[str] = None
     thought: str = ""
     error: Optional[tuple[str, str]] = None
+    file: Optional[tuple[str, str, bytes]] = None
 
 
 def tokens(text: str) -> list[str]:
@@ -309,12 +324,15 @@ def model_turn(
         "sign-in": (SIGN_IN_TOOL, {"service": argument}, lambda result: str(result)),
         "report": (REPORT_TOOL, {"title": argument}, lambda result: REPORT_SAVED),
         "remember": (REMEMBER_TOOL, {"note": argument}, lambda result: NOTED),
+        "state-files": (STATE_FILES_TOOL, {}, lambda result: result),
     }
     if command in tools:
         name, args, answer = tools[command]
         if tool_results:
             return ModelTurn(text=answer(tool_results[-1]))
         return ModelTurn(tool_call=(name, args))
+    if command == "attach":
+        return ModelTurn(text=ATTACHED, file=ATTACHMENT)
     if command == "instruction":
         return ModelTurn(text=instruction)
     if command == "think":

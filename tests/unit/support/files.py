@@ -8,6 +8,8 @@ distribution payload, and the same recording stubs.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 from aion.core.a2a.extensions import (
     Behavior,
@@ -16,13 +18,19 @@ from aion.core.a2a.extensions import (
     Environment,
     PrincipalIdentity,
 )
+from aion.core.runtime.context import AionRuntimeContext, AionRuntimeContextRegistry, ForwardedAttribution
+from aion.server.agent.execution.context.providers import RequestScopeRuntimeContextProvider
 from aion.server.files.a2a import A2AFileTransformer
 from aion.server.files.storage import (
     FileUpload,
+    FileUploadErrorCode,
     FileUploadManager,
     StubFileStorageBackend,
     UploadContext,
+    UploadFailure,
+    UploadReceipt,
 )
+from aion.server.files.turn import TurnFiles, turn_files
 
 ORG = "org-1"
 
@@ -114,3 +122,57 @@ class StoringTransformer(A2AFileTransformer):
 
     async def transform(self, event, **kwargs):
         return await super().transform(event, upload_context=upload_context(), **kwargs)
+
+
+class NumberingBackend(StubFileStorageBackend):
+    """Stub that stores each file as the next number - file ``file-<n>``, version ``ver-<n>`` - or refuses them all.
+
+    ``stored`` is every file it stored, in order; ``delay`` holds each batch
+    back, so that two asks can overlap.
+    """
+
+    def __init__(self, *, refuse: bool = False, delay: float = 0.0) -> None:
+        self.refuse = refuse
+        self.delay = delay
+        self.stored: list[FileUpload] = []
+
+    async def store_many(self, uploads, *, context):
+        if self.delay:
+            await asyncio.sleep(self.delay)
+        outcomes = []
+        for upload in uploads:
+            if self.refuse:
+                outcomes.append(UploadFailure(FileUploadErrorCode.STORAGE_REJECTED))
+                continue
+            self.stored.append(upload)
+            number = len(self.stored)
+            outcomes.append(
+                UploadReceipt(
+                    uri=f"https://files.test/{number}?grant=g",
+                    file_id=f"file-{number}",
+                    version_id=f"ver-{number}",
+                    access_expires_at="2099-01-01T00:00:00Z",
+                )
+            )
+        return outcomes
+
+
+@contextmanager
+def storing_turn(backend: StubFileStorageBackend, *, task_id: str = "task-1") -> Iterator[TurnFiles]:
+    """A turn whose files ``backend`` stores, with the callback attribution an execution always has."""
+    AionRuntimeContextRegistry.set_provider(RequestScopeRuntimeContextProvider())
+    AionRuntimeContextRegistry.set_current_context(
+        AionRuntimeContext(
+            distribution_extension_payload=distribution_payload(principal()),
+            callback_attribution=ForwardedAttribution("signed"),
+        )
+    )
+    files = TurnFiles(
+        A2AFileTransformer(FileUploadManager(backend)), context_id="context-1", task_id=task_id
+    )
+    try:
+        with turn_files(files):
+            yield files
+    finally:
+        AionRuntimeContextRegistry.set_current_context(None)
+        AionRuntimeContextRegistry.clear_provider()

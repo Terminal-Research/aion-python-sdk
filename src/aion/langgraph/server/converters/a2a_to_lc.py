@@ -6,7 +6,7 @@ import base64
 import json
 
 from a2a.types import Part
-from aion.core.a2a.files import media_type_of
+from aion.core.a2a.files import STORED_FILE_KEY, StoredFile, media_type_of
 from google.protobuf import json_format
 from langchain_core.messages.content import (
     AudioContentBlock,
@@ -55,7 +55,9 @@ class A2AToLcConverter:
         or video block by its media type, a file block otherwise - which is
         what a model integration translates into its provider's format. The
         block keeps the file's name, and its address or its bytes as the part
-        carries them.
+        carries them. A stored file's block keeps the reference to it as well
+        (``aion:file`` in ``extras``), by which the SDK's models read the file
+        once its link has expired (``aion.langgraph.authoring.files``).
 
         Returns None for unrecognised part types.
         """
@@ -81,7 +83,10 @@ class A2AToLcConverter:
         """The block for a file part, with its content given by ``url`` or ``base64``."""
         mime_type = cls._detect_mime_type(part)
         create = _MEDIA_BLOCKS.get(mime_type.partition("/")[0], create_file_block)
-        extras = {"filename": part.filename} if part.filename else {}
+        extras: dict = {"filename": part.filename} if part.filename else {}
+        stored = StoredFile.of(part)
+        if stored is not None:
+            extras[STORED_FILE_KEY] = stored.to_metadata()
         return create(mime_type=mime_type, **source, **extras)
 
     @staticmethod

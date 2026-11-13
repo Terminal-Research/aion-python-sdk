@@ -6,7 +6,10 @@ limited lifetime, and a model provider cannot be relied on to fetch it;
 OpenAI's Chat Completions takes no file by address at all. ``inline_files``
 replaces every such block with the same block carrying the file's content,
 right before a model request. The graph's state keeps the address: the
-content is put into the request only, never into a checkpoint.
+content is put into the request only, never into a checkpoint. A block of a
+stored file names the file too (``aion:file`` in ``extras``), and the file is
+read by that name, through a new link once the block's own has expired; the
+name is left out of the request.
 
 The models ``aion_chat_openai`` and ``aion_chat_model`` build do this on every
 call. A graph that builds its own model calls ``inline_files`` on the
@@ -30,6 +33,7 @@ import base64
 from collections.abc import Sequence
 from typing import Any, Optional
 
+from aion.core.a2a.files import STORED_FILE_KEY, StoredFile
 from aion.core.agent.model_files import read_file_for_model, read_file_for_model_sync
 from langchain_core.messages import BaseMessage
 
@@ -54,9 +58,22 @@ def _name(block: dict) -> Optional[str]:
     return extras.get("filename") if isinstance(extras, dict) else None
 
 
+def _stored(block: dict) -> Optional[StoredFile]:
+    """The stored file a block links to, when it names one."""
+    extras = block.get("extras")
+    return StoredFile.from_metadata(extras.get(STORED_FILE_KEY)) if isinstance(extras, dict) else None
+
+
 def _with_content(block: dict, content: bytes) -> dict:
-    """The block with the file's content in place of its address."""
+    """The block with the file's content in place of its address and of the stored file's name."""
     inlined = {key: value for key, value in block.items() if key != "url"}
+    extras = inlined.get("extras")
+    if isinstance(extras, dict) and STORED_FILE_KEY in extras:
+        extras = {key: value for key, value in extras.items() if key != STORED_FILE_KEY}
+        if extras:
+            inlined["extras"] = extras
+        else:
+            del inlined["extras"]
     inlined["base64"] = base64.b64encode(content).decode()
     return inlined
 
@@ -86,7 +103,8 @@ async def inline_files(messages: Sequence[BaseMessage]) -> list[BaseMessage]:
             if url is None:
                 blocks.append(block)
             else:
-                blocks.append(_with_content(block, await read_file_for_model(url, name=_name(block))))
+                data = await read_file_for_model(url, name=_name(block), stored=_stored(block))
+                blocks.append(_with_content(block, data))
         result.append(message.model_copy(update={"content": blocks}))
     return result
 
@@ -113,6 +131,7 @@ def inline_files_sync(messages: Sequence[BaseMessage]) -> list[BaseMessage]:
             if url is None:
                 blocks.append(block)
             else:
-                blocks.append(_with_content(block, read_file_for_model_sync(url, name=_name(block))))
+                data = read_file_for_model_sync(url, name=_name(block), stored=_stored(block))
+                blocks.append(_with_content(block, data))
         result.append(message.model_copy(update={"content": blocks}))
     return result

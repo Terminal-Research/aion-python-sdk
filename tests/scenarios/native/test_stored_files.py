@@ -1,4 +1,4 @@
-"""A stored file reaches the model by its content.
+"""A stored file reaches the model by its content, and the framework's state by its address.
 
 On a deployment that stores files, the bytes a caller sends are uploaded
 before the agent runs, and the task and the agent hold an address. A model
@@ -6,6 +6,10 @@ is sent the content all the same: the SDK reads the file for the request and
 keeps what the server has just stored in memory, so nothing is downloaded
 again. The storage here is the stub backend, whose addresses lead nowhere -
 the content can only have come from memory.
+
+A file the agent's model answers with is stored once: the client gets its
+address, and the framework's own state - a LangGraph checkpoint, an ADK
+session - keeps the same address, not the bytes.
 """
 
 from __future__ import annotations
@@ -26,6 +30,7 @@ from tests.scenarios.harness import (
     final_task,
     section_texts,
 )
+from tests.scenarios.agents.native_script import ATTACHED
 from tests.scenarios.harness.recorder import stored_messages
 
 pytestmark = [pytest.mark.native, pytest.mark.files]
@@ -87,3 +92,28 @@ async def test_the_task_still_holds_the_address_and_no_bytes(storing: ScenarioCl
     ]
     assert [part.WhichOneof("content") for part in file_parts] == ["url"]
     assert file_parts[0].url.startswith(STUB_URL_PREFIX)
+
+
+async def test_a_file_the_model_answers_with_is_kept_in_the_state_as_the_address_the_client_got(
+    storing: ScenarioClient,
+) -> None:
+    """One upload: the state holds the address the task holds, and no bytes."""
+    events = await _send(storing, "attach")
+    answered = final_task(events)
+    assert answered.state == "COMPLETED"
+
+    stored = await storing.get_task(answered.task_id)
+    sent = [
+        part
+        for parts in [message.parts for message in stored_messages(stored)] + [artifact.parts for artifact in stored.artifacts]
+        for part in parts
+        if part.WhichOneof("content") in ("url", "raw")
+    ]
+    assert [part.WhichOneof("content") for part in sent] == ["url"]
+    assert sent[0].url.startswith(STUB_URL_PREFIX)
+    assert ATTACHED in " ".join(section_texts(events))
+
+    described = await _send(storing, "state-files", context_id=answered.context_id)
+
+    (answer,) = section_texts(described)
+    assert json.loads(answer) == [{"url": sent[0].url, "inline": False}]

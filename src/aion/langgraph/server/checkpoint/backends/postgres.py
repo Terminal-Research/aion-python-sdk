@@ -14,6 +14,7 @@ from aion.core.db import DbManagerProtocol
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from aion.langgraph.server.constants import AION_LANGGRAPH_SCHEMA
+from ..files import LinkedFilesSaver
 from .base import CheckpointerBackend
 
 # Every server of an agent may run the checkpoint migrations on start, and in
@@ -31,13 +32,14 @@ CHECKPOINT_SETUP_LOCK_KEY = 7_382_194_612
 CHECKPOINT_SETUP_LOCK_POLL_SECONDS = 0.1
 
 
-class AionAsyncPostgresSaver(AsyncPostgresSaver):
+class AionAsyncPostgresSaver(LinkedFilesSaver, AsyncPostgresSaver):
     """AsyncPostgresSaver that routes all queries to a dedicated PostgreSQL schema.
 
     Extends AsyncPostgresSaver to support schema isolation by setting search_path
     on each connection before executing queries and restoring it afterwards.
     This allows sharing a single connection pool across multiple schemas without
-    creating additional connections.
+    creating additional connections. A file a message of the state carries
+    inline is saved as a link to the stored file (``LinkedFilesSaver``).
 
     Attributes:
         _schema: Target schema for LangGraph checkpoint tables.

@@ -21,7 +21,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from functools import cached_property
-from typing import Any, Iterable, Optional, Sequence
+from typing import Any, Iterable, Iterator, Optional, Sequence
 from urllib.parse import urlsplit
 
 from a2a.types import Artifact, Message, Part, Role, Task, TaskArtifactUpdateEvent
@@ -114,6 +114,17 @@ def _window(items: Sequence[Any], limit: Optional[int], offset: int = 0) -> list
         return []
     start = 0 if limit is None else max(0, end - limit)
     return list(items[start:end])
+
+
+def _file_parts_of(task: Task) -> Iterator[Part]:
+    """The parts of a task that carry a file by its address: in its messages and its artifacts."""
+    messages = list(task.history)
+    if task.status.HasField("message"):
+        messages.append(task.status.message)
+    for parts in [message.parts for message in messages] + [artifact.parts for artifact in task.artifacts]:
+        for part in parts:
+            if part.WhichOneof("content") == "url":
+                yield part
 
 
 def select_tasks(
@@ -553,9 +564,10 @@ class Conversation(ABC):
 
         For a reader that holds only the address - a model request names a
         file that way. The address is that of a file part of one of the
-        conversation's messages; the part is what is read (:meth:`read_file`),
+        conversation's tasks - a message, the caller's or the agent's, or an
+        artifact the agent sent; the part is what is read (:meth:`read_file`),
         so an address whose link has expired still reads the file. An address
-        no message carries is fetched as it is.
+        no task carries is fetched as it is.
 
         Args:
             url: The address a file part holds.
@@ -569,10 +581,9 @@ class Conversation(ABC):
         if content is None:
             if self._file_parts is None:
                 self._file_parts = {}
-                for message in await self.list_messages():
-                    for part in message.parts:
-                        if part.WhichOneof("content") == "url":
-                            self._file_parts.setdefault(part.url, part)
+                for task in await self.list_tasks():
+                    for part in _file_parts_of(task):
+                        self._file_parts.setdefault(part.url, part)
             part = self._file_parts.get(url) or Part(url=url, filename=name or "")
             return await self.read_file(part, max_bytes=max_bytes)
         if max_bytes is not None and len(content) > max_bytes:
