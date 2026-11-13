@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-256 scenarios in 48 files, 563 runs across 2 frameworks: 535 run, 27 skipped, 1 independent of the framework.
+263 scenarios in 49 files, 593 runs across 2 frameworks: 550 run, 42 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -36,6 +36,7 @@ Features a framework's native agent does not have; a native scenario driving one
 | Framework | Capability | Reason |
 |---|---|---|
 | langgraph | `credential-request` | LangGraph has no credential request of its own; a graph would ask through interrupt() |
+| langgraph | `tool-confirmation` | LangGraph has no tool confirmation of its own; a graph asks through interrupt() and reads the answer itself |
 | langgraph | `artifact-service` | LangGraph has no artifact service; a graph emits artifacts through the Aion API |
 | adk | `prebuilt-agent` | ADK's LlmAgent is already its one standard way to build an agent; the rest of the native group runs it |
 | adk | `subgraph` | ADK has no graphs inside graphs; it composes agents as sub_agents, which is a feature of its own |
@@ -73,7 +74,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `evolution` | the evolution extension through the SDK's wrapper and a stand-in toolkit: the standard path, refusals as REJECTED tasks, a cancel | 15 | `make tests-scenarios TAGS=evolution` |
 | `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 21 | `make tests-scenarios-persistence` |
 | `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 19 | `make tests-scenarios-distributed` |
-| `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 50 | `make tests-scenarios TAGS=native` |
+| `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 57 | `make tests-scenarios TAGS=native` |
 
 ## Scenarios by file
 
@@ -615,6 +616,20 @@ An agent whose work happens inside a subgraph.
 | [``thread.reply`` one level down: the message arrives and is the task's answer.](native/test_subgraph.py#L64 "test_a_reply_from_a_node_of_a_subgraph_reaches_the_client") | `native` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
 | [A thought from a node of a subgraph reaches the client](native/test_subgraph.py#L77 "test_a_thought_from_a_node_of_a_subgraph_reaches_the_client") | `native` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
 | [Two subgraphs answer side by side: one section each, never a word of the other's in it.](native/test_subgraph.py#L83 "test_two_subgraphs_streaming_at_once_each_arrive_whole") | `native` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
+
+### `tests/scenarios/native/test_tool_confirmation.py`
+
+A tool's confirmation, answered ADK's way or the agent's, through the server.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [A tool shows its question on a card and waits](native/test_tool_confirmation.py#L66 "test_a_tool_shows_its_question_on_a_card_and_waits") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+| [Adks confirmation object typed as json answers as it is](native/test_tool_confirmation.py#L77 "test_adks_confirmation_object_typed_as_json_answers_as_it_is") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+| [Adks confirmation object sent as data answers as it is](native/test_tool_confirmation.py#L83 "test_adks_confirmation_object_sent_as_data_answers_as_it_is") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+| [A pressed button reaches the tool that decides](native/test_tool_confirmation.py#L89 "test_a_pressed_button_reaches_the_tool_that_decides") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+| [A typed answer reaches the tool that decides](native/test_tool_confirmation.py#L100 "test_a_typed_answer_reaches_the_tool_that_decides") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+| [``before_tool_callback`` runs before ADK checks the confirmation, and sets it.](native/test_tool_confirmation.py#L111 "test_the_agent_judges_the_answer_for_a_tool_adk_confirms") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+| [With no judge of the agent's, an answer that is not ADK's object is a refusal, not a crash.](native/test_tool_confirmation.py#L128 "test_a_tool_adk_confirms_takes_only_its_object") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
 
 ### `tests/scenarios/persistence/test_database_migrations.py`
 

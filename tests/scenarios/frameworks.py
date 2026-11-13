@@ -229,6 +229,9 @@ NATIVE_UNSUPPORTED: dict[tuple[str, str], str] = {
     ("langgraph", "credential-request"): (
         "LangGraph has no credential request of its own; a graph would ask through interrupt()"
     ),
+    ("langgraph", "tool-confirmation"): (
+        "LangGraph has no tool confirmation of its own; a graph asks through interrupt() and reads the answer itself"
+    ),
     ("langgraph", "artifact-service"): (
         "LangGraph has no artifact service; a graph emits artifacts through the Aion API"
     ),

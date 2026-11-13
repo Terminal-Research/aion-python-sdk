@@ -2,9 +2,20 @@
 
 An ``LlmAgent`` with a plain Python function as its tool. The input is the
 invocation's ``user_content`` as ADK assembles it into the model request,
-and the answer is the model's own response: no ``Thread``, no emitter, no
-inbox. ADK runs the function call, feeds the response back and calls the
-model again; the session carries the conversation between turns.
+and the answer is the model's own response: no ``Thread``, no inbox. ADK runs
+the function call, feeds the response back and calls the model again; the
+session carries the conversation between turns. The one thing of Aion's a
+tool uses is a card: ``confirm_with_card`` shows its question on one, with
+two buttons, through ``emit_card``.
+
+Confirmations are ADK's own, answered either ADK's way or the agent's: a
+``ToolConfirmation`` the client sends is taken as it is, and any other answer
+- a typed word, a pressed button - reaches the agent unconfirmed in the
+confirmation's payload, where ``agreed`` reads it. ``confirm_action`` and
+``confirm_with_card`` ask for themselves and read it when ADK runs them
+again; ``delete_cache`` is confirmed by ADK, and ``judge_confirmation``, the
+agent's ``before_tool_callback``, judges its answer before ADK checks it;
+``drop_table`` is confirmed by ADK and by ADK's own object only.
 
 The model is ``native_script`` behind ``BaseLlm``, streaming the way
 ``BaseLlm.generate_content_async`` describes SSE: partial chunks, then one
@@ -18,16 +29,24 @@ import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from aion.adk.authoring import inline_files_before_model
+from aion.adk.authoring import emit_card, inline_files_before_model
+from aion.adk.authoring.invocation import get_adk_emitter
+from aion.core.agent.invocation.card import Actions, Button, Card, Text
 from fastapi.openapi.models import APIKey, APIKeyIn
 from google.adk.agents import LlmAgent
 from google.adk.auth.auth_credential import AuthCredential, AuthCredentialTypes
 from google.adk.auth.auth_tool import AuthConfig
 from google.adk.models import BaseLlm, LlmRequest, LlmResponse
-from google.adk.tools import ToolContext
+from google.adk.tools import FunctionTool, ToolContext
+from google.adk.tools.tool_confirmation import ToolConfirmation
 from google.genai import types
 
 from tests.scenarios.agents.native_script import (
+    APPROVE,
+    DELETED,
+    DROPPED,
+    REJECT,
+    YES_WORDS,
     FAILURE_TEXT,
     REPORT_FILENAME,
     ModelFailure,
@@ -189,7 +208,9 @@ def confirm_action(action: str, tool_context: ToolContext) -> str:
     """Ask the user to confirm an action, and report what they answered.
 
     ADK's own confirmation: the first call asks and the run pauses; ADK
-    calls the tool again with the user's answer once it arrives.
+    calls the tool again with the user's answer once it arrives. An answer
+    that is not ADK's confirmation object arrives unconfirmed, as typed, in
+    the confirmation's payload, and this tool decides what it means.
 
     Args:
         action: What is about to be done.
@@ -198,7 +219,56 @@ def confirm_action(action: str, tool_context: ToolContext) -> str:
     if confirmation is None:
         tool_context.request_confirmation(hint=f"Proceed with {action}?")
         return "waiting for confirmation"
-    return "yes" if confirmation.confirmed else "no"
+    return "yes" if agreed(confirmation) else "no"
+
+
+def confirm_with_card(action: str, tool_context: ToolContext) -> str:
+    """Show the question on a card with two buttons, ask to confirm, and report the answer.
+
+    Args:
+        action: What is about to be done.
+    """
+    confirmation = tool_context.tool_confirmation
+    if confirmation is None:
+        question = f"Proceed with {action}?"
+        emit_card(
+            get_adk_emitter(),
+            Card("Confirmation")
+            .add(Text(question))
+            .add(Actions().add(Button("Yes", id=APPROVE, style="primary")).add(Button("No", id=REJECT))),
+        )
+        tool_context.request_confirmation(hint=question)
+        return "waiting for confirmation"
+    return "yes" if agreed(confirmation) else "no"
+
+
+def delete_cache() -> str:
+    """Delete the build cache. ADK asks the user first; the agent judges the answer."""
+    return DELETED
+
+
+def drop_table() -> str:
+    """Drop the table. ADK asks the user first; only ADK's own confirmation confirms it."""
+    return DROPPED
+
+
+def agreed(confirmation: ToolConfirmation) -> bool:
+    """This agent's reading of an answer: ADK's object as it says, a button by its id, a word from its list."""
+    if confirmation.confirmed:
+        return True
+    answer = confirmation.payload if isinstance(confirmation.payload, dict) else {}
+    pressed = (answer.get("data") or {}).get("actionId")
+    if pressed:
+        return pressed == APPROVE
+    return str(answer.get("text", "")).strip().lower() in YES_WORDS
+
+
+def judge_confirmation(tool: Any, args: dict[str, Any], tool_context: ToolContext) -> None:
+    """Read the answer to ``delete_cache``'s confirmation the agent's way, before ADK checks it."""
+    confirmation = tool_context.tool_confirmation
+    if tool.name == delete_cache.__name__ and confirmation is not None:
+        confirmation.confirmed = agreed(confirmation)
+    return None
 
 
 def sign_in(service: str, tool_context: ToolContext) -> str:
@@ -241,7 +311,13 @@ def _build_agent(**kwargs: Any) -> LlmAgent:
         name=AGENT_NAME,
         model=ScriptedLlm(),
         instruction=INSTRUCTION,
-        tools=[get_weather, ticker, save_report, remember, count_call, confirm_action, sign_in],
+        tools=[
+            get_weather, ticker, save_report, remember, count_call, confirm_action, confirm_with_card,
+            FunctionTool(delete_cache, require_confirmation=True),
+            FunctionTool(drop_table, require_confirmation=True),
+            sign_in,
+        ],
         output_key=LAST_ANSWER_KEY,
+        before_tool_callback=judge_confirmation,
         **kwargs,
     )

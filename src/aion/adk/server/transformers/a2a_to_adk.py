@@ -46,23 +46,8 @@ class ADKTransformer:
                 if part.text:
                     parts.append(types.Part(text=part.text))
 
-                elif part.raw:
-                    parts.append(types.Part(
-                        inline_data=types.Blob(
-                            mime_type=media_type_of(part),
-                            data=part.raw,
-                            display_name=part.filename or None,
-                        )
-                    ))
-
-                elif part.url:
-                    parts.append(types.Part(
-                        file_data=types.FileData(
-                            mime_type=media_type_of(part),
-                            file_uri=part.url,
-                            display_name=part.filename or None,
-                        )
-                    ))
+                elif part.raw or part.url:
+                    parts.append(file_part(part))
 
                 elif part.HasField("data"):
                     data_dict = json_format.MessageToDict(part.data)
@@ -76,4 +61,26 @@ class ADKTransformer:
         return types.Content(role="user", parts=parts)
 
 
-__all__ = ["ADKTransformer"]
+def file_part(part: Part) -> types.Part:
+    """An A2A file part as ADK takes it: its bytes as ``inline_data``, its address as ``file_data``.
+
+    Either keeps the file's media type and name.
+    """
+    if part.raw:
+        return types.Part(
+            inline_data=types.Blob(
+                mime_type=media_type_of(part),
+                data=part.raw,
+                display_name=part.filename or None,
+            )
+        )
+    return types.Part(
+        file_data=types.FileData(
+            mime_type=media_type_of(part),
+            file_uri=part.url,
+            display_name=part.filename or None,
+        )
+    )
+
+
+__all__ = ["ADKTransformer", "file_part"]

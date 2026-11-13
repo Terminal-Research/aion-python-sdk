@@ -24,6 +24,14 @@ latest user message, the way a scenario decides what to send:
                         stopped, then answer
     confirm <action>    call ``confirm_action``, which asks the user (LangGraph
                         ``interrupt``), then answer with what they said
+    confirm-card <action>
+                        call ``confirm_with_card``, which shows its question on
+                        a card with two buttons and asks for ADK's confirmation,
+                        then answer with what the tool made of the reply
+    delete-cache        call ``delete_cache``, which ADK confirms for itself
+                        and the agent's ``before_tool_callback`` judges
+    drop-table          call ``drop_table``, which ADK confirms for itself
+                        and only ADK's own confirmation object confirms
     sign-in <service>   call ``sign_in``, which asks for credentials (ADK
                         ``request_credential``)
     report <title>      call ``save_report``, which saves an ADK artifact
@@ -70,6 +78,12 @@ __all__ = [
     "append_progress",
     "count_call",
     "confirmed_answer",
+    "APPROVE",
+    "REJECT",
+    "YES_WORDS",
+    "DELETED",
+    "DROPPED",
+    "REJECTED",
     "report_text",
     "ticker",
     "WEATHER_PREAMBLE",
@@ -94,6 +108,18 @@ TICKER_TOOL = "ticker"
 COUNT_TOOL = "count_call"
 COUNTED_ANSWER = "Counted."
 CONFIRM_TOOL = "confirm_action"
+CARD_CONFIRM_TOOL = "confirm_with_card"
+JUDGED_TOOL = "delete_cache"
+STANDARD_TOOL = "drop_table"
+APPROVE = "approve"
+REJECT = "reject"
+"""The action ids of the buttons ``confirm_with_card`` shows."""
+YES_WORDS = frozenset({"yes", "sure", "go ahead"})
+"""What the agent takes a typed answer to mean yes: its own choice, not the SDK's."""
+DELETED = "deleted"
+DROPPED = "dropped"
+REJECTED = "rejected"
+"""What the model says a tool ADK confirms gave back when ADK rejected the call."""
 SIGN_IN_TOOL = "sign_in"
 REPORT_TOOL = "save_report"
 REMEMBER_TOOL = "remember"
@@ -277,6 +303,9 @@ def model_turn(
     tools = {
         "slow-tool": (TICKER_TOOL, {"path": argument}, lambda result: result),
         "confirm": (CONFIRM_TOOL, {"action": argument}, confirmed_answer),
+        "confirm-card": (CARD_CONFIRM_TOOL, {"action": argument}, confirmed_answer),
+        "delete-cache": (JUDGED_TOOL, {}, lambda result: confirmed_answer(result or REJECTED)),
+        "drop-table": (STANDARD_TOOL, {}, lambda result: confirmed_answer(result or REJECTED)),
         "sign-in": (SIGN_IN_TOOL, {"service": argument}, lambda result: str(result)),
         "report": (REPORT_TOOL, {"title": argument}, lambda result: REPORT_SAVED),
         "remember": (REMEMBER_TOOL, {"note": argument}, lambda result: NOTED),
