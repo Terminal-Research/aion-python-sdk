@@ -21,6 +21,7 @@ try:
         aion_langgraph_mcp_client,
         load_aion_mcp_tools,
     )
+    from .files import inline_files, inline_files_sync
     from .models import aion_chat_model, aion_chat_openai
     from .invocation import Message, Thread
     from .invocation.emitters import (
@@ -51,5 +52,7 @@ __all__ = [
     "emit_card",
     "emit_message",
     "emit_thinking",
+    "inline_files",
+    "inline_files_sync",
     "load_aion_mcp_tools",
 ]

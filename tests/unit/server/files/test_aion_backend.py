@@ -13,6 +13,7 @@ import pytest
 from a2a.types import TaskArtifactUpdateEvent
 from aion.api import AionFileClient, PrincipalSelector
 from aion.core.a2a import FileActionPayload, file_artifact
+from aion.core.a2a.files import StoredFile, forget_stored_file
 from aion.core.constants.a2a import MESSAGING_EXTENSION_URI_V1
 from aion.core.principal import Principal
 from aion.core.runtime.context import (
@@ -118,7 +119,13 @@ class TestRequestShape:
         assert len(requests) == 1
         assert result.artifact.parts[0].url.endswith("?grant=secret")
         assert not result.artifact.parts[0].raw
-        assert result.artifact.parts[0].metadata == artifact.parts[0].metadata
+        stored = result.artifact.parts[0]
+        # The part keeps what the agent wrote and gains the reference to the file.
+        reference = StoredFile.of(stored)
+        assert (reference.file_id, reference.version_id) == ("file-1", "v-1")
+        assert reference.access_expires_at == datetime(2026, 10, 6, 1, tzinfo=timezone.utc)
+        assert forget_stored_file(stored)
+        assert stored.metadata == artifact.parts[0].metadata
         if action is not None:
             assert MESSAGING_EXTENSION_URI_V1 in result.artifact.extensions
 
@@ -539,3 +546,101 @@ class TestLifecycle:
         client = Client(jwt_manager=StaticTokenManager(), base_url="https://api.aion.test")
         await AionFileStorageBackend(client).aclose()
         assert closed == [True]
+
+
+class TestRenewLink:
+    """A new download grant for a File version stored earlier."""
+
+    async def test_a_new_link_names_the_same_file_and_version(self):
+        async def never_uploads(request):
+            raise AssertionError("renewing a link uploads nothing")
+
+        outcome = await backend(never_uploads).renew_link("file-1", "v-1")
+
+        assert outcome == UploadReceipt(
+            uri="https://api.aion.test/files/file-1/versions/v-1/content?grant=secret",
+            file_id="file-1",
+            version_id="v-1",
+            access_expires_at="2026-10-06T01:00:00Z",
+        )
+
+    async def test_outside_a_turn_no_attribution_is_sent(self):
+        seen = []
+
+        async def grant(request):
+            seen.append(request)
+            return granted()
+
+        await backend(None, grant_handler=grant).renew_link("file-1", "v-1")
+
+        (request,) = seen
+        assert request.method == "POST" and request.url.path == "/files/file-1/versions/v-1/grants"
+        assert request.headers["authorization"] == "Bearer token"
+        assert "aion-caller-id" not in request.headers and "aion-usage-attribution" not in request.headers
+        assert "ttlSeconds" not in request.url.params
+
+    async def test_a_request_scope_sends_its_own_attribution(self):
+        seen = []
+
+        async def grant(request):
+            seen.append(request)
+            return granted()
+
+        caller = Principal.from_subject("aion:v1:AionUser:dXNlci0x")
+        scope = upload_context(runtime_context=AionRuntimeContext(callback_attribution=DirectAttribution(caller)))
+        await backend(None, grant_handler=grant).renew_link("file-1", "v-1", context=scope)
+
+        assert seen[0].headers["aion-caller-id"] == caller.subject
+
+    @pytest.mark.parametrize("status,code,retryable", [
+        (403, FileUploadErrorCode.STORAGE_FORBIDDEN, False),
+        (401, FileUploadErrorCode.STORAGE_UNAUTHORIZED, False),
+        (404, FileUploadErrorCode.STORAGE_REJECTED, False),
+        (503, FileUploadErrorCode.STORAGE_UNAVAILABLE, True),
+    ])
+    async def test_a_refusal_is_reported_after_one_attempt(self, status, code, retryable):
+        attempts = []
+
+        async def grant(request):
+            attempts.append(request)
+            return httpx.Response(status, text="refused")
+
+        outcome = await backend(None, grant_handler=grant).renew_link("file-1", "v-1")
+
+        assert isinstance(outcome, UploadFailure)
+        assert (outcome.error_code, outcome.retryable) == (code, retryable)
+        assert len(attempts) == 1
+
+    async def test_storage_that_cannot_be_reached_is_a_failure(self):
+        async def grant(request):
+            raise httpx.ConnectError("no route")
+
+        outcome = await backend(None, grant_handler=grant).renew_link("file-1", "v-1")
+
+        assert isinstance(outcome, UploadFailure)
+        assert outcome.error_code is FileUploadErrorCode.STORAGE_UNAVAILABLE and outcome.retryable
+
+    async def test_a_grant_for_another_version_is_not_accepted(self):
+        async def grant(request):
+            return granted(version_id="v-2")
+
+        outcome = await backend(None, grant_handler=grant).renew_link("file-1", "v-1")
+
+        assert isinstance(outcome, UploadFailure)
+
+    async def test_a_backend_without_links_gives_none(self):
+        from aion.server.files.storage import StubFileStorageBackend
+
+        assert await StubFileStorageBackend().renew_link("file-1", "v-1") is None
+        assert await FileUploadManager(StubFileStorageBackend()).renew_link("file-1", "v-1") is None
+
+    async def test_a_closed_manager_refuses(self):
+        async def grant(request):
+            raise AssertionError("a closed manager asks nothing")
+
+        manager = FileUploadManager(backend(None, grant_handler=grant))
+        await manager.aclose()
+
+        outcome = await manager.renew_link("file-1", "v-1")
+
+        assert isinstance(outcome, UploadFailure) and outcome.error_code is FileUploadErrorCode.STORAGE_CLOSED

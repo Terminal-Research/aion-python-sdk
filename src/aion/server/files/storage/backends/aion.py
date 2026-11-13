@@ -14,6 +14,10 @@ the failure's cause carries what that line needs. For refused credentials
 (401) or a refused permission (403) that is the step the API refused (the
 upload or the download grant), whose behalf the request acted on, and the
 ``operation_id`` the platform logs the upload under.
+
+The same grant is issued again for a version stored earlier (``renew_link``):
+one attempt, with no upload behind it to protect, whose failure leaves the
+stored link as the only one.
 """
 
 from __future__ import annotations
@@ -97,6 +101,42 @@ class AionFileStorageBackend(FileStorageBackend):
                 *(self._store_one(upload, context) for upload in uploads)
             )
         )
+
+    async def renew_link(
+        self,
+        file_id: str,
+        version_id: str,
+        *,
+        context: UploadContext | None = None,
+    ) -> UploadOutcome:
+        """Obtain a new download grant for the exact version of a stored File.
+
+        The grant is asked for with the attribution of ``context`` when one
+        is given, otherwise with that of the scope the call runs in - an
+        agent's turn - or, outside any, with none, where Aion acts as the
+        deployment's daemon.
+        """
+        # TODO(file-link-authority)
+        step = f"download grant for stored file {file_id}"
+        refused = _Refused(step, None, context or UploadContext())
+        try:
+            async with self._slots:
+                grant = await self._client.create_read_grant(
+                    file_id, version_id,
+                    usage_attribution=context.usage_attribution if context else None,
+                    runtime_context=context.runtime_context if context else None,
+                )
+        except AionDaemonIdentityRequired as error:
+            return _daemon_failure(error, refused)
+        except AionAuthenticationError as error:
+            return _credentials_failure(error, refused)
+        except AionFileStorageError as error:
+            return self._classify(error, refused)
+        except httpx.TransportError as error:
+            return UploadFailure(
+                FileUploadErrorCode.STORAGE_UNAVAILABLE, retryable=True, cause=error
+            )
+        return self._receipt({"id": file_id, "versionId": version_id}, grant)
 
     async def aclose(self) -> None:
         """Close the Files API client."""
@@ -220,17 +260,18 @@ class StorageRefusal(AionError):
 
 @dataclass(frozen=True)
 class _Refused:
-    """The request the API refused: its step, operation id and upload scope."""
+    """The request the API refused: its step, the upload's operation id and the scope.
+
+    A grant for a file stored earlier has no upload operation behind it.
+    """
 
     step: str
-    operation_id: UUID
+    operation_id: UUID | None
     context: UploadContext
 
     def __str__(self) -> str:
-        return (
-            f"the {self.step} (operation {self.operation_id}) on behalf of "
-            f"{_acting_as(self.context)}"
-        )
+        operation = f" (operation {self.operation_id})" if self.operation_id else ""
+        return f"the {self.step}{operation} on behalf of {_acting_as(self.context)}"
 
 
 def _credentials_failure(error: Exception, refused: _Refused) -> UploadFailure:

@@ -1,18 +1,24 @@
 """Move inline file content out of A2A messages, events and tasks.
 
-Walks a message, event or task for ``Part(raw=...)`` - inline bytes - and
-replaces each one with ``Part(url=...)`` once the content is stored. Storage is
-awaited, so a URL only ever names content that exists.
+Walks a message, event or task for parts that carry file content inline -
+``raw`` bytes or a ``data:`` URL (``inline``) - and replaces each one with
+``Part(url=...)`` once the content is stored. Storage is awaited, so a URL only
+ever names content that exists. Every such part is stored, whatever its media
+type: a JSX Card the agent sends leaves as a link like any other file.
 
 Every inline part of one message, event or task is collected first and stored
 in a single batch. Sequential storage would add up the round trips; the batch
 pays only for its slowest file.
 
-Parts matching a skip rule (JSX Cards, for instance) are documents rather than
-files and are left alone. With no upload manager configured the transformer is
-a no-op and inline content passes through unchanged - the one place where
-"keep the bytes in the database" is decided, and it is decided by configuration
-rather than by a failure.
+The bytes of every file stored are kept in memory for a while
+(``aion.core.a2a.file_contents``), under the identity its new part carries:
+a model request later in the turn, or in a later turn on this server, reads
+the file without downloading what was just uploaded.
+
+With no upload manager configured the transformer is a no-op and inline
+content passes through unchanged - the one place where "keep the bytes in the
+database" is decided, and it is decided by configuration rather than by a
+failure.
 """
 
 from __future__ import annotations
@@ -20,6 +26,7 @@ from __future__ import annotations
 import copy
 import logging
 import mimetypes
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -34,13 +41,16 @@ from a2a.types import (
     Artifact,
     Message,
     Part,
+    Role,
     Task,
     TaskArtifactUpdateEvent,
     TaskStatus,
     TaskStatusUpdateEvent,
 )
+from aion.core.a2a.file_contents import content_key, file_contents
 from aion.core.runtime.context import get_aion_runtime_context
 from aion.core.a2a.extensions.messaging import FileActionPayload
+from aion.core.a2a.files import GENERIC_MEDIA_TYPE, StoredFile
 from aion.core.constants.a2a import MESSAGING_EXTENSION_URI_V1
 from aion.server.files.storage import (
     FileRetentionDefault,
@@ -53,7 +63,8 @@ from aion.server.files.storage import (
     resolve_upload_context,
 )
 
-from .rules import PartSkipRule, create_default_skip_rules
+from .inline import MalformedDataURLError, carries_inline_content, inline_content
+from .uploads import TurnUploads
 
 logger = logging.getLogger(__name__)
 
@@ -105,29 +116,22 @@ class Transform:
 
 
 class A2AFileTransformer:
-    """Rewrites ``Part(raw=...)`` into ``Part(url=...)``.
+    """Rewrites a part with inline file content into ``Part(url=...)``.
 
     If ``upload_manager`` is omitted, one is built from settings. With no
     backend configured every method is a pass-through, so the transformer can
     be constructed unconditionally.
     """
 
-    def __init__(
-        self,
-        upload_manager: FileUploadManager | None = None,
-        skip_rules: PartSkipRule | None = None,
-    ) -> None:
+    def __init__(self, upload_manager: FileUploadManager | None = None) -> None:
         """Initialize the transformer.
 
         Args:
             upload_manager: Manager to store content through. ``None`` builds
                 one from settings; still ``None`` afterwards means no backend
                 is configured and the transformer is inert.
-            skip_rules: Which parts are never stored. Defaults to the standard
-                rules.
         """
         self._upload_manager = upload_manager or FileUploadManager.from_settings()
-        self._skip_rules = skip_rules or create_default_skip_rules()
 
     @property
     def is_active(self) -> bool:
@@ -139,12 +143,27 @@ class A2AFileTransformer:
         """The underlying upload manager, if a backend is configured."""
         return self._upload_manager
 
+    @staticmethod
+    def forget_contents(receipts: Iterable[UploadReceipt]) -> None:
+        """Drop the kept content of stored files the work they were stored for no longer needs.
+
+        Every file the transformer stores is kept in the process's file cache
+        (``aion.core.a2a.file_contents``); a file stored for a request that
+        was rejected afterwards is read by nobody, so its content leaves at
+        once instead of taking room until it expires.
+        """
+        for receipt in receipts:
+            key = content_key(_stored_part(receipt))
+            if key is not None:
+                file_contents().forget(key)
+
     async def transform(
         self,
         event: Event,
         *,
         retention: Retention = PartRetention.REQUESTED,
         upload_context: UploadContextResolution | None = None,
+        turn: TurnUploads | None = None,
     ) -> Transform:
         """Store the inline files of an A2A event and point its parts at them.
 
@@ -174,12 +193,21 @@ class A2AFileTransformer:
         A part without a filename of its own is uploaded under its artifact's
         name, which is where ``file_artifact()`` puts it.
 
+        A stored part carries the download link in ``url`` and, when the
+        storage service names the file and its version, the reference to the
+        file under ``aion:file`` in its metadata (``aion.core.a2a.files``),
+        from which the link is issued again after it expires
+        (``aion.server.files.links``).
+
         Args:
             event: Message, task, status update or artifact update.
             retention: Leave each file's retention to its own request, or set
                 one for all of them.
             upload_context: Resolved projection to store against. Defaults to
                 the one projected from the active runtime context.
+            turn: What the turn has stored already: a file it stored is not
+                stored again, its part gets the same link. ``None`` stores
+                every file it is given.
 
         Returns:
             The event, transformed when it carried inline content, and a
@@ -189,8 +217,8 @@ class A2AFileTransformer:
         if self._upload_manager is None:
             return Transform(event, TransformReport())
 
-        fields = _part_fields(event)
-        if not any(self._is_convertible(part) for parts, _ in fields for part in parts):
+        fields = part_fields(event)
+        if not any(carries_inline_content(part) for parts, _ in fields for part in parts):
             return Transform(event, TransformReport())
 
         context_id, task_id = _event_ids(event)
@@ -202,13 +230,17 @@ class A2AFileTransformer:
             resolution,
             default_filenames=[name for parts, name in fields for _ in parts],
             retention=retention,
+            turn=turn,
+            origin=_origin(event),
+            task_id=task_id,
+            context_id=context_id,
         )
         if not report.changed:
             return Transform(event, report)
 
         new_event = copy.deepcopy(event)
         remaining = iter(results)
-        for parts, _ in _part_fields(new_event):
+        for parts, _ in part_fields(new_event):
             kept = [part for part in islice(remaining, len(parts)) if part is not None]
             del parts[:]
             parts.extend(kept)
@@ -232,6 +264,10 @@ class A2AFileTransformer:
         *,
         default_filenames: list[str | None],
         retention: Retention,
+        turn: TurnUploads | None,
+        origin: str,
+        task_id: str | None,
+        context_id: str | None,
     ) -> tuple[list[Part | None], TransformReport]:
         """Store every convertible part of one event in one batch.
 
@@ -244,9 +280,15 @@ class A2AFileTransformer:
 
         ``default_filenames``, aligned with ``parts`` as well, names the file
         a part without a filename of its own is uploaded under.
+
+        Every stored file is logged once at INFO: whose it is (``origin``),
+        its name, type and size, the file and version the storage service
+        gave it, and the task and context - never its link, which carries
+        its own access, nor its content. A file ``turn`` had stored already
+        is logged at DEBUG, and its receipt is not reported again.
         """
         report = TransformReport()
-        indexes = [i for i, part in enumerate(parts) if self._is_convertible(part)]
+        indexes = [i for i, part in enumerate(parts) if carries_inline_content(part)]
         if not indexes:
             return list(parts), report
 
@@ -271,32 +313,65 @@ class A2AFileTransformer:
                 logger.warning("Dropping inline file part with invalid retention metadata")
                 report.failures.append(UploadFailure(FileUploadErrorCode.STORAGE_REJECTED))
                 continue
+            except MalformedDataURLError as error:
+                logger.warning("Dropping inline file part: %s", error)
+                report.failures.append(UploadFailure(FileUploadErrorCode.STORAGE_REJECTED))
+                continue
             uploads.append(upload)
             upload_indexes.append(index)
-        outcomes = await self._upload_manager.store_many(uploads, context=resolution)
+        if turn is None:
+            outcomes = [
+                (outcome, True)
+                for outcome in await self._upload_manager.store_many(uploads, context=resolution)
+            ]
+        else:
+            outcomes = await turn.store_many(self._upload_manager, uploads, context=resolution)
 
         stored: dict[int, Part] = {}
-        for index, upload, outcome in zip(upload_indexes, uploads, outcomes, strict=True):
+        for index, upload, (outcome, stored_now) in zip(
+            upload_indexes, uploads, outcomes, strict=True
+        ):
             if isinstance(outcome, UploadReceipt):
-                report.receipts.append(outcome)
-                stored[index] = Part(
-                    url=outcome.uri,
+                if stored_now:
+                    report.receipts.append(outcome)
+                    logger.info(
+                        "Stored %s file %r (%s, %d bytes) as file %s version %s; task %s, context %s",
+                        origin,
+                        upload.filename,
+                        upload.media_type,
+                        upload.byte_size,
+                        outcome.file_id or "-",
+                        outcome.version_id or "-",
+                        task_id or "-",
+                        context_id or "-",
+                    )
+                else:
+                    logger.debug(
+                        "File %r is stored already this turn as file %s version %s; task %s",
+                        upload.filename,
+                        outcome.file_id or "-",
+                        outcome.version_id or "-",
+                        task_id or "-",
+                    )
+                stored[index] = _stored_part(
+                    outcome,
                     media_type=upload.media_type,
-                    filename=parts[index].filename,
-                    metadata=(
-                        parts[index].metadata if retention is PartRetention.REQUESTED else None
-                    ),
+                    filename=upload.filename,
+                    metadata=parts[index].metadata if retention is PartRetention.REQUESTED else None,
                 )
+                if stored_now:
+                    _keep_content(stored[index], upload.data)
                 continue
-            # One line per file with the reason in brief and no traceback: a
-            # refusal the storage service answered with has none worth reading.
-            logger.warning(
-                "Dropping inline file part %r (%d bytes): %s%s",
-                upload.filename,
-                upload.byte_size,
-                outcome.error_code.value,
-                f" - {_brief(outcome.cause)}" if outcome.cause is not None else "",
-            )
+            if stored_now:
+                # One line per file with the reason in brief and no traceback: a
+                # refusal the storage service answered with has none worth reading.
+                logger.warning(
+                    "Dropping inline file part %r (%d bytes): %s%s",
+                    upload.filename,
+                    upload.byte_size,
+                    outcome.error_code.value,
+                    f" - {_brief(outcome.cause)}" if outcome.cause is not None else "",
+                )
             report.failures.append(outcome)
 
         convertible = set(indexes)
@@ -306,31 +381,87 @@ class A2AFileTransformer:
         ]
         return results, report
 
-    def _is_convertible(self, part: Part) -> bool:
-        """Whether a part carries inline content this transformer should store."""
-        return bool(part.raw) and not self._skip_rules.should_skip(part)
-
     @staticmethod
     def _upload_for(part: Part, default_filename: str | None, retention: Retention) -> FileUpload:
         """Build the storage request for one inline part.
 
+        The part's own media type comes first, then the one its ``data:``
+        URL declares, then a guess from the file's name;
+        ``application/octet-stream``, which names no kind, counts as none. A
+        part without a filename of its own is stored under ``default_filename``.
+
         Raises:
             ValidationError: The part requests its own retention in a
                 ``FileActionPayload`` that does not validate.
+            MalformedDataURLError: The part's ``data:`` URL does not decode.
         """
+        content = inline_content(part)
         filename = part.filename or default_filename
-        media_type = part.media_type
+        media_type = next(
+            (declared for declared in (part.media_type, content.media_type) if declared and declared != GENERIC_MEDIA_TYPE),
+            None,
+        )
         if not media_type and filename:
             media_type, _ = mimetypes.guess_type(filename)
         expires_at = (
             _requested_retention(part) if retention is PartRetention.REQUESTED else retention
         )
         return FileUpload(
-            data=bytes(part.raw),
-            media_type=media_type or "application/octet-stream",
+            data=content.data,
+            media_type=media_type or GENERIC_MEDIA_TYPE,
             filename=filename or None,
             retention_expires_at=expires_at,
         )
+
+
+def _keep_content(part: Part, content: bytes) -> None:
+    """Keep the bytes of a file just stored under the identity its part now carries, and its link."""
+    key = content_key(part)
+    if key is not None:
+        file_contents().put(key, content, url=part.url)
+
+
+def _origin(event: Event) -> str:
+    """Whose files an event carries: a user's message brings the caller's, anything else is the agent's."""
+    if isinstance(event, Message) and event.role == Role.ROLE_USER:
+        return "inbound"
+    return "agent"
+
+
+def _stored_part(
+        receipt: UploadReceipt,
+        *,
+        media_type: str = "",
+        filename: str | None = None,
+        metadata: Any = None,
+) -> Part:
+    """The part that stands for a stored file: its link, and the reference to it when there is one.
+
+    It carries the media type and the name the file was stored under, so a
+    file stored under its artifact's name keeps that name in the part too.
+    """
+    part = Part(url=receipt.uri, media_type=media_type, filename=filename or "", metadata=metadata)
+    reference = _reference(receipt)
+    if reference is not None:
+        reference.write_to(part)
+    return part
+
+
+def _reference(receipt: UploadReceipt) -> StoredFile | None:
+    """What the stored part records of the file besides its link.
+
+    A storage service that names the file and its exact version lets the
+    link be issued again once it has expired; one that names neither leaves
+    the part with its link alone.
+    """
+    if not receipt.file_id or not receipt.version_id:
+        return None
+    return StoredFile.create(
+        receipt.file_id,
+        receipt.version_id,
+        access_expires_at=receipt.access_expires_at,
+        retention_expires_at=receipt.retention_expires_at,
+    )
 
 
 def _requested_retention(part: Part) -> datetime | None | FileRetentionDefault:
@@ -341,7 +472,7 @@ def _requested_retention(part: Part) -> datetime | None | FileRetentionDefault:
     return FileRetentionDefault.PROVIDER
 
 
-def _part_fields(event: Event) -> list[tuple[Any, str | None]]:
+def part_fields(event: Event) -> list[tuple[Any, str | None]]:
     """Every part list of an event, each with its default filename.
 
     A part list is the repeated ``parts`` field itself, so the caller can

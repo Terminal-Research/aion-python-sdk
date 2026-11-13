@@ -11,7 +11,8 @@ try:
         aion_adk_mcp_toolsets_sync,
         default_adk_runtime_context,
     )
-    from .models import aion_lite_llm
+    from .files import inline_files, inline_files_before_model
+    from .models import ModelChoice, aion_lite_llm
     from .invocation.emitters import emit_artifact, emit_card, emit_reaction, emit_message, emit_thinking
 except ModuleNotFoundError as exc:
     if is_own_module(exc.name):
@@ -23,6 +24,9 @@ __all__ = [
     "aion_adk_mcp_toolsets_sync",
     "default_adk_runtime_context",
     "aion_lite_llm",
+    "ModelChoice",
+    "inline_files",
+    "inline_files_before_model",
     "emit_artifact",
     "emit_card",
     "emit_reaction",

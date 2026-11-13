@@ -230,6 +230,28 @@ class TestUndeliveredArtifact:
         assert await self._loads(artifacts, self.ALICE, "other")
         assert await self._loads(artifacts, self.BOB, "report.pdf")
 
+    async def test_an_undelivered_published_artifact_is_removed(self, artifacts):
+        """An artifact ``emit_artifact`` published is held apart from saved ones, and goes too."""
+        artifacts.remember_published(
+            app_name=self.ALICE.agent_id,
+            user_id=self.ALICE.state_owner,
+            session_id="ctx-1",
+            filename="report.pdf",
+            part=types.Part(inline_data=types.Blob(data=b"bytes", mime_type="application/pdf")),
+        )
+        event = TaskArtifactUpdateEvent(
+            task_id="task-1",
+            context_id="ctx-1",
+            artifact=Artifact(artifact_id="a-1", name="report.pdf", parts=[Part(raw=b"bytes")]),
+        )
+
+        await self._executor(artifacts).discard_undelivered(self._config(self.ALICE), event)
+
+        assert not await self._loads(artifacts, self.ALICE, "report.pdf")
+        assert await artifacts.list_artifact_keys(
+            app_name=self.ALICE.agent_id, user_id=self.ALICE.state_owner, session_id="ctx-1"
+        ) == []
+
     async def test_a_status_update_has_nothing_in_the_artifact_service(self, artifacts):
         """Files in a status message come from the model's reply, not from saved artifacts."""
         await self._save(artifacts, self.ALICE, "report.pdf")

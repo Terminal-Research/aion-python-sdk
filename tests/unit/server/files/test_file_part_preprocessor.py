@@ -11,7 +11,8 @@ from types import SimpleNamespace
 import pytest
 from a2a.types import Message, Part, Role, SendMessageRequest
 from a2a.utils.errors import InternalError, InvalidParamsError
-from aion.core.constants import DISTRIBUTION_EXTENSION_URI_V1
+from aion.core.a2a.file_contents import content_key, file_contents
+from aion.core.constants import CARDS_MEDIA_TYPE, DISTRIBUTION_EXTENSION_URI_V1
 from aion.core.runtime.context import AionRuntimeExtensions
 from aion.server.core.app.handlers.request_preprocessors import (
     FilePartPreprocessor,
@@ -76,6 +77,56 @@ class TestInboundStorage:
 
         part = req.message.parts[0]
         assert part.url and not part.raw
+
+    async def test_a_part_typed_as_a_card_is_the_callers_file(self):
+        """Only an agent sends cards; a caller's part of that type is stored like any file."""
+        pre, backend = preprocessor()
+        req = request(Part(raw=b"%PDF-", media_type=CARDS_MEDIA_TYPE, filename="x.pdf"))
+
+        await pre.process(req, preprocessing_context(None))
+
+        part = req.message.parts[0]
+        assert part.url and not part.raw
+        assert backend.batches[0][0].data == b"%PDF-"
+
+    async def test_a_data_url_is_stored_and_its_content_kept_for_the_turn(self):
+        """The turn reads the file from memory, as it does a file sent as raw bytes."""
+        pre, backend = preprocessor()
+        req = request(Part(url="data:application/pdf;base64,JVBERi0=", filename="a.pdf"))
+
+        await pre.process(req, preprocessing_context(None))
+
+        part = req.message.parts[0]
+        assert part.url.startswith(StubFileStorageBackend.BASE_URI)
+        assert backend.batches[0][0].media_type == "application/pdf"
+        assert file_contents().get(content_key(part)) == b"%PDF-"
+
+    async def test_a_file_sent_as_some_bytes_is_stored_as_the_kind_its_name_says(self):
+        """``application/octet-stream`` names no kind: a client that does not know ``.pdf`` sends a PDF that way."""
+        pre, backend = preprocessor()
+        req = request(Part(raw=b"%PDF-", media_type="application/octet-stream", filename="report.pdf"))
+
+        await pre.process(req, preprocessing_context(None))
+
+        assert backend.batches[0][0].media_type == "application/pdf"
+        assert req.message.parts[0].media_type == "application/pdf"
+
+    async def test_a_kind_the_client_names_is_kept(self):
+        pre, backend = preprocessor()
+        req = request(Part(raw=b"a,b", media_type="text/plain", filename="totals.csv"))
+
+        await pre.process(req, preprocessing_context(None))
+
+        assert backend.batches[0][0].media_type == "text/plain"
+
+    async def test_a_data_url_that_does_not_decode_rejects_the_request(self):
+        pre, _ = preprocessor()
+        req = request(Part(url="data:application/pdf;base64,J"))
+
+        with pytest.raises(InvalidParamsError):
+            await pre.process(req, preprocessing_context(None))
+
+        assert req.message.parts[0].url == "data:application/pdf;base64,J"
 
     async def test_projection_reaches_the_backend(self):
         """Organization and carrier arrive as explicit arguments.
@@ -189,6 +240,18 @@ class TestCompensation:
         await pre.rollback()
 
         assert len(discarded[0]) == 1
+
+    async def test_a_rejected_requests_files_leave_the_file_cache(self):
+        """Nobody reads them: their content does not wait to expire."""
+        pre, _ = preprocessor(StubFileStorageBackend())
+        req = request(raw_part())
+        await pre.process(req, preprocessing_context(distribution_payload(principal())))
+        key = content_key(req.message.parts[0])
+        assert file_contents().get(key) == b"bytes"
+
+        await pre.rollback()
+
+        assert file_contents().get(key) is None
 
     async def test_rollback_without_uploads_is_a_no_op(self):
         pre, _ = preprocessor()
@@ -396,3 +459,55 @@ class TestFailingCompensation:
         await pre.rollback()
 
         assert attempts == [1]
+
+
+class TestStoredFileReference:
+    """``aion:file`` is the server's key: never taken from a caller, written for what the server stores."""
+
+    @staticmethod
+    def forged() -> Part:
+        part = Part(url="https://example.test/any.pdf", filename="any.pdf")
+        part.metadata.update({
+            "aion:file": {"fileId": "someone-elses-file", "fileVersionId": "v-1"},
+            "note": "kept",
+        })
+        return part
+
+    async def test_a_callers_reference_is_removed(self):
+        processor, _ = preprocessor()
+        req = request(self.forged())
+
+        await processor.process(req, preprocessing_context(distribution_payload(principal()), carrier="signed"))
+
+        (part,) = req.message.parts
+        assert "aion:file" not in part.metadata
+        assert part.metadata["note"] == "kept" and part.url == "https://example.test/any.pdf"
+
+    async def test_it_is_removed_without_a_storage_backend_too(self):
+        processor = FilePartPreprocessor(A2AFileTransformer(upload_manager=None))
+        req = request(self.forged())
+
+        await processor.process(req, preprocessing_context())
+
+        assert "aion:file" not in req.message.parts[0].metadata
+
+    async def test_a_stored_inbound_file_names_the_file_the_server_stored(self):
+        from aion.core.a2a.files import StoredFile
+
+        stored = UploadReceipt(
+            uri="https://files.test/content?grant=g",
+            file_id="file-9",
+            version_id="v-3",
+            access_expires_at="2026-11-10T13:00:00Z",
+            retention_expires_at="2026-12-10T12:00:00Z",
+        )
+        processor, _ = preprocessor(OutcomeBackend([stored]))
+        inline = raw_part()
+        inline.metadata.update({"aion:file": {"fileId": "someone-elses-file", "fileVersionId": "v-1"}})
+        req = request(inline)
+
+        await processor.process(req, preprocessing_context(distribution_payload(principal()), carrier="signed"))
+
+        reference = StoredFile.of(req.message.parts[0])
+        assert (reference.file_id, reference.version_id) == ("file-9", "v-3")
+        assert list(req.message.parts[0].metadata) == ["aion:file"]

@@ -50,6 +50,17 @@ class ADKToA2AEventConverter:
     neither sent again nor made a message. A non-partial event that ends no
     section is a message, a ``WORKING`` status update the task keeps in its
     history.
+
+    A task has one streamed answer at a time: ``aion:stream-delta`` is one
+    artifact with one open section. Agents that stream at once - the
+    sub-agents of a ``ParallelAgent`` - therefore take turns. ADK gives each
+    of them a branch of its own, so a stream is told by its events' author
+    and branch. The stream that started first is live and its chunks go out
+    as they come; every event of another stream is held, and once the live
+    section has ended the next stream goes out as a section of its own, in
+    the order the streams started. Each answer reaches the client whole, and
+    the task keeps the section that ended last, as it does after model calls
+    made one after another.
     """
 
     def __init__(
@@ -64,6 +75,11 @@ class ADKToA2AEventConverter:
         # Whether a section of `aion:stream-delta` is open.
         self._section_open = False
         self._section_ended = False
+        # The stream the open section belongs to, by author and branch.
+        self._live: tuple | None = None
+        # The events of the streams that wait for the live one, by stream, in
+        # the order the streams started.
+        self._waiting: dict[tuple, list[Event]] = {}
 
     async def convert(self, adk_event: Event) -> list[AgentEvent]:
         """Convert an ADK event to zero or more A2A events.
@@ -76,13 +92,69 @@ class ADKToA2AEventConverter:
         """
         if adk_event is None:
             return []
+        events = await self._convert_in_turn(adk_event)
+        return events + await self._release_waiting()
 
-        if adk_event.partial:
-            if not adk_event.content:
-                return []
-            return self._convert_partial(adk_event)
-        else:
+    async def _convert_in_turn(self, adk_event: Event) -> list[AgentEvent]:
+        """Convert an event, or hold it while another stream's section is open.
+
+        A reaction, a thought and an artifact published as it is are not part
+        of an answer and go out at once. A stream that waits keeps all its
+        other events in order, the event that ends it included. A whole event
+        of an agent that is not streaming goes out beside the open section
+        and leaves it alone.
+
+        An event that only reports an error (``error_code`` with no content)
+        says nothing to the client: the turn's failure does. A section it
+        interrupted stays unfinished, as it does when the model raises.
+        """
+        if adk_event.partial and not adk_event.content:
+            return []
+        if not adk_event.content and (adk_event.error_code or adk_event.error_message):
+            return []
+        if not adk_event.partial and self._is_beside_the_answer(adk_event):
             return await self._convert_non_partial(adk_event)
+
+        key = (adk_event.author, adk_event.branch)
+        if key in self._waiting:
+            self._waiting[key].append(adk_event)
+            return []
+
+        held = self._live not in (None, key) and self._section_open and not self._section_ended
+        if not adk_event.partial:
+            return await self._convert_non_partial(adk_event, beside=held)
+        if held:
+            self._waiting[key] = [adk_event]
+            return []
+        events = self._close_section() if self._live != key else []
+        self._live = key
+        return events + self._convert_partial(adk_event)
+
+    @staticmethod
+    def _is_beside_the_answer(adk_event: Event) -> bool:
+        """Whether the event is a reaction, a thought or an artifact published as it is."""
+        output = get_aion_output(adk_event)
+        return bool(output) and (output.reaction is not None or bool(output.thinking) or output.published is not None)
+
+    async def _release_waiting(self) -> list[AgentEvent]:
+        """Let the next waiting streams out once no section is running.
+
+        A stream that ended while it waited goes out whole and gives way to
+        the one after it; one that is still running becomes the live stream.
+        """
+        events: list[AgentEvent] = []
+        while self._waiting and not (self._section_open and not self._section_ended):
+            events.extend(self._close_section())
+            events.extend(await self._replay_next_waiting())
+        return events
+
+    async def _replay_next_waiting(self) -> list[AgentEvent]:
+        """Convert the events of the stream that waited longest, as if they arrived now."""
+        key = next(iter(self._waiting))
+        events: list[AgentEvent] = []
+        for adk_event in self._waiting.pop(key):
+            events.extend(await self._convert_in_turn(adk_event))
+        return events
 
     def _convert_partial(self, adk_event: Event) -> list[AgentEvent]:
         """Emit a chunk of ``aion:stream-delta`` for a partial (streaming) ADK event.
@@ -129,6 +201,7 @@ class ADKToA2AEventConverter:
         A section whose last chunk did not say so gets the mark
         (``stream_delta_end``); its text is not sent again.
         """
+        self._live = None
         if not self._section_open:
             return []
         owes_end = not self._section_ended
@@ -154,7 +227,7 @@ class ADKToA2AEventConverter:
             last_chunk=True,
         )
 
-    async def _convert_non_partial(self, adk_event: Event) -> list[AgentEvent]:
+    async def _convert_non_partial(self, adk_event: Event, *, beside: bool = False) -> list[AgentEvent]:
         """Convert a complete (non-partial) ADK event to A2A events.
 
         If the event carries an aion:output hint, routes to the specified
@@ -167,6 +240,12 @@ class ADKToA2AEventConverter:
         the client receives while the task is still running and the task
         keeps in its history. Finally, artifacts from artifact_delta are
         loaded and emitted as TaskArtifactUpdateEvents.
+
+        Args:
+            adk_event: The complete event.
+            beside: The open section belongs to another agent's stream that
+                is still running: the event neither ends it nor repeats its
+                text, so all its content is a message.
         """
         results: list[AgentEvent] = []
 
@@ -184,7 +263,8 @@ class ADKToA2AEventConverter:
         if output and output.card is not None:
             # A card is the agent's own output after the model call it made,
             # so the section that call was streaming has ended.
-            results.extend(self._close_section())
+            if not beside:
+                results.extend(self._close_section())
             if output.card.url:
                 card = Card(url=output.card.url)
             else:
@@ -215,7 +295,7 @@ class ADKToA2AEventConverter:
 
         content_parts = A2ATransformer.transform_content(adk_event.content) if adk_event.content else []
         routing = get_aion_routing(adk_event)
-        if self._section_open:
+        if self._section_open and not beside:
             results.extend(self._close_section())
             content_parts = [part for part in content_parts if part.WhichOneof("content") != "text"]
 
@@ -326,14 +406,19 @@ class ADKToA2AEventConverter:
             results.append(event)
         return results
 
-    def finalize_stream(self) -> list[AgentEvent]:
+    async def finalize_stream(self) -> list[AgentEvent]:
         """End a section the agent's run left open.
 
         Called when the run is over: partial events arrived and no
         non-partial event followed them, so the section gets its end mark
-        here.
+        here. A stream still waiting behind it goes out after it, as a
+        section of its own.
         """
-        return self._close_section()
+        events = self._close_section()
+        while self._waiting:
+            events.extend(await self._replay_next_waiting())
+            events.extend(self._close_section())
+        return events
 
     def generate_complete(self) -> TaskStatusUpdateEvent:
         """Produce a final TaskStatusUpdateEvent with state=completed.

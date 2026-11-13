@@ -34,6 +34,7 @@ from aion.server.agent.adapters import AgentFrameworkExecutor, ExecutionConfig, 
 from aion.server.agent.aion_agent import AionAgent
 from aion.server.agent.execution.scope import set_task_id
 from aion.server.files.a2a import A2AFileTransformer
+from aion.server.files.turn import TurnFiles, turn_files
 from aion.server.tasks.conversation import StoredConversations
 
 from .context.attribution import callback_attribution
@@ -324,6 +325,13 @@ class AionAgentRequestExecutor(AgentExecutor):
             # client learns the task is working without waiting out the model.
             await task_updater.start_work()
 
+        # The turn's files are stored once, whether the pipeline or the
+        # framework's state asks first (``aion.server.files.turn``).
+        files = (
+            TurnFiles(self._file_transformer, context_id=task.context_id, task_id=task.id)
+            if self._file_transformer is not None and self._file_transformer.is_active
+            else None
+        )
         pipeline = AionEventPipeline(
             event_queue,
             task_updater,
@@ -335,11 +343,13 @@ class AionAgentRequestExecutor(AgentExecutor):
                 + ([task.status.message.message_id] if task.status.HasField('message') else [])
             ),
             queued_before=0 if is_new_task else 1,
+            turn_uploads=files.uploads if files is not None else None,
         )
         turn = _Turn(executor, config)
         self._turns[task.id] = turn
         try:
-            await self._run_turn(turn, task, context, event_queue, task_updater, pipeline, is_new_task)
+            with turn_files(files):
+                await self._run_turn(turn, task, context, event_queue, task_updater, pipeline, is_new_task)
         finally:
             turn.finished.set()
             if self._turns.get(task.id) is turn:

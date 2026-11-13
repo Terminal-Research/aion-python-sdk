@@ -12,6 +12,7 @@ from aion.server.database import prepare_database
 from aion.server.agent.aion_agent import AionAgent
 from aion.server.auth import AuthConfigurationError, TokenVerifier, build_token_verifier
 from aion.server.files.a2a import A2AFileTransformer
+from aion.server.files.links import StoredFileLinks
 from aion.server.files.storage.manager import FileUploadManager
 from fastapi import FastAPI
 from opentelemetry.context import Context
@@ -97,6 +98,9 @@ class AppFactory:
         self.token_verifier = token_verifier
         self.upload_manager = upload_manager or FileUploadManager.from_settings()
         self.file_transformer = A2AFileTransformer(self.upload_manager)
+        # One issuer of download links for the answers, the push deliveries and
+        # the agent's own reads, so a link issued for one serves the others.
+        self.file_links = StoredFileLinks(self.upload_manager)
 
         self.fastapi_app: Optional[FastAPI] = None
         self._enabled_extensions: list[EnabledExtension] = []
@@ -234,6 +238,7 @@ class AppFactory:
             self.db_factory.db_manager,
             owner_resolver=self.aion_agent.owner_resolver,
             push_url_validator=url_validator,
+            file_links=self.file_links,
         )
         self._push_sender = push_sender
 
@@ -250,6 +255,7 @@ class AppFactory:
             context_runs=self.store_manager.get_context_runs(),
             context_artifacts=self.store_manager.get_context_artifacts(),
             owner_resolver=self.aion_agent.owner_resolver,
+            file_links=self.file_links,
         )
         self._executor = AionAgentRequestExecutor(
             self.aion_agent,
@@ -265,6 +271,7 @@ class AppFactory:
             admission=self.store_manager.get_admission(),
             context_catalog=self.store_manager.get_context_catalog(),
             abandoned_tasks=abandoned_tasks,
+            file_links=self.file_links,
             push_config_store=push_config_store,
             push_sender=push_sender,
             push_url_validator=url_validator,

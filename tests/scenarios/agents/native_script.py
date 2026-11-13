@@ -24,10 +24,29 @@ latest user message, the way a scenario decides what to send:
                         stopped, then answer
     confirm <action>    call ``confirm_action``, which asks the user (LangGraph
                         ``interrupt``), then answer with what they said
+    confirm-card <action>
+                        call ``confirm_with_card``, which shows its question on
+                        a card with two buttons and asks for ADK's confirmation,
+                        then answer with what the tool made of the reply
+    delete-cache        call ``delete_cache``, which ADK confirms for itself
+                        and the agent's ``before_tool_callback`` judges
+    drop-table          call ``drop_table``, which ADK confirms for itself
+                        and only ADK's own confirmation object confirms
     sign-in <service>   call ``sign_in``, which asks for credentials (ADK
                         ``request_credential``)
     report <title>      call ``save_report``, which saves an ADK artifact
     remember <note>     call ``remember``, which writes the note to ADK state
+    attach              answer with ``ATTACHED`` and the file ``ATTACHMENT``,
+                        inline in the model's own answer
+    state-files         call ``state_files``, which describes every file the
+                        framework's state holds for the conversation, then
+                        answer with what it returned
+    snapshot            call ``snapshot``, which returns the image
+                        ``SNAPSHOT`` (ADK puts it into the tool's function
+                        response), then answer like ``tool-media``
+    tool-media          answer with a JSON description of the media in the
+                        function responses of the request, as the model
+                        received them
     instruction         answer with the system instruction the model received
     think <text>        think ``THOUGHT`` first, streamed as the framework's
                         reasoning, then answer with <text>
@@ -36,6 +55,15 @@ latest user message, the way a scenario decides what to send:
                         a scenario sees that the tool ran exactly once
     fail-after-tool <n> say ``WEATHER_PREAMBLE``, call ``get_weather``, then
                         stream <n> words of the answer and fail
+    refuse              answer with an error and no content, as a model whose
+                        response was blocked does (ADK ``error_code``)
+    cut-off <n>         stream <n> words, then end the response with an error,
+                        as a model that ran out of tokens does (ADK
+                        ``error_code``)
+
+The agents with two branches running at once (``langgraph_subgraph``,
+``adk_parallel``) take their branches' names and answers from here too:
+``BRANCHES`` and ``branch_answer``.
 
 Anything else is answered with ``UNKNOWN_REPLY``. The tools behind the last
 four are the framework's own - an interrupt, an artifact service, session
@@ -48,6 +76,7 @@ import asyncio
 import json
 import re
 from dataclasses import dataclass
+from collections.abc import Sequence
 from typing import Any, Optional
 
 __all__ = [
@@ -55,16 +84,32 @@ __all__ = [
     "NOTED",
     "REPORT_FILENAME",
     "REPORT_SAVED",
+    "ATTACHED",
+    "ATTACHMENT",
+    "STATE_FILES_TOOL",
+    "SNAPSHOT",
+    "SNAPSHOT_TOOL",
     "THOUGHT",
     "UNKNOWN_REPLY",
     "COUNTED_ANSWER",
     "append_progress",
     "count_call",
     "confirmed_answer",
+    "APPROVE",
+    "REJECT",
+    "YES_WORDS",
+    "DELETED",
+    "DROPPED",
+    "REJECTED",
     "report_text",
     "ticker",
     "WEATHER_PREAMBLE",
     "FAILURE_TEXT",
+    "REFUSAL",
+    "BRANCHES",
+    "BRANCH_DELAY_SECONDS",
+    "branch_answer",
+    "CUT_OFF",
     "ModelFailure",
     "ModelTurn",
     "UserMessage",
@@ -80,9 +125,23 @@ TICKER_TOOL = "ticker"
 COUNT_TOOL = "count_call"
 COUNTED_ANSWER = "Counted."
 CONFIRM_TOOL = "confirm_action"
+CARD_CONFIRM_TOOL = "confirm_with_card"
+JUDGED_TOOL = "delete_cache"
+STANDARD_TOOL = "drop_table"
+APPROVE = "approve"
+REJECT = "reject"
+"""The action ids of the buttons ``confirm_with_card`` shows."""
+YES_WORDS = frozenset({"yes", "sure", "go ahead"})
+"""What the agent takes a typed answer to mean yes: its own choice, not the SDK's."""
+DELETED = "deleted"
+DROPPED = "dropped"
+REJECTED = "rejected"
+"""What the model says a tool ADK confirms gave back when ADK rejected the call."""
 SIGN_IN_TOOL = "sign_in"
 REPORT_TOOL = "save_report"
 REMEMBER_TOOL = "remember"
+STATE_FILES_TOOL = "state_files"
+SNAPSHOT_TOOL = "snapshot"
 SLOW_WORDS = 600
 SLOW_DELAY_SECONDS = 0.05
 TICKER_SECONDS = 60
@@ -90,10 +149,31 @@ REPORT_SAVED = "Report saved."
 REPORT_FILENAME = "report.txt"
 THOUGHT = "The user wants a short answer."
 NOTED = "Noted."
+ATTACHED = "Here is the file."
+ATTACHMENT = ("attached.pdf", "application/pdf", b"%PDF-1.7\n" + b"attached " * 8)
+"""The file ``attach`` answers with: its name, media type and content."""
+SNAPSHOT = ("image/png", b"\x89PNG\r\n\x1a\n" + b"snapshot" * 4)
+"""The image ``snapshot`` returns: its media type and content."""
 WEATHER_PREAMBLE = "Checking the weather."
 RECALL_PREFIX = "You said: "
 UNKNOWN_REPLY = "I do not know that one."
 FAILURE_TEXT = "the stand-in model failed on purpose"
+REFUSAL = ("SAFETY", "The response was blocked.")
+"""The error code and message ``refuse`` answers with."""
+CUT_OFF = ("MAX_TOKENS", "Maximum tokens reached")
+"""The error code and message ``cut-off`` ends its response with."""
+
+
+BRANCHES = ("left", "right")
+"""The branches of an agent that runs two models at once."""
+BRANCH_WORDS = 4
+BRANCH_DELAY_SECONDS = 0.02
+"""Between a branch's words, so the two streams interleave."""
+
+
+def branch_answer(branch: str) -> str:
+    """What a branch's model says."""
+    return " ".join(f"{branch}{index}" for index in range(BRANCH_WORDS))
 
 
 class ModelFailure(RuntimeError):
@@ -185,6 +265,10 @@ class ModelTurn:
         delay: Seconds to wait before each word.
         progress_path: A file each word is appended to as it streams.
         thought: Reasoning the model streams before its text, if any.
+        error: ``(code, message)`` the response ends with after its text, for
+            a framework whose model reports an error in its response.
+        file: ``(name, media type, content)`` of a file the answer carries
+            inline after its text, if any.
     """
 
     text: str = ""
@@ -193,6 +277,8 @@ class ModelTurn:
     delay: float = 0.0
     progress_path: Optional[str] = None
     thought: str = ""
+    error: Optional[tuple[str, str]] = None
+    file: Optional[tuple[str, str, bytes]] = None
 
 
 def tokens(text: str) -> list[str]:
@@ -206,6 +292,7 @@ def model_turn(
     tool_results: list[str],
     earlier_user_texts: list[str],
     instruction: str = "",
+    tool_media: Sequence[dict[str, Any]] = (),
 ) -> ModelTurn:
     """What the model answers.
 
@@ -214,6 +301,10 @@ def model_turn(
         tool_results: What tools returned since that message, in order.
         earlier_user_texts: The user's earlier messages in the context.
         instruction: The system instruction the model was given, if any.
+        tool_media: The media in the request's function responses, each
+            ``{"mime_type": ..., "size": ...}`` when its content came with
+            the request or ``{"mime_type": ..., "url": ...}`` when only its
+            address did.
     """
     # The command is the first text part: a data part arrives as text too,
     # and joined onto it would change the command.
@@ -244,15 +335,24 @@ def model_turn(
     tools = {
         "slow-tool": (TICKER_TOOL, {"path": argument}, lambda result: result),
         "confirm": (CONFIRM_TOOL, {"action": argument}, confirmed_answer),
+        "confirm-card": (CARD_CONFIRM_TOOL, {"action": argument}, confirmed_answer),
+        "delete-cache": (JUDGED_TOOL, {}, lambda result: confirmed_answer(result or REJECTED)),
+        "drop-table": (STANDARD_TOOL, {}, lambda result: confirmed_answer(result or REJECTED)),
         "sign-in": (SIGN_IN_TOOL, {"service": argument}, lambda result: str(result)),
         "report": (REPORT_TOOL, {"title": argument}, lambda result: REPORT_SAVED),
         "remember": (REMEMBER_TOOL, {"note": argument}, lambda result: NOTED),
+        "state-files": (STATE_FILES_TOOL, {}, lambda result: result),
+        "snapshot": (SNAPSHOT_TOOL, {}, lambda result: json.dumps(list(tool_media))),
     }
     if command in tools:
         name, args, answer = tools[command]
         if tool_results:
             return ModelTurn(text=answer(tool_results[-1]))
         return ModelTurn(tool_call=(name, args))
+    if command == "attach":
+        return ModelTurn(text=ATTACHED, file=ATTACHMENT)
+    if command == "tool-media":
+        return ModelTurn(text=json.dumps(list(tool_media)))
     if command == "instruction":
         return ModelTurn(text=instruction)
     if command == "think":
@@ -266,4 +366,9 @@ def model_turn(
             count = int(argument or "1")
             return ModelTurn(text=" ".join(f"word{index}" for index in range(count + 5)), fail_after=count)
         return ModelTurn(text=WEATHER_PREAMBLE, tool_call=(WEATHER_TOOL, {"city": "Kyiv"}))
+    if command == "refuse":
+        return ModelTurn(error=REFUSAL)
+    if command == "cut-off":
+        count = int(argument or "1")
+        return ModelTurn(text=" ".join(f"word{index}" for index in range(count)), error=CUT_OFF)
     return ModelTurn(text=UNKNOWN_REPLY)

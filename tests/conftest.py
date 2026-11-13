@@ -144,6 +144,18 @@ def run_python_without(
 
 
 @pytest.fixture(autouse=True)
+def no_kept_file_contents():
+    """Start every test with nothing in the process's cache of file contents.
+
+    The cache is one per process (``aion.core.a2a.file_contents``); a file one
+    test read would otherwise answer the next test's read of the same address.
+    """
+    from aion.core.a2a.file_contents import file_contents
+
+    file_contents().clear()
+
+
+@pytest.fixture(autouse=True)
 def extension_registry():
     """The A2A extension registry as a server fills it before it activates anything.
 

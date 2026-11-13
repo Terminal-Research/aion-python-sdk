@@ -213,3 +213,27 @@ def test_aion_adk_mcp_toolset_resolves_tools_at_runtime(monkeypatch) -> None:
         "mcp/capabilities/mcp.twitter.distribution",
         "tool:https://api.example.test/distributions/distribution-id/mcp",
     ]
+
+
+def test_default_adk_runtime_context_reads_the_invocation_of_a_real_readonly_context() -> None:
+    """What ADK hands ``BaseToolset.get_tools`` on a server: a ``ReadonlyContext`` over the invocation.
+
+    The server keeps the runtime context on the invocation context, not in
+    session state, and ``ReadonlyContext`` exposes neither as an attribute.
+    """
+    from google.adk.agents.readonly_context import ReadonlyContext
+
+    runtime_context = object()
+    invocation = SimpleNamespace(aion_runtime_context=runtime_context, session=SimpleNamespace(state={}))
+
+    assert default_adk_runtime_context(ReadonlyContext(invocation)) is runtime_context
+
+
+def test_default_adk_runtime_context_falls_back_to_the_turn_running_here(monkeypatch) -> None:
+    """A context object that carries nothing still resolves inside a turn: the server installed the turn's context."""
+    from aion.core.runtime.context.registry import AionRuntimeContextRegistry
+
+    runtime_context = object()
+    monkeypatch.setattr(AionRuntimeContextRegistry, "get_current_context", classmethod(lambda cls: runtime_context))
+
+    assert default_adk_runtime_context(SimpleNamespace()) is runtime_context

@@ -13,6 +13,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 __all__ = [
     "BaseEnvSettings",
     "ApiSettings",
+    "FileSettings",
+    "file_settings",
     "PLATFORM_SUPPLIED",
     "api_settings",
     "platform_supplied_variables",
@@ -215,8 +217,66 @@ class ApiSettings(BaseEnvSettings):
         return self._ws_gql_url
 
 
+class FileSettings(BaseEnvSettings):
+    """How file contents are kept in memory and handed to a model."""
+
+    file_cache_bytes: int = Field(
+        default=256 * 1024 * 1024,
+        ge=0,
+        alias="AION_FILE_CACHE_BYTES",
+        description=(
+            "The memory, in bytes, a process may use to keep the contents of stored "
+            "files it has read or just stored, so that a file is downloaded once "
+            "(`aion.core.a2a.file_contents`). A file larger than this is never "
+            "kept; 0 keeps nothing. Default: 268435456 (256 MiB)."
+        ),
+    )
+
+    file_cache_ttl: float = Field(
+        default=3600.0,
+        ge=0,
+        allow_inf_nan=False,
+        alias="AION_FILE_CACHE_TTL",
+        description=(
+            "How long, in seconds, the content of a stored file stays in memory "
+            "after it was last read. Default: 3600."
+        ),
+    )
+
+    model_file_max_bytes: int = Field(
+        default=20 * 1024 * 1024,
+        ge=0,
+        alias="AION_MODEL_FILE_MAX_BYTES",
+        description=(
+            "The largest file, in bytes, the SDK puts into a model request by its "
+            "content. A turn whose model request carries a larger file fails and "
+            "says so. Default: 20971520 (20 MiB)."
+        ),
+    )
+
+    file_trusted_hosts: str = Field(
+        default="",
+        alias="AION_FILE_TRUSTED_HOSTS",
+        description=(
+            "Comma-separated host names a file may be downloaded from although "
+            "they resolve to a private, loopback or other non-public address "
+            "(`aion.core.http.file_transport`). Every other host must resolve to "
+            "public addresses only; the Aion API host is always allowed. "
+            "Default: none."
+        ),
+    )
+
+    @property
+    def trusted_hosts(self) -> frozenset[str]:
+        """The host names of ``AION_FILE_TRUSTED_HOSTS``, lower-case."""
+        return frozenset(
+            host.strip().lower().rstrip(".") for host in self.file_trusted_hosts.split(",") if host.strip()
+        )
+
+
 try:
     api_settings = ApiSettings()
+    file_settings = FileSettings()
 except Exception as ex:
     print(f"Error loading configuration: {ex}")
     raise

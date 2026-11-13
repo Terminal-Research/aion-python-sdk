@@ -587,13 +587,15 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
         )
         return bool(acquired)
 
-    async def find_context_task_ids(
+    async def find_context_tasks(
             self,
             agent_id: str,
             context_id: str,
-            excluded_states: Iterable[str] = (),
-    ) -> List[str]:
-        """The ids of every owner's tasks of a context, oldest first.
+            *,
+            states: Optional[Iterable[str]] = None,
+            limit: Optional[int] = None,
+    ) -> List[TaskRecord]:
+        """Every owner's tasks of a context, oldest first.
 
         Every owner's tasks are listed: who may read the context is decided
         before the search is made (context admission).
@@ -601,16 +603,65 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
         Args:
             agent_id: Restrict to this agent's tasks.
             context_id: The context to list.
-            excluded_states: States, by their protobuf name, a listed task
-                must not be in.
+            states: States, by their protobuf name, a listed task must be in;
+                None lists the tasks in any state.
+            limit: List only the newest ``limit`` of the matching tasks.
 
         Returns:
-            The task ids as strings, by ``created_at``.
+            The task heads by ``created_at``, oldest first.
         """
-        stmt = select(self.model_class.id)
-        excluded = list(excluded_states)
-        if excluded:
-            stmt = stmt.where(self.model_class.state.not_in(excluded))
+        stmt = select(self.model_class)
+        if states is not None:
+            stmt = stmt.where(self.model_class.state.in_(list(states)))
         stmt = self._apply_filter(stmt, agent_id=agent_id, context_id=context_id)
-        stmt = stmt.order_by(asc(self.model_class.created_at), asc(self.model_class.id))
-        return [str(task_id) for task_id in (await self._session.execute(stmt)).scalars().all()]
+        stmt = stmt.order_by(desc(self.model_class.created_at), desc(self.model_class.id))
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        return list(reversed(await self._execute_and_convert_many(stmt)))
+
+    async def find_context_artifacts(
+            self,
+            agent_id: str,
+            context_id: str,
+            *,
+            name: Optional[str] = None,
+            task_id: Optional[uuid.UUID] = None,
+            excluded_artifact_ids: Iterable[str] = (),
+    ) -> List[StoredArtifact]:
+        """Every artifact among the tasks of a context, newest task first.
+
+        Within a task the artifact written last comes first. The search is
+        not narrowed to an owner: who may see the context's tasks is decided
+        before it is made (context admission).
+
+        Args:
+            agent_id: Restrict to this agent's tasks.
+            context_id: The context to search.
+            name: Keep only the artifacts with this ``name``.
+            task_id: Keep only the artifacts of this task.
+            excluded_artifact_ids: Artifact ids to leave out.
+
+        Returns:
+            One row per artifact of each task.
+        """
+        stmt = (
+            select(self.model_class.id, TaskArtifactModel.payload, TaskArtifactModel.updated_at)
+            .select_from(self.model_class)
+            .join(TaskArtifactModel, TaskArtifactModel.task_id == self.model_class.id)
+            .order_by(
+                desc(self.model_class.created_at),
+                desc(self.model_class.id),
+                desc(TaskArtifactModel.updated_at),
+                desc(TaskArtifactModel.artifact_id),
+            )
+        )
+        excluded = list(excluded_artifact_ids)
+        if excluded:
+            stmt = stmt.where(TaskArtifactModel.artifact_id.not_in(excluded))
+        if name is not None:
+            stmt = stmt.where(TaskArtifactModel.payload["name"].astext == name)
+        if task_id is not None:
+            stmt = stmt.where(self.model_class.id == task_id)
+        stmt = self._apply_filter(stmt, agent_id=agent_id, context_id=context_id)
+        result = await self._session.execute(stmt)
+        return [StoredArtifact(row_task_id, payload, updated_at) for row_task_id, payload, updated_at in result.all()]

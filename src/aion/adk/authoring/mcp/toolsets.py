@@ -20,6 +20,7 @@ from aion.mcp import (
 )
 from aion.mcp.endpoints import aion_mcp_http_client
 from aion.api.callback_errors import reraise_callback_error
+from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 
 if TYPE_CHECKING:
     from aion.core.runtime.context.models import AionRuntimeContext
@@ -189,7 +190,16 @@ def aion_adk_mcp_toolsets_sync(
 
 
 def default_adk_runtime_context(readonly_context: Any | None) -> Any | None:
-    """Extract an Aion runtime context from common ADK context locations.
+    """The Aion runtime context of the turn an ADK context object belongs to.
+
+    ADK hands ``BaseToolset.get_tools`` a ``ReadonlyContext`` over the
+    invocation. The server keeps the turn's runtime context on its invocation
+    context (``AionInvocationContext.aion_runtime_context``), which
+    ``ReadonlyContext`` does not expose, so it is read from the invocation
+    behind the object. A context object that carries the runtime context
+    itself, or in its state, is read from there first; and when the object
+    carries none at all, the context of the turn running here is used, which
+    the server installs for every turn.
 
     Args:
         readonly_context: ADK readonly context supplied to
@@ -198,17 +208,21 @@ def default_adk_runtime_context(readonly_context: Any | None) -> Any | None:
     Returns:
         An Aion runtime context when one is available, otherwise ``None``.
     """
-    if readonly_context is None:
-        return None
-    for attribute in ("aion_runtime_context", "runtime_context"):
-        context = getattr(readonly_context, attribute, None)
+    if readonly_context is not None:
+        invocation = getattr(readonly_context, "_invocation_context", None)
+        for holder in (readonly_context, invocation):
+            for attribute in ("aion_runtime_context", "runtime_context"):
+                context = getattr(holder, attribute, None)
+                if context is not None:
+                    return context
+        context = _from_state(getattr(readonly_context, "state", None))
         if context is not None:
             return context
-    state = getattr(readonly_context, "state", None)
-    if state is None:
-        return None
-    if isinstance(state, dict):
-        return state.get("aion_runtime_context") or state.get("runtime_context")
+    return AionRuntimeContextRegistry.get_current_context()
+
+
+def _from_state(state: Any | None) -> Any | None:
+    """A runtime context kept in ADK state under one of its usual keys, or None."""
     getter = getattr(state, "get", None)
     if getter is None:
         return None

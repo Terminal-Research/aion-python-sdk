@@ -13,6 +13,7 @@ from aion.core.agent.invocation.card import Card
 from langchain_core.messages import AIMessage, AIMessageChunk
 from langgraph.types import StreamWriter
 from typing import Any, Optional
+from uuid import uuid4
 
 from ..events.custom_events import (
     ArtifactCustomEvent,
@@ -110,6 +111,11 @@ def emit_message(
       a full AIMessage that follows the chunks ends their section instead of becoming a
       message, and its text is not sent again
 
+    A full message without an id gets one here, on the message itself. A node
+    that also returns the message into the graph's state makes LangGraph send
+    it once more; under the same id that copy is recognized as the message
+    already sent, and neither it nor its files reach the client twice.
+
     Args:
         writer: LangGraph StreamWriter from node signature
         message: LangChain message to emit (AIMessage or AIMessageChunk)
@@ -121,6 +127,8 @@ def emit_message(
         def my_node(state: dict, writer: StreamWriter):
             emit_message(writer, AIMessage(content="Done"))
     """
+    if not isinstance(message, AIMessageChunk) and message.id is None:
+        message.id = str(uuid4())
     writer(MessageCustomEvent(message=message, routing=routing, metadata=metadata))
 
 

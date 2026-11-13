@@ -20,8 +20,9 @@ import base64
 import json
 import uuid
 from collections.abc import AsyncIterator, Sequence
-from typing import Any, Optional
+from typing import Annotated, Any, Optional
 
+from aion.langgraph.authoring import inline_files
 from langchain.agents import create_agent
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
@@ -31,10 +32,11 @@ from langchain_core.messages import (
     HumanMessage,
     ToolMessage,
 )
+from langchain_core.messages.content import create_file_block
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.tools import tool
 from langgraph.graph import START, MessagesState, StateGraph
-from langgraph.prebuilt import ToolNode, tools_condition
+from langgraph.prebuilt import InjectedState, ToolNode, tools_condition
 from langgraph.types import interrupt
 
 from tests.scenarios.agents.native_script import (
@@ -50,7 +52,7 @@ from tests.scenarios.agents.native_script import (
     tokens,
 )
 
-__all__ = ["ScriptedChatModel", "create_graph", "create_prebuilt_agent"]
+__all__ = ["ScriptedChatModel", "create_async_graph", "create_graph", "create_prebuilt_agent"]
 
 
 def _parts(message: HumanMessage) -> tuple[dict[str, Any], ...]:
@@ -64,7 +66,7 @@ def _parts(message: HumanMessage) -> tuple[dict[str, Any], ...]:
             described.append({"type": "text", "text": block})
         elif block.get("type") == "text":
             described.append({"type": "text", "text": block["text"]})
-        elif block.get("type") == "file":
+        elif block.get("type") in ("file", "image", "audio", "video"):
             entry: dict[str, Any] = {"type": "file", "mime_type": block.get("mime_type")}
             if block.get("base64") is not None:
                 entry["size"] = len(base64.b64decode(block["base64"]))
@@ -89,6 +91,12 @@ def _turn(messages: Sequence[BaseMessage]) -> ModelTurn:
     )
 
 
+def _file_block(turn: ModelTurn) -> dict[str, Any]:
+    """The file the answer carries, as a standard block with its content inline."""
+    name, media_type, content = turn.file
+    return create_file_block(base64=base64.b64encode(content).decode(), mime_type=media_type, filename=name)
+
+
 def _tool_call(turn: ModelTurn) -> list[dict[str, Any]]:
     if turn.tool_call is None:
         return []
@@ -111,7 +119,8 @@ class ScriptedChatModel(BaseChatModel):
         turn = _turn(messages)
         if turn.fail_after is not None:
             raise ModelFailure(FAILURE_TEXT)
-        message = AIMessage(content=turn.text, tool_calls=_tool_call(turn))
+        content = [turn.text, _file_block(turn)] if turn.file else turn.text
+        message = AIMessage(content=content, tool_calls=_tool_call(turn))
         return ChatResult(generations=[ChatGeneration(message=message)])
 
     async def _astream(
@@ -129,6 +138,8 @@ class ScriptedChatModel(BaseChatModel):
                 await asyncio.sleep(turn.delay)
             append_progress(turn.progress_path, piece)
             yield ChatGenerationChunk(message=AIMessageChunk(content=piece))
+        if turn.file:
+            yield ChatGenerationChunk(message=AIMessageChunk(content=[_file_block(turn)]))
         for call in _tool_call(turn):
             yield ChatGenerationChunk(
                 message=AIMessageChunk(
@@ -167,8 +178,21 @@ def confirm_action(action: str) -> str:
     return _answer_text(interrupt(f"Proceed with {action}?"))
 
 
+def state_files(state: Annotated[dict, InjectedState]) -> str:
+    """Describe every file the graph's state holds: its address, and whether its content is inline."""
+    return json.dumps(
+        [
+            {"url": block.get("url"), "inline": "base64" in block}
+            for message in state["messages"]
+            if isinstance(message.content, list)
+            for block in message.content
+            if isinstance(block, dict) and block.get("type") in ("file", "image", "audio", "video")
+        ]
+    )
+
+
 def _tools() -> list:
-    return [tool(get_weather), tool(ticker), tool(confirm_action), tool(count_call)]
+    return [tool(get_weather), tool(ticker), tool(confirm_action), tool(count_call), tool(state_files)]
 
 
 def create_prebuilt_agent():
@@ -182,11 +206,31 @@ def create_prebuilt_agent():
 
 def create_graph() -> StateGraph:
     """Build the agent: model, tools, and the loop between them."""
+    return _build_graph(inline=False)
+
+
+async def create_async_graph() -> StateGraph:
+    """The same agent from an ``async def`` factory, as one that awaits while it builds - loading MCP tools, say."""
+    await asyncio.sleep(0)
+    return _build_graph(inline=False)
+
+
+def create_file_inlining_graph() -> StateGraph:
+    """The same agent, sending the files of its messages to the model by their content.
+
+    The one call of Aion's a graph with its own model makes for that:
+    ``inline_files`` on the messages it hands the model.
+    """
+    return _build_graph(inline=True)
+
+
+def _build_graph(*, inline: bool) -> StateGraph:
     tools = _tools()
     model = ScriptedChatModel().bind_tools(tools)
 
     async def call_model(state: MessagesState) -> dict:
-        return {"messages": [await model.ainvoke(state["messages"])]}
+        messages = await inline_files(state["messages"]) if inline else state["messages"]
+        return {"messages": [await model.ainvoke(messages)]}
 
     builder = StateGraph(MessagesState)
     builder.add_node("model", call_model)

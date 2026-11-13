@@ -8,7 +8,7 @@ from a2a.server.context import ServerCallContext
 from a2a.server.owner_resolver import OwnerResolver, resolve_user_scope
 from a2a.types import Task
 
-from aion.core.runtime.context.conversation import ConversationHistory
+from aion.core.runtime.context.conversation import Conversation
 from aion.core.runtime.context.models import AionRuntimeContext
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.tasks.admission import ContextHolder, InMemoryContextAdmission
@@ -45,12 +45,12 @@ class InMemoryConversations:
         """Admit ``user`` into ``context_id``, as its private holder."""
         await self.admission.admit(context_id, ContextHolder.private(user), user)
 
-    def for_turn(self, call_context: ServerCallContext, task: Task) -> ConversationHistory:
+    def for_turn(self, call_context: ServerCallContext, task: Task) -> Conversation:
         """The history of the turn of ``task`` its caller runs."""
         return self.conversations.for_turn(call_context, task)
 
 
-def install(history: Optional[ConversationHistory]) -> None:
+def install(history: Optional[Conversation]) -> None:
     """Make ``history`` the current turn's, keeping the current runtime context's callback attribution.
 
     The runtime context registry needs a provider, as the server registers at

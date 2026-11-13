@@ -649,6 +649,15 @@ its console and, when `LOGSTASH_HOST` and `LOGSTASH_PORT` are configured, to
 Logstash. `LOG_LEVEL` defaults to `INFO`; Logstash excludes debug records and
 records without a running version, invocation distribution, or trace.
 
+The model clients' loggers (`LiteLLM`, `LiteLLM Proxy`, `LiteLLM Router` and
+`openai`) are held at `WARNING` whatever `LOG_LEVEL` says: below it they print
+every model request whole, the conversation, its files as base64 and the
+attribution token. Every file the server stores is logged once at `INFO` -
+whose it is (`inbound` or `agent`), its name, type and size, the file and
+version the storage service gave it, and the task and context - without its
+link, which carries its own access. A file downloaded because it was not in
+memory is logged at `DEBUG`, naming the host only.
+
 The proxy stays silent for HTTP 200 responses to `/health/` and `/health/system/`.
 Other requests are logged at debug level, or warning for proxy-owned failures,
 with the method, path, status, client address, and supplied `Host`, `User-Agent`,

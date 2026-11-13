@@ -96,6 +96,24 @@ class TestEmitMessage:
         assert isinstance(event, MessageCustomEvent)
         assert event.message is msg
 
+    def test_a_message_without_an_id_gets_one_on_itself(self, writer):
+        # the same object, returned into the graph's state, carries the id it was sent under
+        msg = AIMessage(content="Hello")
+        emit_message(writer, msg)
+        assert msg.id
+        assert writer.call_args[0][0].message.id == msg.id
+
+    def test_a_message_keeps_its_own_id(self, writer):
+        msg = AIMessage(content="Hello", id="m-1")
+        emit_message(writer, msg)
+        assert msg.id == "m-1"
+
+    def test_a_chunk_is_left_without_an_id(self, writer):
+        # a chunk's id groups the chunks of one model call; the SDK does not invent one
+        chunk = AIMessageChunk(content="Hello")
+        emit_message(writer, chunk)
+        assert chunk.id is None
+
     def test_emits_message_event_with_chunk(self, writer):
         # AIMessageChunk is accepted and wrapped in MessageCustomEvent
         chunk = AIMessageChunk(content="Hello")

@@ -24,14 +24,20 @@ in the list while configs encrypted with it are still needed. A config whose
 key has been removed cannot be read: a2a-sdk logs it and delivers the task's
 other configs without it.
 
-## conversation-history
+## file-link-authority
 
-- **Status:** Planned
-- **Code:** none
+- **Status:** Needs verification
+- **Code:** `src/aion/server/files/storage/backends/aion.py`
 
-`aion.core.agent.conversation` reads the tasks of the conversation and the
-versions of its artifacts, but has no call that reads its recent messages:
-which messages a participant of a shared conversation sees is not settled. An
-agent that needs earlier turns reads them from its framework's own state,
-which the server keeps per conversation: the LangGraph checkpoint or the ADK
-session.
+A stored file's download link is issued again once the one its part holds
+has expired (`aion.server.files.links`): for what the server answers with
+and pushes, and for the files an agent reads. A new link is asked for in a
+scope other than the one the file was uploaded in - an answer to `GetTask`
+or a push delivery runs outside any agent turn and carries no callback
+attribution, so Aion acts as the deployment's daemon, and a later turn can
+carry another attribution than the turn that stored the file. Whether the
+Files API grants a link in each of those scopes has not been confirmed
+against the live service. Meanwhile a link that is not issued costs
+nothing: the part leaves with the link it was stored with, the refusal is
+logged with the file's id, and the file version is not asked about again
+for a minute.

@@ -8,6 +8,8 @@ import logging
 from a2a.types import Part
 from google.protobuf import json_format, struct_pb2
 from langchain_core.messages import BaseMessage
+
+from aion.core.a2a.files import STORED_FILE_KEY, StoredFile
 from langchain_core.messages.content import ContentBlock  # type: ignore[attr-defined]
 
 logger = logging.getLogger(__name__)
@@ -95,7 +97,9 @@ class LcToA2AConverter:
         ``source_type`` form, which is read when present. Inline content
         becomes ``Part(raw=...)``, which the server stores and replaces with a
         URL like any other outbound file; the block's ``filename``, at the top
-        level or in ``extras``, names the file.
+        level or in ``extras``, names the file. A block that links to a stored
+        file keeps the reference to it (``aion:file`` in ``extras``) on the
+        part, so its link can be issued again.
         """
         mime_type: str | None = block.get("mime_type")
         filename: str | None = block.get("filename") or (block.get("extras") or {}).get("filename")
@@ -111,7 +115,11 @@ class LcToA2AConverter:
             )
 
         if block.get("url"):
-            return Part(url=block["url"], media_type=mime_type, filename=filename)
+            part = Part(url=block["url"], media_type=mime_type, filename=filename)
+            stored = StoredFile.from_metadata((block.get("extras") or {}).get(STORED_FILE_KEY))
+            if stored is not None:
+                stored.write_to(part)
+            return part
 
         if block.get("file_id"):
             return Part(url=block["file_id"], media_type=mime_type, filename=filename)

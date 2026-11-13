@@ -65,7 +65,8 @@ def file_artifact(
     Args:
         data: File content as bytes.
         mime_type: MIME type of the file (e.g. "text/plain", "image/png").
-        name: Human-readable artifact name. Defaults to "file".
+        name: Human-readable artifact name, and the file's name in its
+            part. The artifact's defaults to "file"; the part then has none.
         artifact_id: Explicit artifact ID. Auto-generated if not provided.
         file_action: Per-file retention request. Omit for the Aion storage
             provider's 30-day default. An action with no deadline requests
@@ -87,6 +88,7 @@ def file_artifact(
         parts=[Part(
             raw=data,
             media_type=mime_type,
+            filename=name or "",
             metadata=file_action.to_metadata() if file_action is not None else {},
         )],
         extensions=[MESSAGING_EXTENSION_URI_V1] if file_action is not None else [],

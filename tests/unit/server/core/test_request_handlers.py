@@ -242,3 +242,175 @@ class TestAbandonedNamedTask:
 
         assert await handler._settle_if_abandoned(named) is named
         handler._abandoned_tasks.settle.assert_not_awaited()
+
+
+class TestWorkingFileLinks:
+    """Whatever the handler answers with leaves through ``file_links``, so a stored file's link works."""
+
+    CARRY_CONTENT = {
+        "on_get_task",
+        "on_list_tasks",
+        "on_message_send",
+        "on_message_send_stream",
+        "on_cancel_task",
+        "on_subscribe_to_task",
+        "on_get_context",
+    }
+    """The answers that carry a task, a message or an event."""
+
+    CARRY_NO_FILE = {
+        "on_get_contexts",
+        "on_delete_context",
+        "on_create_task_push_notification_config",
+        "on_get_task_push_notification_config",
+        "on_list_task_push_notification_configs",
+        "on_delete_task_push_notification_config",
+        "on_get_extended_agent_card",
+    }
+    """The answers that carry no part: summaries, configs, a card, a deletion's result."""
+
+    def test_every_answer_is_accounted_for(self):
+        """A method added to the handler is decided here: does its answer carry files?"""
+        answers = {name for name in dir(AionRequestHandler) if name.startswith("on_")}
+
+        assert answers == self.CARRY_CONTENT | self.CARRY_NO_FILE
+
+    @pytest.mark.parametrize("name", sorted(CARRY_CONTENT))
+    def test_an_answer_with_content_refreshes_its_links(self, name):
+        import inspect
+
+        source = inspect.getsource(getattr(AionRequestHandler, name))
+
+        assert any(
+            call in source
+            for call in ("_with_working_links(", "_context_with_working_links(", "refresh_many(")
+        )
+
+    @staticmethod
+    def _links():
+        links = Mock()
+        links.refresh = AsyncMock(side_effect=lambda content: ("fresh", content))
+        return links
+
+    @pytest.mark.anyio
+    async def test_a_task_is_answered_with_working_links(self, monkeypatch):
+        from a2a.server.request_handlers.default_request_handler_v2 import DefaultRequestHandlerV2
+
+        monkeypatch.setattr(DefaultRequestHandlerV2, "on_get_task", AsyncMock(return_value="stored task"))
+        handler = _handler(file_links=self._links())
+
+        assert await handler.on_get_task(Mock(id="t1"), None) == ("fresh", "stored task")
+
+    @pytest.mark.anyio
+    async def test_a_missing_task_is_answered_as_missing(self, monkeypatch):
+        from a2a.server.request_handlers.default_request_handler_v2 import DefaultRequestHandlerV2
+
+        monkeypatch.setattr(DefaultRequestHandlerV2, "on_get_task", AsyncMock(return_value=None))
+        links = self._links()
+        handler = _handler(file_links=links)
+
+        assert await handler.on_get_task(Mock(id="t1"), None) is None
+        links.refresh.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_without_file_links_an_answer_is_the_stored_task(self, monkeypatch):
+        from a2a.server.request_handlers.default_request_handler_v2 import DefaultRequestHandlerV2
+
+        monkeypatch.setattr(DefaultRequestHandlerV2, "on_get_task", AsyncMock(return_value="stored task"))
+
+        assert await _handler().on_get_task(Mock(id="t1"), None) == "stored task"
+
+    @pytest.mark.anyio
+    async def test_a_list_is_answered_with_the_refreshed_tasks(self, monkeypatch):
+        from a2a.server.request_handlers.default_request_handler_v2 import DefaultRequestHandlerV2
+        from a2a.types import ListTasksResponse, Task
+        from aion.server.core.app.handlers import request_handler
+
+        stored = ListTasksResponse(tasks=[Task(id="t1"), Task(id="t2")], total_size=2)
+        monkeypatch.setattr(DefaultRequestHandlerV2, "on_list_tasks", AsyncMock(return_value=stored))
+        monkeypatch.setattr(request_handler, "has_individual_access", lambda context: True)
+        links = Mock()
+        links.refresh_many = AsyncMock(side_effect=lambda tasks: [tasks[0], Task(id="t2", context_id="refreshed")])
+        handler = _handler(file_links=links)
+
+        answer = await handler.on_list_tasks(Mock(), None)
+
+        assert [task.context_id for task in answer.tasks] == ["", "refreshed"]
+        assert answer.total_size == 2
+        assert [task.context_id for task in stored.tasks] == ["", ""]
+
+    @pytest.mark.anyio
+    async def test_a_list_with_nothing_to_refresh_is_answered_as_stored(self, monkeypatch):
+        from a2a.server.request_handlers.default_request_handler_v2 import DefaultRequestHandlerV2
+        from a2a.types import ListTasksResponse, Task
+        from aion.server.core.app.handlers import request_handler
+
+        stored = ListTasksResponse(tasks=[Task(id="t1")])
+        monkeypatch.setattr(DefaultRequestHandlerV2, "on_list_tasks", AsyncMock(return_value=stored))
+        monkeypatch.setattr(request_handler, "has_individual_access", lambda context: True)
+        links = Mock()
+        links.refresh_many = AsyncMock(side_effect=lambda tasks: list(tasks))
+
+        assert await _handler(file_links=links).on_list_tasks(Mock(), None) is stored
+
+    @pytest.mark.anyio
+    async def test_every_stream_event_leaves_with_working_links(self, monkeypatch):
+        from a2a.server.request_handlers.default_request_handler_v2 import DefaultRequestHandlerV2
+        from aion.server.core.app.handlers import request_handler
+
+        async def events(self, params, context):
+            yield "first"
+            yield "second"
+
+        class PassThrough:
+            def __init__(self, **kwargs):
+                pass
+
+            def project(self, source):
+                return source
+
+        monkeypatch.setattr(DefaultRequestHandlerV2, "on_message_send_stream", events)
+        monkeypatch.setattr(request_handler, "TerminalTaskProjection", PassThrough)
+        handler = _handler(file_links=self._links())
+
+        sent = [event async for event in handler.on_message_send_stream(Mock(), None)]
+
+        assert sent == [("fresh", "first"), ("fresh", "second")]
+
+    @pytest.mark.anyio
+    async def test_a_context_is_answered_with_working_links(self):
+        from datetime import datetime, timezone
+
+        from a2a.types import Artifact, Message, Part, Role, TaskState, TaskStatus
+        from aion.core.a2a import ContextArtifact, ContextView
+
+        def with_part(url):
+            return Part(url=url, filename="a.pdf")
+
+        view = ContextView(
+            context_id="c1",
+            history=[Message(message_id="m1", role=Role.ROLE_USER, parts=[with_part("old-1")])],
+            artifacts=[ContextArtifact(task_id="t1", artifact=Artifact(artifact_id="a1", parts=[with_part("old-2")]))],
+            status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
+            last_activity_at=datetime(2026, 11, 10, tzinfo=timezone.utc),
+        )
+
+        def renewed(contents):
+            fresh = []
+            for content in contents:
+                if getattr(content, "parts", None):
+                    content = type(content).FromString(content.SerializeToString())
+                    content.parts[0].url = content.parts[0].url.replace("old", "new")
+                fresh.append(content)
+            return fresh
+
+        links = Mock()
+        links.refresh_many = AsyncMock(side_effect=renewed)
+        handler = _handler(file_links=links)
+        handler._contexts = Mock(get_context=AsyncMock(return_value=view))
+
+        answer = await handler.on_get_context(GetContextParams(context_id="c1"), None)
+
+        assert answer.history[0].parts[0].url == "new-1"
+        assert answer.artifacts[0].artifact.parts[0].url == "new-2" and answer.artifacts[0].task_id == "t1"
+        assert view.history[0].parts[0].url == "old-1" and view.artifacts[0].artifact.parts[0].url == "old-2"

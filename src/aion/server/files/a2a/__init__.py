@@ -4,6 +4,7 @@ from .part_transformer import (
     Retention,
     Transform,
     TransformReport,
+    TurnUploads,
 )
 from .inline_guard import strip_inline_file_content
 
@@ -13,5 +14,6 @@ __all__ = [
     "Retention",
     "Transform",
     "TransformReport",
+    "TurnUploads",
     "strip_inline_file_content",
 ]

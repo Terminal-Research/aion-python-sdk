@@ -30,36 +30,60 @@ class FakeConfig:
         }
 
 
-def test_aion_chat_model_configures_langchain_init(monkeypatch):
-    captured = {}
+def _fake_langchain(monkeypatch, captured):
+    """Stand-ins for ``init_chat_model`` and ``ChatOpenAI`` that record how they were called."""
     langchain = ModuleType("langchain")
     chat_models = ModuleType("langchain.chat_models")
+    langchain_openai = ModuleType("langchain_openai")
 
     def init_chat_model(**kwargs):
         captured.update(kwargs)
-        return "chat-model"
+        return "configurable-model"
+
+    class ChatOpenAI:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
 
     chat_models.init_chat_model = init_chat_model
+    langchain_openai.ChatOpenAI = ChatOpenAI
     monkeypatch.setitem(sys.modules, "langchain", langchain)
     monkeypatch.setitem(sys.modules, "langchain.chat_models", chat_models)
+    monkeypatch.setitem(sys.modules, "langchain_openai", langchain_openai)
     monkeypatch.setattr(_MODULE, "aion_openai_config", lambda: FakeConfig())
+    return ChatOpenAI
+
+
+def test_aion_chat_model_builds_a_chat_openai_that_sends_files_by_content(monkeypatch):
+    captured = {}
+    chat_openai = _fake_langchain(monkeypatch, captured)
 
     result = aion_chat_model(
         "model-id-from-control-plane",
         temperature=0,
     )
 
-    assert result == "chat-model"
+    assert isinstance(result, chat_openai) and type(result) is not chat_openai
     assert captured.pop("callbacks")[0].raise_error is True
     assert captured == {
         "model": "model-id-from-control-plane",
-        "model_provider": "openai",
         "base_url": "https://api.example.test/v1",
         "api_key": "aion-runtime-token",
         "http_client": "sync-client",
         "http_async_client": "async-client",
         "temperature": 0,
     }
+
+
+def test_a_configurable_aion_chat_model_is_langchains_own(monkeypatch):
+    """``init_chat_model`` builds a configurable model's chat model per call, so it is returned as it is."""
+    captured = {}
+    _fake_langchain(monkeypatch, captured)
+
+    result = aion_chat_model("model-id-from-control-plane", configurable_fields=("temperature",))
+
+    assert result == "configurable-model"
+    assert captured["model_provider"] == "openai"
+    assert captured["configurable_fields"] == ("temperature",)
 
 
 def test_aion_chat_openai_configures_chat_openai(monkeypatch):
@@ -76,7 +100,7 @@ def test_aion_chat_openai_configures_chat_openai(monkeypatch):
 
     result = aion_chat_openai("model-id-from-control-plane")
 
-    assert isinstance(result, ChatOpenAI)
+    assert isinstance(result, ChatOpenAI) and type(result) is not ChatOpenAI
     assert captured.pop("callbacks")[0].raise_error is True
     assert captured == {
         "model": "model-id-from-control-plane",

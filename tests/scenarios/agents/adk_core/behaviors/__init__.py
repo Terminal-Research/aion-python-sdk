@@ -16,7 +16,7 @@ from tests.scenarios.agents.adk_core.invocation import Invocation
 from .cards import card
 from .config import config, event, ext, whoami
 from .errors import fail
-from .events import ids, react, steps
+from .events import history, ids, react, steps
 from .files import artifacts, parts, send_file
 from .lifecycle import slow
 from .interrupts import ask, ask_fail, ask_twice
@@ -49,6 +49,7 @@ BEHAVIORS: dict[str, Behavior] = {
     "steps": steps,
     "slow": slow,
     "ids": ids,
+    "history": history,
     "parts": parts,
     "artifacts": artifacts,
     "send-file": send_file,

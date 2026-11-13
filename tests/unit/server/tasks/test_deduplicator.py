@@ -504,6 +504,25 @@ class TestDeduplicateTask:
         assert result.status.message.message_id == "known-status-msg"
         assert [m.message_id for m in result.history] == ["known-status-msg"]
 
+    @pytest.mark.parametrize("held_in", ["history", "status"])
+    def test_known_status_message_is_the_one_the_task_holds(self, held_in):
+        """A patch repeating a message the task holds gets the held one, its stored file and all."""
+        held = _make_message("reply")
+        held.parts.append(Part(url="https://files.example.com/report.pdf", filename="report.pdf"))
+        original = _make_task(history=[held] if held_in == "history" else None)
+        if held_in == "status":
+            original.status.message.CopyFrom(held)
+        ded = A2ATaskDeduplicator(original)
+        patch = _make_task(state=TaskState.TASK_STATE_COMPLETED)
+        repeated = _make_message("reply")
+        repeated.parts.append(Part(raw=b"%PDF", filename="report.pdf"))
+        patch.status.message.CopyFrom(repeated)
+
+        result = ded.deduplicate_task(patch)
+
+        assert result.status.state == TaskState.TASK_STATE_COMPLETED
+        assert result.status.message == held
+
     def test_status_message_is_not_added_to_history_in_task_merge(self):
         """Where a status message goes in the history is the task manager's call, not the merge's."""
         ded = A2ATaskDeduplicator(_make_task(history=[_make_message("msg-1")]))

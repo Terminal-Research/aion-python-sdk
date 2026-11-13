@@ -54,10 +54,6 @@ class ModelEndpoint:
     attribution: Optional[tuple[str, str]] = None
 
 
-async def _no_artifact(_artifact_id: str) -> Any:
-    return None
-
-
 @dataclass(frozen=True)
 class EvolutionRun:
     task_id: str
@@ -66,7 +62,6 @@ class EvolutionRun:
     context_generation: Optional[str] = None
     model: Optional[ModelEndpoint] = None
     secret_values: tuple[str, ...] = ()
-    find_artifact: Callable[[str], Awaitable[Any]] = _no_artifact
 
 
 def availability(*, provider: str) -> Optional[str]:
@@ -113,7 +108,6 @@ class EvolutionToolkit:
             _script(request),
             task_id=run.task_id,
             context_id=run.context_id,
-            find_artifact=run.find_artifact,
             report={
                 "provider": self.provider,
                 "model": model,

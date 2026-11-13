@@ -11,7 +11,7 @@ import time
 from a2a.types import Artifact
 from aion.adk.authoring.transformers import convert_a2a_part_to_genai_part
 from aion.core.db import DbManagerProtocol
-from aion.core.runtime.context.conversation import ConversationHistory
+from aion.core.runtime.context.conversation import Conversation
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.core.exceptions import AionError
 from aion.db.postgres.repositories.adk_artifact_versions import AdkArtifactVersionsRepository
@@ -53,7 +53,7 @@ class _PublishedEntry:
     seq: int
 
 
-def _turn_history() -> Optional[ConversationHistory]:
+def _turn_history() -> Optional[Conversation]:
     """The conversation history the server installed for the current turn, or None outside one."""
     context = AionRuntimeContextRegistry.get_current_context()
     return context.conversation if context is not None else None
@@ -97,6 +97,12 @@ class A2AArtifactService(BaseArtifactService):
     version of a name is the newest one written in the current turn, the
     first part of an artifact published this turn included
     (``remember_published``), and otherwise the newest one the store holds.
+
+    Memory keeps what a turn wrote until the turn ends (``forget_turn``):
+    the turn's task then holds it, and a file in it is read through its link
+    like any stored file, its content kept once in the process's file cache.
+    A user-scoped artifact, which other sessions find in memory alone, and a
+    name another task of the context also wrote to, stay until eviction.
     """
 
     def __init__(
@@ -108,7 +114,8 @@ class A2AArtifactService(BaseArtifactService):
         """
         Args:
             db_manager: Optional DB connection manager for persistence and fallback reads.
-            ttl: Seconds before an artifact path is evicted from memory.
+            ttl: Seconds after its last write before an artifact path still
+                in memory is evicted.
             cleanup_interval: How often (in seconds) the background eviction loop runs.
         """
         self._db_manager = db_manager
@@ -411,9 +418,37 @@ class A2AArtifactService(BaseArtifactService):
             filename: str,
             session_id: Optional[str] = None,
     ) -> None:
-        """Removes all in-memory state for an artifact path (data, timestamps, and offset)."""
-        path = self._artifact_path(app_name, user_id, filename, session_id)
+        """Removes all in-memory state for an artifact path: saved versions, the published part, timestamp and offset.
+
+        The published part goes too: eviction finds a path by its timestamp,
+        so a part left behind would stay in memory, and be listed, for as long
+        as the process runs.
+        """
+        self._forget(self._artifact_path(app_name, user_id, filename, session_id))
+
+    def forget_turn(self, *, app_name: str, user_id: str, session_id: str, task_id: str) -> None:
+        """Drop from memory the session's artifacts the turn of ``task_id`` wrote; the turn has ended.
+
+        Every artifact the turn saved or published has reached its task by
+        then, or was removed when it could not (``delete_artifact``), so the
+        store answers for it. A name that another task wrote to as well is
+        left to eviction, and so are user-scoped artifacts.
+        """
+        prefix = f"{app_name}/{user_id}/{session_id}/"
+        for path in {*self._artifacts, *self._published}:
+            if not path.startswith(prefix) or self._file_has_user_namespace(path.removeprefix(prefix)):
+                continue
+            writers = {entry.task_id for entry in self._artifacts.get(path, [])}
+            published = self._published.get(path)
+            if published is not None:
+                writers.add(published.task_id)
+            if writers == {task_id}:
+                self._forget(path)
+
+    def _forget(self, path: str) -> None:
+        """Remove all in-memory state for an artifact path."""
         self._artifacts.pop(path, None)
+        self._published.pop(path, None)
         self._timestamps.pop(path, None)
         self._version_offsets.pop(path, None)
 
@@ -594,18 +629,15 @@ class A2AArtifactService(BaseArtifactService):
         if history is None or history.context_id != session_id:
             return []
         try:
-            tasks = await history.tasks()
+            stored = await history.list_artifacts(name=filename, all_versions=True, include_sdk=True)
         except Exception as e:
-            logger.warning(f"Reading the context's tasks failed for '{filename}': {e}", exc_info=True)
+            logger.warning(f"Reading the context's artifacts failed for '{filename}': {e}", exc_info=True)
             return []
-        found: List[Artifact] = []
-        for task in reversed(tasks):
-            for artifact in reversed(task.artifacts):
-                if filename is not None and artifact.name != filename:
-                    continue
-                if version is not None and A2AArtifactService._parse_versions_from_db([artifact]) != [version]:
-                    continue
-                found.append(artifact)
+        found = [
+            entry.artifact
+            for entry in stored
+            if version is None or A2AArtifactService._parse_versions_from_db([entry.artifact]) == [version]
+        ]
         return found[:1] if latest_only and version is None else found
 
     async def _fetch_db_artifact_keys(self, *, app_name: str, user_id: str, session_id: str) -> list[str]:
@@ -741,10 +773,7 @@ class A2AArtifactService(BaseArtifactService):
             if now - ts > self._ttl
         ]
         for path in expired:
-            self._artifacts.pop(path, None)
-            self._timestamps.pop(path, None)
-            self._version_offsets.pop(path, None)
-            self._published.pop(path, None)
+            self._forget(path)
             logger.debug(f"Evicted artifact from memory: {path}")
 
     async def close(self) -> None:

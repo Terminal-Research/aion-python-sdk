@@ -8,6 +8,7 @@ from typing import Any
 
 from a2a.types import SendMessageRequest, SubscribeToTaskRequest
 from a2a.utils.errors import InternalError, InvalidParamsError
+from aion.core.a2a.files import forget_stored_file
 from aion.core.runtime.context import AionRuntimeContext
 from aion.server.agent.execution.context.attribution import callback_attribution
 from aion.server.files.a2a import A2AFileTransformer
@@ -31,12 +32,24 @@ class FilePartPreprocessor:
     """Replaces inline file parts with URL parts on the way in.
 
     Runs before any handler or task store operation, so neither the stored task
-    nor the agent ever sees raw bytes. An inbound file that cannot be stored
+    nor the agent ever sees a file's bytes. Inline is ``raw`` bytes or a
+    ``data:`` URL, whatever media type the caller gave the part: one typed as a
+    JSX Card is the caller's file like any other. An inbound file that cannot be stored
     rejects the request instead of degrading: nothing was saved, and the client
     can simply send it again.
 
+    A caller's parts never keep a reference to a stored file (``aion:file``):
+    the server writes that key for the files it stores itself, and reads it
+    back to issue download links with the deployment's own rights. One taken
+    from a caller would name a file of the caller's choosing.
+
     Receipts produced during ``process`` are tracked per async context, so
     concurrent requests compensate only their own uploads.
+
+    The transformer keeps the bytes of a file it stores in memory for a while
+    (``aion.core.a2a.file_contents``): the turn this request starts, and later
+    turns on this server, read the file without downloading what the server
+    has just uploaded.
     """
 
     def __init__(self, file_transformer: A2AFileTransformer) -> None:
@@ -68,10 +81,16 @@ class FilePartPreprocessor:
         if not isinstance(request_obj, (SendMessageRequest, SubscribeToTaskRequest)):
             return
 
-        if not request_obj.message or not self._transformer.upload_manager:
+        if not request_obj.message:
             return
 
         message = request_obj.message
+        for part in message.parts:
+            forget_stored_file(part)
+
+        if not self._transformer.upload_manager:
+            return
+
         runtime = AionRuntimeContext(extensions=context.extensions)
         runtime = runtime.replace(callback_attribution=callback_attribution(context.call_context, runtime))
         resolution = resolve_upload_context(
@@ -105,6 +124,9 @@ class FilePartPreprocessor:
     async def _compensate(self) -> None:
         """Withdraw what this request stored, never raising on the way.
 
+        The files' content leaves the process's file cache at once, whether
+        or not the storage service can withdraw the files themselves.
+
         Compensation is secondary to the failure that triggered it, in both
         directions. Letting it raise out of ``process`` would replace the
         rejection the client needs to read - "the storage service rejected the
@@ -117,6 +139,7 @@ class FilePartPreprocessor:
         if not receipts:
             return
         _request_receipts.set([])
+        self._transformer.forget_contents(receipts)
 
         upload_manager = self._transformer.upload_manager
         if upload_manager is None:

@@ -187,12 +187,16 @@ where the distribution's reply mode says.
 
 ### Message
 
-Normalized inbound message. Exposes sender identity and text content. Provides `reply` and `react` shortcuts.
+Normalized inbound message. Exposes sender identity, text content and attached files. Provides `reply` and `react` shortcuts.
 
 ```python
 async def handle_message(message: Message):
     print(message.text)      # normalized text
     print(message.user.id)   # sender user ID
+
+    for file in message.files:               # attached files, inline or stored
+        content = await file.read()          # bytes, downloaded once and kept
+        print(file.name, file.media_type, len(content))
 
     await message.reply("Got it!")
     await message.react("thumbsup")
@@ -250,17 +254,34 @@ def streaming_node(state: dict, writer: StreamWriter):
 ## Reading the conversation
 
 `emit_*` write what a turn says; `aion.core.agent.conversation` reads what the
-conversation already holds - its earlier tasks and the versions of their
-artifacts - for the turn the server is running. A node calls it without
-arguments: the server installs the turn's history before the graph runs.
+conversation already holds - its messages, its earlier tasks, their artifacts
+and files - for the turn the server is running. A node calls it without
+arguments: the server installs the turn's conversation before the graph runs.
 
 ```python
+from a2a.types import Role
+
+from aion.core.a2a import answer_text
 from aion.core.agent import conversation
 
 async def my_node(state: dict):
-    report = await conversation.find_artifact("analysis")
-    earlier = await conversation.tasks()
+    recent = await conversation.list_messages(limit=10)
+    last_question = await conversation.list_messages(role=Role.ROLE_USER, limit=1)
+
+    reports = await conversation.list_artifacts(name="report.md", limit=1)
+    if reports:
+        draft = await reports[0].read_text()
+
+    previous = await conversation.list_tasks(limit=2)
+    if previous:
+        said = answer_text(previous[-1])
 ```
+
+Outside `aion serve` - a unit test, `langgraph dev` - no conversation is
+installed and the calls raise `ConversationUnavailableError`:
+`conversation.is_available()` asks first, and `aion.core.agent.testing` gives
+a test an `InMemoryConversation` to read. See "Conversation history" in the
+`aion.core` README for every read.
 
 ---
 

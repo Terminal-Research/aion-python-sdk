@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Literal, Optional
 
 from aion.core.constants import EVENT_EXTENSION_URI_V1
 from aion.core.runtime.context import AionRuntimeContext
+from aion.core.a2a.files import ConversationFile, files_of
 
 if TYPE_CHECKING:
     from .thread import BaseThread
@@ -31,9 +32,14 @@ class User:
 class BaseMessage(ABC):
     """Normalized inbound message bound to its thread.
 
-    Provides parsed access to the inbound message fields (id, text, user)
-    and convenience methods (reply, react). Concrete implementations supply
-    the framework-specific react() transport.
+    Provides parsed access to the inbound message fields (id, text, user,
+    files) and convenience methods (reply, react). Concrete implementations
+    supply the framework-specific react() transport.
+
+    Attributes:
+        id: The message's id on the source network, or its A2A message id.
+        text: The message's text; None when it carries none.
+        user: The sender on the source network; None for a direct A2A request.
     """
 
     def __init__(self, context: AionRuntimeContext, thread: "BaseThread") -> None:
@@ -44,6 +50,7 @@ class BaseMessage(ABC):
         self.id: Optional[str] = self._parse_id()
         self.text: Optional[str] = self._parse_text()
         self.user: Optional[User] = self._parse_user()
+        self._files: Optional[list[ConversationFile]] = None
 
     def _parse_id(self) -> Optional[str]:
         """Extract message_id from event payload, falling back to inbox message."""
@@ -65,6 +72,18 @@ class BaseMessage(ABC):
             if p.text and EVENT_EXTENSION_URI_V1 not in p.metadata
         ]
         return "\n".join(parts) if parts else None
+
+    @property
+    def files(self) -> list[ConversationFile]:
+        """The files attached to the message, in order.
+
+        Each reads its content into memory with ``await file.read()`` and
+        keeps it, whether the file arrived inline or the server stored it.
+        """
+        if self._files is None:
+            inbox = self.context.inbox
+            self._files = files_of(inbox.message) if inbox is not None and inbox.message is not None else []
+        return self._files
 
     def _parse_user(self) -> Optional[User]:
         """Build a User from user_id in the event payload; returns None when no event is present."""
