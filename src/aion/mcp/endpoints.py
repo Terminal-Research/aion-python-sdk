@@ -13,11 +13,10 @@ from aion.api.control_plane import (
     AionControlPlanePaths,
     CapabilityKind,
     CapabilityReference,
-    PrincipalSelector,
     RuntimeCapabilityReference,
 )
 from aion.api.exceptions import AionAuthenticationError
-from aion.api.callback_attribution import callback_headers, reject_callback_selector
+from aion.api.callback_attribution import callback_headers
 from aion.api.callback_errors import async_callback_response_hook
 from aion.api.http import aion_jwt_manager
 
@@ -106,15 +105,17 @@ def aion_mcp_http_client(headers=None, timeout=None, auth=None):
 def aion_mcp_authorization_headers(
     token: str | None,
     *,
-    principal_selector: PrincipalSelector | None = None,
     usage_attribution: str | None = None,
     context: AionRuntimeContext | None = None,
 ) -> dict[str, str]:
     """Build authenticated headers for remote Aion MCP requests.
 
+    Forward the current request's signed usage carrier when available. Without
+    one, Aion resolves attribution from the authenticated credentials; deployment
+    credentials use the deployment's current daemon identity and workspace.
+
     Args:
         token: Aion JWT used as the bearer token.
-        principal_selector: Retired override; any explicit value is rejected.
         usage_attribution: Optional opaque usage-attribution carrier to
             preserve across this request.
         context: Explicit runtime scope, otherwise the current invocation.
@@ -128,7 +129,6 @@ def aion_mcp_authorization_headers(
     if not token:
         raise AionAuthenticationError("Unable to obtain an Aion API token.")
 
-    reject_callback_selector(principal_selector)
     return callback_headers(
         {"Authorization": f"Bearer {token}"},
         usage_attribution=usage_attribution, context=context,
@@ -139,7 +139,6 @@ async def aion_mcp_endpoint(
     reference: CapabilityReference | None = None,
     *,
     jwt_manager: AsyncTokenManager | None = None,
-    principal_selector: PrincipalSelector | None = None,
     usage_attribution: str | None = None,
     base_url: str | None = None,
     name: str | None = None,
@@ -151,7 +150,6 @@ async def aion_mcp_endpoint(
             global Aion metatools MCP server.
         jwt_manager: Optional async token manager. Defaults to the SDK's
             global refreshing JWT manager.
-        principal_selector: Retired override; any explicit value is rejected.
         usage_attribution: Optional opaque usage-attribution carrier. When
             omitted, the current runtime request supplies it when available.
         base_url: Optional API base URL. Defaults to ``AION_API_HOST``.
@@ -169,7 +167,6 @@ async def aion_mcp_endpoint(
     return _reference_endpoint(
         normalized,
         token=token,
-        principal_selector=principal_selector,
         usage_attribution=usage_attribution,
         base_url=base_url,
         name=name,
@@ -180,7 +177,6 @@ def aion_mcp_endpoint_sync(
     reference: CapabilityReference | None = None,
     *,
     jwt_manager: SyncTokenManager | None = None,
-    principal_selector: PrincipalSelector | None = None,
     usage_attribution: str | None = None,
     base_url: str | None = None,
     name: str | None = None,
@@ -192,7 +188,6 @@ def aion_mcp_endpoint_sync(
             global Aion metatools MCP server.
         jwt_manager: Optional synchronous token manager. Defaults to the SDK's
             global refreshing JWT manager.
-        principal_selector: Retired override; any explicit value is rejected.
         usage_attribution: Optional opaque usage-attribution carrier. When
             omitted, the current runtime request supplies it when available.
         base_url: Optional API base URL. Defaults to ``AION_API_HOST``.
@@ -210,7 +205,6 @@ def aion_mcp_endpoint_sync(
     return _reference_endpoint(
         normalized,
         token=token,
-        principal_selector=principal_selector,
         usage_attribution=usage_attribution,
         base_url=base_url,
         name=name,
@@ -222,7 +216,6 @@ async def aion_runtime_context_mcp_endpoints(
     *,
     capability_references: Iterable[CapabilityReference] = (),
     runtime_capability_references: Iterable[RuntimeCapabilityReference] = (),
-    principal_selector: PrincipalSelector | None = None,
     jwt_manager: AsyncTokenManager | None = None,
     base_url: str | None = None,
 ) -> list[AionMcpEndpoint]:
@@ -237,7 +230,6 @@ async def aion_runtime_context_mcp_endpoints(
             metatools MCP server should be connected.
         runtime_capability_references: Reference templates to resolve from
             ``context`` after the runtime subject is known.
-        principal_selector: Retired override; any explicit value is rejected.
         jwt_manager: Optional async token manager. Defaults to the SDK's
             global refreshing JWT manager.
         base_url: Optional API base URL. Defaults to ``AION_API_HOST``.
@@ -251,7 +243,6 @@ async def aion_runtime_context_mcp_endpoints(
         context,
         capability_references=capability_references,
         runtime_capability_references=runtime_capability_references,
-        principal_selector=principal_selector,
         token=token,
         base_url=base_url,
     )
@@ -262,7 +253,6 @@ def aion_runtime_context_mcp_endpoints_sync(
     *,
     capability_references: Iterable[CapabilityReference] = (),
     runtime_capability_references: Iterable[RuntimeCapabilityReference] = (),
-    principal_selector: PrincipalSelector | None = None,
     jwt_manager: SyncTokenManager | None = None,
     base_url: str | None = None,
 ) -> list[AionMcpEndpoint]:
@@ -277,7 +267,6 @@ def aion_runtime_context_mcp_endpoints_sync(
             metatools MCP server should be connected.
         runtime_capability_references: Reference templates to resolve from
             ``context`` after the runtime subject is known.
-        principal_selector: Retired override; any explicit value is rejected.
         jwt_manager: Optional synchronous token manager. Defaults to the SDK's
             global refreshing JWT manager.
         base_url: Optional API base URL. Defaults to ``AION_API_HOST``.
@@ -291,7 +280,6 @@ def aion_runtime_context_mcp_endpoints_sync(
         context,
         capability_references=capability_references,
         runtime_capability_references=runtime_capability_references,
-        principal_selector=principal_selector,
         token=token,
         base_url=base_url,
     )
@@ -302,13 +290,11 @@ def _runtime_context_endpoints(
     *,
     capability_references: Iterable[CapabilityReference],
     runtime_capability_references: Iterable[RuntimeCapabilityReference],
-    principal_selector: PrincipalSelector | None,
     token: str | None,
     base_url: str | None,
 ) -> list[AionMcpEndpoint]:
     headers = aion_mcp_authorization_headers(
         token,
-        principal_selector=principal_selector,
         context=context,
     )
     paths = AionControlPlanePaths(base_url)
@@ -337,7 +323,6 @@ def _reference_endpoint(
     reference: CapabilityReference,
     *,
     token: str | None,
-    principal_selector: PrincipalSelector | None,
     usage_attribution: str | None,
     base_url: str | None,
     name: str | None,
@@ -348,7 +333,6 @@ def _reference_endpoint(
         url=paths.capability_url(reference),
         headers=aion_mcp_authorization_headers(
             token,
-            principal_selector=principal_selector,
             usage_attribution=usage_attribution,
         ),
     )

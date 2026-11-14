@@ -267,29 +267,6 @@ class AionRuntimeContext:
             return None
         return self.distribution_extension_payload.environment
 
-    def get_principal_selector(self) -> Optional[str]:
-        """Return the control-plane principal selector for this invocation.
-
-        This selector is request metadata for calls that this behavior makes
-        back to Aion control-plane endpoints, including MCP and A2A access. It
-        scopes the request to the runtime principal used for access control.
-        When the active environment has a daemon identity, that identity is the
-        most specific selector. Otherwise the selector falls back to the active
-        environment. Omitting the selector can cause the control plane to treat
-        the request as the broader authenticated subject and deny requests that
-        would be authorized for the runtime daemon or environment.
-
-        Typed selector objects live in ``aion.api``.
-
-        Returns:
-            A header-ready ``aion://agent/identity/<id>`` selector when the active
-            environment has a daemon identity, otherwise
-            ``aion://agent/environment/<id>``. Returns ``None`` when no
-            distribution environment is available.
-        """
-        environment = self.get_environment()
-        return environment.principal_selector if environment else None
-
     def get_principal_identity(self) -> Optional[PrincipalIdentity]:
         """Return the principal identity from the distribution.
 

@@ -8,8 +8,6 @@ import httpx
 
 from aion.adk.authoring.models import aion_lite_llm
 import aion.adk.authoring.models as models
-import aion.api.model_service_client as model_service_client
-from aion.api.exceptions import AionModelPrincipalError
 from aion.core.exceptions import AionDaemonIdentityRequired
 from aion.core.runtime.context import AionRuntimeContext
 
@@ -171,27 +169,6 @@ def test_lite_llm_client_allows_deployment_initiated_work(monkeypatch):
     for call in calls:
         assert call["api_key"] == "fresh-jwt"
         assert call.get("extra_headers", {}) == {}
-
-
-def test_lite_llm_does_not_derive_authority_from_environment_metadata(monkeypatch):
-    """Routing metadata alone is not a callback authorization input."""
-    calls = _fake_adk_modules(monkeypatch)
-    monkeypatch.setattr(models, "aion_openai_config", lambda: FakeConfig())
-    monkeypatch.setattr(models, "aion_model_api_key", lambda: "fresh-jwt")
-    monkeypatch.setattr(
-        model_service_client,
-        "aion_principal_selector",
-        lambda: "aion://agent/environment/env-id",
-    )
-    monkeypatch.setattr("aion.api.callback_attribution.get_aion_runtime_context",
-                        lambda: AionRuntimeContext())
-
-    client = aion_lite_llm("model-id").kwargs["llm_client"]
-
-    asyncio.run(client.acompletion(model="openai/model-id", messages=[], tools=None))
-    assert len(calls) == 1
-    assert calls[0]["api_key"] == "fresh-jwt"
-    assert calls[0]["extra_headers"] == {}
 
 
 @pytest.mark.parametrize("asynchronous", [False, True])

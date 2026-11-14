@@ -181,32 +181,6 @@ class PrincipalSelector:
             f"{AION_PRINCIPAL_SELECTOR_HEADER} cannot select {kind} resources"
         )
 
-    @classmethod
-    def from_runtime_context(
-        cls,
-        context: AionRuntimeContext | None,
-    ) -> Self | None:
-        """Create a selector from the active runtime context, if present.
-
-        Runtime contexts derive the selector from the environment daemon
-        identity when available, and otherwise fall back to the active
-        environment. This scopes outgoing control-plane calls, such as MCP or
-        A2A access, to the principal used for access control.
-
-        Args:
-            context: Current Aion runtime context.
-
-        Returns:
-            A principal selector, or ``None`` when the context has no runtime
-            principal metadata.
-        """
-        if context is None:
-            return None
-        raw_selector = context.get_principal_selector()
-        if raw_selector is None:
-            return None
-        return cls.from_header_value(raw_selector)
-
     def to_header_value(self) -> str:
         """Return the HTTP header value for this selector.
 

@@ -59,20 +59,6 @@ def test_active_carrierless_request_uses_deployment_attribution(monkeypatch, bui
         assert "Aion-Caller-Id" not in result
 
 
-@pytest.mark.parametrize("builder", ["mcp", "file", "model"])
-def test_each_callback_rejects_stale_explicit_selector(builder):
-    from aion.api.file_service_client import aion_file_authorization_headers
-    from aion.api.model_service_client import aion_model_request_headers
-    from aion.mcp import aion_mcp_authorization_headers
-    calls = {
-        "mcp": lambda: aion_mcp_authorization_headers("version", principal_selector="old"),
-        "file": lambda: aion_file_authorization_headers("version", principal_selector="old"),
-        "model": lambda: aion_model_request_headers(principal_selector_provider=lambda: "old"),
-    }
-    with pytest.raises(AionAuthenticationError, match="no longer supported"):
-        calls[builder]()
-
-
 @pytest.mark.parametrize("carrier", [None, "opaque"])
 @pytest.mark.parametrize("value", ["", "invented", "aion://user/untrusted"])
 def test_legacy_callers_are_discarded_without_changing_attribution(carrier, value):

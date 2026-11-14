@@ -16,7 +16,7 @@ def reject_callback_selector(value: object) -> None:
     """Reject explicit selector overrides instead of silently changing authority."""
     if value is not None:
         raise AionAuthenticationError(
-            "Aion-Principal-Selector is no longer supported for SDK callbacks; "
+            "SDK callbacks do not accept a principal selector; "
             "use request-local callback attribution with Version credentials."
         )
 
@@ -31,7 +31,7 @@ def callback_headers(
 
     Without a carrier, including inside an active request, send no attribution.
     Aion resolves the deployment's current daemon and payer from its credentials.
-    Retired caller-ID inputs are discarded, including duplicate or empty values.
+    Caller-ID headers cannot select attribution and are not forwarded.
 
     Args:
         existing: Transport inputs; duplicate usage carriers are rejected.

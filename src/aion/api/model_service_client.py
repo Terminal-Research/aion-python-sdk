@@ -14,7 +14,7 @@ from aion.api.control_plane import (
     PrincipalSelectorKind,
 )
 from aion.api.exceptions import AionAuthenticationError, AionModelPrincipalError
-from aion.api.callback_attribution import callback_headers, reject_callback_selector
+from aion.api.callback_attribution import callback_headers
 from aion.api.callback_errors import callback_response_hook, async_callback_response_hook
 from aion.api.http.jwt_manager import (
     AionJWTManager,
@@ -25,7 +25,6 @@ from aion.core.constants import AION_USAGE_ATTRIBUTION_HEADER
 from aion.core.runtime.context import get_aion_runtime_context
 from aion.core.settings import api_settings
 
-PrincipalSelectorProvider = Callable[[], str | None]
 UsageAttributionProvider = Callable[[], str | None]
 ModelApiKeyProvider = Callable[[], str]
 
@@ -140,25 +139,6 @@ async def aion_jwt_api_key(
     return token
 
 
-def aion_principal_selector() -> str | None:
-    """Return the current model-service principal selector, if available.
-
-    Reads the active AionRuntimeContext via AionRuntimeContextRegistry, which is
-    populated by aion.server at request entry. Returns None when called outside
-    a server context (e.g. during local development or direct script use).
-
-    This metadata helper is not used to authorize SDK callbacks.
-    Expected forms:
-
-    - Agent environment selector: ``aion://agent/environment/<id>``
-    - Agent identity selector: ``aion://agent/identity/<id>``
-    """
-    context = get_aion_runtime_context()
-    if context is None:
-        return None
-    return context.get_principal_selector()
-
-
 def aion_usage_attribution() -> str | None:
     """Return the current opaque usage-attribution carrier, if available.
 
@@ -175,21 +155,18 @@ def aion_usage_attribution() -> str | None:
 def aion_model_request_headers(
         existing: Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
         *,
-        principal_selector_provider: PrincipalSelectorProvider | None = None,
         usage_attribution_provider: UsageAttributionProvider | None = None,
 ) -> dict[str, str]:
     """Build request-local callback headers without an independent selector.
 
     Args:
         existing: Existing transport headers; conflicting inputs are refused.
-        principal_selector_provider: Retired override, rejected when supplied.
         usage_attribution_provider: Optional opaque carrier source, which must
             agree with the active request rather than overriding its identity.
 
     Returns:
         Exclusive callback attribution for the Version-authenticated request.
     """
-    reject_callback_selector(principal_selector_provider)
     return callback_headers(
         existing,
         usage_attribution=usage_attribution_provider() if usage_attribution_provider else None,
@@ -292,7 +269,7 @@ def _aion_model_async_http_client(
 def _model_request_hook(
         api_key_provider: ModelApiKeyProvider | None,
 ) -> Callable[[httpx.Request], None]:
-    """Return a sync request hook for dynamic auth and principal headers."""
+    """Return a sync request hook for dynamic auth and usage headers."""
     def hook(request: httpx.Request) -> None:
         if api_key_provider is not None:
             request.headers["Authorization"] = f"Bearer {api_key_provider()}"
@@ -304,7 +281,7 @@ def _model_request_hook(
 def _async_model_request_hook(
         api_key_provider: ModelApiKeyProvider | None,
 ) -> Callable[[httpx.Request], Any]:
-    """Return an async request hook for dynamic auth and principal headers."""
+    """Return an async request hook for dynamic auth and usage headers."""
     async def hook(request: httpx.Request) -> None:
         if api_key_provider is not None:
             request.headers["Authorization"] = f"Bearer {api_key_provider()}"
@@ -318,7 +295,6 @@ __all__ = [
     "AION_USAGE_ATTRIBUTION_HEADER",
     "AionModelClientConfig",
     "ModelApiKeyProvider",
-    "PrincipalSelectorProvider",
     "UsageAttributionProvider",
     "aion_jwt_api_key",
     "aion_model_api_key",
@@ -328,6 +304,5 @@ __all__ = [
     "aion_model_request_headers",
     "aion_model_base_url",
     "aion_openai_config",
-    "aion_principal_selector",
     "aion_usage_attribution",
 ]

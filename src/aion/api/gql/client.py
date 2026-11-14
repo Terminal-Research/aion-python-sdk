@@ -278,7 +278,7 @@ class AionGqlClient:
         gql_target = _to_capability_subject_gql_input(target)
         parameters = _with_callback_attribution(service_parameters)
         if parameters is not None and any(
-            item.key.casefold() in ("aion-usage-attribution", "aion-caller-id")
+            item.key.casefold() == AION_USAGE_ATTRIBUTION_HEADER.casefold()
             for item in parameters.additional or ()
         ):
             reject_callback_selector(principal)

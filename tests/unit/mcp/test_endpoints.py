@@ -15,7 +15,6 @@ from aion.api.control_plane import (
     CapabilityReference,
     CapabilitySubjectSource,
     CapabilitySubject,
-    PrincipalSelector,
     RuntimeCapabilityReference,
 )
 from aion.api.exceptions import AionAuthenticationError
@@ -55,25 +54,24 @@ class FakeSyncTokenManager:
 class FakeRuntimeContext:
     """Runtime context carrying a signed carrier and capability routing."""
 
+    def __init__(self, carrier: str | None = "signed-token") -> None:
+        self.carrier = carrier
+
     def get_callback_attribution(self):
         from aion.core.runtime.context import ForwardedAttribution
-        return ForwardedAttribution("signed-token")
+        return ForwardedAttribution(self.carrier) if self.carrier else None
 
     def get_environment(self) -> SimpleNamespace:
         """Return a fake environment."""
-        return SimpleNamespace(id="env-id")
+        return SimpleNamespace(id="env-id", daemon_agent_identity_id="daemon-id")
 
     def get_distribution(self) -> SimpleNamespace:
         """Return a fake incoming distribution."""
         return SimpleNamespace(id="distribution-id")
 
-    def get_principal_selector(self) -> str:
-        """Return the derived principal selector."""
-        return "aion://agent/environment/env-id"
-
-    def get_usage_attribution(self) -> str:
-        """Return a fake request-scoped attribution carrier."""
-        return "signed-token"
+    def get_usage_attribution(self) -> str | None:
+        """Return the configured request-scoped attribution carrier."""
+        return self.carrier
 
 
 def test_endpoint_returns_langchain_multi_server_config() -> None:
@@ -346,3 +344,31 @@ def test_runtime_context_sync_endpoints_resolve_runtime_references() -> None:
         "https://api.example.com/mcp/capabilities/mcp.aion.metatools",
         "https://api.example.com/distributions/distribution-id/mcp",
     ]
+
+
+@pytest.mark.parametrize("carrier", [None, "signed-token"])
+@pytest.mark.parametrize("synchronous", [False, True])
+def test_destination_does_not_select_callback_authority(
+    monkeypatch, carrier, synchronous,
+) -> None:
+    """MCP routing never replaces request attribution or deployment fallback."""
+    context = FakeRuntimeContext(carrier)
+    monkeypatch.setattr(
+        "aion.api.callback_attribution.get_aion_runtime_context", lambda: context,
+    )
+    reference = CapabilityReference.mcp(
+        CapabilitySubject.environment("target-environment"), key="mcp.tools",
+    )
+    if synchronous:
+        endpoint = aion_mcp_endpoint_sync(
+            reference, jwt_manager=FakeSyncTokenManager("deployment-token"),
+        )
+    else:
+        endpoint = asyncio.run(aion_mcp_endpoint(
+            reference, jwt_manager=FakeAsyncTokenManager("deployment-token"),
+        ))
+    expected = {"Authorization": "Bearer deployment-token"}
+    if carrier:
+        expected[AION_USAGE_ATTRIBUTION_HEADER] = carrier
+    assert endpoint.headers == expected
+    assert "/environments/target-environment/" in endpoint.url

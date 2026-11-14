@@ -98,8 +98,8 @@ for executable examples, media limits and response pricing.
 
 `AionFileClient` obtains a current bearer token and, inside an Aion runtime
 request, forwards its opaque usage-attribution carrier. The server verifies its
-executor and checks current authority. Explicit callback selector overrides are
-rejected rather than silently selecting a different identity.
+executor and checks current authority. Without a carrier, deployment credentials
+let the server resolve the deployment's current daemon and payer.
 
 ```python
 from aion.api import AionFileClient
@@ -139,12 +139,10 @@ from aion.api import (
     CapabilityReference,
     CapabilitySubject,
     CapabilitySubjectSource,
-    PrincipalSelector,
     RuntimeCapabilityReference,
 )
 
 subject = CapabilitySubject.environment("agent-environment-id")
-principal = PrincipalSelector.agent_environment("agent-environment-id")
 paths = AionControlPlanePaths()
 
 primary_mcp_url = paths.capability_url(CapabilityReference.primary_mcp(subject))
@@ -152,18 +150,14 @@ twitter_mcp_url = paths.capability_url(
     CapabilityReference.mcp(subject, key="mcp.twitter.distribution")
 )
 a2a_url = paths.capability_url(CapabilityReference.primary_a2a(subject))
-graphql_principal = principal.to_gql_value()
 
 runtime_mcp_reference = RuntimeCapabilityReference.primary_mcp(
     CapabilitySubjectSource.INCOMING_DISTRIBUTION
 )
 ```
 
-Principal selectors serialize as abstract Aion resource URIs, such as
-`aion://agent/environment/{id}`.
-
-The GraphQL client accepts these SDK model objects at its boundary and converts
-them to their canonical resource URI strings before sending requests.
+Capability subjects select the destination. Callback authority and usage
+attribution come from the request carrier or authenticated credentials.
 
 ## Development
 
@@ -181,11 +175,10 @@ poetry run ariadne-codegen client
 ```
 
 SDK callbacks keep the Version bearer and forward `Aion-Usage-Attribution`.
-Do not send `Aion-Principal-Selector` or exchange the bearer for a daemon token.
+Use deployment credentials for callbacks; the API resolves their authority.
 Capability subjects still address the destination; they do not select authority.
 
-Explicit `Aion-Caller-Id` inputs are discarded without selecting attribution.
-Malformed or conflicting usage carriers still fail; selector overrides fail too.
+Malformed or conflicting usage carriers fail before the request is sent.
 
 When a request has no usage carrier, callbacks send no attribution header.
 This also applies to anonymous sessions and application-authenticated requests.
