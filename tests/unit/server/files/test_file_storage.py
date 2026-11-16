@@ -43,6 +43,7 @@ from aion.server.files.a2a import strip_inline_file_content
 from aion.server.files.a2a.part_transformer import A2AFileTransformer
 from aion.server.files.storage import (
     FileRetentionDefault,
+    FileStorageBackend,
     FileUpload,
     FileUploadErrorCode,
     FileUploadManager,
@@ -219,6 +220,48 @@ class TestFileUploadManager:
         monkeypatch.setattr(app_settings, "file_storage_backend", "nope")
         with pytest.raises(ValueError, match="Unknown storage backend"):
             FileUploadManager.from_settings()
+
+
+class TestStubBackend:
+    """The stub keeps what it stores in this process, under the address it hands out."""
+
+    async def test_a_stored_file_is_held_under_its_address(self):
+        backend = StubFileStorageBackend()
+
+        [receipt] = await backend.store_many([FileUpload(data=b"%PDF-", media_type="application/pdf")], context=upload_context())
+
+        assert receipt.uri.startswith(StubFileStorageBackend.BASE_URI)
+        assert backend.held(receipt.uri) == b"%PDF-"
+        assert backend.held(f"{StubFileStorageBackend.BASE_URI}/elsewhere") is None
+
+    async def test_a_discarded_file_is_held_no_more(self):
+        backend = StubFileStorageBackend()
+        [receipt] = await backend.store_many([FileUpload(data=b"bytes", media_type="text/plain")], context=upload_context())
+
+        await backend.discard([receipt])
+
+        assert backend.held(receipt.uri) is None
+
+    async def test_the_server_conversation_reads_a_held_file_from_the_stub(self):
+        """Its address leads nowhere: the file is read in this process, in this turn or a later one."""
+        from aion.core.exceptions import ConversationFileTooLargeError
+        from aion.server.tasks.conversation import _StoredConversation
+
+        manager = FileUploadManager(StubFileStorageBackend())
+        receipt = await manager.store(FileUpload(data=b"%PDF-", media_type="application/pdf"), context=upload_context())
+        conversation = _StoredConversation(None, None, None, context_id="c-1", task_id="t-1", holder=None, storage=manager)
+        part = Part(url=receipt.uri, filename="report.pdf")
+
+        assert await conversation.read_file(part) == b"%PDF-"
+        with pytest.raises(ConversationFileTooLargeError):
+            await conversation.read_file(part, max_bytes=2)
+
+    def test_another_backend_holds_nothing(self):
+        class Elsewhere(FileStorageBackend):
+            async def store_many(self, uploads, *, context):
+                return []
+
+        assert Elsewhere().held("https://files.test/1") is None
 
 
 class TestLeafName:
@@ -553,6 +596,18 @@ class TestA2AFileTransformer:
         )).event
 
         assert event.artifact.parts[0].filename == "art"
+
+    async def test_the_reference_records_the_files_size(self):
+        """A reader learns whether the file fits a model request without downloading it."""
+        from aion.core.a2a.files import StoredFile
+        from tests.unit.support.files import NumberingBackend
+
+        event = (await self._transformer(NumberingBackend()).transform(
+            artifact_event(Part(raw=b"a,b,c", media_type="text/csv")),
+            upload_context=upload_context(),
+        )).event
+
+        assert StoredFile.of(event.artifact.parts[0]).byte_size == 5
 
     async def test_failed_part_is_dropped_logged_and_reported(self, caplog):
         """Never inline bytes - that is what the transformer exists to prevent.

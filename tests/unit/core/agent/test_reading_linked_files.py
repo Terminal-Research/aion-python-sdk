@@ -73,7 +73,6 @@ async def test_an_address_in_a_status_message_is_read_by_its_part() -> None:
 
 async def test_a_model_read_with_the_reference_reads_the_stored_file() -> None:
     """A file only the state holds - a tool's image, say - is found by its reference, not by the tasks."""
-    file_contents().clear()
     conversation = _Recording()
 
     with use_conversation(conversation):
@@ -83,15 +82,13 @@ async def test_a_model_read_with_the_reference_reads_the_stored_file() -> None:
     assert StoredFile.of(read) == REPORT and read.url == OLD_LINK and read.filename == "report.pdf"
 
 
-async def test_outside_a_turn_the_reference_finds_the_kept_content() -> None:
-    file_contents().clear()
+async def test_the_reference_finds_what_the_turn_kept_under_another_link() -> None:
     file_contents().put("file:file-1:ver-1", PDF, url="https://files.test/1?grant=fresh")
 
     assert await read_file_for_model(OLD_LINK, stored=REPORT) == PDF
 
 
-def test_a_blocking_read_with_the_reference_finds_the_kept_content() -> None:
-    file_contents().clear()
+def test_a_blocking_read_with_the_reference_finds_what_the_turn_kept() -> None:
     file_contents().put("file:file-1:ver-1", PDF, url="https://files.test/1?grant=fresh")
 
     assert read_file_for_model_sync(OLD_LINK, stored=REPORT) == PDF

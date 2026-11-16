@@ -8,6 +8,7 @@ from typing import Any
 
 from a2a.types import SendMessageRequest, SubscribeToTaskRequest
 from a2a.utils.errors import InternalError, InvalidParamsError
+from aion.core.a2a.file_contents import CALL_CONTEXT_KEY, FileContents, keeping_file_contents
 from aion.core.a2a.files import forget_stored_file
 from aion.core.runtime.context import AionRuntimeContext
 from aion.server.agent.execution.context.attribution import callback_attribution
@@ -46,10 +47,10 @@ class FilePartPreprocessor:
     Receipts produced during ``process`` are tracked per async context, so
     concurrent requests compensate only their own uploads.
 
-    The transformer keeps the bytes of a file it stores in memory for a while
-    (``aion.core.a2a.file_contents``): the turn this request starts, and later
-    turns on this server, read the file without downloading what the server
-    has just uploaded.
+    The bytes of the files it stores travel with the request: they are kept
+    in the file contents the request leaves on its call context
+    (``aion.core.a2a.file_contents``), and the turn the request starts reads
+    them from there instead of downloading what the server has just uploaded.
     """
 
     def __init__(self, file_transformer: A2AFileTransformer) -> None:
@@ -99,11 +100,16 @@ class FilePartPreprocessor:
             task_id=message.task_id or None,
         )
 
+        # The turn this request starts takes the files stored here from the
+        # request, without downloading them back.
+        contents = FileContents()
+        context.call_context.state[CALL_CONTEXT_KEY] = contents
         # The caller's files are kept for the provider's default: a request
         # does not get to book storage the deployment pays for.
-        transform = await self._transformer.transform(
-            message, retention=FileRetentionDefault.PROVIDER, upload_context=resolution
-        )
+        with keeping_file_contents(contents):
+            transform = await self._transformer.transform(
+                message, retention=FileRetentionDefault.PROVIDER, upload_context=resolution
+            )
         # Recorded before the rejection check: a batch can be half-stored when
         # one file fails, and those receipts still need compensating.
         _request_receipts.set(list(transform.report.receipts))
@@ -124,9 +130,6 @@ class FilePartPreprocessor:
     async def _compensate(self) -> None:
         """Withdraw what this request stored, never raising on the way.
 
-        The files' content leaves the process's file cache at once, whether
-        or not the storage service can withdraw the files themselves.
-
         Compensation is secondary to the failure that triggered it, in both
         directions. Letting it raise out of ``process`` would replace the
         rejection the client needs to read - "the storage service rejected the
@@ -139,7 +142,6 @@ class FilePartPreprocessor:
         if not receipts:
             return
         _request_receipts.set([])
-        self._transformer.forget_contents(receipts)
 
         upload_manager = self._transformer.upload_manager
         if upload_manager is None:

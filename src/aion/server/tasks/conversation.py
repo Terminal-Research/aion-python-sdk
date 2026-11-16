@@ -13,7 +13,9 @@ tasks: the participants of a shared context share the conversation.
 A stored file of the conversation is read through a download link that works
 now: when the link its part was stored with has expired, a new one is issued
 for the same file version (``aion.server.files.links``), in the scope of the
-turn that reads it.
+turn that reads it. A storage backend that holds its files in this process -
+the stub one, for development - is asked for the file first
+(``FileStorageBackend.held``).
 """
 
 from __future__ import annotations
@@ -24,6 +26,8 @@ from typing import TYPE_CHECKING, Iterable, Optional
 from a2a.server.owner_resolver import OwnerResolver
 from a2a.types import Message, Part, Task
 
+from aion.core.a2a.files import DEFAULT_MAX_FILE_BYTES
+from aion.core.exceptions import ConversationFileTooLargeError
 from aion.core.runtime.context.conversation import (
     ArtifactVersion,
     Conversation,
@@ -38,6 +42,8 @@ from aion.server.tasks.context_runs import ContextRuns
 if TYPE_CHECKING:
     from a2a.server.context import ServerCallContext
     from a2a.server.tasks import TaskStore
+
+    from aion.server.files.storage import FileUploadManager
 
 __all__ = ["StoredConversations"]
 
@@ -56,6 +62,8 @@ class StoredConversations:
         file_links: Issues a download link to a stored file again once the
             one its part holds has expired; omitted, a file is read through
             the link it was stored with.
+        storage: The storage files are stored through, asked first for a file
+            it holds in this process.
     """
 
     def __init__(
@@ -66,12 +74,14 @@ class StoredConversations:
             context_artifacts: ContextArtifacts,
             owner_resolver: OwnerResolver,
             file_links: Optional[StoredFileLinks] = None,
+            storage: Optional["FileUploadManager"] = None,
     ) -> None:
         self._task_store = task_store
         self._context_runs = context_runs
         self._context_artifacts = context_artifacts
         self._owner_resolver = owner_resolver
         self._file_links = file_links
+        self._storage = storage
 
     def for_turn(self, call_context: "ServerCallContext", task: Task) -> Conversation:
         """The conversation of the turn of ``task`` its caller (``call_context``) runs."""
@@ -83,6 +93,7 @@ class StoredConversations:
             task_id=task.id,
             holder=holder_of(call_context, self._owner_resolver),
             file_links=self._file_links,
+            storage=self._storage,
         )
 
 
@@ -99,6 +110,7 @@ class _StoredConversation(Conversation):
             task_id: str,
             holder: Optional[ContextHolder],
             file_links: Optional[StoredFileLinks] = None,
+            storage: Optional["FileUploadManager"] = None,
     ) -> None:
         super().__init__(context_id=context_id, task_id=task_id)
         self._task_store = task_store
@@ -106,6 +118,7 @@ class _StoredConversation(Conversation):
         self._context_artifacts = context_artifacts
         self._holder = holder
         self._file_links = file_links
+        self._storage = storage
 
     async def _held(self) -> bool:
         return self._holder is not None and await self._context_runs.holds(self.context_id, self._holder)
@@ -175,6 +188,15 @@ class _StoredConversation(Conversation):
             include_sdk=include_sdk,
         )
         return found if limit is None else found[:limit]
+
+    async def read_file(self, part: Part, *, max_bytes: Optional[int] = DEFAULT_MAX_FILE_BYTES) -> bytes:
+        """The file from the storage backend when it holds it in this process, else as any conversation reads it."""
+        held = self._storage.held(part.url) if self._storage is not None and part.WhichOneof("content") == "url" else None
+        if held is None:
+            return await super().read_file(part, max_bytes=max_bytes)
+        if max_bytes is not None and len(held) > max_bytes:
+            raise ConversationFileTooLargeError(part.filename or "file", max_bytes)
+        return held
 
     async def file_link(self, part: Part) -> str:
         """The part's own link while it works, otherwise one issued anew for the same file version."""

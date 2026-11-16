@@ -145,14 +145,19 @@ def run_python_without(
 
 @pytest.fixture(autouse=True)
 def no_kept_file_contents():
-    """Start every test with nothing in the process's cache of file contents.
+    """Run every test as a turn of its own: its own file contents, and no verdict on a file yet.
 
-    The cache is one per process (``aion.core.a2a.file_contents``); a file one
-    test read would otherwise answer the next test's read of the same address.
+    A turn keeps the files it reads (``aion.core.a2a.file_contents``), and
+    the process remembers which files a model refused
+    (``aion.core.agent.left_out_files``); a file one test's model refused
+    would otherwise be left out of the next test's request.
     """
-    from aion.core.a2a.file_contents import file_contents
+    from aion.core.a2a.file_contents import FileContents, keeping_file_contents
+    from aion.core.agent.left_out_files import forget_verdicts
 
-    file_contents().clear()
+    forget_verdicts()
+    with keeping_file_contents(FileContents()):
+        yield
 
 
 @pytest.fixture(autouse=True)

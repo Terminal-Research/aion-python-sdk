@@ -99,12 +99,16 @@ class StoredFile:
             storage service did not say.
         retention_expires_at: When the file is removed; None when it is kept
             indefinitely or the storage service did not say.
+        byte_size: The file's size in bytes, when the server recorded it: a
+            reader that only needs to know whether the file fits learns it
+            without downloading the file.
     """
 
     file_id: str
     version_id: str
     access_expires_at: Optional[datetime] = None
     retention_expires_at: Optional[datetime] = None
+    byte_size: Optional[int] = None
 
     @classmethod
     def create(
@@ -114,17 +118,20 @@ class StoredFile:
             *,
             access_expires_at: Timestamp = None,
             retention_expires_at: Timestamp = None,
+            byte_size: Any = None,
     ) -> "StoredFile":
         """Build a reference from ids and timestamps as a storage service reports them.
 
         A timestamp is a ``datetime`` or an RFC 3339 string; one that cannot
-        be read is taken as not reported.
+        be read is taken as not reported, and so is a size that is not a
+        whole number of bytes.
         """
         return cls(
             file_id=file_id,
             version_id=version_id,
             access_expires_at=_instant(access_expires_at),
             retention_expires_at=_instant(retention_expires_at),
+            byte_size=_byte_size(byte_size),
         )
 
     @classmethod
@@ -151,6 +158,7 @@ class StoredFile:
             version_id,
             access_expires_at=payload.get("accessExpiresAt"),
             retention_expires_at=payload.get("retentionExpiresAt"),
+            byte_size=payload.get("byteSize"),
         )
 
     def with_access(self, access_expires_at: Timestamp, retention_expires_at: Timestamp = None) -> "StoredFile":
@@ -182,11 +190,27 @@ class StoredFile:
             payload["accessExpiresAt"] = _wire(self.access_expires_at)
         if self.retention_expires_at is not None:
             payload["retentionExpiresAt"] = _wire(self.retention_expires_at)
+        if self.byte_size is not None:
+            payload["byteSize"] = self.byte_size
         return payload
 
     def write_to(self, part: Part) -> None:
         """Record the reference on ``part``, replacing the one it carries."""
         part.metadata.update({STORED_FILE_KEY: self.to_metadata()})
+
+
+def _byte_size(value: Any) -> Optional[int]:
+    """A size as metadata carries it - a JSON number, which a ``Struct`` holds as a float, or a string - else None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, str):
+        value = value.strip()
+        if not value.isdigit():
+            return None
+        return int(value)
+    if isinstance(value, (int, float)) and value >= 0 and float(value).is_integer():
+        return int(value)
+    return None
 
 
 def forget_stored_file(part: Part) -> bool:

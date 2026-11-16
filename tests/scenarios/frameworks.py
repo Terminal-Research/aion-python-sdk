@@ -22,6 +22,7 @@ __all__ = [
     "SUBGRAPH_AGENTS",
     "PARALLEL_AGENTS",
     "FILE_INLINING_AGENTS",
+    "REFUSED_FILES_AGENTS",
     "ASYNC_FACTORY_AGENTS",
     "SEQUENCE_AGENTS",
     "TRANSFER_AGENTS",
@@ -169,6 +170,25 @@ FILE_INLINING_AGENTS: dict[str, Framework] = {
         name="adk",
         agent_package="tests.scenarios.agents.adk_native",
         agent_entry="agent.py:create_file_inlining_agent",
+        sdk_extras=("adk-server",),
+    ),
+}
+
+
+REFUSED_FILES_AGENTS: dict[str, Framework] = {
+    # The native agent with its model behind the SDK's model class, which
+    # leaves out a file the model refuses, served as its own agent:
+    # `native/test_refused_files.py`, on a deployment that stores files.
+    "langgraph": Framework(
+        name="langgraph",
+        agent_package="tests.scenarios.agents.langgraph_native",
+        agent_entry="graph.py:create_refused_files_graph",
+        sdk_extras=("langgraph-server",),
+    ),
+    "adk": Framework(
+        name="adk",
+        agent_package="tests.scenarios.agents.adk_native",
+        agent_entry="agent.py:create_refused_files_agent",
         sdk_extras=("adk-server",),
     ),
 }

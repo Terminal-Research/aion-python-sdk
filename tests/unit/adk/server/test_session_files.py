@@ -210,7 +210,9 @@ async def test_the_session_names_the_stored_file_behind_each_link(where: str) ->
     _, stored = await _append(_event(part), NumberingBackend())
 
     assert stored.events[-1].custom_metadata[STORED_FILES_KEY] == {
-        LINK: {"fileId": "file-1", "fileVersionId": "ver-1", "accessExpiresAt": "2099-01-01T00:00:00Z"}
+        LINK: {
+            "fileId": "file-1", "fileVersionId": "ver-1", "accessExpiresAt": "2099-01-01T00:00:00Z", "byteSize": len(PDF),
+        }
     }
 
 

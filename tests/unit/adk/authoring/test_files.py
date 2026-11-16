@@ -19,7 +19,6 @@ from aion.adk.authoring import inline_files, inline_files_before_model
 from aion.adk.authoring.models import _file_inlining_lite_llm
 from aion.core.a2a.file_contents import file_contents
 from aion.core.agent.testing import InMemoryConversation, use_conversation
-from aion.core.exceptions import TaskFailedError
 from aion.core.settings import file_settings
 
 PDF_URL = "https://files.test/report?grant=abc"
@@ -91,12 +90,19 @@ async def test_a_file_this_server_holds_in_memory_is_not_read_again() -> None:
     assert request.contents[0].parts[0].inline_data.data == PDF
 
 
-async def test_a_file_larger_than_a_model_request_may_carry_fails_the_task(monkeypatch) -> None:
-    monkeypatch.setattr(file_settings, "model_file_max_bytes", 4)
+async def test_a_file_larger_than_a_model_request_may_carry_is_a_note(monkeypatch) -> None:
+    """The file is left out with a note in its place, and the conversation goes on without it."""
+    monkeypatch.setattr(file_settings, "model_file_max_bytes", 12)
     request, _ = _request()
 
-    with use_conversation(_conversation()), pytest.raises(TaskFailedError, match="report.pdf"):
+    with use_conversation(_conversation()):
         await inline_files(request)
+
+    text, pdf, png = request.contents[0].parts
+    assert pdf.text == (
+        '[File "report.pdf" (application/pdf) is larger than the 12 bytes a model request may carry and was left out]'
+    )
+    assert png.inline_data.data == PNG
 
 
 async def test_a_file_that_is_not_a_web_address_is_left_to_the_model() -> None:
@@ -163,6 +169,20 @@ class TestToolMedia:
             PNG,
             "image/png",
             "chart.png",
+        )
+
+    async def test_a_tools_media_too_large_is_a_note_after_the_function_response(self, monkeypatch) -> None:
+        """A note cannot be a function response's media: it follows the function response as text."""
+        monkeypatch.setattr(file_settings, "model_file_max_bytes", 4)
+        request = LlmRequest(model="gpt-test", contents=[self._tool_answer()])
+
+        with use_conversation(_conversation()):
+            await inline_files(request)
+
+        answer, note = request.contents[0].parts
+        assert answer.function_response.name == "snapshot" and not answer.function_response.parts
+        assert note.text == (
+            '[File "chart.png" (image/png) is larger than the 4 bytes a model request may carry and was left out]'
         )
 
     async def test_the_session_keeps_the_address(self) -> None:

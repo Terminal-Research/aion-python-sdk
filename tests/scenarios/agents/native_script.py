@@ -61,6 +61,11 @@ latest user message, the way a scenario decides what to send:
                         as a model that ran out of tokens does (ADK
                         ``error_code``)
 
+Before any of that, the model refuses a request that carries a file of
+``REFUSED_MEDIA_TYPE``, wherever in the conversation: it fails with HTTP
+status 400 before a word of answer, as a model service refuses a file type it
+does not take (``refuse_files``).
+
 The agents with two branches running at once (``langgraph_subgraph``,
 ``adk_parallel``) take their branches' names and answers from here too:
 ``BRANCHES`` and ``branch_answer``.
@@ -76,7 +81,7 @@ import asyncio
 import json
 import re
 from dataclasses import dataclass
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Any, Optional
 
 __all__ = [
@@ -178,6 +183,27 @@ def branch_answer(branch: str) -> str:
 
 class ModelFailure(RuntimeError):
     """What ``fail-after`` raises, from inside the model call."""
+
+
+REFUSED_MEDIA_TYPE = "video/x-refused"
+"""The media type of a file the model does not take."""
+
+
+class ModelRefusal(Exception):
+    """A model service's refusal of what a request carries: HTTP 400, before any answer."""
+
+    status_code = 400
+
+
+def refuse_files(media_types: Iterable[Optional[str]]) -> None:
+    """Refuse the request when it carries a file of ``REFUSED_MEDIA_TYPE``.
+
+    Raises:
+        ModelRefusal: One of ``media_types``, the types of the request's
+            files, is ``REFUSED_MEDIA_TYPE``.
+    """
+    if REFUSED_MEDIA_TYPE in media_types:
+        raise ModelRefusal(f"The model does not take files of type {REFUSED_MEDIA_TYPE}.")
 
 
 def get_weather(city: str) -> str:

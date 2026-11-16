@@ -4,13 +4,18 @@ A stored file reaches an agent as an address. A model provider cannot be
 relied on to fetch it: the address is a download link of the deployment's own
 storage, with a limited lifetime, and several model APIs take a file only by
 its content. So the SDK's model helpers send every file by its content, and
-read it here: from memory when this server stored or read it before
+read it here: from what the turn read or stored already
 (``aion.core.a2a.file_contents``), otherwise from storage, through the
 conversation of the turn, which reads a file whatever became of the link the
 message holds.
 
-A file that cannot be read, or is larger than ``AION_MODEL_FILE_MAX_BYTES``,
-fails the turn's task with a reason its caller can read.
+A file that cannot be read fails the turn's task with a reason its caller
+can read. A file larger than ``AION_MODEL_FILE_MAX_BYTES`` is not read:
+``ModelFileTooLargeError`` says so, and the SDK's helpers put a note in the
+file's place in the request (``aion.core.agent.left_out_files``), so the
+conversation goes on without the file. A stored file's reference records its
+size, so such a file is known without downloading it; any other is known
+once a read reaches the limit, and is not read again in the turn.
 """
 
 from __future__ import annotations
@@ -20,7 +25,7 @@ import base64
 import concurrent.futures
 import logging
 import uuid
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -31,13 +36,20 @@ from a2a.types import Part
 
 from aion.core.a2a.file_contents import content_key, file_contents
 from aion.core.a2a.files import StoredFile
-from aion.core.exceptions import ConversationFileError, ConversationUnavailableError, TaskFailedError
+from aion.core.agent.left_out_files import stored_label
+from aion.core.exceptions import (
+    ConversationFileError,
+    ConversationFileTooLargeError,
+    ConversationUnavailableError,
+    TaskFailedError,
+)
 from aion.core.settings import file_settings
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
     "HeldDocuments",
+    "ModelFileTooLargeError",
     "holding_documents",
     "place_held_documents",
     "read_file_for_model",
@@ -46,6 +58,41 @@ __all__ = [
 
 SYNC_READ_TIMEOUT_SECONDS = 120.0
 """How long a worker thread waits for the turn's event loop to read a file."""
+
+
+class ModelFileTooLargeError(TaskFailedError):
+    """A file is larger than ``AION_MODEL_FILE_MAX_BYTES``, the most a model request may carry.
+
+    The SDK's model helpers and ``inline_files`` put a note in the file's
+    place instead of failing; raised out of them, it fails the task with its
+    reason.
+
+    Attributes:
+        limit: The limit the file is larger than.
+    """
+
+    def __init__(self, label: str, limit: int) -> None:
+        super().__init__(f"File {label!r} is larger than the {limit} bytes a model request may carry.")
+        self.limit = limit
+
+
+def _too_large(key: str, label: str, limit: int, stored: Optional[StoredFile]) -> ModelFileTooLargeError:
+    """The error for a file too large for a model request; the turn remembers the file, and logs it once."""
+    if file_contents().mark_too_large(key):
+        logger.warning(
+            "File %r (%s) is larger than the %d bytes a model request may carry; it is not sent to the model.",
+            label,
+            stored_label(stored),
+            limit,
+        )
+    return ModelFileTooLargeError(label, limit)
+
+
+def _known_too_large(key: str, limit: int, stored: Optional[StoredFile]) -> bool:
+    """Whether the file is too large for a model request by what is known without reading it."""
+    if stored is not None and stored.byte_size is not None and stored.byte_size > limit:
+        return True
+    return file_contents().is_too_large(key)
 
 
 async def read_file_for_model(
@@ -63,14 +110,19 @@ async def read_file_for_model(
             from; without it the address is looked up in the conversation.
 
     Raises:
-        TaskFailedError: The file could not be read, or is larger than a
-            model request may carry.
+        ModelFileTooLargeError: The file is larger than a model request may
+            carry: by the size its reference records, or by a read in this
+            turn.
+        TaskFailedError: The file could not be read.
     """
     from aion.core.runtime.context.conversation import current_conversation, fetch_file
 
     limit = file_settings.model_file_max_bytes
     label = name or "file"
     part = _stored_part(url, name, stored)
+    key = content_key(part) if part is not None else f"url:{url}"
+    if _known_too_large(key, limit, stored):
+        raise _too_large(key, label, limit, stored)
     try:
         try:
             conversation = current_conversation()
@@ -80,19 +132,18 @@ async def read_file_for_model(
             async def download() -> bytes:
                 return await fetch_file(url, label=label, max_bytes=limit)
 
-            key = content_key(part) if part is not None else f"url:{url}"
             content = await file_contents().load(key, download, url=url)
         else:
             if part is not None:
                 content = await conversation.read_file(part, max_bytes=limit)
             else:
                 content = await conversation.read_file_at(url, name=name, max_bytes=limit)
+    except ConversationFileTooLargeError as error:
+        raise _too_large(key, label, limit, stored) from error
     except ConversationFileError as error:
         raise TaskFailedError(f"{error} It could not be sent to the model.") from error
     if len(content) > limit:
-        raise TaskFailedError(
-            f"File {label!r} is larger than the {limit} bytes a model request may carry."
-        )
+        raise _too_large(key, label, limit, stored)
     return content
 
 
@@ -160,10 +211,13 @@ def _read_from_address(url: str, *, name: Optional[str], stored: Optional[Stored
     limit = file_settings.model_file_max_bytes
     label = name or "file"
     contents = file_contents()
-    content = contents.get_by_url(url)
     part = _stored_part(url, name, stored)
+    key = content_key(part) if part is not None else f"url:{url}"
+    if _known_too_large(key, limit, stored):
+        raise _too_large(key, label, limit, stored)
+    content = contents.get_by_url(url)
     if content is None and part is not None:
-        content = contents.get(content_key(part))
+        content = contents.get(key)
     if content is None:
         chunks: list[bytes] = []
         size = 0
@@ -198,11 +252,9 @@ def _read_from_address(url: str, *, name: Optional[str], stored: Optional[Stored
         if size <= limit:
             content = b"".join(chunks)
             logger.debug("Downloaded file %r (%d bytes) from %s", label, size, urlsplit(url).hostname)
-            contents.put(content_key(part) if part is not None else f"url:{url}", content, url=url)
+            contents.put(key, content, url=url)
     if content is None or len(content) > limit:
-        raise TaskFailedError(
-            f"File {label!r} is larger than the {limit} bytes a model request may carry."
-        )
+        raise _too_large(key, label, limit, stored)
     return content
 
 
@@ -227,6 +279,10 @@ class HeldDocuments:
         mark = f"[aion-file:{uuid.uuid4().hex}]"
         self._documents[mark] = (content, mime_type, name)
         return mark
+
+    def without(self, marks: Collection[str]) -> "HeldDocuments":
+        """These documents but the ones ``marks`` stand for: those a request leaves out."""
+        return HeldDocuments({mark: held for mark, held in self._documents.items() if mark not in marks})
 
     def place(self, messages: list[Any]) -> list[Any]:
         """The messages of a Chat Completions request with every mark replaced by its document.
@@ -290,9 +346,9 @@ _held_documents: ContextVar[Optional[HeldDocuments]] = ContextVar("aion_held_doc
 
 
 @contextmanager
-def holding_documents() -> Iterator[HeldDocuments]:
-    """Hold the documents of the model request made inside the block."""
-    held = HeldDocuments()
+def holding_documents(held: Optional[HeldDocuments] = None) -> Iterator[HeldDocuments]:
+    """Hold the documents of the model request made inside the block: ``held``, or none yet."""
+    held = held if held is not None else HeldDocuments()
     token = _held_documents.set(held)
     try:
         yield held

@@ -100,7 +100,7 @@ class A2AArtifactService(BaseArtifactService):
 
     Memory keeps what a turn wrote until the turn ends (``forget_turn``):
     the turn's task then holds it, and a file in it is read through its link
-    like any stored file, its content kept once in the process's file cache.
+    like any stored file.
     A user-scoped artifact, which other sessions find in memory alone, and a
     name another task of the context also wrote to, stay until eviction.
     """

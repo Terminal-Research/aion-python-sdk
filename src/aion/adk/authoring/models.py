@@ -219,13 +219,14 @@ async def _chosen_model(choose_model: ModelChoice) -> str:
 
 
 def _file_inlining_lite_llm(lite_llm: type) -> type:
-    """``LiteLlm`` that sends the files of a request by their content."""
+    """``LiteLlm`` that sends the files of a request by their content, and leaves out a file its model refuses."""
     built = _file_inlining_classes.get(lite_llm)
     if built is not None:
         return built
 
-    from aion.adk.authoring.files import inline_files
-    from aion.core.agent.model_files import holding_documents
+    from aion.adk.authoring.files import check_request, leave_out, marks_of, prepare_request
+    from aion.core.agent.left_out_files import RefusedFileSearch, is_known_refused
+    from aion.core.agent.model_files import HeldDocuments, holding_documents
 
     class AionLiteLlm(lite_llm):
         """ADK's ``LiteLlm`` behind Aion's model service; files go to the model by their content.
@@ -233,6 +234,12 @@ def _file_inlining_lite_llm(lite_llm: type) -> type:
         Built from a ``ModelChoice``, it names the model of each request: ADK
         writes the agent's model name into the request, and ``LiteLlm`` sends
         the request to the model it names.
+
+        A request whose model refuses a file is made again without that
+        file, a note in its place, and later requests leave the file out from
+        the start; ADK sees one call (``RefusedFileSearch``). Only the try
+        that goes through gives responses: the others fail before their
+        first one.
         """
 
         _choose_model: Optional[ModelChoice]
@@ -247,10 +254,45 @@ def _file_inlining_lite_llm(lite_llm: type) -> type:
             # Documents are held here and put into the request's body by the
             # client that sends it (`AionLiteLlmClient`): LiteLlm would upload
             # them to the provider's Files API otherwise.
-            with holding_documents() as documents:
-                await inline_files(llm_request, documents=documents)
-                async for response in super().generate_content_async(llm_request, stream):
-                    yield response
+            model = llm_request.model or self.model
+            documents = HeldDocuments()
+            files = await prepare_request(
+                llm_request, documents=documents, unread=lambda stored: is_known_refused(model, stored)
+            )
+            contents = llm_request.contents
+            search = RefusedFileSearch(model, [file.file for file in files])
+            while True:
+                left_out = search.left_out
+                request = llm_request
+                if left_out:
+                    request = llm_request.model_copy(update={"contents": leave_out(contents, files, left_out)})
+                with holding_documents(documents.without(marks_of(files, left_out))):
+                    responses = super().generate_content_async(request, stream)
+                    try:
+                        first = await anext(responses, None)
+                    except Exception as error:
+                        failure = error
+                    else:
+                        search.succeeded()
+                        if first is not None:
+                            yield first
+                            async for response in responses:
+                                yield response
+                        return
+                for suspect in search.failed(failure):
+                    part = next(file for file in files if file.file.key == suspect.key)
+                    search.checked(suspect, await self._check_alone(model, part))
+
+        async def _check_alone(self, model, file):
+            """How a request with ``file`` alone failed, or None when the model took it."""
+            request, held = check_request(model, file)
+            with holding_documents(held):
+                try:
+                    async for _ in super().generate_content_async(request, stream=False):
+                        pass
+                except Exception as error:
+                    return error
+            return None
 
     _file_inlining_classes[lite_llm] = AionLiteLlm
     return AionLiteLlm

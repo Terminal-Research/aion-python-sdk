@@ -23,6 +23,7 @@ from collections.abc import AsyncIterator, Sequence
 from typing import Annotated, Any, Optional
 
 from aion.langgraph.authoring import inline_files
+from aion.langgraph.authoring.models import _file_inlining_chat_openai
 from langchain.agents import create_agent
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
@@ -48,11 +49,18 @@ from tests.scenarios.agents.native_script import (
     count_call,
     get_weather,
     model_turn,
+    refuse_files,
     ticker,
     tokens,
 )
 
-__all__ = ["ScriptedChatModel", "create_async_graph", "create_graph", "create_prebuilt_agent"]
+__all__ = [
+    "ScriptedChatModel",
+    "create_async_graph",
+    "create_graph",
+    "create_prebuilt_agent",
+    "create_refused_files_graph",
+]
 
 
 def _parts(message: HumanMessage) -> tuple[dict[str, Any], ...]:
@@ -76,6 +84,17 @@ def _parts(message: HumanMessage) -> tuple[dict[str, Any], ...]:
         else:
             described.append({"type": block.get("type")})
     return tuple(described)
+
+
+def _media_types(messages: Sequence[BaseMessage]) -> list[Optional[str]]:
+    """The media types of the files the messages carry."""
+    return [
+        block.get("mime_type")
+        for message in messages
+        if isinstance(message.content, list)
+        for block in message.content
+        if isinstance(block, dict) and block.get("type") in ("file", "image", "audio", "video")
+    ]
 
 
 def _turn(messages: Sequence[BaseMessage]) -> ModelTurn:
@@ -107,6 +126,8 @@ def _tool_call(turn: ModelTurn) -> list[dict[str, Any]]:
 class ScriptedChatModel(BaseChatModel):
     """A chat model that answers from ``native_script``, and streams."""
 
+    model_name: str = "scripted"
+
     @property
     def _llm_type(self) -> str:
         return "scripted"
@@ -116,6 +137,7 @@ class ScriptedChatModel(BaseChatModel):
         return self
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        refuse_files(_media_types(messages))
         turn = _turn(messages)
         if turn.fail_after is not None:
             raise ModelFailure(FAILURE_TEXT)
@@ -126,6 +148,7 @@ class ScriptedChatModel(BaseChatModel):
     async def _astream(
         self, messages, stop=None, run_manager=None, **kwargs
     ) -> AsyncIterator[ChatGenerationChunk]:
+        refuse_files(_media_types(messages))
         turn = _turn(messages)
         for piece in tokens(turn.thought):
             yield ChatGenerationChunk(
@@ -224,9 +247,18 @@ def create_file_inlining_graph() -> StateGraph:
     return _build_graph(inline=True)
 
 
-def _build_graph(*, inline: bool) -> StateGraph:
+def create_refused_files_graph() -> StateGraph:
+    """The same agent with its model behind the SDK's model class, as ``aion_chat_openai`` builds it.
+
+    The SDK's model class sends the files of the messages by their content
+    and leaves out a file the model refuses, with a note in its place.
+    """
+    return _build_graph(inline=False, model=_file_inlining_chat_openai(ScriptedChatModel)())
+
+
+def _build_graph(*, inline: bool, model: Optional[BaseChatModel] = None) -> StateGraph:
     tools = _tools()
-    model = ScriptedChatModel().bind_tools(tools)
+    model = (model or ScriptedChatModel()).bind_tools(tools)
 
     async def call_model(state: MessagesState) -> dict:
         messages = await inline_files(state["messages"]) if inline else state["messages"]

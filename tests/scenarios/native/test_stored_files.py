@@ -2,10 +2,11 @@
 
 On a deployment that stores files, the bytes a caller sends are uploaded
 before the agent runs, and the task and the agent hold an address. A model
-is sent the content all the same: the SDK reads the file for the request and
-keeps what the server has just stored in memory, so nothing is downloaded
-again. The storage here is the stub backend, whose addresses lead nowhere -
-the content can only have come from memory.
+is sent the content all the same: the SDK reads the file for the request -
+in the turn the request starts, from what the request stored. The storage
+here is the stub backend, which keeps its files in the server's memory under
+addresses that lead nowhere - the content can only have come from the server
+itself, in the request's turn and in later ones.
 
 A file the agent's model answers with is stored once: the client gets its
 address, and the framework's own state - a LangGraph checkpoint, an ADK

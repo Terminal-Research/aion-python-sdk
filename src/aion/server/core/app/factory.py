@@ -256,6 +256,7 @@ class AppFactory:
             context_artifacts=self.store_manager.get_context_artifacts(),
             owner_resolver=self.aion_agent.owner_resolver,
             file_links=self.file_links,
+            storage=self.upload_manager,
         )
         self._executor = AionAgentRequestExecutor(
             self.aion_agent,

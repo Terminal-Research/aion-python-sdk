@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from a2a.types import Part
 
 from aion.core.a2a.files import STORED_FILE_KEY, StoredFile, forget_stored_file
@@ -32,6 +33,19 @@ def test_a_reference_survives_the_part_it_is_written_to() -> None:
         "accessExpiresAt": "2026-11-10T13:00:00Z",
         "retentionExpiresAt": "2026-12-10T12:00:00Z",
     }
+
+
+def test_the_size_survives_the_part_it_is_written_to() -> None:
+    """Part metadata is a ``Struct``, which holds every number as a float."""
+    part = Part(url="https://files.test/1")
+    StoredFile.create("file-1", "version-1", byte_size=1234).write_to(part)
+
+    assert StoredFile.of(part).byte_size == 1234
+
+
+@pytest.mark.parametrize("size", ["", "-1", "1.5", 1.5, -1, True, "many"])
+def test_a_size_that_is_not_a_whole_number_of_bytes_is_not_reported(size) -> None:
+    assert StoredFile.from_metadata({"fileId": "f", "fileVersionId": "v", "byteSize": size}).byte_size is None
 
 
 def test_writing_a_reference_keeps_the_parts_other_metadata() -> None:

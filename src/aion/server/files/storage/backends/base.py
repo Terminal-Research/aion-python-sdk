@@ -92,6 +92,15 @@ class FileStorageBackend(ABC):
         """
         return None
 
+    def held(self, uri: str) -> Optional[bytes]:
+        """The content of a file this backend stored at ``uri``, when it holds it in this process.
+
+        A storage service is reached through the file's link, and the default
+        holds nothing. A backend for development that has no service to read
+        from overrides this, and the server reads its files from it.
+        """
+        return None
+
     async def discard(self, receipts: Iterable[UploadReceipt]) -> None:
         """Withdraw files stored for work that was rejected afterwards.
 

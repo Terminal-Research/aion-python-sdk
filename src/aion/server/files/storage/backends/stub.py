@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Sequence
+from typing import Optional, Sequence
 from uuid import uuid4
 
 from ..context import UploadContext
@@ -14,20 +14,31 @@ logger = logging.getLogger(__name__)
 
 
 class StubFileStorageBackend(FileStorageBackend):
-    """Hands back a plausible URI without storing anything.
+    """Hands back a plausible URI, and keeps the file in this process's memory under it.
 
     Useful for exercising the whole conversion path - preprocessing ordering,
     outbound conversion, the inline-content guard - without a storage
-    service.
+    service. The URI leads nowhere: the server reads a file it stored from
+    the backend itself (``held``), in this turn or a later one, for as long
+    as the process runs - with no expiry and no budget, which suits a single
+    process of development or tests. A restart loses every file.
     It succeeds unconditionally, so it proves the wiring, not the failure
     handling.
     """
 
     BASE_URI = "https://stub-storage.example.com/files"
 
+    def __init__(self) -> None:
+        self._files: dict[str, bytes] = {}
+
+    def held(self, uri: str) -> Optional[bytes]:
+        """The content stored at ``uri`` in this process, or None."""
+        return self._files.get(uri)
+
     async def discard(self, receipts) -> None:
-        """Nothing was stored, so nothing is abandoned."""
-        return None
+        """Forget the files of work that was rejected."""
+        for receipt in receipts:
+            self._files.pop(receipt.uri, None)
 
     async def store_many(
         self,
@@ -35,8 +46,11 @@ class StubFileStorageBackend(FileStorageBackend):
         *,
         context: UploadContext,
     ) -> list[UploadOutcome]:
-        """Return a receipt per upload, logging what a real backend would send."""
-        return [self._receipt(upload, context) for upload in uploads]
+        """Keep each upload under a URI of its own and return a receipt for it."""
+        receipts = [self._receipt(upload, context) for upload in uploads]
+        for upload, receipt in zip(uploads, receipts):
+            self._files[receipt.uri] = upload.data
+        return receipts
 
     def _receipt(self, upload: FileUpload, context: UploadContext) -> UploadReceipt:
         file_id = str(uuid4())
@@ -44,7 +58,7 @@ class StubFileStorageBackend(FileStorageBackend):
         prefix = f"/{context.context_id}" if context.context_id else ""
         uri = f"{self.BASE_URI}{prefix}/{file_id}/{name}"
         logger.debug(
-            "[StubStorage] upload skipped: uri=%s size=%d organization=%s",
+            "[StubStorage] kept in memory: uri=%s size=%d organization=%s",
             uri,
             upload.byte_size,
             context.organization_id,

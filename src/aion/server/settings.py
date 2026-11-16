@@ -29,7 +29,9 @@ class AppSettings(BaseEnvSettings):
             "way and kept there as a link; a file the turn also sends out is stored once. "
             "Options: 'aion' (the Aion Files API; requires AION_CLIENT_ID and "
             "AION_CLIENT_SECRET, the server refuses to start without them), "
-            "'stub' (development only). Default: None (disabled, base64 passthrough)."
+            "'stub' (development only: it keeps the files in the server process's memory "
+            "under addresses that lead nowhere, and a restart loses them). "
+            "Default: None (disabled, base64 passthrough)."
         )
     )
 

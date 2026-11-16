@@ -58,6 +58,7 @@ __all__ = [
     "ExtensionRejection",
     "ConversationUnavailableError",
     "ConversationFileError",
+    "ConversationFileTooLargeError",
 ]
 
 
@@ -298,3 +299,19 @@ class ConversationFileError(AionError):
     def __init__(self, message: str, *, status_code: Optional[int] = None) -> None:
         super().__init__(message)
         self.status_code = status_code
+
+
+class ConversationFileTooLargeError(ConversationFileError):
+    """A file of the conversation is larger than the caller allowed.
+
+    Raised where :class:`ConversationFileError` is, when a read reaches its
+    ``max_bytes``: the file is not taken at all.
+
+    Args:
+        label: How the message names the file.
+        max_bytes: The limit the read had.
+    """
+
+    def __init__(self, label: str, max_bytes: int) -> None:
+        super().__init__(f"File {label!r} is larger than the {max_bytes} bytes this read allows.")
+        self.max_bytes = max_bytes

@@ -10,10 +10,11 @@ Every inline part of one message, event or task is collected first and stored
 in a single batch. Sequential storage would add up the round trips; the batch
 pays only for its slowest file.
 
-The bytes of every file stored are kept in memory for a while
+The bytes of every file stored are kept for the turn it was stored for
 (``aion.core.a2a.file_contents``), under the identity its new part carries:
-a model request later in the turn, or in a later turn on this server, reads
-the file without downloading what was just uploaded.
+a model request later in the turn reads the file without downloading what was
+just uploaded. The part's reference records the file's size too, so a reader
+knows whether the file fits a model request without downloading it.
 
 With no upload manager configured the transformer is a no-op and inline
 content passes through unchanged - the one place where "keep the bytes in the
@@ -26,7 +27,6 @@ from __future__ import annotations
 import copy
 import logging
 import mimetypes
-from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -142,20 +142,6 @@ class A2AFileTransformer:
     def upload_manager(self) -> FileUploadManager | None:
         """The underlying upload manager, if a backend is configured."""
         return self._upload_manager
-
-    @staticmethod
-    def forget_contents(receipts: Iterable[UploadReceipt]) -> None:
-        """Drop the kept content of stored files the work they were stored for no longer needs.
-
-        Every file the transformer stores is kept in the process's file cache
-        (``aion.core.a2a.file_contents``); a file stored for a request that
-        was rejected afterwards is read by nobody, so its content leaves at
-        once instead of taking room until it expires.
-        """
-        for receipt in receipts:
-            key = content_key(_stored_part(receipt))
-            if key is not None:
-                file_contents().forget(key)
 
     async def transform(
         self,
@@ -358,6 +344,7 @@ class A2AFileTransformer:
                     media_type=upload.media_type,
                     filename=upload.filename,
                     metadata=parts[index].metadata if retention is PartRetention.REQUESTED else None,
+                    byte_size=upload.byte_size,
                 )
                 if stored_now:
                     _keep_content(stored[index], upload.data)
@@ -415,7 +402,7 @@ class A2AFileTransformer:
 
 
 def _keep_content(part: Part, content: bytes) -> None:
-    """Keep the bytes of a file just stored under the identity its part now carries, and its link."""
+    """Keep the bytes of a file just stored for the turn it was stored in, under the identity its part now carries, and its link."""
     key = content_key(part)
     if key is not None:
         file_contents().put(key, content, url=part.url)
@@ -434,6 +421,7 @@ def _stored_part(
         media_type: str = "",
         filename: str | None = None,
         metadata: Any = None,
+        byte_size: int | None = None,
 ) -> Part:
     """The part that stands for a stored file: its link, and the reference to it when there is one.
 
@@ -441,18 +429,19 @@ def _stored_part(
     file stored under its artifact's name keeps that name in the part too.
     """
     part = Part(url=receipt.uri, media_type=media_type, filename=filename or "", metadata=metadata)
-    reference = _reference(receipt)
+    reference = _reference(receipt, byte_size)
     if reference is not None:
         reference.write_to(part)
     return part
 
 
-def _reference(receipt: UploadReceipt) -> StoredFile | None:
+def _reference(receipt: UploadReceipt, byte_size: int | None = None) -> StoredFile | None:
     """What the stored part records of the file besides its link.
 
     A storage service that names the file and its exact version lets the
     link be issued again once it has expired; one that names neither leaves
-    the part with its link alone.
+    the part with its link alone. The size lets a reader tell whether the
+    file fits a model request without downloading it.
     """
     if not receipt.file_id or not receipt.version_id:
         return None
@@ -461,6 +450,7 @@ def _reference(receipt: UploadReceipt) -> StoredFile | None:
         receipt.version_id,
         access_expires_at=receipt.access_expires_at,
         retention_expires_at=receipt.retention_expires_at,
+        byte_size=byte_size,
     )
 
 

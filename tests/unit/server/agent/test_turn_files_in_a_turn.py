@@ -129,3 +129,44 @@ async def test_a_state_file_that_cannot_be_stored_fails_the_task_with_its_reason
     ]
     reason = " ".join(part.text for part in failed.status.message.parts)
     assert reason and reason != CRASH_REASON.format(task_id=TASK_ID)
+
+
+class _Reading(AgentFrameworkExecutor):
+    """A framework that reads what its turn keeps, and keeps a file of its own."""
+
+    def __init__(self) -> None:
+        self.found: list = []
+
+    async def stream(self, context, config):  # pragma: no cover - only resumed turns run here
+        return
+        yield
+
+    async def resume(self, context, config):
+        from aion.core.a2a.file_contents import file_contents
+
+        self.found.append(file_contents().get("file:f-1:v-1"))
+        file_contents().put("file:f-2:v-2", b"made this turn")
+        yield TaskStatusUpdateEvent(
+            task_id=TASK_ID, context_id=CONTEXT_ID, status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED)
+        )
+
+
+async def test_the_turn_starts_with_the_files_its_request_stored_and_keeps_them_no_longer(runtime_context) -> None:
+    """The preprocessor leaves them on the request's call context; the turn takes them off it."""
+    from aion.core.a2a.file_contents import CALL_CONTEXT_KEY, FileContents, file_contents
+
+    brought = FileContents()
+    brought.put("file:f-1:v-1", PDF)
+    call_context = ServerCallContext(state={CALL_CONTEXT_KEY: brought})
+    agent = _Reading()
+    task = Task(id=TASK_ID, context_id=CONTEXT_ID, status=TaskStatus(state=TaskState.TASK_STATE_WORKING))
+    context = RequestContext(call_context, task_id=TASK_ID, context_id=CONTEXT_ID, task=task)
+
+    with patch.object(
+        AionAgentRequestExecutor, "_setup_runtime_context", AsyncMock(return_value=ResponseServiceParameters())
+    ):
+        await request_executor(agent).execute(context, RecordingQueue())
+
+    assert agent.found == [PDF]
+    assert CALL_CONTEXT_KEY not in call_context.state
+    assert file_contents().get("file:f-2:v-2") is None, "what the turn kept went with it"

@@ -220,37 +220,14 @@ class ApiSettings(BaseEnvSettings):
 class FileSettings(BaseEnvSettings):
     """How file contents are kept in memory and handed to a model."""
 
-    file_cache_bytes: int = Field(
-        default=256 * 1024 * 1024,
-        ge=0,
-        alias="AION_FILE_CACHE_BYTES",
-        description=(
-            "The memory, in bytes, a process may use to keep the contents of stored "
-            "files it has read or just stored, so that a file is downloaded once "
-            "(`aion.core.a2a.file_contents`). A file larger than this is never "
-            "kept; 0 keeps nothing. Default: 268435456 (256 MiB)."
-        ),
-    )
-
-    file_cache_ttl: float = Field(
-        default=3600.0,
-        ge=0,
-        allow_inf_nan=False,
-        alias="AION_FILE_CACHE_TTL",
-        description=(
-            "How long, in seconds, the content of a stored file stays in memory "
-            "after it was last read. Default: 3600."
-        ),
-    )
-
     model_file_max_bytes: int = Field(
         default=20 * 1024 * 1024,
         ge=0,
         alias="AION_MODEL_FILE_MAX_BYTES",
         description=(
             "The largest file, in bytes, the SDK puts into a model request by its "
-            "content. A turn whose model request carries a larger file fails and "
-            "says so. Default: 20971520 (20 MiB)."
+            "content. A larger file is not read: a text note that says so takes "
+            "its place in the request. Default: 20971520 (20 MiB)."
         ),
     )
 

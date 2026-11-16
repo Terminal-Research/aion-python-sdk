@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-265 scenarios in 49 files, 597 runs across 2 frameworks: 553 run, 43 skipped, 1 independent of the framework.
+268 scenarios in 50 files, 603 runs across 2 frameworks: 559 run, 43 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -65,7 +65,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `interrupts` | INPUT_REQUIRED and resume | 10 | `make tests-scenarios TAGS=interrupts` |
 | `errors` | failures that must stay reported, not crash the server | 10 | `make tests-scenarios TAGS=errors` |
 | `artifacts` | artifact and card emission | 11 | `make tests-scenarios TAGS=artifacts` |
-| `files` | inline file parts: stored, rejected, or passed through | 17 | `make tests-scenarios TAGS=files` |
+| `files` | inline file parts: stored, rejected, or passed through | 20 | `make tests-scenarios TAGS=files` |
 | `extensions` | extension activation and payload delivery | 12 | `make tests-scenarios TAGS=extensions` |
 | `daemon` | daemon extension identity and environment | 7 | `make tests-scenarios TAGS=daemon` |
 | `authentication` | bearer tokens: required, verified, and naming the caller | 6 | `make tests-scenarios TAGS=authentication` |
@@ -75,7 +75,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `evolution` | the evolution extension through the SDK's wrapper and a stand-in toolkit: the standard path, refusals as REJECTED tasks, a cancel | 15 | `make tests-scenarios TAGS=evolution` |
 | `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 21 | `make tests-scenarios-persistence` |
 | `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 19 | `make tests-scenarios-distributed` |
-| `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 59 | `make tests-scenarios TAGS=native` |
+| `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 62 | `make tests-scenarios TAGS=native` |
 
 ## Scenarios by file
 
@@ -578,6 +578,16 @@ The agent ``langchain.agents.create_agent`` builds, served as it is built.
 | [A turn with a tool completes](native/test_prebuilt_agent.py#L38 "test_a_turn_with_a_tool_completes") | `native` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
 | [The next turn remembers](native/test_prebuilt_agent.py#L45 "test_the_next_turn_remembers") | `native` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
 | [A tool can pause for the user](native/test_prebuilt_agent.py#L53 "test_a_tool_can_pause_for_the_user") | `native` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
+
+### `tests/scenarios/native/test_refused_files.py`
+
+A file the model refuses is left out, and the conversation goes on.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The turn answers; the other file reaches the model, the refused one is a note.](native/test_refused_files.py#L70 "test_the_model_gets_a_note_in_place_of_the_file_it_refused") | `native`, `files` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The message with the file stays in the history; the next turn leaves the file out from the start.](native/test_refused_files.py#L83 "test_later_turns_of_the_conversation_answer") | `native`, `files` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The note is in the model request only: the task holds the file's address, as for any file.](native/test_refused_files.py#L94 "test_the_task_keeps_the_file_as_it_was_sent") | `native`, `files` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
 
 ### `tests/scenarios/native/test_selection.py`
 

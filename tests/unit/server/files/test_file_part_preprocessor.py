@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import pytest
 from a2a.types import Message, Part, Role, SendMessageRequest
 from a2a.utils.errors import InternalError, InvalidParamsError
-from aion.core.a2a.file_contents import content_key, file_contents
+from aion.core.a2a.file_contents import CALL_CONTEXT_KEY, content_key, file_contents
 from aion.core.constants import CARDS_MEDIA_TYPE, DISTRIBUTION_EXTENSION_URI_V1
 from aion.core.runtime.context import AionRuntimeExtensions
 from aion.server.core.app.handlers.request_preprocessors import (
@@ -90,16 +90,18 @@ class TestInboundStorage:
         assert backend.batches[0][0].data == b"%PDF-"
 
     async def test_a_data_url_is_stored_and_its_content_kept_for_the_turn(self):
-        """The turn reads the file from memory, as it does a file sent as raw bytes."""
+        """The turn reads the file from what the request carries, as it does a file sent as raw bytes."""
         pre, backend = preprocessor()
         req = request(Part(url="data:application/pdf;base64,JVBERi0=", filename="a.pdf"))
+        context = preprocessing_context(None)
 
-        await pre.process(req, preprocessing_context(None))
+        await pre.process(req, context)
 
         part = req.message.parts[0]
         assert part.url.startswith(StubFileStorageBackend.BASE_URI)
         assert backend.batches[0][0].media_type == "application/pdf"
-        assert file_contents().get(content_key(part)) == b"%PDF-"
+        assert context.call_context.state[CALL_CONTEXT_KEY].get(content_key(part)) == b"%PDF-"
+        assert file_contents().get(content_key(part)) is None, "the request's files are its turn's, not the caller's"
 
     async def test_a_file_sent_as_some_bytes_is_stored_as_the_kind_its_name_says(self):
         """``application/octet-stream`` names no kind: a client that does not know ``.pdf`` sends a PDF that way."""
@@ -241,17 +243,18 @@ class TestCompensation:
 
         assert len(discarded[0]) == 1
 
-    async def test_a_rejected_requests_files_leave_the_file_cache(self):
-        """Nobody reads them: their content does not wait to expire."""
-        pre, _ = preprocessor(StubFileStorageBackend())
+    async def test_a_rejected_requests_files_leave_the_stub(self):
+        """The stub keeps what it stores in memory; a rejected request's files are nobody's."""
+        backend = StubFileStorageBackend()
+        pre, _ = preprocessor(backend)
         req = request(raw_part())
         await pre.process(req, preprocessing_context(distribution_payload(principal())))
-        key = content_key(req.message.parts[0])
-        assert file_contents().get(key) == b"bytes"
+        url = req.message.parts[0].url
+        assert backend.held(url) == b"bytes"
 
         await pre.rollback()
 
-        assert file_contents().get(key) is None
+        assert backend.held(url) is None
 
     async def test_rollback_without_uploads_is_a_no_op(self):
         pre, _ = preprocessor()

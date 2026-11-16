@@ -28,9 +28,10 @@ import asyncio
 import json
 import uuid
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import Any, Optional
 
 from aion.adk.authoring import emit_card, inline_files_before_model
+from aion.adk.authoring.models import _file_inlining_lite_llm
 from aion.adk.authoring.invocation import get_adk_emitter
 from aion.core.agent.invocation.card import Actions, Button, Card, Text
 from fastapi.openapi.models import APIKey, APIKeyIn
@@ -58,12 +59,19 @@ from tests.scenarios.agents.native_script import (
     count_call,
     get_weather,
     model_turn,
+    refuse_files,
     report_text,
     ticker,
     tokens,
 )
 
-__all__ = ["ScriptedLlm", "create_agent", "create_async_agent", "create_file_inlining_agent"]
+__all__ = [
+    "ScriptedLlm",
+    "create_agent",
+    "create_async_agent",
+    "create_file_inlining_agent",
+    "create_refused_files_agent",
+]
 
 AGENT_NAME = "native_agent"
 
@@ -127,6 +135,20 @@ def _tool_media(contents: list[types.Content]) -> list[dict[str, Any]]:
     return described
 
 
+def _media_types(contents: list[types.Content]) -> list[Optional[str]]:
+    """The media types of the files the contents carry, a function response's media included."""
+    types_: list[Optional[str]] = []
+    for content in contents:
+        for part in content.parts or []:
+            media = list(part.function_response.parts or []) if part.function_response is not None else [part]
+            for item in media:
+                if item.inline_data is not None:
+                    types_.append(item.inline_data.mime_type)
+                elif item.file_data is not None:
+                    types_.append(item.file_data.mime_type)
+    return types_
+
+
 def _turn(request: LlmRequest) -> ModelTurn:
     """Read the request's contents the way the script needs them."""
     contents = request.contents or []
@@ -160,6 +182,7 @@ class ScriptedLlm(BaseLlm):
     async def generate_content_async(
         self, llm_request: LlmRequest, stream: bool = False
     ) -> AsyncGenerator[LlmResponse, None]:
+        refuse_files(_media_types(llm_request.contents or []))
         turn = _turn(llm_request)
         final: list[types.Part] = []
         if turn.thought:
@@ -344,10 +367,19 @@ def create_file_inlining_agent() -> LlmAgent:
     return _build_agent(before_model_callback=inline_files_before_model)
 
 
-def _build_agent(**kwargs: Any) -> LlmAgent:
+def create_refused_files_agent() -> LlmAgent:
+    """The same agent with its model behind the SDK's model class, as ``aion_lite_llm`` builds it.
+
+    The SDK's model class sends the files of a request by their content and
+    leaves out a file the model refuses, with a note in its place.
+    """
+    return _build_agent(model=_file_inlining_lite_llm(ScriptedLlm)())
+
+
+def _build_agent(*, model: Optional[BaseLlm] = None, **kwargs: Any) -> LlmAgent:
     return LlmAgent(
         name=AGENT_NAME,
-        model=ScriptedLlm(),
+        model=model or ScriptedLlm(),
         instruction=INSTRUCTION,
         tools=[
             get_weather, ticker, save_report, remember, count_call, confirm_action, confirm_with_card, state_files,

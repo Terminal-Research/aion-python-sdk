@@ -1,16 +1,25 @@
-"""The contents of stored files, kept in memory for a while.
+"""The contents of the files one turn reads, kept for the turn.
 
 A stored file reaches an agent as an address, and reading it is a download.
-The same file is read again and again: a model that takes a file by its
-content gets it in every request of the conversation, several times within
-one turn. This cache keeps what was read, and what the server itself just
-stored, so that a server downloads a file once.
+Within one turn the same file is read again and again: a model that takes a
+file by its content gets it in every request of the turn, and a turn that
+calls tools makes several. ``FileContents`` keeps what the turn read, and what
+the server stored for it - the files of the request that started the turn and
+the files the agent sent - so that a turn downloads a file at most once. It
+ends with the turn: the next turn reads a file again, from its storage, on
+whichever server runs it, and nothing waits in memory between turns.
 
-It is one per process. A stored file is immutable, so an entry never goes
-stale: it leaves when it has not been read for ``ttl_seconds``, when room is
-needed for a newer one, or when the file is withdrawn (``forget``). Another
-server of the agent has a cache of its own and downloads the file itself; the
-storage service is what they share.
+The request opens it. The inbound preprocessor stores the request's files
+while it is current and leaves it on the request's call context
+(``CALL_CONTEXT_KEY``); the request executor runs the turn with it
+(``keeping_file_contents``), so the files just stored are not downloaded
+back. A request carried to another server reaches it without them, and that
+server reads the files from storage. Outside a turn ``file_contents`` gives
+one that keeps nothing, and every read downloads.
+
+A file larger than ``AION_MODEL_FILE_MAX_BYTES`` is not kept: no model
+request carries it. The turn remembers such a file instead
+(``mark_too_large``), so it is not downloaded again only to be left out.
 
 An entry is kept under the file's own identity (``content_key``) - the id of
 the stored version, or the address for a file the server did not store - and
@@ -21,9 +30,10 @@ its address alone.
 from __future__ import annotations
 
 import asyncio
-import time
-from collections import OrderedDict
-from collections.abc import Awaitable, Callable
+import threading
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Optional
 
 from a2a.types import Part
@@ -31,7 +41,7 @@ from a2a.types import Part
 from aion.core.a2a.files import StoredFile
 from aion.core.settings import file_settings
 
-__all__ = ["FileContents", "content_key", "file_contents"]
+__all__ = ["CALL_CONTEXT_KEY", "FileContents", "content_key", "file_contents", "keeping_file_contents"]
 
 
 def content_key(part: Part) -> Optional[str]:
@@ -49,69 +59,42 @@ def content_key(part: Part) -> Optional[str]:
 
 
 class FileContents:
-    """File contents by identity, within a memory budget.
+    """The file contents of one turn, by identity; shared with the threads the turn runs code in."""
 
-    Args:
-        max_bytes: The memory all entries may take together; 0 keeps nothing.
-            A file larger than the budget is not kept.
-        ttl_seconds: How long an entry stays after it was last read.
-        clock: Monotonic seconds.
-    """
-
-    def __init__(
-            self,
-            *,
-            max_bytes: int,
-            ttl_seconds: float,
-            clock: Callable[[], float] = time.monotonic,
-    ) -> None:
-        self._max_bytes = max_bytes
-        self._ttl_seconds = ttl_seconds
-        self._clock = clock
-        # Least recently read first.
-        self._entries: OrderedDict[str, tuple[bytes, float]] = OrderedDict()
+    def __init__(self, *, keeps: bool = True) -> None:
+        """
+        Args:
+            keeps: False for the one outside a turn, which keeps nothing.
+        """
+        self._keeps = keeps
+        self._entries: dict[str, bytes] = {}
         self._keys_by_url: dict[str, str] = {}
-        self._size = 0
+        self._too_large: set[str] = set()
         self._loading: dict[str, asyncio.Future[bytes]] = {}
-
-    @property
-    def size(self) -> int:
-        """The memory the entries take together, in bytes."""
-        return self._size
+        self._lock = threading.Lock()
 
     def get(self, key: str) -> Optional[bytes]:
-        """The content kept under ``key``, or None; a read keeps the entry longer."""
-        entry = self._entries.get(key)
-        if entry is None:
-            return None
-        content, read_at = entry
-        if self._clock() - read_at > self._ttl_seconds:
-            self._drop(key)
-            return None
-        self._entries[key] = (content, self._clock())
-        self._entries.move_to_end(key)
-        return content
+        """The content kept under ``key``, or None."""
+        with self._lock:
+            return self._entries.get(key)
 
     def get_by_url(self, url: str) -> Optional[bytes]:
         """The content of the file ``url`` was seen to address, or None."""
-        key = self._keys_by_url.get(url)
-        return self.get(key) if key is not None else None
+        with self._lock:
+            key = self._keys_by_url.get(url)
+            return self._entries.get(key) if key is not None else None
 
     def put(self, key: str, content: bytes, *, url: Optional[str] = None) -> bool:
         """Keep ``content`` under ``key``, findable by ``url`` too; whether it was kept.
 
-        Entries read longest ago make room. A file larger than the whole
-        budget is not kept.
+        A file larger than a model request may carry is not kept.
         """
-        if len(content) > self._max_bytes:
+        if not self._keeps or len(content) > file_settings.model_file_max_bytes:
             return False
-        self._drop(key)
-        while self._entries and self._size + len(content) > self._max_bytes:
-            self._drop(next(iter(self._entries)))
-        self._entries[key] = (content, self._clock())
-        self._size += len(content)
-        if url is not None:
-            self._keys_by_url[url] = key
+        with self._lock:
+            self._entries[key] = content
+            if url is not None:
+                self._keys_by_url[url] = key
         return True
 
     async def load(
@@ -131,13 +114,16 @@ class FileContents:
         """
         content = self.get(key)
         if content is not None:
-            if url is not None:
-                self._keys_by_url[url] = key
+            if url is not None and self._keeps:
+                with self._lock:
+                    self._keys_by_url[url] = key
             return content
         if url is not None:
             content = self.get_by_url(url)
             if content is not None:
                 return content
+        if not self._keeps:
+            return await loader()
         loading = self._loading.get(key)
         if loading is None:
             loading = asyncio.ensure_future(loader())
@@ -147,34 +133,40 @@ class FileContents:
         self.put(key, content, url=url)
         return content
 
-    def forget(self, key: str) -> None:
-        """Drop the content kept under ``key``, and the addresses it was found by."""
-        self._drop(key)
+    def is_too_large(self, key: str) -> bool:
+        """Whether the turn found the file ``key`` names larger than a model request may carry."""
+        with self._lock:
+            return key in self._too_large
 
-    def clear(self) -> None:
-        """Forget every entry."""
-        self._entries.clear()
-        self._keys_by_url.clear()
-        self._size = 0
-
-    def _drop(self, key: str) -> None:
-        entry = self._entries.pop(key, None)
-        if entry is None:
-            return
-        self._size -= len(entry[0])
-        for url in [url for url, kept in self._keys_by_url.items() if kept == key]:
-            del self._keys_by_url[url]
+    def mark_too_large(self, key: str) -> bool:
+        """Remember that the file ``key`` names is too large for a model request; whether it is news to the turn."""
+        if not self._keeps:
+            return True
+        with self._lock:
+            if key in self._too_large:
+                return False
+            self._too_large.add(key)
+            return True
 
 
-_contents: Optional[FileContents] = None
+CALL_CONTEXT_KEY = "aion:file-contents"
+"""Where a request's call context (``ServerCallContext.state``) holds the file contents of its turn."""
+
+_KEEPS_NOTHING = FileContents(keeps=False)
+
+_current: ContextVar[Optional[FileContents]] = ContextVar("aion_file_contents", default=None)
+
+
+@contextmanager
+def keeping_file_contents(contents: FileContents) -> Iterator[FileContents]:
+    """Keep the files read and stored inside the block in ``contents``."""
+    token = _current.set(contents)
+    try:
+        yield contents
+    finally:
+        _current.reset(token)
 
 
 def file_contents() -> FileContents:
-    """The process's cache, sized by ``AION_FILE_CACHE_BYTES`` and ``AION_FILE_CACHE_TTL``."""
-    global _contents
-    if _contents is None:
-        _contents = FileContents(
-            max_bytes=file_settings.file_cache_bytes,
-            ttl_seconds=file_settings.file_cache_ttl,
-        )
-    return _contents
+    """The file contents of the turn running here; outside a turn, one that keeps nothing."""
+    return _current.get() or _KEEPS_NOTHING

@@ -151,8 +151,7 @@ class TestTurnFiles:
         stored_lines = [record for record in caplog.records if record.getMessage().startswith("Stored ")]
         assert len(stored_lines) == 1
 
-    async def test_the_stored_content_is_kept_for_a_later_read(self) -> None:
-        file_contents().clear()
+    async def test_the_stored_content_is_kept_for_a_later_read_in_the_turn(self) -> None:
         with storing_turn(NumberingBackend()) as files:
             [kept] = await files.keep_parts([_report()])
 

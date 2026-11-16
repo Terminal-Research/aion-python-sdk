@@ -78,6 +78,7 @@ class RecordingBackend(StubFileStorageBackend):
     """Stub that records every batch it was handed."""
 
     def __init__(self):
+        super().__init__()
         self.batches: list[list[FileUpload]] = []
         self.contexts: list[UploadContext] = []
 
@@ -91,6 +92,7 @@ class OutcomeBackend(StubFileStorageBackend):
     """Stub returning a scripted outcome per position, with a delay each."""
 
     def __init__(self, outcomes, delay: float = 0.0):
+        super().__init__()
         self._outcomes = outcomes
         self._delay = delay
         self.concurrent_peak = 0
@@ -132,6 +134,7 @@ class NumberingBackend(StubFileStorageBackend):
     """
 
     def __init__(self, *, refuse: bool = False, delay: float = 0.0) -> None:
+        super().__init__()
         self.refuse = refuse
         self.delay = delay
         self.stored: list[FileUpload] = []

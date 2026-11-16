@@ -68,7 +68,7 @@ from typing import Iterable, Optional
 from a2a.types import Message, Task, TaskArtifactUpdateEvent
 
 from aion.core.a2a.files import ConversationFile, StoredFile
-from aion.core.exceptions import ConversationFileError, ConversationUnavailableError
+from aion.core.exceptions import ConversationFileError, ConversationFileTooLargeError, ConversationUnavailableError
 from aion.core.runtime.context.conversation import (
     ArtifactVersion,
     Conversation,
@@ -80,6 +80,7 @@ __all__ = [
     "ArtifactVersion",
     "ConversationFile",
     "ConversationFileError",
+    "ConversationFileTooLargeError",
     "Conversation",
     "ConversationUnavailableError",
     "StoredFile",

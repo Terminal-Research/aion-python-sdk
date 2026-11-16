@@ -20,6 +20,7 @@ from a2a.utils.telemetry import trace_function
 from aion.core.a2a import codes
 from aion.core.a2a.enums import A2AMetadataKey
 from aion.core.a2a.errors import error_parts
+from aion.core.a2a.file_contents import CALL_CONTEXT_KEY, FileContents, keeping_file_contents
 from aion.core.exceptions import AionAuthenticationError, ExtensionRejection, InvalidPrincipalError
 from aion.core.runtime import (
     AionRuntimeContextBuilder,
@@ -348,7 +349,9 @@ class AionAgentRequestExecutor(AgentExecutor):
         turn = _Turn(executor, config)
         self._turns[task.id] = turn
         try:
-            with turn_files(files):
+            # What the turn reads and stores is kept for the turn, starting
+            # with the files its request stored (``aion.core.a2a.file_contents``).
+            with turn_files(files), keeping_file_contents(_request_file_contents(context)):
                 await self._run_turn(turn, task, context, event_queue, task_updater, pipeline, is_new_task)
         finally:
             turn.finished.set()
@@ -723,3 +726,14 @@ async def _close(events: Any) -> None:
         await aclose()
     except Exception:
         logger.exception("Closing an executor's stream failed")
+
+
+def _request_file_contents(context: RequestContext) -> FileContents:
+    """The file contents the turn of this request starts with: the request's own files, or none.
+
+    They are taken off the call context, which may outlive the turn: the bytes
+    go when the turn ends.
+    """
+    state = getattr(getattr(context, "call_context", None), "state", None)
+    kept = state.pop(CALL_CONTEXT_KEY, None) if isinstance(state, dict) else None
+    return kept if isinstance(kept, FileContents) else FileContents()

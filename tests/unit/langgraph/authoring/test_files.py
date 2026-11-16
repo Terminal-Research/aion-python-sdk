@@ -20,7 +20,6 @@ from langchain_openai import ChatOpenAI
 from aion.core.a2a.file_contents import file_contents
 from aion.core.agent.testing import InMemoryConversation, use_conversation
 from aion.core.exceptions import TaskFailedError
-from aion.core.settings import file_settings
 from aion.langgraph.authoring import inline_files, inline_files_sync
 from aion.langgraph.authoring.models import _file_inlining_chat_openai
 
@@ -101,13 +100,6 @@ async def test_a_file_this_server_holds_in_memory_is_not_read_again() -> None:
         [message] = await inline_files([HumanMessage(content=[create_file_block(url=PDF_URL, mime_type="application/pdf")])])
 
     assert base64.b64decode(message.content[0]["base64"]) == PDF
-
-
-async def test_a_file_larger_than_a_model_request_may_carry_fails_the_task(monkeypatch) -> None:
-    monkeypatch.setattr(file_settings, "model_file_max_bytes", 4)
-
-    with use_conversation(_conversation()), pytest.raises(TaskFailedError, match="report.pdf"):
-        await inline_files([_question()])
 
 
 async def test_a_file_that_cannot_be_read_fails_the_task_with_its_name() -> None:

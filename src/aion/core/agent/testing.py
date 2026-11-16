@@ -34,7 +34,7 @@ from uuid import uuid4
 
 from a2a.types import Artifact, Message, Part, Role, Task, TaskState, TaskStatus
 
-from aion.core.exceptions import ConversationFileError
+from aion.core.exceptions import ConversationFileError, ConversationFileTooLargeError
 from aion.core.a2a.files import DEFAULT_MAX_FILE_BYTES
 from aion.core.runtime.context.conversation import (
     ArtifactVersion,
@@ -162,7 +162,7 @@ class InMemoryConversation(Conversation):
                 f"File {label!r} has no content in this test conversation: add it to `files` by its address."
             )
         if max_bytes is not None and len(content) > max_bytes:
-            raise ConversationFileError(f"File {label!r} is larger than the {max_bytes} bytes this read allows.")
+            raise ConversationFileTooLargeError(label, max_bytes)
         return content
 
 

@@ -154,6 +154,10 @@ class FileUploadManager:
             return UploadFailure(FileUploadErrorCode.STORAGE_CLOSED)
         return await self._backend.renew_link(file_id, version_id, context=context)
 
+    def held(self, uri: str) -> Optional[bytes]:
+        """The content of a file the backend holds in this process at ``uri``; see :meth:`FileStorageBackend.held`."""
+        return None if self._closed else self._backend.held(uri)
+
     async def discard(self, receipts: Iterable[UploadReceipt]) -> None:
         """Compensate uploads whose request was rejected afterwards.
 
