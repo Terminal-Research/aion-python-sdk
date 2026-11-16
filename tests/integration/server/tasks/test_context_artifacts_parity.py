@@ -26,6 +26,7 @@ from a2a.server.context import ServerCallContext
 from a2a.server.owner_resolver import resolve_user_scope
 from a2a.server.tasks.task_manager import append_artifact_to_task
 from a2a.types import (
+    Artifact,
     Message as A2AMessage,
     Part as A2APart,
     Role,
@@ -198,7 +199,7 @@ async def test_three_tasks_write_versions_0_1_2_and_the_latest_is_found(backend)
     assert [await backend.stored_version(task) for task in (first, second, third)] == ["0", "1", "2"]
 
     _, turn = await backend.write("ctx", "alice")
-    found = await turn.find_artifact(SPEC)
+    found = await turn.get_artifact(SPEC)
 
     assert (found.task_id, found.version) == (third.id, 2)
     assert found.artifact.artifact_id == SPEC
@@ -226,7 +227,7 @@ async def test_a_holder_that_does_not_hold_the_context_numbers_from_zero_and_fin
     stranger, turn = await backend.write("ctx", "bob", _spec("bob's plan"), COMPLETED)
 
     assert stranger.artifacts[0].metadata["version"] == "0"
-    assert await turn.find_artifact(SPEC) is None
+    assert await turn.get_artifact(SPEC) is None
 
 
 async def test_the_tasks_of_a_shared_context_are_every_participants(backend):
@@ -237,3 +238,43 @@ async def test_the_tasks_of_a_shared_context_are_every_participants(backend):
 
     assert [(item.task_id, item.version) for item in versions] == [(from_bob.id, 1), (versions[1].task_id, 0)]
     assert from_bob.artifacts[0].metadata["version"] == "1"
+
+
+async def test_the_artifacts_of_a_context_are_the_latest_version_of_each(backend):
+    alice = ContextHolder.private("alice")
+    await backend.admission.admit("ctx", alice, "alice")
+
+    async def save(*artifacts: Artifact) -> Task:
+        task = Task(
+            id=str(uuid.uuid4()),
+            context_id="ctx",
+            status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
+            artifacts=list(artifacts),
+        )
+        await backend.store.save(task, _caller("alice"))
+        return task
+
+    def named(artifact_id: str, name: str, text: str) -> Artifact:
+        return Artifact(artifact_id=artifact_id, name=name, parts=[A2APart(text=text)])
+
+    first = await save(named("report", "report.md", "v1"), named("aion:stream-delta", "Stream Delta", "said"))
+    second = await save(named("report", "report.md", "v2"))
+    third = await save(named("stats", "stats", "3"))
+
+    async def read(holder: ContextHolder = alice, **selection) -> list[tuple[str, str, str]]:
+        found = await backend.ledger.artifacts("ctx", holder, **selection)
+        assert all(item.updated_at is not None for item in found)
+        return [(item.artifact_id, item.task_id, item.text) for item in found]
+
+    assert await read() == [("stats", third.id, "3"), ("report", second.id, "v2")]
+    assert await read(name="report.md", all_versions=True) == [
+        ("report", second.id, "v2"), ("report", first.id, "v1"),
+    ]
+    assert await read(task_id=first.id) == [("report", first.id, "v1")]
+    assert await read(task_id=first.id, include_sdk=True, name="Stream Delta") == [
+        ("aion:stream-delta", first.id, "said"),
+    ]
+    assert await read(task_id="not-a-task-id") == []
+    assert await read(name="nothing") == []
+    assert await read(ContextHolder.private("bob")) == []
+    assert await read(GATEWAY) == []

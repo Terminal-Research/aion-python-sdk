@@ -23,10 +23,11 @@ OUTBOX_KEY = "a2a_outbox"
 class StreamResult:
     """Accumulated state after one stream cycle.
 
-    outbox — the last `a2a_outbox` a node wrote during this cycle, or None
-        when no node wrote one. Taken from the cycle's own updates rather
-        than from the graph state: the checkpoint keeps the channel's value
-        across turns, and the next turn in the context would read it back.
+    outbox — the last `a2a_outbox` a node of the graph wrote during this
+        cycle, or None when no node wrote one. Taken from the cycle's own
+        updates rather than from the graph state: the checkpoint keeps the
+        channel's value across turns, and the next turn in the context would
+        read it back.
     """
 
     outbox: Any = None
@@ -38,6 +39,14 @@ class StreamExecutor:
     Lifecycle: instantiate > iterate `execute()` > read `result`.
     Created fresh per stream/resume call. Does not know about response
     assembly or state persistence.
+
+    The graph is streamed with its subgraphs: LangGraph reports what a node
+    of a subgraph streams - the chunks of its model call, what it writes to
+    the stream writer, which is how the Aion authoring calls deliver - under
+    the subgraph's namespace, and leaves it out of a stream of the parent
+    graph alone. Messages and custom events are converted whichever graph
+    they come from. The outbox is the parent graph's: a subgraph's state
+    reaches the parent as the update of the node that runs it.
     """
 
     def __init__(
@@ -78,13 +87,15 @@ class StreamExecutor:
         if runtime_context is not None:
             kwargs["context"] = runtime_context
 
-        async for event_type, event_data in self._graph.astream(
-            inputs, config, stream_mode=STREAM_MODES, **kwargs
+        async for namespace, event_type, event_data in self._graph.astream(
+            inputs, config, stream_mode=STREAM_MODES, subgraphs=True, **kwargs
         ):
             if event_type == "messages":
                 event_data, _ = event_data
 
-            if event_type == "updates":
+            # An empty namespace is the graph itself; a subgraph's names the
+            # nodes that lead to it.
+            if event_type == "updates" and not namespace:
                 self._track_outbox(event_data)
 
             if self._preprocessor:

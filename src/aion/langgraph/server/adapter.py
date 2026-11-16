@@ -54,7 +54,7 @@ class LangGraphAdapter(AgentAdapter):
         return [StateGraph, Pregel]
 
     def can_handle(self, agent_obj: Any) -> bool:
-        """Return True for LangGraph graph instances and zero-arg factory callables."""
+        """Return True for LangGraph graph instances and zero-arg factory callables, sync or async."""
         if self._is_graph_instance(agent_obj):
             return True
 
@@ -67,7 +67,9 @@ class LangGraphAdapter(AgentAdapter):
         """Initialize agent from discovered object.
 
         Args:
-            agent_obj: Graph instance or callable that returns a graph
+            agent_obj: Graph instance, or a callable that returns a graph. A
+                callable that returns an awaitable - an ``async def``
+                factory - is awaited on the server's event loop.
             config: Agent configuration
 
         Returns:
@@ -81,6 +83,8 @@ class LangGraphAdapter(AgentAdapter):
         if callable(agent_obj) and not inspect.isclass(agent_obj):
             logger.debug(f"Calling function to get graph")
             graph = agent_obj()
+            if inspect.isawaitable(graph):
+                graph = await graph
             if not self._is_graph_instance(graph):
                 raise TypeError(
                     f"Function returned {type(graph).__name__}, expected a LangGraph graph"

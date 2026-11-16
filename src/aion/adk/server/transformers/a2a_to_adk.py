@@ -1,10 +1,10 @@
 """Transforms A2A RequestContext and ExecutionConfig into ADK format."""
 
 import json
-import mimetypes
 from typing import Optional, TYPE_CHECKING
 
 from a2a.types import Part
+from aion.core.a2a.files import media_type_of
 from aion.server.agent.adapters import ExecutionConfig
 from google.genai import types
 from google.protobuf import json_format
@@ -46,23 +46,8 @@ class ADKTransformer:
                 if part.text:
                     parts.append(types.Part(text=part.text))
 
-                elif part.raw:
-                    mime_type = part.media_type or "application/octet-stream"
-                    parts.append(types.Part(
-                        inline_data=types.Blob(
-                            mime_type=mime_type,
-                            data=part.raw,
-                        )
-                    ))
-
-                elif part.url:
-                    mime_type = ADKTransformer._detect_mime_type_from_part(part)
-                    parts.append(types.Part(
-                        file_data=types.FileData(
-                            mime_type=mime_type,
-                            file_uri=part.url,
-                        )
-                    ))
+                elif part.raw or part.url:
+                    parts.append(file_part(part))
 
                 elif part.HasField("data"):
                     data_dict = json_format.MessageToDict(part.data)
@@ -75,18 +60,27 @@ class ADKTransformer:
 
         return types.Content(role="user", parts=parts)
 
-    @staticmethod
-    def _detect_mime_type_from_part(part: Part) -> str:
-        """Detect MIME type: explicit media_type > guess from filename > fallback."""
-        if part.media_type:
-            return part.media_type
 
-        if part.filename:
-            guessed, _ = mimetypes.guess_type(part.filename)
-            if guessed:
-                return guessed
+def file_part(part: Part) -> types.Part:
+    """An A2A file part as ADK takes it: its bytes as ``inline_data``, its address as ``file_data``.
 
-        return "application/octet-stream"
+    Either keeps the file's media type and name.
+    """
+    if part.raw:
+        return types.Part(
+            inline_data=types.Blob(
+                mime_type=media_type_of(part),
+                data=part.raw,
+                display_name=part.filename or None,
+            )
+        )
+    return types.Part(
+        file_data=types.FileData(
+            mime_type=media_type_of(part),
+            file_uri=part.url,
+            display_name=part.filename or None,
+        )
+    )
 
 
-__all__ = ["ADKTransformer"]
+__all__ = ["ADKTransformer", "file_part"]

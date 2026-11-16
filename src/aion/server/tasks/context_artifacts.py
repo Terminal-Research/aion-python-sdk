@@ -19,12 +19,15 @@ extension that needs one run per context refuses a second one itself.
 
 from __future__ import annotations
 
-from typing import Protocol
+import uuid
+from typing import Optional, Protocol
 
-from a2a.types import Artifact
-
-from aion.core.a2a.artifacts import ARTIFACT_VERSION_KEY
-from aion.core.runtime.context.conversation import ArtifactVersion
+from aion.core.runtime.context.conversation import (
+    SDK_ARTIFACT_IDS,
+    ArtifactVersion,
+    artifact_version,
+    select_artifacts,
+)
 from aion.db.postgres import DbManager
 from aion.db.postgres.repositories import ContextReservationsRepository, TasksRepository
 from aion.server.tasks.admission import ACTIVE, ContextHolder, InMemoryContextAdmission, holder_of_record
@@ -38,16 +41,6 @@ __all__ = [
 ]
 
 
-def artifact_version(artifact: Artifact) -> int:
-    """The version number in the artifact's metadata; 0 for an artifact that carries none."""
-    if artifact.HasField("metadata") and ARTIFACT_VERSION_KEY in artifact.metadata:
-        try:
-            return int(artifact.metadata[ARTIFACT_VERSION_KEY])
-        except (TypeError, ValueError):
-            return 0
-    return 0
-
-
 class ContextArtifacts(Protocol):
     """Reads the versions of an artifact among the tasks of a context."""
 
@@ -58,6 +51,30 @@ class ContextArtifacts(Protocol):
 
         Empty when ``holder`` does not hold the context, when nothing was
         admitted into it, or when it is being deleted.
+        """
+
+    async def artifacts(
+            self,
+            context_id: str,
+            holder: ContextHolder,
+            *,
+            name: Optional[str] = None,
+            task_id: Optional[str] = None,
+            all_versions: bool = False,
+            include_sdk: bool = False,
+    ) -> list[ArtifactVersion]:
+        """The artifacts of the context's tasks, newest task first: the latest version of each.
+
+        Empty when ``holder`` does not hold the context, as ``versions`` is.
+
+        Args:
+            context_id: The context to read.
+            holder: The holder the read is made for.
+            name: Keep only the artifacts with this ``name``.
+            task_id: Keep only the artifacts of this task.
+            all_versions: Keep every version of an artifact id, not only the
+                newest one.
+            include_sdk: Keep the artifacts the SDK fills itself as well.
         """
 
 
@@ -82,6 +99,29 @@ class InMemoryContextArtifacts:
             for artifact in task.artifacts
             if artifact.artifact_id == artifact_id
         ]
+
+    async def artifacts(
+            self,
+            context_id: str,
+            holder: ContextHolder,
+            *,
+            name: Optional[str] = None,
+            task_id: Optional[str] = None,
+            all_versions: bool = False,
+            include_sdk: bool = False,
+    ) -> list[ArtifactVersion]:
+        async with self._admission.lock:
+            entry = self._admission.entries.get(context_id)
+            if entry is None or entry.state != ACTIVE or entry.holder != holder:
+                return []
+        tasks = await self._store.tasks_in_context(context_id)
+        versions = (
+            ArtifactVersion(task.id, artifact, artifact_version(artifact), updated_at)
+            for task, updated_at in reversed(tasks)
+            if task_id is None or task.id == task_id
+            for artifact in reversed(task.artifacts)
+        )
+        return select_artifacts(versions, name=name, all_versions=all_versions, include_sdk=include_sdk)
 
 
 class PostgresContextArtifacts:
@@ -110,3 +150,36 @@ class PostgresContextArtifacts:
             ArtifactVersion(str(row.task_id), row.artifact, artifact_version(row.artifact), row.updated_at)
             for row in rows
         ]
+
+    async def artifacts(
+            self,
+            context_id: str,
+            holder: ContextHolder,
+            *,
+            name: Optional[str] = None,
+            task_id: Optional[str] = None,
+            all_versions: bool = False,
+            include_sdk: bool = False,
+    ) -> list[ArtifactVersion]:
+        task_uuid = None
+        if task_id is not None:
+            try:
+                task_uuid = uuid.UUID(task_id)
+            except ValueError:
+                return []
+        async with self._db_manager.get_session() as session:
+            held = await ContextReservationsRepository(session).held(self._agent_id, context_id)
+            if held is None or held.state != ACTIVE or holder_of_record(held) != holder:
+                return []
+            rows = await TasksRepository(session).find_context_artifacts(
+                self._agent_id,
+                context_id,
+                name=name,
+                task_id=task_uuid,
+                excluded_artifact_ids=() if include_sdk else SDK_ARTIFACT_IDS,
+            )
+        versions = (
+            ArtifactVersion(str(row.task_id), row.artifact, artifact_version(row.artifact), row.updated_at)
+            for row in rows
+        )
+        return select_artifacts(versions, all_versions=all_versions, include_sdk=include_sdk)

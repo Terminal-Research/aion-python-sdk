@@ -18,10 +18,11 @@ from typing import AsyncIterator
 
 import pytest
 import pytest_asyncio
+from packaging.version import Version
 
 from tests.scenarios.conftest import serve_for
-from tests.scenarios.frameworks import NATIVE_AGENTS, Framework, native_unsupported_reason
-from tests.scenarios.harness import ScenarioClient, ServeProcess, ServeVariant
+from tests.scenarios.frameworks import NATIVE_AGENTS, Framework, native_since, native_unsupported_reason
+from tests.scenarios.harness import ScenarioClient, ServeProcess, ServeVariant, installed_version
 
 
 @pytest.fixture(scope="session", params=[agent.name for agent in NATIVE_AGENTS])
@@ -32,18 +33,27 @@ def framework(request: pytest.FixtureRequest) -> Framework:
 
 @pytest.fixture(autouse=True)
 def skip_unsupported_capability(request: pytest.FixtureRequest) -> None:
-    """Skip a scenario about a feature this framework does not have.
+    """Skip a scenario about a feature this framework, or the release the server runs, does not have.
 
     The reason comes from ``frameworks.NATIVE_UNSUPPORTED``, the way
     ``skip_unsupported`` reads ``UNSUPPORTED`` for commands: the scenario
-    names the feature, never the framework.
+    names the feature, never the framework. A feature the framework gained
+    inside the SDK's range is in ``frameworks.NATIVE_SINCE``, and the
+    scenario skips when the server's installation has an older release.
     """
     marker = request.node.get_closest_marker("capability")
     if marker is None:
         return
-    reason = native_unsupported_reason(request.getfixturevalue("framework").name, marker.args[0])
+    framework, capability = request.getfixturevalue("framework").name, marker.args[0]
+    reason = native_unsupported_reason(framework, capability)
     if reason:
         pytest.skip(reason)
+    since = native_since(framework, capability)
+    if since is None:
+        return
+    installed = installed_version(since.distribution)
+    if installed is not None and Version(installed) < Version(since.version):
+        pytest.skip(f"{since.distribution} {installed} on the server: {since.reason}")
 
 
 @pytest.fixture(scope="session")

@@ -9,6 +9,7 @@ from a2a.types import Task
 from a2a.types.a2a_pb2 import TaskPushNotificationConfig
 from a2a.utils.proto_utils import to_stream_response
 from aion.server.a2a.utils import NO_TEXT, describe_event, extract_event_preview
+from aion.server.files.links import StoredFileLinks
 from google.protobuf.json_format import MessageToDict
 
 logger = logging.getLogger(__name__)
@@ -114,12 +115,22 @@ class AionPushNotificationSender(BasePushNotificationSender):
     a scheme are sent as ``Bearer``, where the base sends no
     ``Authorization`` at all.
 
+    An event is delivered with working download links: given ``file_links``,
+    every expired link of a stored file is replaced before the event is sent
+    (``aion.server.files.links``). The outcome of a long task carries files
+    written more than a link's lifetime ago.
+
     The base class builds its request and logs its outcome inline, with no
     extension point, so ``_dispatch_notification`` and ``send_notification``
     are reimplemented rather than delegated to. ``test_sdk_override_parity``
     pins both to the base signatures so an SDK upgrade that changes them
     fails at test time rather than at delivery time.
     """
+
+    def __init__(self, *args, file_links: StoredFileLinks | None = None, **kwargs) -> None:
+        """Build a2a-sdk's sender; ``file_links`` refreshes the links of what it delivers."""
+        super().__init__(*args, **kwargs)
+        self._file_links = file_links
 
     async def aclose(self) -> None:
         """Close the underlying HTTP client and its connection pool."""
@@ -160,6 +171,8 @@ class AionPushNotificationSender(BasePushNotificationSender):
             return
         if not push_configs:
             return
+        if self._file_links is not None:
+            event = await self._file_links.refresh(event)
 
         results = await asyncio.gather(
             *[

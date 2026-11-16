@@ -2,7 +2,12 @@
 
 from langgraph.checkpoint.memory import InMemorySaver
 
+from ..files import LinkedFilesSaver
 from .base import CheckpointerBackend
+
+
+class AionInMemorySaver(LinkedFilesSaver, InMemorySaver):
+    """InMemorySaver that keeps a file a message of the state carries inline as a link to the stored file."""
 
 
 class MemoryBackend(CheckpointerBackend):
@@ -15,8 +20,8 @@ class MemoryBackend(CheckpointerBackend):
     def is_available(self) -> bool:
         return True
 
-    async def create(self) -> InMemorySaver:
-        return InMemorySaver()
+    async def create(self) -> AionInMemorySaver:
+        return AionInMemorySaver()
 
 
-__all__ = ["MemoryBackend"]
+__all__ = ["AionInMemorySaver", "MemoryBackend"]

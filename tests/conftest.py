@@ -144,6 +144,23 @@ def run_python_without(
 
 
 @pytest.fixture(autouse=True)
+def no_kept_file_contents():
+    """Run every test as a turn of its own: its own file contents, and no verdict on a file yet.
+
+    A turn keeps the files it reads (``aion.core.a2a.file_contents``), and
+    the process remembers which files a model refused
+    (``aion.core.agent.left_out_files``); a file one test's model refused
+    would otherwise be left out of the next test's request.
+    """
+    from aion.core.a2a.file_contents import FileContents, keeping_file_contents
+    from aion.core.agent.left_out_files import forget_verdicts
+
+    forget_verdicts()
+    with keeping_file_contents(FileContents()):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def extension_registry():
     """The A2A extension registry as a server fills it before it activates anything.
 

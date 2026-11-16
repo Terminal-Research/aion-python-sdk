@@ -768,3 +768,35 @@ class TestFanOutSummary:
         await sender.send_notification(TASK_ID, _event())
 
         assert sender._client.post.await_count == 3
+
+
+class TestWorkingFileLinks:
+    """A delivery carries download links that work when it is sent."""
+
+    @pytest.mark.anyio
+    async def test_the_event_is_delivered_with_refreshed_links(self):
+        client = _client()
+        stored, refreshed = _event(), _event()
+        refreshed.context_id = "refreshed"
+        links = Mock()
+        links.refresh = AsyncMock(return_value=refreshed)
+        sender = AionPushNotificationSender(
+            httpx_client=client, config_store=_store(_config()), file_links=links
+        )
+
+        await sender.send_notification(TASK_ID, stored)
+
+        links.refresh.assert_awaited_once_with(stored)
+        assert client.post.await_args.kwargs["json"]["task"]["contextId"] == "refreshed"
+
+    @pytest.mark.anyio
+    async def test_nothing_is_refreshed_for_a_task_without_webhooks(self):
+        links = Mock()
+        links.refresh = AsyncMock()
+        store = Mock()
+        store.get_info_for_dispatch = AsyncMock(return_value=[])
+        sender = AionPushNotificationSender(httpx_client=_client(), config_store=store, file_links=links)
+
+        await sender.send_notification(TASK_ID, _event())
+
+        links.refresh.assert_not_awaited()

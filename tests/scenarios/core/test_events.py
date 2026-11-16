@@ -11,7 +11,17 @@ import json
 
 import pytest
 
-from tests.scenarios.commands import IdsResponse, steps_texts
+from tests.scenarios.commands import (
+    ARTIFACT_DATA_NAME,
+    ARTIFACT_FILE_BYTES,
+    ARTIFACT_FILE_NAME,
+    ARTIFACT_URL_NAME,
+    HistoryResponse,
+    IdsResponse,
+    artifacts_data_parts,
+    artifacts_text,
+    steps_texts,
+)
 from tests.scenarios.harness import (
     SKIP,
     ScenarioClient,
@@ -104,6 +114,29 @@ async def test_a_second_message_in_a_context_starts_a_new_task(client: ScenarioC
 
     assert second.context_id == first.context_id
     assert second.task_id != first.task_id
+
+
+@pytest.mark.command("history")
+async def test_a_turn_reads_what_its_conversation_already_holds(client: ScenarioClient) -> None:
+    """A later turn reads the earlier turns' messages, tasks, answers, artifacts and a file's content."""
+    first = final_task(await client.send("echo hello"))
+    second = final_task(await client.send("artifacts", context_id=first.context_id))
+
+    events = await client.send("history", context_id=first.context_id)
+    read = HistoryResponse.model_validate_json(reply_texts(events)[-1])
+    third = final_task(events)
+
+    earlier = [["user", "echo hello"], ["agent", "hello"], ["user", "artifacts"], ["agent", artifacts_text()]]
+    assert read.messages[:4] == earlier
+    assert read.user_texts[:2] == ["echo hello", "artifacts"]
+    assert read.newest_agent_text == artifacts_text()
+    assert read.task_ids[:2] == [first.task_id, second.task_id]
+    assert read.completed_task_ids == [first.task_id, second.task_id]
+    assert read.newest_task_ids[-1] in (second.task_id, third.task_id)
+    assert read.answers[first.task_id] == "hello"
+    assert sorted(read.artifact_names) == sorted([ARTIFACT_DATA_NAME, ARTIFACT_FILE_NAME, ARTIFACT_URL_NAME])
+    assert read.data == artifacts_data_parts()[0]
+    assert read.file_text == ARTIFACT_FILE_BYTES.decode()
 
 
 @pytest.mark.command("echo")

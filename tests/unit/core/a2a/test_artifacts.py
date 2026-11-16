@@ -51,3 +51,15 @@ class TestArtifactMetadata:
     @pytest.mark.parametrize("build", BUILDERS.values(), ids=BUILDERS.keys())
     def test_without_metadata_the_artifact_has_none(self, build):
         assert not build().metadata
+
+
+class TestFileArtifact:
+    def test_the_name_is_the_files_name_too(self):
+        artifact = file_artifact(b"a,b", mime_type="text/csv", name="totals.csv")
+
+        assert (artifact.name, artifact.parts[0].filename) == ("totals.csv", "totals.csv")
+
+    def test_without_a_name_the_file_has_none(self):
+        artifact = file_artifact(b"a,b", mime_type="text/csv")
+
+        assert (artifact.name, artifact.parts[0].filename) == ("file", "")

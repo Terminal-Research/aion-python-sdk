@@ -80,6 +80,41 @@ class TestSetupRootLogger:
         assert count_after_first == count_after_second == 1
 
 
+class TestModelClientLoggers:
+    def test_model_requests_are_not_printed_even_at_debug(self):
+        """LiteLLM prints through a handler of its own, so the logger itself is held back."""
+        from aion.server.logging import setup_root_logger
+        from aion.server.logging.filters import MODEL_CLIENT_LOGGERS
+        from aion.server.logging.handlers import AionLogstashHandler, LogStreamHandler
+
+        root = logging.getLogger()
+        original, root_level = root.handlers[:], root.level
+        levels = {name: logging.getLogger(name).level for name in MODEL_CLIENT_LOGGERS}
+        root.handlers = [h for h in original if not isinstance(h, (LogStreamHandler, AionLogstashHandler))]
+        try:
+            with patch("aion.server.settings.app_settings") as ms, \
+                 patch("aion.core.settings.api_settings") as ma:
+                ms.log_level = logging.DEBUG
+                ms.logstash_host = "localhost"
+                ms.logstash_port = 5000
+                ms.is_logstash_configured = False
+                ms.host_name = "n"
+                ma.client_id = "c"
+
+                setup_root_logger()
+
+            assert set(MODEL_CLIENT_LOGGERS) == {"LiteLLM", "LiteLLM Proxy", "LiteLLM Router", "openai"}
+            for name in MODEL_CLIENT_LOGGERS:
+                logger = logging.getLogger(name)
+                assert not logger.isEnabledFor(logging.INFO), name
+                assert logger.isEnabledFor(logging.WARNING), name
+        finally:
+            root.handlers = original
+            root.setLevel(root_level)
+            for name, level in levels.items():
+                logging.getLogger(name).setLevel(level)
+
+
 class TestBaseRules:
     """The shipped rules muzzle library chatter LOG_LEVEL alone would let through."""
 

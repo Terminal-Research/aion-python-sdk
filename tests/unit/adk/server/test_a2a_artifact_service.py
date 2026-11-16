@@ -113,6 +113,19 @@ async def test_delete_forgets_every_version(service: A2AArtifactService) -> None
     ) == []
 
 
+async def test_delete_forgets_a_published_part_too(service: A2AArtifactService) -> None:
+    service.remember_published(
+        app_name=APP, user_id=USER, filename="report.txt", part=types.Part(text="published"), session_id=SESSION
+    )
+
+    await service.delete_artifact(app_name=APP, user_id=USER, filename="report.txt", session_id=SESSION)
+
+    assert await service.list_artifact_keys(app_name=APP, user_id=USER, session_id=SESSION) == []
+    assert await service.load_artifact(
+        app_name=APP, user_id=USER, filename="report.txt", session_id=SESSION
+    ) is None
+
+
 async def test_numbering_continues_after_what_the_database_already_holds(
     service: A2AArtifactService,
 ) -> None:

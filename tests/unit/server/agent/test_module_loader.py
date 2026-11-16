@@ -17,6 +17,10 @@ Focus areas:
     - raises FileNotFoundError for missing file
     - raises ValueError when spec is None (non-Python file)
     - raises ValueError when exec_module raises
+    - registers the module in sys.modules under its own name
+    - a file with postponed annotations and its own classes loads
+    - a file that fails to execute leaves no sys.modules entry
+    - two files with the same name keep separate sys.modules entries
 
   _load_from_dotted_path():
     - loads a valid installed module (e.g. "os")
@@ -37,14 +41,26 @@ Focus areas:
     - skips classes from other modules
 """
 
+import operator
 import sys
 import types
+import typing
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from aion.server.agent.aion_agent.module_loader import ModuleLoader
+
+
+@pytest.fixture(autouse=True)
+def _forget_loaded_files():
+    """Drop the modules a test loaded from files, so tests do not see each other's."""
+    before = set(sys.modules)
+    yield
+    for name in set(sys.modules) - before:
+        if "_module" in name:
+            del sys.modules[name]
 
 
 class TestIsFilePath:
@@ -131,6 +147,87 @@ class TestLoadFromFile:
         loader = ModuleLoader(base_path=tmp_path, logger=MagicMock())
         with pytest.raises(ValueError, match="Failed to execute module"):
             loader._load_from_file(str(py_file))
+
+    def test_module_is_registered_under_its_name(self, tmp_path):
+        """A loaded file is in sys.modules under its own name, already while its code runs."""
+        py_file = tmp_path / "registered.py"
+        py_file.write_text("import sys\nSEEN_ITSELF = sys.modules.get(__name__) is not None\n")
+        loader = ModuleLoader(base_path=tmp_path, logger=MagicMock())
+        module = loader._load_from_file(str(py_file))
+        assert module.SEEN_ITSELF is True
+        assert sys.modules[module.__name__] is module
+
+    def test_dataclass_with_postponed_annotations_loads(self, tmp_path):
+        """A file with postponed annotations can define a dataclass: dataclasses reads the class's module."""
+        py_file = tmp_path / "state.py"
+        py_file.write_text(
+            "from __future__ import annotations\n"
+            "from dataclasses import dataclass\n"
+            "@dataclass\n"
+            "class State:\n"
+            "    count: int = 0\n"
+        )
+        loader = ModuleLoader(base_path=tmp_path, logger=MagicMock())
+        module = loader._load_from_file(str(py_file))
+        assert module.State().count == 0
+
+    def test_postponed_annotations_resolve_against_the_file(self, tmp_path):
+        """Type hints of a class from a loaded file resolve with the names that file imported."""
+        py_file = tmp_path / "graph.py"
+        py_file.write_text(
+            "from __future__ import annotations\n"
+            "import operator\n"
+            "from typing import Annotated, TypedDict\n"
+            "class State(TypedDict):\n"
+            "    items: Annotated[list[str], operator.add]\n"
+        )
+        loader = ModuleLoader(base_path=tmp_path, logger=MagicMock())
+        module = loader._load_from_file(str(py_file))
+        hints = typing.get_type_hints(module.State, include_extras=True)
+        assert hints["items"].__metadata__ == (operator.add,)
+
+    def test_failed_file_leaves_no_module_registered(self, tmp_path):
+        """A file that raises while executing is not left in sys.modules."""
+        py_file = tmp_path / "half.py"
+        py_file.write_text("import sys\nNAME = __name__\nraise RuntimeError('broken module')\n")
+        loader = ModuleLoader(base_path=tmp_path, logger=MagicMock())
+        before = set(sys.modules)
+        with pytest.raises(ValueError, match="Failed to execute module"):
+            loader._load_from_file(str(py_file))
+        assert set(sys.modules) == before
+
+    def test_same_file_name_in_two_directories_keeps_both(self, tmp_path):
+        """Two files named alike stay registered apart, so each class still resolves in its own file."""
+        source = (
+            "from __future__ import annotations\n"
+            "from typing import TypedDict\n"
+            "class Marker: pass\n"
+            "class State(TypedDict):\n"
+            "    marker: Marker\n"
+        )
+        modules = []
+        for directory in ("first", "second"):
+            (tmp_path / directory).mkdir()
+            (tmp_path / directory / "agent.py").write_text(source)
+            loader = ModuleLoader(base_path=tmp_path / directory, logger=MagicMock())
+            modules.append(loader._load_from_file("agent.py"))
+        first, second = modules
+        assert first.__name__ != second.__name__
+        assert sys.modules[first.__name__] is first
+        assert sys.modules[second.__name__] is second
+        assert typing.get_type_hints(first.State)["marker"] is first.Marker
+        assert typing.get_type_hints(second.State)["marker"] is second.Marker
+
+    def test_loading_a_file_again_reuses_its_name(self, tmp_path):
+        """A second load of one file executes it again under the same name and replaces the entry."""
+        py_file = tmp_path / "again.py"
+        py_file.write_text("VALUE = object()\n")
+        loader = ModuleLoader(base_path=tmp_path, logger=MagicMock())
+        first = loader._load_from_file(str(py_file))
+        second = loader._load_from_file(str(py_file))
+        assert second.__name__ == first.__name__
+        assert second.VALUE is not first.VALUE
+        assert sys.modules[second.__name__] is second
 
     def test_absolute_path_used_directly(self, tmp_path):
         """_load_from_file uses an absolute path directly, ignoring base_path."""

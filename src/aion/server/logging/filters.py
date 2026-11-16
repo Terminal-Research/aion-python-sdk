@@ -28,6 +28,12 @@ BASE_RULES: dict[str, int | None] = {
     "alembic": logging.WARNING,
 }
 
+MODEL_CLIENT_LOGGERS: tuple[str, ...] = ("LiteLLM", "LiteLLM Proxy", "LiteLLM Router", "openai")
+"""Loggers that print every model request whole at DEBUG: the conversation,
+its files as base64 and the attribution token. LiteLLM writes through a
+handler of its own as well, which no filter on the server's handlers reaches,
+so these loggers are held at WARNING themselves rather than by a rule here."""
+
 
 class NamespaceFilter(logging.Filter):
     """Filter log records by logger namespace with per-namespace minimum log levels.

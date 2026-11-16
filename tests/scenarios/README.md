@@ -30,7 +30,10 @@ toolkits.py     the scripted toolkit's deployment, and sending its scripts and r
 frameworks.py   the frameworks under test, and what each cannot do
 harness/        serve, client, recorder, shape, pg, and the payload builders
 agents/         one agent package per framework, all answering commands.py,
-                and one native agent per framework, answering native_script.py
+                one native agent per framework, answering native_script.py,
+                and an agent per shape that takes its own road through an
+                adapter: a prebuilt agent, a graph around a subgraph, an
+                agent from an async factory, a router with sub-agents
 configs/        aion.yaml templates, one per deployment variant
 core/           the scenarios, run for every framework
 persistence/    the scenarios that need a database under the server
@@ -145,6 +148,17 @@ make dist-build && make tests-scenarios-dist
 
 This is the last step of `make release-check`, and the last gate before the
 upload in `publish-python.yml`.
+
+`make tests-floors-scenarios` runs them in `.venv-floors`, the environment
+`make tests-floors` builds at the oldest release of every declared range.
+Pytest itself runs there, so every server is that environment's `aion`. A
+feature a framework gained inside its range is listed in
+`frameworks.NATIVE_SINCE`, and a scenario driving it skips there, naming the
+release it needs:
+
+```bash
+make tests-floors && make tests-floors-scenarios
+```
 
 ## The stream contract
 

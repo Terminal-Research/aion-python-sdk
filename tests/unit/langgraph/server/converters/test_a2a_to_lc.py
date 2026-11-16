@@ -119,3 +119,42 @@ class TestDetectMimeType:
         part.media_type = None
         part.filename = None
         assert A2AToLcConverter._detect_mime_type(part) == "application/octet-stream"
+
+
+class TestFileBlocks:
+    """A file becomes the LangChain block of its kind, with its name."""
+
+    @pytest.mark.parametrize(
+        ("media_type", "block_type"),
+        [
+            ("image/png", "image"),
+            ("audio/wav", "audio"),
+            ("video/mp4", "video"),
+            ("application/pdf", "file"),
+            ("text/plain", "file"),
+        ],
+    )
+    def test_the_block_follows_the_media_type(self, media_type, block_type):
+        block = A2AToLcConverter.from_part(Part(url="https://files.test/f", media_type=media_type))
+
+        assert block["type"] == block_type
+        assert block["url"] == "https://files.test/f"
+        assert block["mime_type"] == media_type
+
+    def test_inline_bytes_keep_their_kind_too(self):
+        block = A2AToLcConverter.from_part(Part(raw=b"\x89PNG", media_type="image/png"))
+
+        assert block["type"] == "image"
+        assert block["base64"] == "iVBORw=="
+
+    def test_the_block_keeps_the_files_name(self):
+        block = A2AToLcConverter.from_part(
+            Part(url="https://files.test/f", media_type="application/pdf", filename="report.pdf")
+        )
+
+        assert block["extras"] == {"filename": "report.pdf"}
+
+    def test_a_file_without_a_name_has_no_extras(self):
+        block = A2AToLcConverter.from_part(Part(url="https://files.test/f", media_type="application/pdf"))
+
+        assert "extras" not in block

@@ -46,6 +46,7 @@ __all__ = [
     "NOT_IMPLEMENTED_PREFIX",
     "not_implemented_text",
     "IdsResponse",
+    "HistoryResponse",
     "ExtResponse",
     "WhoamiResponse",
     "EventResponse",
@@ -96,6 +97,34 @@ class IdsResponse(BaseModel):
 
     task_id: Optional[str] = None
     context_id: Optional[str] = None
+
+
+class HistoryResponse(BaseModel):
+    """What the conversation already holds, as the agent reads it in a turn.
+
+    Attributes:
+        messages: Every message, oldest first, as ``[role, text]``.
+        user_texts: The text of the user's messages only.
+        newest_agent_text: The text of the agent's newest message.
+        task_ids: Every task, oldest first.
+        completed_task_ids: The tasks that completed.
+        newest_task_ids: The two newest tasks.
+        answers: The text each task answered with, by task id.
+        artifact_names: The names of the artifacts the tasks produced.
+        data: The first value of the artifact named ``data``.
+        file_text: The content of the artifact named ``file``, read as text.
+    """
+
+    messages: list[list[str]] = []
+    user_texts: list[str] = []
+    newest_agent_text: Optional[str] = None
+    task_ids: list[str] = []
+    completed_task_ids: list[str] = []
+    newest_task_ids: list[str] = []
+    answers: dict[str, Optional[str]] = {}
+    artifact_names: list[str] = []
+    data: Optional[Any] = None
+    file_text: Optional[str] = None
 
 
 class ExtResponse(BaseModel):
@@ -226,6 +255,8 @@ COMMANDS: tuple[Command, ...] = (
             response_model=ConfigResponse),
     Command("ids", "Report task and context ids", tags=("events", "lifecycle"),
             response_model=IdsResponse),
+    Command("history", "Report what the conversation already holds", tags=("events",),
+            response_model=HistoryResponse),
     Command("big", "Reply with n KB of text", "<kb>", ("errors",)),
     Command("parts", "Report the kinds of parts the inbound message carried", tags=("files",),
             response_model=PartsResponse),

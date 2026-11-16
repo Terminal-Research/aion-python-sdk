@@ -367,7 +367,7 @@ class TestStreamRouting:
         converter = make_converter()
         await converter.convert(make_routed_partial_event("one", make_routing()))
 
-        [end] = converter.finalize_stream()
+        [end] = await converter.finalize_stream()
 
         assert (_contents(end), _routed(end)) == ([""], False)
         assert end.last_chunk is True
@@ -376,7 +376,7 @@ class TestStreamRouting:
         converter = make_converter()
 
         [chunk] = await converter.convert(make_partial_event("It is sunny."))
-        [final] = converter.finalize_stream()
+        [final] = await converter.finalize_stream()
 
         assert not _routed(chunk)
         assert not _routed(final)

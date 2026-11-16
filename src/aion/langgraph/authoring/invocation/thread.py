@@ -71,7 +71,8 @@ class Thread(BaseThread):
 
         Supports str, AIMessage, AIMessageChunk, or async iterator of those types.
         metadata is applied only when the SDK constructs the message (str or async iterator);
-        it is ignored for AIMessage and AIMessageChunk which are sent as-is.
+        it is ignored for AIMessage and AIMessageChunk which are sent as-is, except that an
+        AIMessage without an id gets one (see ``emit_message``).
         """
         writer = self.get_writer()
         if writer is None:

@@ -11,6 +11,7 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
+from aion.core.a2a.content import is_same_message
 from aion.core.a2a.deltas import join_stream_delta
 from aion.core.a2a.enums import A2AMetadataKey, ArtifactId
 from aion.server.a2a.constants import (
@@ -314,19 +315,6 @@ def is_message_in_task_history(
 
     m_id = message.message_id if message is not None else message_id
     return bool(m_id) and m_id in task_history_message_ids(task)
-
-
-def is_same_message(first: Message, second: Message) -> bool:
-    """Return True if two messages are the same message.
-
-    Messages are matched by ``message_id`` when either has one: a stored copy
-    can differ from the original in ways that do not make it another message,
-    such as a store round-trip. Two messages without ids are compared field by
-    field.
-    """
-    if first.message_id or second.message_id:
-        return first.message_id == second.message_id
-    return first == second
 
 
 def is_message_recorded(task: Task, message: Message) -> bool:

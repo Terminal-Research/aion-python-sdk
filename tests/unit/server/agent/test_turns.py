@@ -242,7 +242,7 @@ async def test_every_turn_reads_the_conversation_of_its_task(route) -> None:
     seen = []
 
     async def read(_context):
-        history = conversation.history()
+        history = conversation.current()
         seen.append((history.context_id, history.task_id))
         return
         yield  # pragma: no cover - makes this a generator
@@ -267,7 +267,7 @@ async def test_a_turn_of_a_server_without_conversations_reads_none() -> None:
 
     async def read(_context):
         try:
-            conversation.history()
+            conversation.current()
         except conversation.ConversationUnavailableError:
             unavailable.append(True)
         return

@@ -19,10 +19,9 @@ the server closes the task ``REJECTED`` with the refusal's code. A message
 into a running task of the extension is refused unless its executor queues
 one (``TaskExecutor.message_to_busy_task``).
 
-The executor writes its events whole: their Event markup, its state object
-under its URI in the task's metadata (written whole, since a2a-sdk merges
-event metadata with ``Struct.MergeFrom``), the masking of secrets and any
-limits of its own.
+The executor writes its events whole: their Event markup, its state for
+clients as an artifact of its own with a schema-tagged data part (rewritten
+whole), the masking of secrets and any limits of its own.
 """
 
 from __future__ import annotations

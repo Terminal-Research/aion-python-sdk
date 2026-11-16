@@ -198,7 +198,7 @@ jobs:
   floors:
     name: Oldest allowed dependencies
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     # The unit job varies the interpreter and nothing else, so every leg of it
     # resolves each declared range to its newest release. This one installs
     # the oldest, which is the only thing that can tell us whether
@@ -232,6 +232,12 @@ jobs:
 
       - name: Run the unit suite against the oldest allowed dependencies
         run: make tests-floors
+
+      # The same installation serves the scenarios: a feature a framework
+      # gained inside its range is a scenario that runs on the newest releases
+      # in the `scenarios` job and skips here, naming the release it needs.
+      - name: Run the scenarios against the oldest allowed dependencies
+        run: make tests-floors-scenarios
 
   # The one check branch protection should require. It runs even when a job
   # above fails or is cancelled, because a skipped required check can count as

@@ -36,12 +36,14 @@ from tests.scenarios.frameworks import (  # noqa: E402
     FRAMEWORKS,
     NATIVE_AGENTS,
     NATIVE_AGENTS_BY_NAME,
+    NATIVE_SINCE,
     NATIVE_UNSUPPORTED,
     NO_EVENT_ROUTER,
     UNSUPPORTED,
     Framework,
     implemented_commands,
     divergence_reason,
+    native_since,
     native_unsupported_reason,
     no_event_router_reason,
     unsupported_reason,
@@ -349,14 +351,19 @@ def _run_cell(scenario: Scenario, framework: Framework) -> str:
     """The status of one scenario on one framework, naming a native agent.
 
     A native scenario runs a different agent than the rest of the row's
-    framework column does, so its cell says which.
+    framework column does, so its cell says which, and from which release
+    of the framework when the feature it drives is not in every allowed one.
     """
     if not scenario.frameworks:
         return _status_cell(ANY_FRAMEWORK)
     status = _status_cell(scenario.status(framework))
     if scenario.native and status == RUNS:
         agent = NATIVE_AGENTS_BY_NAME[framework.name]
-        return f"{RUNS} {code(agent.agent_package.rsplit('.', 1)[-1])}"
+        cell = f"{RUNS} {code(agent.agent_package.rsplit('.', 1)[-1])}"
+        since = native_since(framework.name, scenario.capability) if scenario.capability else None
+        if since is not None:
+            cell += f", [{SKIP}]({FRAMEWORKS_ANCHOR}) before {since.distribution} {since.version}"
+        return cell
     return status
 
 
@@ -385,7 +392,8 @@ def render(scenarios: list[Scenario], suites: list[Suite]) -> str:
         "the suite is and how to run it is in [README.md](README.md).",
         "",
         f"A status cell reads `{RUNS}` when it runs, `{SKIP}` when `frameworks.UNSUPPORTED`, "
-        f"`frameworks.NATIVE_UNSUPPORTED` or `frameworks.NO_EVENT_ROUTER` names the pair (the reason is under "
+        f"`frameworks.NATIVE_UNSUPPORTED` or `frameworks.NO_EVENT_ROUTER` names the pair, or the server runs a "
+        f"release older than the one `frameworks.NATIVE_SINCE` names (the reason is under "
         f"[Frameworks]({FRAMEWORKS_ANCHOR})), `{GAP}` when the agent has no behaviour for the "
         f"command yet, `xfail: <reason>` for a knowingly deferred defect, "
         f"`{ANY_FRAMEWORK}` when the scenario does not depend on a framework, and "
@@ -446,6 +454,21 @@ def render(scenarios: list[Scenario], suites: list[Suite]) -> str:
         lines += table(
             ["Framework", "Capability", "Reason"],
             [[framework, code(capability), reason] for (framework, capability), reason in NATIVE_UNSUPPORTED.items()],
+        )
+    if NATIVE_SINCE:
+        lines += [
+            "",
+            "Features a framework gained inside the range the SDK allows; a native scenario driving "
+            "one runs where the server has that release or a newer one and `skip`s on an older one, "
+            "such as the oldest releases `make tests-floors` installs:",
+            "",
+        ]
+        lines += table(
+            ["Framework", "Capability", "From", "Reason before it"],
+            [
+                [framework, code(capability), f"{since.distribution} {since.version}", since.reason]
+                for (framework, capability), since in NATIVE_SINCE.items()
+            ],
         )
     if NO_EVENT_ROUTER:
         lines += [

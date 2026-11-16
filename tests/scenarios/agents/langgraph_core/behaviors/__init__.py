@@ -14,7 +14,7 @@ from tests.scenarios.agents.langgraph_core.invocation import Invocation
 from .cards import card
 from .config import config, event, ext, whoami
 from .errors import fail
-from .events import ids, react, steps
+from .events import history, ids, react, steps
 from .files import artifacts, parts, send_file
 from .interrupts import ask, ask_fail, ask_twice
 from .lifecycle import slow
@@ -48,6 +48,7 @@ BEHAVIORS: dict[str, Behavior] = {
     "ask-twice": ask_twice,
     "ask-fail": ask_fail,
     "ids": ids,
+    "history": history,
     "parts": parts,
     "artifacts": artifacts,
     "send-file": send_file,

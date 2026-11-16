@@ -19,8 +19,18 @@ __all__ = [
     "NATIVE_AGENTS",
     "NATIVE_AGENTS_BY_NAME",
     "PREBUILT_AGENTS",
+    "SUBGRAPH_AGENTS",
+    "PARALLEL_AGENTS",
+    "FILE_INLINING_AGENTS",
+    "REFUSED_FILES_AGENTS",
+    "ASYNC_FACTORY_AGENTS",
+    "SEQUENCE_AGENTS",
+    "TRANSFER_AGENTS",
     "NATIVE_UNSUPPORTED",
     "native_unsupported_reason",
+    "Since",
+    "NATIVE_SINCE",
+    "native_since",
     "UNSUPPORTED",
     "unsupported_reason",
     "DIVERGENCES",
@@ -121,6 +131,118 @@ PREBUILT_AGENTS: dict[str, Framework] = {
 }
 
 
+SUBGRAPH_AGENTS: dict[str, Framework] = {
+    # A graph whose one node is a graph of its own, served as its own agent:
+    # `native/test_subgraph.py`. What runs one level down - a model call, the
+    # Aion authoring calls - reaches the adapter under the subgraph's
+    # namespace, which is a different road than a node of the parent graph.
+    "langgraph": Framework(
+        name="langgraph",
+        agent_package="tests.scenarios.agents.langgraph_subgraph",
+        agent_entry="graph.py:create_graph",
+        sdk_extras=("langgraph-server",),
+    ),
+}
+
+
+PARALLEL_AGENTS: dict[str, Framework] = {
+    # An agent with two branches whose models stream at once, served as its
+    # own agent: `native/test_parallel_streams.py`. Parallel nodes of a graph
+    # on LangGraph, the sub-agents of a ParallelAgent on ADK.
+    "langgraph": SUBGRAPH_AGENTS["langgraph"],
+    "adk": Framework(
+        name="adk",
+        agent_package="tests.scenarios.agents.adk_parallel",
+        agent_entry="agent.py:create_agent",
+        sdk_extras=("adk-server",),
+    ),
+}
+
+
+FILE_INLINING_AGENTS: dict[str, Framework] = {
+    # The native agent with the one Aion call that sends the files of a
+    # conversation to its model by their content, served as its own agent:
+    # `native/test_stored_files.py`, on a deployment that stores files.
+    "langgraph": Framework(
+        name="langgraph",
+        agent_package="tests.scenarios.agents.langgraph_native",
+        agent_entry="graph.py:create_file_inlining_graph",
+        sdk_extras=("langgraph-server",),
+    ),
+    "adk": Framework(
+        name="adk",
+        agent_package="tests.scenarios.agents.adk_native",
+        agent_entry="agent.py:create_file_inlining_agent",
+        sdk_extras=("adk-server",),
+    ),
+}
+
+
+REFUSED_FILES_AGENTS: dict[str, Framework] = {
+    # The native agent with its model behind the SDK's model class, which
+    # leaves out a file the model refuses, served as its own agent:
+    # `native/test_refused_files.py`, on a deployment that stores files.
+    "langgraph": Framework(
+        name="langgraph",
+        agent_package="tests.scenarios.agents.langgraph_native",
+        agent_entry="graph.py:create_refused_files_graph",
+        sdk_extras=("langgraph-server",),
+    ),
+    "adk": Framework(
+        name="adk",
+        agent_package="tests.scenarios.agents.adk_native",
+        agent_entry="agent.py:create_refused_files_agent",
+        sdk_extras=("adk-server",),
+    ),
+}
+
+
+ASYNC_FACTORY_AGENTS: dict[str, Framework] = {
+    # The native agent returned by an `async def` factory, served as its own
+    # agent: `native/test_async_factory.py`. The server has to await the
+    # factory before it has an agent to serve.
+    "langgraph": Framework(
+        name="langgraph",
+        agent_package="tests.scenarios.agents.langgraph_native",
+        agent_entry="graph.py:create_async_graph",
+        sdk_extras=("langgraph-server",),
+    ),
+    "adk": Framework(
+        name="adk",
+        agent_package="tests.scenarios.agents.adk_native",
+        agent_entry="agent.py:create_async_agent",
+        sdk_extras=("adk-server",),
+    ),
+}
+
+
+SEQUENCE_AGENTS: dict[str, Framework] = {
+    # A sequence of agents whose first step asks the user, served as its own
+    # agent: `native/test_sequence_pause.py`. Resuming a pause inside a
+    # workflow agent is a different road than resuming a single agent.
+    "adk": Framework(
+        name="adk",
+        agent_package="tests.scenarios.agents.adk_sequence",
+        agent_entry="agent.py:create_agent",
+        sdk_extras=("adk-server",),
+    ),
+}
+
+
+TRANSFER_AGENTS: dict[str, Framework] = {
+    # A router that hands the conversation to its sub-agents, served as its
+    # own agent: `native/test_agent_transfer.py`. Who answers the next
+    # message is ADK's Runner's to pick, which the server runs the agent
+    # through.
+    "adk": Framework(
+        name="adk",
+        agent_package="tests.scenarios.agents.adk_transfer",
+        agent_entry="agent.py:create_agent",
+        sdk_extras=("adk-server",),
+    ),
+}
+
+
 NATIVE_UNSUPPORTED: dict[tuple[str, str], str] = {
     # (framework name, capability) -> why the framework has no such thing.
     #
@@ -130,12 +252,34 @@ NATIVE_UNSUPPORTED: dict[tuple[str, str], str] = {
     ("langgraph", "credential-request"): (
         "LangGraph has no credential request of its own; a graph would ask through interrupt()"
     ),
+    ("langgraph", "tool-confirmation"): (
+        "LangGraph has no tool confirmation of its own; a graph asks through interrupt() and reads the answer itself"
+    ),
     ("langgraph", "artifact-service"): (
         "LangGraph has no artifact service; a graph emits artifacts through the Aion API"
+    ),
+    ("langgraph", "tool-media"): (
+        "LangGraph has no function response media; a tool's image is a block of its ToolMessage"
     ),
     ("adk", "prebuilt-agent"): (
         "ADK's LlmAgent is already its one standard way to build an agent; the "
         "rest of the native group runs it"
+    ),
+    ("adk", "subgraph"): (
+        "ADK has no graphs inside graphs; it composes agents as sub_agents, which is "
+        "a feature of its own"
+    ),
+    ("langgraph", "agent-sequence"): (
+        "LangGraph has no workflow agent; a graph's edges are its sequence, and an "
+        "interrupt between its nodes is `core/test_interrupts`"
+    ),
+    ("langgraph", "agent-transfer"): (
+        "LangGraph has no transfer between agents of its own; a graph routes with its "
+        "edges and keeps who is active in its state"
+    ),
+    ("langgraph", "error-response"): (
+        "a LangChain chat model has no error response; it reports a failed call by "
+        "raising, which `fail-after` drives"
     ),
     ("langgraph", "session-state"): (
         "LangGraph has no output_key or tool-written session state; its state is the "
@@ -147,6 +291,45 @@ NATIVE_UNSUPPORTED: dict[tuple[str, str], str] = {
 def native_unsupported_reason(framework: str, capability: str) -> str | None:
     """Why this framework's native agent cannot do that, or None."""
     return NATIVE_UNSUPPORTED.get((framework, capability))
+
+
+@dataclass(frozen=True)
+class Since:
+    """The release a framework gained a feature in.
+
+    Attributes:
+        distribution: The framework's distribution, as installed.
+        version: The first release that has the feature.
+        reason: What a release before it does instead.
+    """
+
+    distribution: str
+    version: str
+    reason: str
+
+
+NATIVE_SINCE: dict[tuple[str, str], Since] = {
+    # (framework name, capability) -> the release the feature arrived in.
+    #
+    # The SDK supports every release in its range, so a feature a framework
+    # gained inside the range is missing from the older releases. A native
+    # scenario driving one runs where the server's installation has that
+    # release or a newer one, and skips below it: on the oldest releases
+    # allowed, for one, which the scenarios run against in the floors CI job.
+    ("adk", "tool-media"): Since(
+        distribution="google-adk",
+        version="2.7.0",
+        reason=(
+            "ADK before 2.7 has no function response media: a Part a tool returns is a "
+            "value of its function response"
+        ),
+    ),
+}
+
+
+def native_since(framework: str, capability: str) -> Since | None:
+    """The release this framework gained that feature in, or None when every allowed one has it."""
+    return NATIVE_SINCE.get((framework, capability))
 
 
 UNSUPPORTED: dict[tuple[str, str], str] = {

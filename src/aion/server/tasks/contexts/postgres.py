@@ -32,11 +32,19 @@ from .catalog import (
     FinishOutcome,
 )
 
-__all__ = ["PostgresContextCatalog"]
+__all__ = ["PostgresContextCatalog", "is_conversation_message_row"]
 
 _MESSAGE_TYPE = literal_column(
     f"{TaskMessageModel.__tablename__}.payload -> 'metadata' ->> '{A2AMetadataKey.MESSAGE_TYPE.value}'"
 )
+
+
+def is_conversation_message_row():
+    """The condition a ``task_messages`` row meets when it is a message of the conversation.
+
+    The SQL counterpart of ``aion.core.a2a.content.is_conversation_message``.
+    """
+    return or_(_MESSAGE_TYPE.is_(None), _MESSAGE_TYPE == MessageType.MESSAGE.value)
 
 
 class PostgresContextCatalog:
@@ -135,7 +143,7 @@ class PostgresContextCatalog:
                         .join(TaskRecordModel, TaskRecordModel.id == TaskMessageModel.task_id)
                         .where(
                             in_context,
-                            or_(_MESSAGE_TYPE.is_(None), _MESSAGE_TYPE == MessageType.MESSAGE.value),
+                            is_conversation_message_row(),
                         )
                         .order_by(
                             desc(TaskRecordModel.created_at),

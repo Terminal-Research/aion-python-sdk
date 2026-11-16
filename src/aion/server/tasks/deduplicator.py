@@ -153,6 +153,8 @@ class A2ATaskDeduplicator:
         not add it to the history: once the task stops, the task manager puts
         it at the end of the history (``record_closing_message``), and a
         running task's status message moves there with the next status update.
+        A status message the task already holds stays as the task holds it,
+        files stored and linked, not as the patch repeats it.
 
         Args:
             task: The task payload that should be merged into the original task.
@@ -172,7 +174,10 @@ class A2ATaskDeduplicator:
             normalized_status = copy.deepcopy(task.status)
             self._sanitize_struct_field(normalized_status, "metadata")
             if self._has_field(normalized_status, "message"):
-                normalized_status.message.CopyFrom(self._normalize_message(normalized_status.message))
+                held = self._held_message(normalized_status.message.message_id)
+                normalized_status.message.CopyFrom(
+                    held if held is not None else self._normalize_message(normalized_status.message)
+                )
             merged.status.CopyFrom(normalized_status)
 
         self._merge_messages(merged, task.history)
@@ -463,6 +468,18 @@ class A2ATaskDeduplicator:
         new_struct = Struct()
         ParseDict(sanitized, new_struct)
         getattr(message, field_name).CopyFrom(new_struct)
+
+    def _held_message(self, message_id: str) -> Message | None:
+        """A copy of the message the task holds under ``message_id``, if it holds one."""
+        if not message_id or message_id not in self._known_message_ids:
+            return None
+        task = self._original_task
+        candidates = [task.status.message] if self._has_status_message(task) else []
+        candidates.extend(reversed(task.history))
+        for message in candidates:
+            if message.message_id == message_id:
+                return copy.deepcopy(message)
+        return None
 
     def _message_is_duplicate(self, message: Message) -> bool:
         """Return `True` when a message ID is already represented by the task."""

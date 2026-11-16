@@ -12,10 +12,12 @@ from typing import TypedDict
 import pytest
 from a2a.utils.errors import UnsupportedOperationError
 from google.adk.sessions import InMemorySessionService
+from google.genai import types
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
+from aion.adk.server.artifacts.backends.a2a import A2AArtifactService
 from aion.adk.server.execution.adk_executor import ADKExecutor
 from aion.core.config.models import AgentConfig
 from aion.langgraph.server.execution.langgraph_executor import LangGraphExecutor
@@ -107,6 +109,43 @@ class TestADK:
         assert not await self._exists(sessions, GATEWAY, "ctx")
         assert await self._exists(sessions, ALICE, "ctx")
         assert await self._exists(sessions, BOB, "ctx")
+
+    async def test_the_contexts_artifacts_are_deleted_and_nothing_else(self):
+        """Saved and published artifacts alike: a context used again lists none of the deleted one's."""
+        artifacts = A2AArtifactService()
+        executor = ADKExecutor(
+            agent=object(),
+            config=AgentConfig(path="m:agent"),
+            session_service=InMemorySessionService(),
+            artifact_service=artifacts,
+        )
+        for scope in (ALICE, BOB):
+            await artifacts.save_artifact(
+                app_name=scope.agent_id,
+                user_id=scope.state_owner,
+                session_id="ctx",
+                filename="saved.txt",
+                artifact=types.Part(text="saved"),
+            )
+            artifacts.remember_published(
+                app_name=scope.agent_id,
+                user_id=scope.state_owner,
+                session_id="ctx",
+                filename="published.txt",
+                part=types.Part(text="published"),
+            )
+
+        try:
+            await executor.delete_state(ExecutionConfig(context_id="ctx", state_scope=ALICE))
+
+            assert await artifacts.list_artifact_keys(
+                app_name=ALICE.agent_id, user_id=ALICE.state_owner, session_id="ctx"
+            ) == []
+            assert await artifacts.list_artifact_keys(
+                app_name=BOB.agent_id, user_id=BOB.state_owner, session_id="ctx"
+            ) == ["published.txt", "saved.txt"]
+        finally:
+            await artifacts.close()
 
     async def test_a_missing_session_is_not_an_error(self):
         executor = self._executor(InMemorySessionService())

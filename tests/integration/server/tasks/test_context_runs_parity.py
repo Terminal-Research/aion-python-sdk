@@ -2,11 +2,14 @@
 
 * A context is held by the holder admitted into it first, while it lives;
   another holder, or anyone once the context is deleted, does not hold it.
-* The generation of a context's id is the same on every read while the
+* The time a context was created is the same on every read while the
   context lives, None before anything is admitted into it, and new once a
   deleted context's id is reserved again.
-* The tasks of a context are every owner's, oldest first; the unfinished ones
-  are those without an outcome. Other contexts' tasks do not count.
+* The tasks of a context are every owner's, oldest first, with their history
+  and artifacts; they are narrowed by state and counted from the newest.
+  Other contexts' tasks do not count.
+* The messages of a context are the conversation messages of its tasks,
+  oldest first, narrowed by role and task and paged from the newest.
 * The waiting task a message continues is the caller's newest task of the
   executor it addresses; a task without a route is the framework executor's.
 """
@@ -20,7 +23,10 @@ import pytest_asyncio
 from a2a.auth.user import User
 from a2a.server.context import ServerCallContext
 from a2a.server.owner_resolver import resolve_user_scope
-from a2a.types import Task, TaskState, TaskStatus
+from a2a.types import Message, Part, Role, Task, TaskState, TaskStatus
+
+from aion.core.a2a.content import text_of
+from aion.core.a2a.enums import A2AMetadataKey, MessageType
 
 from .postgres_support import POSTGRES_TEST_URL, prepared_database, stores as postgres_stores
 
@@ -103,20 +109,20 @@ async def backend(request, _database) -> _Backend:
     return _Backend(request.param)
 
 
-async def test_the_generation_lives_with_the_reservation(backend: _Backend) -> None:
+async def test_the_time_a_context_was_created_lives_with_the_reservation(backend: _Backend) -> None:
     context_id = f"ctx-{uuid.uuid4()}"
     holder = ContextHolder.private("alice")
 
-    assert await backend.runs.generation(context_id) is None
+    assert await backend.runs.created_at(context_id) is None
     await backend.admission.admit(context_id, holder, "alice")
-    first = await backend.runs.generation(context_id)
+    first = await backend.runs.created_at(context_id)
     await backend.admission.admit(context_id, holder, "alice")
-    assert await backend.runs.generation(context_id) == first
+    assert await backend.runs.created_at(context_id) == first
 
     await backend.forget(context_id)
-    assert await backend.runs.generation(context_id) is None
+    assert await backend.runs.created_at(context_id) is None
     await backend.admission.admit(context_id, holder, "alice")
-    second = await backend.runs.generation(context_id)
+    second = await backend.runs.created_at(context_id)
 
     assert first is not None and second is not None and second != first
 
@@ -142,8 +148,48 @@ async def test_the_tasks_of_a_context_are_every_owners_oldest_first(backend: _Ba
     other = await backend.task(context_id, TaskState.TASK_STATE_COMPLETED, OTHER_EXTENSION)
     await backend.task(f"ctx-{uuid.uuid4()}", TaskState.TASK_STATE_WORKING, EXTENSION)
 
-    assert await backend.runs.task_ids(context_id) == [canceled, waiting, framework, other]
-    assert await backend.runs.task_ids(context_id, unfinished=True) == [waiting, framework]
+    async def ids(**selection) -> list[str]:
+        return [task.id for task in await backend.runs.tasks(context_id, **selection)]
+
+    open_states = frozenset({TaskState.TASK_STATE_INPUT_REQUIRED, TaskState.TASK_STATE_WORKING})
+    assert await ids() == [canceled, waiting, framework, other]
+    assert await ids(states=open_states) == [waiting, framework]
+    assert await ids(limit=2) == [framework, other]
+    assert await ids(states=open_states, limit=1) == [framework]
+    assert await ids(states=frozenset()) == []
+    assert await ids(limit=0) == []
+
+
+def _said(text: str, role: int = Role.ROLE_USER) -> Message:
+    return Message(message_id=str(uuid.uuid4()), role=role, parts=[Part(text=text)])
+
+
+async def test_the_messages_of_a_context_are_its_tasks_conversation(backend: _Backend) -> None:
+    context_id = f"ctx-{uuid.uuid4()}"
+    first = Task(id=str(uuid.uuid4()), context_id=context_id, status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED))
+    event = _said("values")
+    event.metadata[A2AMetadataKey.MESSAGE_TYPE.value] = MessageType.LANGRAPH_VALUES.value
+    first.history.extend([_said("Write a report"), event, _said("Here it is.", Role.ROLE_AGENT)])
+    await backend.store.save(first, _caller("alice"))
+    second = Task(id=str(uuid.uuid4()), context_id=context_id, status=TaskStatus(state=TaskState.TASK_STATE_WORKING))
+    second.history.append(_said("Add numbers"))
+    second.status.message.CopyFrom(_said("Adding.", Role.ROLE_AGENT))
+    await backend.store.save(second, _caller("bob"))
+    elsewhere = Task(id=str(uuid.uuid4()), context_id=f"ctx-{uuid.uuid4()}", status=TaskStatus())
+    elsewhere.history.append(_said("Somewhere else"))
+    await backend.store.save(elsewhere, _caller("alice"))
+
+    async def texts(**selection) -> list[str]:
+        return [text_of(message) for message in await backend.runs.messages(context_id, **selection)]
+
+    assert await texts() == ["Write a report", "Here it is.", "Add numbers", "Adding."]
+    assert await texts(role=Role.ROLE_USER) == ["Write a report", "Add numbers"]
+    assert await texts(role=Role.ROLE_AGENT, limit=1) == ["Adding."]
+    assert await texts(task_id=first.id) == ["Write a report", "Here it is."]
+    assert await texts(limit=2, offset=1) == ["Here it is.", "Add numbers"]
+    assert await texts(limit=2, offset=10) == []
+    assert await texts(task_id="not-a-task-id") == []
+    assert await texts(task_id=elsewhere.id) == []
 
 
 async def test_the_newest_task_of_an_executor_is_the_callers_own(backend: _Backend) -> None:

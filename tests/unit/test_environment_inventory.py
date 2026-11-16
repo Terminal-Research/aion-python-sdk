@@ -22,13 +22,13 @@ from pathlib import Path
 
 import pytest
 
-from aion.core.settings import ApiSettings, platform_supplied_variables
+from aion.core.settings import ApiSettings, FileSettings, platform_supplied_variables
 from aion.db.settings import DatabaseSettings
 from aion.server.settings import AppSettings
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-MODELS = (AppSettings, ApiSettings, DatabaseSettings)
+MODELS = (AppSettings, ApiSettings, FileSettings, DatabaseSettings)
 
 
 def _model_variables() -> set[str]:

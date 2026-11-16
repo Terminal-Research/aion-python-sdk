@@ -28,7 +28,15 @@ from tests.scenarios.commands import (
     PartsResponse,
     artifacts_text,
 )
+from tests.scenarios.core.test_cards import (
+    CARD_FILENAME,
+    CARD_PAYLOAD_SCHEMA,
+    card_event,
+    card_part,
+    stored_card,
+)
 from tests.scenarios.harness import (
+    CARDS_EXTENSION_URI,
     DISTRIBUTION_EXTENSION_URI,
     Ev,
     FileAttachment,
@@ -241,6 +249,26 @@ async def test_an_outbound_file_leaves_as_a_url(storage_client: ScenarioClient) 
 
     assert artifacts_text() in reply_texts(events)
     assert final_task(events).state == "COMPLETED"
+
+
+@pytest.mark.variant("file-storage")
+@pytest.mark.command("card")
+async def test_a_card_leaves_as_a_link_to_its_document(storage_client: ScenarioClient) -> None:
+    """A card is a file like any other: the client fetches it, typed and tagged as a card."""
+    events = await storage_client.send(
+        "card",
+        metadata=distribution_metadata(),
+        extensions=[DISTRIBUTION_EXTENSION_URI],
+    )
+
+    part = card_part(card_event(events).raw.status.message.parts)
+    assert part.WhichOneof("content") == "url"
+    assert part.url.startswith(STUB_URL_PREFIX)
+    assert part.filename == CARD_FILENAME
+    assert dict(part.metadata)[CARDS_EXTENSION_URI] == {"schema": CARD_PAYLOAD_SCHEMA}
+
+    stored = stored_card(await storage_client.get_task(final_task(events).task_id))
+    assert stored.WhichOneof("content") == "url" and not stored.raw
 
 
 @pytest.mark.command("artifacts")

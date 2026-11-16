@@ -8,6 +8,11 @@ empty part with ``lastChunk`` - and its text is not sent again. The next
 model call opens a section of its own. The streamed text is the
 artifact, never a message. A thought goes to ``aion:thinking-delta`` and
 leaves the section open.
+
+The sub-agents of a ``ParallelAgent`` stream at once, each on a branch of its
+own, and their events arrive interleaved. The task has one streamed answer at
+a time, so the streams take turns: the one that started first goes out live,
+the other waits with all its events and follows as a section of its own.
 """
 
 from __future__ import annotations
@@ -202,7 +207,7 @@ async def test_finalize_stream_closes_an_open_section_with_the_end_mark() -> Non
     converter = _converter()
     await _convert(_text("It ", custom_metadata={"lane": "weather"}), _text("is sunny."), converter=converter)
 
-    events = converter.finalize_stream()
+    events = await converter.finalize_stream()
 
     assert _deltas(events) == [("", True, True)]
     assert _messages(events) == []
@@ -212,8 +217,8 @@ async def test_finalize_stream_without_an_open_section_produces_nothing() -> Non
     converter = _converter()
     await _convert(_text("It is sunny."), _text("It is sunny.", partial=False), converter=converter)
 
-    assert converter.finalize_stream() == []
-    assert _converter().finalize_stream() == []
+    assert await converter.finalize_stream() == []
+    assert await _converter().finalize_stream() == []
 
 
 async def test_the_executor_closes_the_section_before_the_terminal_status() -> None:
@@ -262,7 +267,7 @@ async def test_a_thread_streaming_an_iterator_ends_with_the_end_mark_and_no_mess
 
     assert _deltas(events) == [("It ", False, False), ("is sunny.", True, False), ("", True, True)]
     assert _messages(events) == []
-    assert converter.finalize_stream() == []
+    assert await converter.finalize_stream() == []
 
 
 async def test_a_partial_thought_streams_nothing() -> None:
@@ -301,4 +306,97 @@ async def test_a_partial_event_that_completes_the_turn_ends_the_section_itself()
     last = await converter.convert(chunk("b", last=True))
 
     assert [(e.append, e.last_chunk) for e in first + last] == [(False, False), (True, True)]
-    assert converter.finalize_stream() == []
+    assert await converter.finalize_stream() == []
+
+
+def _of(branch: str, text: str, *, partial: bool = True) -> Event:
+    """An event of one sub-agent of a ParallelAgent: its own author and branch."""
+    return Event(
+        author=branch,
+        branch=f"both.{branch}",
+        content=types.Content(role="model", parts=[types.Part(text=text)]),
+        partial=partial,
+    )
+
+
+async def test_two_agents_streaming_at_once_go_out_one_after_the_other() -> None:
+    """The first to start streams live; the other follows whole, and neither text is sent twice."""
+    events = await _convert(
+        _of("left", "left0 "),
+        _of("right", "right0 "),
+        _of("left", "left1"),
+        _of("right", "right1"),
+        _of("left", "left0 left1", partial=False),
+        _of("right", "right0 right1", partial=False),
+    )
+
+    assert _deltas(events) == [
+        ("left0 ", False, False),
+        ("left1", True, False),
+        ("", True, True),
+        ("right0 ", False, False),
+        ("right1", True, False),
+        ("", True, True),
+    ]
+    assert _messages(events) == []
+
+
+async def test_a_waiting_agent_still_streaming_becomes_the_live_one() -> None:
+    converter = _converter()
+
+    events = await _convert(
+        _of("left", "left"),
+        _of("right", "right0 "),
+        _of("left", "left", partial=False),
+        converter=converter,
+    )
+    assert _deltas(events) == [("left", False, False), ("", True, True), ("right0 ", False, False)]
+
+    events = await _convert(_of("right", "right1"), _of("right", "right0 right1", partial=False), converter=converter)
+    assert _deltas(events) == [("right1", True, False), ("", True, True)]
+
+
+async def test_the_agent_that_finishes_first_still_waits_its_turn() -> None:
+    """Order is by who started: the stream that began second goes out second, though it ended first."""
+    events = await _convert(
+        _of("left", "left0 "),
+        _of("right", "right"),
+        _of("right", "right", partial=False),
+        _of("left", "left1"),
+        _of("left", "left0 left1", partial=False),
+    )
+
+    assert [text for text, _, _ in _deltas(events) if text] == ["left0 ", "left1", "right"]
+    assert _messages(events) == []
+
+
+async def test_a_whole_answer_beside_a_running_stream_is_a_message_and_leaves_the_section_alone() -> None:
+    """An agent that does not stream answers next to one that does: its text is its own, not the section's."""
+    events = await _convert(
+        _of("left", "left0 "),
+        _of("right", "right whole", partial=False),
+        _of("left", "left1"),
+        _of("left", "left0 left1", partial=False),
+    )
+
+    assert _deltas(events) == [("left0 ", False, False), ("left1", True, False), ("", True, True)]
+    assert _messages(events) == ["right whole"]
+
+
+async def test_a_thought_of_a_waiting_agent_goes_out_at_once() -> None:
+    thought = _thought("Looking it up.")
+    thought.author, thought.branch = "right", "both.right"
+
+    events = await _convert(_of("left", "left0 "), _of("right", "right0 "), thought)
+
+    assert len(_thoughts(events)) == 1
+    assert _deltas(events) == [("left0 ", False, False)]
+
+
+async def test_an_agent_left_waiting_goes_out_when_the_run_ends() -> None:
+    converter = _converter()
+    await _convert(_of("left", "left"), _of("right", "right"), converter=converter)
+
+    events = await converter.finalize_stream()
+
+    assert _deltas(events) == [("", True, True), ("right", False, False), ("", True, True)]

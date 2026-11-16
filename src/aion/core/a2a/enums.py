@@ -65,6 +65,8 @@ class A2AMetadataKey(str, Enum):
     ROUTED_EXTENSION = "aion:routedExtension"
     SOURCE_MESSAGE_ID = "aion:sourceMessageId"
     """On ``aion:assistant-answer``: the id of the message the answer was copied from."""
+    FILE = "aion:file"
+    """On a file part the server stored: where the file is kept (``aion.core.a2a.files.StoredFile``)."""
 
 
 class TaskSettlementReason(str, Enum):

@@ -16,6 +16,7 @@ from collections.abc import Awaitable, Callable
 from typing import Optional
 
 from aion.server.auth import is_hosted
+from aion.server.files.links import StoredFileLinks
 from aion.server.settings import app_settings
 from .push_sender import AionPushNotificationSender
 
@@ -57,6 +58,7 @@ class PushNotificationFactory:
             db_manager: Optional[DbManagerProtocol] = None,
             owner_resolver: OwnerResolver = resolve_user_scope,
             push_url_validator: Optional[PushUrlValidator] = None,
+            file_links: Optional[StoredFileLinks] = None,
     ) -> tuple[PushNotificationConfigStore, PushNotificationSender]:
         """Build the config store and the sender that delivers from it.
 
@@ -69,6 +71,9 @@ class PushNotificationFactory:
             push_url_validator: The check every delivery's URL must pass
                 first; ``None`` delivers to any URL. See
                 ``push_url_validator()``.
+            file_links: Replaces the expired download links of stored files
+                in every event delivered; ``None`` delivers the links as
+                stored.
         """
         if db_manager and db_manager.is_initialized:
             config_store: PushNotificationConfigStore = cls._create_postgres_store(
@@ -81,6 +86,7 @@ class PushNotificationFactory:
             httpx_client=httpx.AsyncClient(timeout=cls._build_timeout()),
             config_store=config_store,
             push_url_validator=push_url_validator,
+            file_links=file_links,
         )
         return config_store, sender
 

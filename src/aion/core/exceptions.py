@@ -56,6 +56,9 @@ __all__ = [
     "InvalidPrincipalError",
     "AionDaemonIdentityRequired",
     "ExtensionRejection",
+    "ConversationUnavailableError",
+    "ConversationFileError",
+    "ConversationFileTooLargeError",
 ]
 
 
@@ -266,3 +269,49 @@ class AionModelPrincipalError(AionAuthenticationError):
     def public_reason(self) -> str:
         """That the model call has no principal, without the selector it resolved to."""
         return "The agent's model call has no principal the Aion model service will run work for."
+
+
+class ConversationUnavailableError(AionError):
+    """No turn is running here, so there is no conversation to read.
+
+    ``aion.core.agent.conversation`` reads the conversation the server
+    installs for the turn it runs; outside a turn - a unit test, a graph run
+    without ``aion serve`` - nothing is installed.
+    ``conversation.is_available()`` asks first, and
+    ``aion.core.agent.testing`` installs a conversation for a test.
+    """
+
+
+class ConversationFileError(AionError):
+    """A file of the conversation could not be read.
+
+    Raised by ``ConversationFile.read`` and ``ArtifactVersion.read``: the
+    address answered with an error (a stored file's address is a download
+    link that expires), the address is not one the SDK fetches, or the file
+    is larger than the caller allowed.
+
+    Args:
+        message: What could not be read and why.
+        status_code: The HTTP status the address answered with, when it
+            answered.
+    """
+
+    def __init__(self, message: str, *, status_code: Optional[int] = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+class ConversationFileTooLargeError(ConversationFileError):
+    """A file of the conversation is larger than the caller allowed.
+
+    Raised where :class:`ConversationFileError` is, when a read reaches its
+    ``max_bytes``: the file is not taken at all.
+
+    Args:
+        label: How the message names the file.
+        max_bytes: The limit the read had.
+    """
+
+    def __init__(self, label: str, max_bytes: int) -> None:
+        super().__init__(f"File {label!r} is larger than the {max_bytes} bytes this read allows.")
+        self.max_bytes = max_bytes

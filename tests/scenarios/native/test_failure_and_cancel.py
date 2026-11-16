@@ -10,6 +10,9 @@ it. What the client is owed there:
   on the wire and in ``tasks/get``, it keeps what was streamed as its
   ``aion:stream-delta`` artifact and not as a message, and nothing arrives
   afterwards;
+* a model response that ends with an error instead of raising (ADK's
+  ``error_code``): the task is FAILED with the error as its reason, and keeps
+  what was streamed the same way;
 * a cancel mid-stream or mid-tool: the work itself stops - watched through a
   file the model and the tool append to as they go - and the next turn in the
   context is answered.
@@ -23,7 +26,8 @@ from pathlib import Path
 import pytest
 from a2a.types import TaskState
 
-from tests.scenarios.agents.native_script import WEATHER_PREAMBLE
+from aion.adk.server.execution.stream_executor import ErrorResponse
+from tests.scenarios.agents.native_script import CUT_OFF, REFUSAL, WEATHER_PREAMBLE
 from tests.scenarios.harness import (
     ASSISTANT_ANSWER_ARTIFACT_ID,
     STREAM_DELTA_ARTIFACT_ID,
@@ -125,6 +129,42 @@ async def test_a_section_ended_before_the_failure_reached_the_client_whole(clien
     texts = stored_texts(stored)
     assert WEATHER_PREAMBLE not in texts
     assert not any(text.startswith("word") for text in texts)
+
+
+@pytest.mark.capability("error-response")
+async def test_a_model_answering_with_an_error_fails_the_task_with_the_reason(client: ScenarioClient) -> None:
+    """A response that is an error and nothing else: FAILED, saying which error, and no answer."""
+    events = await client.send("refuse")
+
+    closing = final_task(events)
+    assert closing.state == "FAILED"
+    assert closing.text == ErrorResponse(*REFUSAL).reason
+    assert section_texts(events) == []
+    assert reply_texts(events) == []
+
+    stored = await client.get_task(closing.task_id)
+    assert stored.status.state == TaskState.TASK_STATE_FAILED
+    assert stored_artifact(stored, ASSISTANT_ANSWER_ARTIFACT_ID) is None
+
+
+@pytest.mark.capability("error-response")
+async def test_a_response_cut_off_by_an_error_fails_the_task_and_keeps_what_was_streamed(
+    client: ScenarioClient,
+) -> None:
+    """The words streamed before the error arrived and stay in the task; they are not its answer."""
+    events = await client.send("cut-off 2")
+
+    assert "".join(event.text for event in events if is_chunk(event)) == "word0 word1"
+    closing = final_task(events)
+    assert closing.state == "FAILED"
+    assert closing.text == ErrorResponse(*CUT_OFF).reason
+    assert reply_texts(events) == []
+
+    stored = await client.get_task(closing.task_id)
+    assert stored.status.state == TaskState.TASK_STATE_FAILED
+    streamed = stored_artifact(stored, STREAM_DELTA_ARTIFACT_ID)
+    assert streamed is not None and text_of_parts(streamed.parts) == "word0 word1"
+    assert stored_artifact(stored, ASSISTANT_ANSWER_ARTIFACT_ID) is None
 
 
 async def _start(client: ScenarioClient, text: str):
