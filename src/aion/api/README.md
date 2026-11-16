@@ -98,8 +98,8 @@ for executable examples, media limits and response pricing.
 
 `AionFileClient` obtains a current bearer token and, inside an Aion runtime
 request, forwards its opaque usage-attribution carrier. The server verifies its
-executor and checks current authority. Explicit callback selector overrides are
-rejected rather than silently selecting a different identity.
+executor and checks current authority. Without a carrier, deployment credentials
+let the server resolve the deployment's current daemon and payer.
 
 ```python
 from aion.api import AionFileClient
@@ -139,12 +139,10 @@ from aion.api import (
     CapabilityReference,
     CapabilitySubject,
     CapabilitySubjectSource,
-    PrincipalSelector,
     RuntimeCapabilityReference,
 )
 
 subject = CapabilitySubject.environment("agent-environment-id")
-principal = PrincipalSelector.agent_environment("agent-environment-id")
 paths = AionControlPlanePaths()
 
 primary_mcp_url = paths.capability_url(CapabilityReference.primary_mcp(subject))
@@ -152,18 +150,14 @@ twitter_mcp_url = paths.capability_url(
     CapabilityReference.mcp(subject, key="mcp.twitter.distribution")
 )
 a2a_url = paths.capability_url(CapabilityReference.primary_a2a(subject))
-graphql_principal = principal.to_gql_value()
 
 runtime_mcp_reference = RuntimeCapabilityReference.primary_mcp(
     CapabilitySubjectSource.INCOMING_DISTRIBUTION
 )
 ```
 
-Principal selectors serialize as abstract Aion resource URIs, such as
-`aion://agent/environment/{id}`.
-
-The GraphQL client accepts these SDK model objects at its boundary and converts
-them to their canonical resource URI strings before sending requests.
+Capability subjects select the destination. Callback authority and usage
+attribution come from the request carrier or authenticated credentials.
 
 ## Development
 
@@ -181,14 +175,16 @@ poetry run ariadne-codegen client
 ```
 
 SDK callbacks keep the Version bearer and forward `Aion-Usage-Attribution`.
-Do not send `Aion-Principal-Selector` or exchange the bearer for a daemon token.
+Use deployment credentials for callbacks; the API resolves their authority.
 Capability subjects still address the destination; they do not select authority.
 
-For a direct accepted SDK request, the runtime instead reports its canonical
-caller through `Aion-Caller-Id`. Anonymous sessions retain their session ID;
-an unidentified accepted caller is `ExternalAnonymous`. This value is attribution
-only. Aion resolves the deployment's current daemon and payer on each callback;
-the SDK does not cache an assignment or use the caller's bearer for these calls.
+Malformed or conflicting usage carriers fail before the request is sent.
+
+When a request has no usage carrier, callbacks send no attribution header.
+This also applies to anonymous sessions and application-authenticated requests.
+Aion resolves the deployment's current daemon for all three usage roles and its
+organization as payer. The SDK does not infer billing attribution from the incoming
+bearer, cache an assignment, or use the caller's bearer for these calls.
 Without deployment credentials, a guest session cannot access metered APIs.
 
 `AionDaemonIdentityRequired` (also exported from `aion.core.exceptions`) carries

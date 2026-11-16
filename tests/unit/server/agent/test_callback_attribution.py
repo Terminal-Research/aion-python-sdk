@@ -16,7 +16,7 @@ from aion.core.exceptions import AionAuthenticationError
 from aion.core.principal import Principal
 from aion.core.runtime.context import (
     AionRuntimeContext, AionRuntimeContextRegistry, AionRuntimeExtensions,
-    DirectAttribution, ForwardedAttribution, get_aion_runtime_context,
+    ForwardedAttribution, get_aion_runtime_context,
 )
 from aion.server.agent.execution.context.attribution import callback_attribution
 from aion.server.agent.execution.context.providers import RequestScopeRuntimeContextProvider
@@ -58,8 +58,9 @@ def executor(stream):
 
 
 @pytest.mark.parametrize("resume", [False, True])
-async def test_concurrent_streams_keep_each_caller_and_restore_parent(resume):
-    parent = AionRuntimeContext(callback_attribution=DirectAttribution(Principal("AionUser", "parent")))
+@pytest.mark.parametrize("forwarded", [False, True])
+async def test_concurrent_streams_keep_authentication_and_restore_parent(resume, forwarded):
+    parent = AionRuntimeContext(callback_attribution=ForwardedAttribution("parent"))
     AionRuntimeContextRegistry.set_current_context(parent)
     entered = asyncio.Event()
     seen = []
@@ -67,7 +68,9 @@ async def test_concurrent_streams_keep_each_caller_and_restore_parent(resume):
     async def stream(context):
         current = get_aion_runtime_context()
         expected = context.call_context.state["auth"].caller.principal
-        assert current.get_callback_attribution() == DirectAttribution(expected)
+        assert current.get_callback_attribution() == (
+            ForwardedAttribution(f"carrier-{expected.id}") if forwarded else None
+        )
         seen.append(expected)
         if len(seen) == 2:
             entered.set()
@@ -79,7 +82,9 @@ async def test_concurrent_streams_keep_each_caller_and_restore_parent(resume):
 
     worker = executor(stream)
     await asyncio.wait_for(asyncio.gather(*[
-        worker.execute(request(number, resume=resume)[0], AsyncMock())
+        worker.execute(request(number, resume=resume, carrier=(
+            f"carrier-{request(number)[1].id}" if forwarded else None
+        ))[0], AsyncMock())
         for number in (1, 2)
     ]), timeout=2)
     assert len(set(seen)) == 2
@@ -89,7 +94,7 @@ async def test_concurrent_streams_keep_each_caller_and_restore_parent(resume):
 @pytest.mark.parametrize("error", [RuntimeError, asyncio.CancelledError])
 async def test_nested_execution_restores_context_even_on_failure(error):
     async def inner(context):
-        assert get_aion_runtime_context().get_callback_attribution() == DirectAttribution(request(2)[1])
+        assert get_aion_runtime_context().get_callback_attribution() is None
         raise error()
         yield
 
@@ -126,9 +131,9 @@ async def test_background_work_inherits_only_its_explicit_execution_scope():
 
 
 async def test_cancel_receives_current_request_attribution():
-    context, caller = request(resume=True)
+    context, _ = request(resume=True)
     async def cancel(config, within):
-        assert get_aion_runtime_context().get_callback_attribution() == DirectAttribution(caller)
+        assert get_aion_runtime_context().get_callback_attribution() is None
     worker = request_executor(FakeFrameworkExecutor(cancel=cancel))
     await worker.cancel(context, AsyncMock())
     assert get_aion_runtime_context() is None
@@ -156,23 +161,22 @@ async def test_missing_or_unactivated_carrier_cannot_fall_back(activated):
     assert get_aion_runtime_context() is None
 
 
-def test_absent_canonical_caller_is_external_anonymous_not_a_guessed_user():
+def test_application_authentication_does_not_supply_usage_attribution():
     context = SimpleNamespace(call_context=SimpleNamespace(
         state={}, user=SimpleNamespace(user_name="raw-provider-name", is_authenticated=True)))
-    assert callback_attribution(context.call_context, AionRuntimeContext()) == DirectAttribution(
-        Principal("ExternalAnonymous", "external-anonymous"))
+    assert callback_attribution(context.call_context, AionRuntimeContext()) is None
 
 
 def test_distribution_payload_does_not_override_verified_caller():
-    context, principal = request()
+    context, _ = request()
     runtime = AionRuntimeContext(distribution_extension_payload=SimpleNamespace(caller_id="spoofed"))
-    assert callback_attribution(context.call_context, runtime) == DirectAttribution(principal)
+    assert callback_attribution(context.call_context, runtime) is None
 
 
 def test_conflicting_runtime_inputs_are_rejected():
     context = AionRuntimeContext(
         extensions=AionRuntimeExtensions({USAGE_ATTRIBUTION_EXTENSION_URI_V1: "signed"}),
-        callback_attribution=DirectAttribution(request()[1]),
+        callback_attribution=ForwardedAttribution("different"),
     )
     with pytest.raises(AionAuthenticationError, match="Conflicting"):
         context.get_callback_attribution()

@@ -155,11 +155,11 @@ class TestExecuteRuntimeContext:
                         # Verify builder was called
                         MockBuilder.from_request_context.assert_called_once_with(ctx)
 
-                        # An empty inbox still gets explicit direct attribution,
+                        # An empty inbox carries no usage attribution,
                         # and never inherits the previous execution's caller.
                         assigned = MockRegistry.aset_current_context.await_args_list
                         assert len(assigned) == 2
-                        assert assigned[0].args[0].callback_attribution is not None
+                        assert assigned[0].args[0].callback_attribution is None
                         assert assigned[1].args == (None,)
 
 
@@ -402,7 +402,7 @@ class TestCancel:
 
         [runtime] = seen
         assert runtime.extensions.activated_uris == ()
-        assert runtime.callback_attribution is not None
+        assert runtime.callback_attribution is None
         [canceled] = [call.args[0] for call in event_queue.enqueue_event.await_args_list]
         assert canceled.status.state == TaskState.TASK_STATE_CANCELED
 

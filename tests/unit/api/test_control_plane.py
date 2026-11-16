@@ -42,10 +42,6 @@ class FakePrincipalIdentity:
 class FakeRuntimeContext:
     """Minimal runtime context used to exercise SDK helpers."""
 
-    def get_principal_selector(self) -> str:
-        """Return the fake environment selector."""
-        return "aion://agent/environment/env-123"
-
     def get_environment(self) -> FakeEnvironment:
         """Return the fake environment."""
         return FakeEnvironment()
@@ -57,14 +53,6 @@ class FakeRuntimeContext:
     def get_principal_identity(self) -> FakePrincipalIdentity:
         """Return the fake principal identity."""
         return FakePrincipalIdentity()
-
-
-class FakeDaemonRuntimeContext(FakeRuntimeContext):
-    """Runtime context with a daemon identity selector."""
-
-    def get_principal_selector(self) -> str:
-        """Return the fake daemon identity selector."""
-        return "aion://agent/identity/daemon-123"
 
 
 def test_principal_selector_builds_header_and_gql_value() -> None:
@@ -99,37 +87,6 @@ def test_principal_selector_rejects_non_principal_resource_uri() -> None:
     """Verify resource URIs must address supported principal resources."""
     with pytest.raises(ValueError, match="cannot select project resources"):
         PrincipalSelector.from_header_value("aion://project/project-1")
-
-
-class FakeMissingSelectorRuntimeContext(FakeRuntimeContext):
-    """Runtime context without principal selector metadata."""
-
-    def get_principal_selector(self) -> None:
-        """Return no principal selector."""
-        return None
-
-
-def test_principal_selector_from_runtime_context_prefers_daemon_identity() -> None:
-    """Verify runtime selectors can select daemon identity principals."""
-    selector = PrincipalSelector.from_runtime_context(FakeDaemonRuntimeContext())
-
-    assert selector == PrincipalSelector.agent_identity("daemon-123")
-
-
-def test_principal_selector_from_runtime_context_uses_runtime_selector() -> None:
-    """Verify runtime selector uses the context-provided selector directly."""
-    selector = PrincipalSelector.from_runtime_context(FakeRuntimeContext())
-
-    assert selector == PrincipalSelector.agent_environment("env-123")
-
-
-def test_principal_selector_from_runtime_context_returns_none() -> None:
-    """Verify missing runtime selector metadata remains absent."""
-    selector = PrincipalSelector.from_runtime_context(
-        FakeMissingSelectorRuntimeContext()
-    )
-
-    assert selector is None
 
 
 def test_capability_subject_builds_gql_input() -> None:

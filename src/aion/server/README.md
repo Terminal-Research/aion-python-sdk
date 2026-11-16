@@ -581,18 +581,17 @@ process: no versions, no journal, nothing shared, so one server only.
 
 The executor builds callback attribution from the current accepted request, not
 from saved task history. An activated usage-attribution carrier stays opaque and
-is forwarded unchanged. Otherwise the verified caller's canonical subject,
-including an anonymous session, becomes `DirectAttribution`. Application
-authentication can report a canonical user name; a raw name has no Aion namespace
-and is attributed as `ExternalAnonymous` without changing its task ownership.
-This reported value does not grant permissions or choose the payer.
+is forwarded unchanged. Without a carrier, callbacks send only their normal
+service credentials. Aion assigns the deployment's daemon to agent, originator,
+and executor, with the deployment organization as payer. Incoming authentication
+and task ownership remain independent of usage attribution.
 
 The ContextVar scope covers stream consumption, resume and cancellation, then
 restores its parent even on failure. Async work spawned inside it inherits that
 invocation's scope. Work transferred to another process must establish a fresh
 execution scope; never checkpoint a bearer or restore attribution from framework
 state. A supplied-but-unactivated or invalid usage carrier is an error, not a
-signal to fall back to direct mode.
+signal to fall back to deployment attribution.
 
 ## Response Extension Provenance
 

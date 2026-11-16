@@ -156,19 +156,18 @@ class TestArtifactStorage:
         assert backend.contexts[0].usage_attribution == "signed"
         assert backend.contexts[0].context_id == "ctx-1"
 
-    async def test_missing_attribution_stores_nothing(self, no_runtime_context):
-        """Missing invocation scope must not turn an upload into autonomous work."""
+    async def test_carrierless_artifact_uses_deployment_attribution(self, no_runtime_context):
+        """The API resolves the daemon instead of the SDK inventing attribution."""
         backend = RecordingBackend()
         event, service = bytes_artifact_event()
         (converted,) = await converter(service).convert(event)
 
         transform = await store(converted, backend)
 
-        assert transform.event is None
-        assert [f.error_code for f in transform.report.failures] == [
-            FileUploadErrorCode.NO_ATTRIBUTION
-        ]
-        assert backend.batches == []
+        assert transform.event is not None
+        assert not transform.report.failures
+        assert backend.contexts[0].usage_attribution is None
+        assert backend.contexts[0].organization_id is None
 
 
 class TestUndeliveredArtifact:

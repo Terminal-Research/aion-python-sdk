@@ -23,12 +23,15 @@ from a2a.types import Message, Part, Role, SendMessageRequest, Task, TaskState, 
 
 from aion.api import AionFileClient, CapabilitySubject
 from aion.api.gql.client import AionGqlClient
-from aion.api.gql.generated.graphql_client import A2AJsonRpcRequestGQLInput
+from aion.api.gql.generated.graphql_client import (
+    A2AJsonRpcRequestGQLInput, A2AServiceParameterGQLInput,
+    A2AServiceParametersGQLInput,
+)
 from aion.api.model_service_client import _aion_model_async_http_client
 from aion.core.constants import AION_USAGE_ATTRIBUTION_HEADER, USAGE_ATTRIBUTION_EXTENSION_URI_V1
 from aion.core.exceptions import AionDaemonIdentityRequired
 from aion.core.principal import Principal
-from aion.core.runtime.context import AionRuntimeContext, AionRuntimeContextRegistry, DirectAttribution
+from aion.core.runtime.context import AionRuntimeContext, AionRuntimeContextRegistry
 from aion.mcp import aion_mcp_endpoint
 from aion.server.agent.execution.context.providers import RequestScopeRuntimeContextProvider
 from aion.server.agent.execution.scope import init_execution_scope, clear_execution_scope
@@ -254,27 +257,25 @@ async def test_all_clients_keep_concurrent_execution_attribution(api, resume):
     finally:
         await gql.client.http_client.aclose()
     assert AionRuntimeContextRegistry.get_current_context() is None
-    guest = Principal("AnonymousSession", "00000000-0000-0000-0000-000000000002").subject
     assert len(api.requests) == 12
-    assert sum(headers.get("aion-caller-id") == guest for _, headers in api.requests) == 4
+    assert all("aion-caller-id" not in headers for _, headers in api.requests)
     for _, headers in api.requests:
         assert headers["authorization"] == "Bearer version-token"
         assert "aion-principal-selector" not in headers
         assert (headers.get("aion-caller-id"), headers.get("aion-usage-attribution")) in (
-            (guest, None), (None, "opaque-forwarded"), (None, None))
+            (None, "opaque-forwarded"), (None, None))
     assert sum("aion-caller-id" not in headers and "aion-usage-attribution" not in headers
-               for _, headers in api.requests) == 4
+               for _, headers in api.requests) == 8
     assert len(api.subscriptions) == 3
     assert sum(variables["serviceParameters"] is None
-               for _, variables in api.subscriptions) == 1
+               for _, variables in api.subscriptions) == 2
     for token, variables in api.subscriptions:
         assert token == "version-token"
         assert variables["principal"] is None
         if variables["serviceParameters"] is None:
             continue
         pairs = variables["serviceParameters"]["additional"]
-        assert pairs in ([{"key": "Aion-Caller-Id", "value": guest}],
-                        [{"key": "Aion-Usage-Attribution", "value": "opaque-forwarded"}])
+        assert pairs == [{"key": "Aion-Usage-Attribution", "value": "opaque-forwarded"}]
 
 
 @pytest.mark.parametrize("client_kind", ["model", "mcp", "file", "a2a"])
@@ -282,9 +283,7 @@ async def test_all_clients_keep_concurrent_execution_attribution(api, resume):
 async def test_missing_daemon_is_typed_without_retries(api, client_kind, self_initiated):
     api.failure = True
     AionRuntimeContextRegistry.set_current_context(None if self_initiated else AionRuntimeContext(
-        callback_attribution=DirectAttribution(
-            Principal("ExternalAnonymous", "external-anonymous")
-        )
+        callback_attribution=None
     ))
     with pytest.raises(AionDaemonIdentityRequired) as caught:
         if client_kind == "model":
@@ -323,8 +322,7 @@ async def test_model_adapters_preserve_http_200_stream_errors(api, monkeypatch, 
 
     api.stream_error = True
     AionRuntimeContextRegistry.set_current_context(AionRuntimeContext(
-        callback_attribution=DirectAttribution(
-            Principal("ExternalAnonymous", "external-anonymous"))))
+        callback_attribution=None))
     config = AionModelClientConfig(base_url=api.url + "/v1", api_key="version-token")
     with pytest.raises(AionDaemonIdentityRequired) as caught:
         if adapter == "adk":
@@ -358,4 +356,41 @@ async def test_model_adapters_preserve_http_200_stream_errors(api, monkeypatch, 
     assert len(api.requests) == 1
     _, headers = api.requests[0]
     assert headers["authorization"] == "Bearer version-token"
-    assert headers["aion-caller-id"] == Principal("ExternalAnonymous", "external-anonymous").subject
+    assert "aion-caller-id" not in headers
+
+
+@pytest.mark.parametrize("carrier", [None, "opaque-forwarded"])
+async def test_model_transport_strips_retired_caller_before_sending(api, carrier):
+    headers = [("Aion-Caller-Id", "untrusted"), ("aion-caller-id", "")]
+    if carrier:
+        headers.append((AION_USAGE_ATTRIBUTION_HEADER, carrier))
+    async with _aion_model_async_http_client(lambda: "version-token") as model:
+        response = await model.post(api.url + "/v1/chat/completions",
+                                    json={}, headers=headers)
+    assert response.status_code == 200
+    sent = api.requests[-1][1]
+    assert "aion-caller-id" not in sent
+    assert sent.get("aion-usage-attribution") == carrier
+    assert sent["authorization"] == "Bearer version-token"
+
+
+@pytest.mark.parametrize("carrier", [None, "opaque-forwarded"])
+async def test_graphql_transport_strips_retired_caller_parameters(api, carrier):
+    pairs = [("Aion-Caller-Id", ""), ("AION-CALLER-ID", "untrusted")]
+    if carrier:
+        pairs.append((AION_USAGE_ATTRIBUTION_HEADER, carrier))
+    client = await gql_client(api)
+    try:
+        responses = [chunk async for chunk in client.a2a_stream(
+            A2AJsonRpcRequestGQLInput(jsonrpc="2.0", method="message/send"),
+            target=CapabilitySubject.environment("env-1"),
+            service_parameters=A2AServiceParametersGQLInput(additional=[
+                A2AServiceParameterGQLInput(key=key, value=value)
+                for key, value in pairs
+            ]))]
+        assert len(responses) == 1
+    finally:
+        await client.client.http_client.aclose()
+    parameters = api.subscriptions[-1][1]["serviceParameters"]
+    sent = {item["key"]: item["value"] for item in parameters["additional"]}
+    assert sent == ({AION_USAGE_ATTRIBUTION_HEADER: carrier} if carrier else {})

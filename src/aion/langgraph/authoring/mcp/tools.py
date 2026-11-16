@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from aion.api.control_plane import (
     CapabilityReference,
-    PrincipalSelector,
     RuntimeCapabilityReference,
 )
 from aion.api.callback_errors import reraise_callback_error
@@ -41,8 +40,6 @@ class AionLangGraphMcpResolver:
         default_factory=tuple
     )
     """MCP reference templates resolved after runtime context is available."""
-    principal_selector: PrincipalSelector | None = None
-    """Retired override; an explicit value is rejected when resolving endpoints."""
     base_url: str | None = None
     """Optional Aion API base URL. Defaults to ``AION_API_HOST``."""
     jwt_manager: Any | None = None
@@ -67,7 +64,6 @@ class AionLangGraphMcpResolver:
             context,
             capability_references=self.capability_references,
             runtime_capability_references=self.runtime_capability_references,
-            principal_selector=self.principal_selector,
             jwt_manager=self.jwt_manager,
             base_url=self.base_url,
         )
@@ -89,7 +85,6 @@ class AionLangGraphMcpResolver:
             context,
             capability_references=self.capability_references,
             runtime_capability_references=self.runtime_capability_references,
-            principal_selector=self.principal_selector,
             jwt_manager=self.sync_jwt_manager,
             base_url=self.base_url,
         )
@@ -115,7 +110,6 @@ class AionLangGraphMcpResolver:
             context,
             capability_references=self.capability_references,
             runtime_capability_references=self.runtime_capability_references,
-            principal_selector=self.principal_selector,
             jwt_manager=self.jwt_manager,
             base_url=self.base_url,
             client_factory=client_factory,
@@ -142,7 +136,6 @@ class AionLangGraphMcpResolver:
             context,
             capability_references=self.capability_references,
             runtime_capability_references=self.runtime_capability_references,
-            principal_selector=self.principal_selector,
             jwt_manager=self.sync_jwt_manager,
             base_url=self.base_url,
             client_factory=client_factory,
@@ -154,7 +147,6 @@ async def aion_langgraph_mcp_server_config(
     *,
     capability_references: Iterable[CapabilityReference] = (),
     runtime_capability_references: Iterable[RuntimeCapabilityReference] = (),
-    principal_selector: PrincipalSelector | None = None,
     jwt_manager: Any | None = None,
     base_url: str | None = None,
 ) -> dict[str, dict[str, Any]]:
@@ -170,7 +162,6 @@ async def aion_langgraph_mcp_server_config(
             server should be connected.
         runtime_capability_references: MCP reference templates resolved from
             ``context`` after the runtime subject is known.
-        principal_selector: Retired override; any explicit value is rejected.
         jwt_manager: Optional async JWT manager.
         base_url: Optional Aion API base URL.
 
@@ -181,7 +172,6 @@ async def aion_langgraph_mcp_server_config(
         context,
         capability_references=capability_references,
         runtime_capability_references=runtime_capability_references,
-        principal_selector=principal_selector,
         jwt_manager=jwt_manager,
         base_url=base_url,
     )
@@ -193,7 +183,6 @@ def aion_langgraph_mcp_server_config_sync(
     *,
     capability_references: Iterable[CapabilityReference] = (),
     runtime_capability_references: Iterable[RuntimeCapabilityReference] = (),
-    principal_selector: PrincipalSelector | None = None,
     jwt_manager: Any | None = None,
     base_url: str | None = None,
 ) -> dict[str, dict[str, Any]]:
@@ -209,7 +198,6 @@ def aion_langgraph_mcp_server_config_sync(
             server should be connected.
         runtime_capability_references: MCP reference templates resolved from
             ``context`` after the runtime subject is known.
-        principal_selector: Retired override; any explicit value is rejected.
         jwt_manager: Optional synchronous JWT manager.
         base_url: Optional Aion API base URL.
 
@@ -220,7 +208,6 @@ def aion_langgraph_mcp_server_config_sync(
         context,
         capability_references=capability_references,
         runtime_capability_references=runtime_capability_references,
-        principal_selector=principal_selector,
         jwt_manager=jwt_manager,
         base_url=base_url,
     )
@@ -232,7 +219,6 @@ def aion_langgraph_mcp_client(
     *,
     capability_references: Iterable[CapabilityReference] = (),
     runtime_capability_references: Iterable[RuntimeCapabilityReference] = (),
-    principal_selector: PrincipalSelector | None = None,
     jwt_manager: Any | None = None,
     base_url: str | None = None,
     client_factory: ClientFactory | None = None,
@@ -249,7 +235,6 @@ def aion_langgraph_mcp_client(
             server should be connected.
         runtime_capability_references: MCP reference templates resolved from
             ``context`` after the runtime subject is known.
-        principal_selector: Retired override; any explicit value is rejected.
         jwt_manager: Optional synchronous JWT manager.
         base_url: Optional Aion API base URL.
         client_factory: Optional test or customization hook for creating the
@@ -262,7 +247,6 @@ def aion_langgraph_mcp_client(
         context,
         capability_references=capability_references,
         runtime_capability_references=runtime_capability_references,
-        principal_selector=principal_selector,
         jwt_manager=jwt_manager,
         base_url=base_url,
     )
@@ -275,7 +259,6 @@ async def load_aion_mcp_tools(
     *,
     capability_references: Iterable[CapabilityReference] = (),
     runtime_capability_references: Iterable[RuntimeCapabilityReference] = (),
-    principal_selector: PrincipalSelector | None = None,
     jwt_manager: Any | None = None,
     base_url: str | None = None,
     client_factory: ClientFactory | None = None,
@@ -292,7 +275,6 @@ async def load_aion_mcp_tools(
             server should be connected.
         runtime_capability_references: MCP reference templates resolved from
             ``context`` after the runtime subject is known.
-        principal_selector: Retired override; any explicit value is rejected.
         jwt_manager: Optional async JWT manager.
         base_url: Optional Aion API base URL.
         client_factory: Optional test or customization hook for creating the
@@ -305,7 +287,6 @@ async def load_aion_mcp_tools(
         context,
         capability_references=capability_references,
         runtime_capability_references=runtime_capability_references,
-        principal_selector=principal_selector,
         jwt_manager=jwt_manager,
         base_url=base_url,
     )
@@ -323,7 +304,6 @@ async def _endpoints(
     *,
     capability_references: Iterable[CapabilityReference],
     runtime_capability_references: Iterable[RuntimeCapabilityReference],
-    principal_selector: PrincipalSelector | None,
     jwt_manager: Any | None,
     base_url: str | None,
 ) -> list[AionMcpEndpoint]:
@@ -334,7 +314,6 @@ async def _endpoints(
             context,
             capability_references=references,
             runtime_capability_references=runtime_references,
-            principal_selector=principal_selector,
             jwt_manager=jwt_manager,
             base_url=base_url,
         )
@@ -344,7 +323,6 @@ async def _endpoints(
         await aion_mcp_endpoint(
             reference,
             jwt_manager=jwt_manager,
-            principal_selector=principal_selector,
             base_url=base_url,
         )
         for reference in references
@@ -357,7 +335,6 @@ def _endpoints_sync(
     *,
     capability_references: Iterable[CapabilityReference],
     runtime_capability_references: Iterable[RuntimeCapabilityReference],
-    principal_selector: PrincipalSelector | None,
     jwt_manager: Any | None,
     base_url: str | None,
 ) -> list[AionMcpEndpoint]:
@@ -368,7 +345,6 @@ def _endpoints_sync(
             context,
             capability_references=references,
             runtime_capability_references=runtime_references,
-            principal_selector=principal_selector,
             jwt_manager=jwt_manager,
             base_url=base_url,
         )
@@ -378,7 +354,6 @@ def _endpoints_sync(
         aion_mcp_endpoint_sync(
             reference,
             jwt_manager=jwt_manager,
-            principal_selector=principal_selector,
             base_url=base_url,
         )
         for reference in references

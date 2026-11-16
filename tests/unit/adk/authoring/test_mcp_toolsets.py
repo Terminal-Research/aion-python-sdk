@@ -52,10 +52,6 @@ class FakeRuntimeContext:
         """Return a fake incoming distribution."""
         return SimpleNamespace(id="distribution-id")
 
-    def get_principal_selector(self) -> str:
-        """Return the derived principal selector."""
-        return "aion://agent/environment/env-id"
-
     def get_usage_attribution(self) -> None:
         """Return no request-scoped attribution for this generic fixture."""
         return None

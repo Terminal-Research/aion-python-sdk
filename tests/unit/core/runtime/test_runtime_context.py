@@ -282,29 +282,6 @@ class TestAionRuntimeContextDistributionPayload:
         assert ctx.get_environment().name == "staging"
         assert ctx.get_environment().configuration_variables["DB_URL"] == "postgres://..."
 
-    def test_principal_selector_prefers_daemon_identity(self):
-        """Verify that principal selector prefers environment daemon identity."""
-        dist = _make_distribution_ext(
-            env_id="env-99",
-            daemon_agent_identity_id="daemon-1",
-        )
-        ctx = AionRuntimeContext(distribution_extension_payload=dist)
-
-        assert ctx.get_principal_selector() == "aion://agent/identity/daemon-1"
-
-    def test_principal_selector_uses_environment_without_daemon(self):
-        """Verify principal selector falls back to environment id."""
-        dist = _make_distribution_ext(env_id="env-99")
-        ctx = AionRuntimeContext(distribution_extension_payload=dist)
-
-        assert ctx.get_principal_selector() == "aion://agent/environment/env-99"
-
-    def test_principal_selector_missing_without_environment(self):
-        """Verify that principal selector is absent without distribution payload."""
-        ctx = AionRuntimeContext()
-
-        assert ctx.get_principal_selector() is None
-
     def test_no_principal_returns_none_without_losing_payload_records(self):
         """Verify that missing principal identity does not discard payload context."""
         dist = _make_distribution_ext(include_principal=False, include_service=True)

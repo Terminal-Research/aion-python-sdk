@@ -9,10 +9,8 @@ from aion.core.runtime.context import AionRuntimeContext, ForwardedAttribution
 
 @pytest.mark.parametrize("pairs", [
     [("Aion-Usage-Attribution", "one"), ("aion-usage-attribution", "one")],
-    [("Aion-Usage-Attribution", "one"), ("Aion-Caller-Id", "caller")],
     [("Aion-Usage-Attribution", "")],
     [("Aion-Principal-Selector", "")],
-    [("Aion-Caller-Id", "invented")],
 ])
 def test_ambiguous_or_obsolete_inputs_never_downgrade(pairs):
     with pytest.raises(AionAuthenticationError):
@@ -39,7 +37,7 @@ def test_self_initiated_work_preserves_bearer_without_inventing_a_caller(monkeyp
 
 
 @pytest.mark.parametrize("builder", ["mcp", "file", "model", "a2a"])
-def test_active_request_cannot_silently_become_self_initiated(monkeypatch, builder):
+def test_active_carrierless_request_uses_deployment_attribution(monkeypatch, builder):
     from aion.api.file_service_client import aion_file_authorization_headers
     from aion.api.gql.client import _with_callback_attribution
     from aion.api.model_service_client import aion_model_request_headers
@@ -53,19 +51,33 @@ def test_active_request_cannot_silently_become_self_initiated(monkeypatch, build
         "model": aion_model_request_headers,
         "a2a": lambda: _with_callback_attribution(None),
     }
-    with pytest.raises(AionAuthenticationError, match="request-local attribution"):
-        calls[builder]()
+    result = calls[builder]()
+    if builder == "a2a":
+        assert result is None
+    else:
+        assert "Aion-Usage-Attribution" not in result
+        assert "Aion-Caller-Id" not in result
 
 
-@pytest.mark.parametrize("builder", ["mcp", "file", "model"])
-def test_each_callback_rejects_stale_explicit_selector(builder):
-    from aion.api.file_service_client import aion_file_authorization_headers
-    from aion.api.model_service_client import aion_model_request_headers
-    from aion.mcp import aion_mcp_authorization_headers
-    calls = {
-        "mcp": lambda: aion_mcp_authorization_headers("version", principal_selector="old"),
-        "file": lambda: aion_file_authorization_headers("version", principal_selector="old"),
-        "model": lambda: aion_model_request_headers(principal_selector_provider=lambda: "old"),
-    }
-    with pytest.raises(AionAuthenticationError, match="no longer supported"):
-        calls[builder]()
+@pytest.mark.parametrize("carrier", [None, "opaque"])
+@pytest.mark.parametrize("value", ["", "invented", "aion://user/untrusted"])
+def test_legacy_callers_are_discarded_without_changing_attribution(carrier, value):
+    context = AionRuntimeContext(
+        callback_attribution=ForwardedAttribution(carrier) if carrier else None)
+    headers = callback_headers([
+        ("Aion-Caller-Id", value), (" aion-caller-id ", value),
+        ("Authorization", "Bearer version"),
+    ], context=context)
+    expected = {"Authorization": "Bearer version"}
+    if carrier:
+        expected["Aion-Usage-Attribution"] = carrier
+    assert headers == expected
+
+
+@pytest.mark.parametrize("carriers", [
+    [("Aion-Usage-Attribution", "")],
+    [("Aion-Usage-Attribution", "one"), ("aion-usage-attribution", "two")],
+])
+def test_ignored_caller_cannot_hide_invalid_carriers(carriers):
+    with pytest.raises(AionAuthenticationError):
+        callback_headers([("Aion-Caller-Id", "ignored"), *carriers])

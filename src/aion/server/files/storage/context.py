@@ -1,8 +1,8 @@
 """Capture callback evidence without choosing a payer or owner.
 
 Aion resolves those from verified usage or the current deployment binding.
-Distribution recipients and reported callers cannot select either. Preprocessing
-captures the same accepted caller as execution, before runtime installation.
+Distribution recipients cannot select either. Preprocessing captures the same
+usage carrier as execution, before runtime installation.
 """
 
 from __future__ import annotations
@@ -49,8 +49,8 @@ def resolve_upload_context(
 
     Args:
         source: Verified extensions (request preprocessing) or an established
-            runtime context (agent execution). Missing attribution never
-            silently selects self-initiated work.
+            runtime context (agent execution). Without a carrier, Aion resolves
+            the deployment daemon from the service credentials.
         context_id: Conversation identifier to carry with the upload.
         task_id: Task identifier to carry with the upload.
 
@@ -65,9 +65,7 @@ def resolve_upload_context(
         attribution = runtime.get_callback_attribution() if runtime else None
     except AionAuthenticationError as error:
         return UploadFailure(FileUploadErrorCode.STORAGE_UNAUTHORIZED, cause=error)
-    if attribution is None:
-        return UploadFailure(FileUploadErrorCode.NO_ATTRIBUTION)
-    payload = runtime.distribution_extension_payload
+    payload = runtime.distribution_extension_payload if runtime else None
     return UploadContext(
         usage_attribution=(
             attribution.carrier if isinstance(attribution, ForwardedAttribution) else None
