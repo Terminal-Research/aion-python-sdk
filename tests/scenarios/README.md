@@ -149,6 +149,17 @@ make dist-build && make tests-scenarios-dist
 This is the last step of `make release-check`, and the last gate before the
 upload in `publish-python.yml`.
 
+`make tests-floors-scenarios` runs them in `.venv-floors`, the environment
+`make tests-floors` builds at the oldest release of every declared range.
+Pytest itself runs there, so every server is that environment's `aion`. A
+feature a framework gained inside its range is listed in
+`frameworks.NATIVE_SINCE`, and a scenario driving it skips there, naming the
+release it needs:
+
+```bash
+make tests-floors && make tests-floors-scenarios
+```
+
 ## The stream contract
 
 Every scenario builds on the shape of a turn, which is what

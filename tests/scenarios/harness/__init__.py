@@ -49,7 +49,7 @@ from .recorder import (
     texts_of_parts,
     thought_texts,
 )
-from .serve import ServeProcess, ServeVariant, run_aion
+from .serve import ServeProcess, ServeVariant, installed_version, run_aion
 from .shape import (
     ANY,
     SKIP,
@@ -98,6 +98,7 @@ __all__ = [
     "ServeProcess",
     "ServeVariant",
     "THINKING_DELTA_ARTIFACT_ID",
+    "installed_version",
     "run_aion",
     "answer",
     "artifact",

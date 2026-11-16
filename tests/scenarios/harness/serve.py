@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 import os
 import random
 import shutil
@@ -29,6 +30,7 @@ __all__ = [
     "ServeProcess",
     "ServeVariant",
     "configs_root",
+    "installed_version",
     "proxy_port",
     "render_config",
 ]
@@ -287,6 +289,42 @@ def _aion_executable() -> Path:
             "scenarios inside its environment."
         )
     return executable
+
+
+_VERSION_OF = """
+import importlib.metadata
+import sys
+
+try:
+    print(importlib.metadata.version(sys.argv[1]))
+except importlib.metadata.PackageNotFoundError:
+    pass
+"""
+
+
+@functools.cache
+def installed_version(distribution: str) -> Optional[str]:
+    """The release of a distribution in the installation the scenarios start `aion` from.
+
+    That installation need not be the one running the tests:
+    ``SCENARIOS_AION_BIN`` can point at another, with other releases of the
+    frameworks - the oldest ones allowed, say. Its interpreter is the
+    ``python`` beside its ``aion``, as in every virtual environment.
+
+    Returns:
+        The version, or None when the distribution is not installed there.
+    """
+    executable = _aion_executable()
+    interpreter = executable.parent / "python"
+    if not interpreter.exists():
+        raise RuntimeError(f"there is no `python` beside {executable} to ask which {distribution} it runs")
+    result = subprocess.run(
+        [str(interpreter), "-I", "-c", _VERSION_OF, distribution],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.strip() or None
 
 
 def run_aion(*args: str, env: Mapping[str, str]) -> subprocess.CompletedProcess[str]:

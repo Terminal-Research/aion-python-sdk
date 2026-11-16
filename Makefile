@@ -26,7 +26,7 @@ POSTGRES_TEST_URL_IS_EXTERNAL := $(filter environment command line,$(origin POST
 
 .PHONY: help tests tests-unit tests-integration tests-full tests-scenarios tests-scenarios-persistence \
 	tests-scenarios-pg tests-scenarios-distributed \
-	tests-scenarios-dist tests-floors tests-unit-python tests-unit-versions scenarios-matrix lint-imports release-check release check-env chat-bundle-check \
+	tests-scenarios-dist tests-floors tests-floors-scenarios tests-unit-python tests-unit-versions scenarios-matrix lint-imports release-check release check-env chat-bundle-check \
 	dist-build dist-check dist-smoke pg-test-up pg-test-down
 
 # `make help` lists targets in file order, under the `##@` heading above them.
@@ -361,6 +361,18 @@ tests-floors: ## Install the oldest allowed dependencies in .venv-floors and run
 	$(FLOORS_PY) ./scripts/packaging/envcheck.py
 	$(FLOORS_PY) ./scripts/packaging/floors.py --check
 	$(FLOORS_PY) -m pytest -n $(UNIT_WORKERS) tests/unit $(ARGS)
+
+# The scenarios, in the environment `make tests-floors` built: pytest runs
+# there, so every server the harness starts is the `aion` beside that
+# interpreter, at the oldest releases. A feature a framework gained inside its
+# range skips there, naming the release it needs (`frameworks.NATIVE_SINCE` in
+# tests/scenarios). The groups that need a database keep their own targets.
+tests-floors-scenarios: ## Run the scenarios in the .venv-floors tests-floors built (TAGS=, FRAMEWORK=, SCENARIO_WORKERS=)
+	@test -x $(FLOORS_PY) || { \
+		echo "tests-floors-scenarios runs in $(FLOORS_VENV): run 'make tests-floors' first" >&2; \
+		exit 2; \
+	}
+	$(FLOORS_PY) -m pytest tests/scenarios -m "$(SCENARIO_EXPR)" $(SCENARIO_XDIST) $(FRAMEWORK_FILTER) $(ARGS)
 
 ##@ Distribution
 

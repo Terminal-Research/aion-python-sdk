@@ -7,8 +7,8 @@ limited lifetime, and a model provider cannot be relied on to fetch it.
 ``inline_data`` carrying the file's content. The session keeps the address:
 the content is put into the request only.
 
-A tool's media - an image or a document ADK puts into the tool's function
-response (``FunctionResponse.parts``) - is kept by its address too, as
+A tool's media - an image or a document ADK, from 2.7 on, puts into the
+tool's function response (``FunctionResponse.parts``) - is kept by its address too, as
 ``file_data`` of the function response, and ``inline_files`` gives it back its
 content as ``inline_data``: that is the one form in which ADK's ``LiteLlm``
 sends a tool's media to a model.

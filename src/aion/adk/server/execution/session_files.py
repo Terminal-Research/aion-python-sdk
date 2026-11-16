@@ -2,8 +2,8 @@
 
 An event can carry a file inline: ``inline_data`` in its content, written by
 the agent, a callback, a model or ``thread.post``; a tool's media in its
-function response (``FunctionResponse.parts``), where ADK puts an image or a
-document a tool returns; and an outbox in its state delta carries the files
+function response (``FunctionResponse.parts``), where ADK, from 2.7 on, puts
+an image or a document a tool returns; and an outbox in its state delta carries the files
 of the task or message it answers with. The session service writes every
 event whole, so such a file would stay in the database for as long as the
 session does.

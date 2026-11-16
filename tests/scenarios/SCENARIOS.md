@@ -8,7 +8,7 @@
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
-A status cell reads `✓` when it runs, `skip` when `frameworks.UNSUPPORTED`, `frameworks.NATIVE_UNSUPPORTED` or `frameworks.NO_EVENT_ROUTER` names the pair (the reason is under [Frameworks](#frameworks)), `gap` when the agent has no behaviour for the command yet, `xfail: <reason>` for a knowingly deferred defect, `any` when the scenario does not depend on a framework, and `n/a` when it does not run on that one.
+A status cell reads `✓` when it runs, `skip` when `frameworks.UNSUPPORTED`, `frameworks.NATIVE_UNSUPPORTED` or `frameworks.NO_EVENT_ROUTER` names the pair, or the server runs a release older than the one `frameworks.NATIVE_SINCE` names (the reason is under [Frameworks](#frameworks)), `gap` when the agent has no behaviour for the command yet, `xfail: <reason>` for a knowingly deferred defect, `any` when the scenario does not depend on a framework, and `n/a` when it does not run on that one.
 
 ## Coverage at a glance
 
@@ -45,6 +45,12 @@ Features a framework's native agent does not have; a native scenario driving one
 | langgraph | `agent-transfer` | LangGraph has no transfer between agents of its own; a graph routes with its edges and keeps who is active in its state |
 | langgraph | `error-response` | a LangChain chat model has no error response; it reports a failed call by raising, which `fail-after` drives |
 | langgraph | `session-state` | LangGraph has no output_key or tool-written session state; its state is the graph's own channels |
+
+Features a framework gained inside the range the SDK allows; a native scenario driving one runs where the server has that release or a newer one and `skip`s on an older one, such as the oldest releases `make tests-floors` installs:
+
+| Framework | Capability | From | Reason before it |
+|---|---|---|---|
+| adk | `tool-media` | google-adk 2.7.0 | ADK before 2.7 has no function response media: a Part a tool returns is a value of its function response |
 
 An authoring surface only some adapters have; a scenario about it `skip`s on the rest:
 
@@ -613,10 +619,10 @@ A stored file reaches the model by its content, and the framework's state by its
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [An image and a document, each with every byte and no address left in the request.](native/test_stored_files.py#L75 "test_the_model_receives_the_bytes_of_a_file_the_server_stored") | `native`, `files` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [Content goes into the model request only: what is stored is the address.](native/test_stored_files.py#L86 "test_the_task_still_holds_the_address_and_no_bytes") | `native`, `files` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [One upload: the state holds the address the task holds, and no bytes.](native/test_stored_files.py#L99 "test_a_file_the_model_answers_with_is_kept_in_the_state_as_the_address_the_client_got") | `native`, `files` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [A tools image is kept as a link and reaches the model as its content](native/test_stored_files.py#L124 "test_a_tools_image_is_kept_as_a_link_and_reaches_the_model_as_its_content") | `native`, `files` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+| [An image and a document, each with every byte and no address left in the request.](native/test_stored_files.py#L76 "test_the_model_receives_the_bytes_of_a_file_the_server_stored") | `native`, `files` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [Content goes into the model request only: what is stored is the address.](native/test_stored_files.py#L87 "test_the_task_still_holds_the_address_and_no_bytes") | `native`, `files` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [One upload: the state holds the address the task holds, and no bytes.](native/test_stored_files.py#L100 "test_a_file_the_model_answers_with_is_kept_in_the_state_as_the_address_the_client_got") | `native`, `files` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [A tools image is kept as a link and reaches the model as its content](native/test_stored_files.py#L125 "test_a_tools_image_is_kept_as_a_link_and_reaches_the_model_as_its_content") | `native`, `files` | — | `default` | [skip](#frameworks) | ✓ `adk_native`, [skip](#frameworks) before google-adk 2.7.0 |
 
 ### `tests/scenarios/native/test_subgraph.py`
 

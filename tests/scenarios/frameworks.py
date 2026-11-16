@@ -28,6 +28,9 @@ __all__ = [
     "TRANSFER_AGENTS",
     "NATIVE_UNSUPPORTED",
     "native_unsupported_reason",
+    "Since",
+    "NATIVE_SINCE",
+    "native_since",
     "UNSUPPORTED",
     "unsupported_reason",
     "DIVERGENCES",
@@ -288,6 +291,45 @@ NATIVE_UNSUPPORTED: dict[tuple[str, str], str] = {
 def native_unsupported_reason(framework: str, capability: str) -> str | None:
     """Why this framework's native agent cannot do that, or None."""
     return NATIVE_UNSUPPORTED.get((framework, capability))
+
+
+@dataclass(frozen=True)
+class Since:
+    """The release a framework gained a feature in.
+
+    Attributes:
+        distribution: The framework's distribution, as installed.
+        version: The first release that has the feature.
+        reason: What a release before it does instead.
+    """
+
+    distribution: str
+    version: str
+    reason: str
+
+
+NATIVE_SINCE: dict[tuple[str, str], Since] = {
+    # (framework name, capability) -> the release the feature arrived in.
+    #
+    # The SDK supports every release in its range, so a feature a framework
+    # gained inside the range is missing from the older releases. A native
+    # scenario driving one runs where the server's installation has that
+    # release or a newer one, and skips below it: on the oldest releases
+    # allowed, for one, which the scenarios run against in the floors CI job.
+    ("adk", "tool-media"): Since(
+        distribution="google-adk",
+        version="2.7.0",
+        reason=(
+            "ADK before 2.7 has no function response media: a Part a tool returns is a "
+            "value of its function response"
+        ),
+    ),
+}
+
+
+def native_since(framework: str, capability: str) -> Since | None:
+    """The release this framework gained that feature in, or None when every allowed one has it."""
+    return NATIVE_SINCE.get((framework, capability))
 
 
 UNSUPPORTED: dict[tuple[str, str], str] = {
