@@ -246,6 +246,7 @@ tests-full: ## Run every test and check of CI and the release workflow
 	poetry run ./scripts/scenarios_matrix.py --check
 	$(MAKE) tests-unit-versions TEST_PATHS= ARGS=
 	$(MAKE) tests-floors ARGS=
+	$(MAKE) tests-floors-scenarios TAGS= FRAMEWORK= ARGS=
 	$(MAKE) tests-integration TEST_PATHS= ARGS=
 	$(MAKE) tests-scenarios TAGS= FRAMEWORK= ARGS=
 	$(MAKE) tests-scenarios-persistence FRAMEWORK= ARGS=
