@@ -4,7 +4,7 @@ import logging
 import copy
 from a2a.server.events import Event, EventQueue
 from a2a.server.tasks import TaskUpdater
-from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
+from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskState, TaskStatus, TaskStatusUpdateEvent
 
 from aion.core.a2a.enums import ArtifactId
 from aion.core.exceptions import AionError
@@ -100,7 +100,10 @@ class AionEventPipeline:
     Task the agent handed over through its outbox. Whatever the turn yields
     after that is dropped - the executor's own end of a turn whose outbox
     already decided it among them - so the task is not reopened, completed
-    over a failure, or answered after the fact.
+    over a failure, or answered after the fact. A Task that ends the task is
+    stored here, past the event consumer, and a status update in its state
+    follows it through the queue: the consumer ends the execution and pushes
+    the outcome on that, as on any terminal status.
 
     Two things of the SDK's own artifacts happen here, the same for every
     executor:
@@ -230,6 +233,8 @@ class AionEventPipeline:
             if isinstance(event, Task):
                 await self._flush_pending_status_message(event)
             await self._save_silently(event)
+            if isinstance(event, Task) and event.status.state in TERMINAL_TASK_STATES:
+                await self._announce_terminal_state(event.status.state)
         else:
             # All other events are streamed to client
             await self._emit_to_client(event)
@@ -329,6 +334,23 @@ class AionEventPipeline:
             await task_manager.process(event)
         else:
             logger.warning("Cannot process event silently: task_manager is not initialized.")
+
+    async def _announce_terminal_state(self, state: int) -> None:
+        """Queue a status update in the terminal state a Task saved silently has put the task in.
+
+        The event consumer ends an execution - sends its push notification and
+        releases the task - when an event it applies leaves the task terminal,
+        and the silent write does not pass through it. Applying the update
+        writes nothing: the task already holds this state (``AionTaskManager``).
+        The client's stream withholds it and closes with the stored Task, and
+        the push channel sends the stored Task in its place, so both carry
+        the Task the agent handed over.
+        """
+        await self._emit_to_client(TaskStatusUpdateEvent(
+            task_id=self._task_updater.task_id,
+            context_id=self._task_updater.context_id,
+            status=TaskStatus(state=state),
+        ))
 
     async def _catch_up(self, event: Task | Message) -> None:
         """Wait until the store holds the task and every update queued before ``event`` is applied.

@@ -27,7 +27,15 @@ import pytest
 import pytest_asyncio
 from google.protobuf.timestamp_pb2 import Timestamp
 
-from tests.scenarios.commands import ask_question, echo_text, react_text, stream_text, think_text, thoughts_texts
+from tests.scenarios.commands import (
+    OUTBOX_FAILED_REASON,
+    ask_question,
+    echo_text,
+    react_text,
+    stream_text,
+    think_text,
+    thoughts_texts,
+)
 from tests.scenarios.harness import (
     ASSISTANT_ANSWER_ARTIFACT_ID,
     AUTHORIZATION_HEADER,
@@ -506,3 +514,42 @@ async def test_a_push_config_is_created_read_listed_and_deleted(client: Scenario
     assert listed["result"]["configs"] == [created["result"]]
     assert "error" not in deleted
     assert after["result"].get("configs", []) == []
+
+
+SENDS = {
+    "unary-immediate": {"stream": False, "return_immediately": True},
+    "unary": {"stream": False},
+    "stream": {},
+}
+"""The ways a caller sends a turn: the hosted platform's unary send that returns at once, a unary send, a stream."""
+
+@pytest.mark.variant("push")
+@pytest.mark.command("outbox-failed")
+@pytest.mark.parametrize("send", ["unary-immediate", "unary", "stream"])
+async def test_an_outcome_set_through_the_outbox_is_pushed(
+    push_client: ScenarioClient,
+    callback: CallbackServer,
+    send: str,
+) -> None:
+    """A terminal state the agent hands over in an outbox Task reaches the callback once, as the full Task.
+
+    The SDK stores that Task itself rather than passing it through the queue
+    the push channel reads, which is why the outcome has to be announced
+    there too.
+    """
+    events = await push_client.send("outbox-failed", push_notification_url=callback.url, **SENDS[send])
+    task_id = final_task(events).task_id
+
+    notifications = await _wait_until(
+        callback, lambda received: "TASK_STATE_FAILED" in _pushed_states(received)
+    )
+    # A second delivery of the outcome would follow the first within moments.
+    notifications = await callback.wait(timeout=1, count=len(notifications) + 1)
+
+    states = _pushed_states(notifications)
+    assert states.count("TASK_STATE_FAILED") == 1, f"pushed states: {states}"
+    assert states[-1] == "TASK_STATE_FAILED", f"pushed states: {states}"
+    pushed_task = _task_from_notification(notifications[-1])
+    assert pushed_task["id"] == task_id
+    assert OUTBOX_FAILED_REASON in json.dumps(pushed_task["status"]["message"])
+

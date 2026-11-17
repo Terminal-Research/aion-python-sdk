@@ -293,7 +293,7 @@ async def test_a_first_task_that_decides_the_turn_moves_the_task_itself(submitte
 
     await pipeline.process(_task(state=outcome))
 
-    assert queue.events == []
+    assert TaskState.TASK_STATE_WORKING not in [e.status.state for e in _status_events(queue)]
     stored = await store.get(TASK_ID, call_context)
     assert stored.status.state == outcome
 
@@ -378,11 +378,36 @@ async def test_what_a_turn_yields_after_an_outbox_outcome_is_dropped(
     await pipeline.process(_message("too late"))
     await pipeline.process(_status(state=TaskState.TASK_STATE_COMPLETED))
 
-    assert queue.events == []
+    assert [e.status.state for e in _status_events(queue)] == ([outcome] if closes_the_task else [])
     assert pipeline.terminal_seen is closes_the_task
     stored = await store.get(TASK_ID, call_context)
     assert stored.status.state == outcome
     assert "too late" not in [m.parts[0].text for m in stored.history]
+
+
+@pytest.mark.parametrize("outcome", [TaskState.TASK_STATE_COMPLETED, TaskState.TASK_STATE_FAILED])
+async def test_a_task_that_closes_the_task_is_followed_by_its_state_through_the_queue(
+    manager, queue, store, call_context, outcome
+) -> None:
+    """The event consumer ends the execution and pushes the outcome only on an event it applies.
+
+    The update it applies writes nothing: the stored task, which the push and
+    the client's stream carry, stays the one the agent handed over.
+    """
+    pipeline = _pipeline(queue, task_started=True)
+    await manager.save_task_event(_task())
+    handed_over = _task(state=outcome, history=[_message("all set")])
+    handed_over.status.message.CopyFrom(_message("the reason"))
+
+    await pipeline.process(handed_over)
+    saved = await store.get(TASK_ID, call_context)
+    await _consume(manager, queue)
+
+    [announced] = queue.events
+    assert isinstance(announced, TaskStatusUpdateEvent)
+    assert (announced.task_id, announced.context_id) == (TASK_ID, CONTEXT_ID)
+    assert announced.status.state == outcome
+    assert await store.get(TASK_ID, call_context) == saved
 
 
 async def test_what_a_turn_yields_after_its_outcome_status_is_dropped(manager, queue) -> None:
