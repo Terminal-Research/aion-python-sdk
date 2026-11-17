@@ -1,5 +1,6 @@
 """AgentAdapter implementation for LangGraph compiled graphs."""
 
+import copy
 import logging
 import inspect
 from pathlib import Path
@@ -15,6 +16,7 @@ from langgraph.pregel import Pregel
 
 from .checkpoint import CheckpointerFactory
 from .execution import LangGraphExecutor
+from .outbox_channel import untracked_outbox_channels
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +138,10 @@ class LangGraphAdapter(AgentAdapter):
         need one too. A copy is returned; the caller's graph is not modified.
         ``checkpointer=False`` is an explicit choice and is left alone.
 
+        A state field that holds an ``A2AOutbox`` on LangGraph's ordinary
+        channel is given the untracked channel ``A2AOutboxField`` declares,
+        so the checkpoint holds no outbox (``outbox_channel``).
+
         Args:
             graph: LangGraph graph instance
             config: Agent configuration
@@ -148,15 +154,23 @@ class LangGraphAdapter(AgentAdapter):
             "CompiledGraph",
             "CompiledMessageGraph"
         }:
+            update: dict[str, Any] = {}
             if getattr(graph, "checkpointer", None) is None and hasattr(graph, "copy"):
                 logger.debug("Graph is already compiled; attaching the server checkpointer")
-                checkpointer = await self._get_checkpointer()
-                return graph.copy(update={"checkpointer": checkpointer})
-            logger.debug(f"Graph is already compiled with its own checkpointer")
-            return graph
+                update["checkpointer"] = await self._get_checkpointer()
+            else:
+                logger.debug(f"Graph is already compiled with its own checkpointer")
+            channels = untracked_outbox_channels(graph)
+            if channels is not None and hasattr(graph, "copy"):
+                update["channels"] = channels
+            return _copy_compiled(graph, update) if update else graph
 
         if hasattr(graph, "compile") and callable(getattr(graph, "compile")):
             logger.debug(f"Compiling graph")
+            channels = untracked_outbox_channels(graph)
+            if channels is not None:
+                graph = copy.copy(graph)
+                graph.channels = channels
             checkpointer = await self._get_checkpointer()
             compiled_graph = graph.compile(checkpointer=checkpointer)
             return compiled_graph
@@ -192,3 +206,19 @@ class LangGraphAdapter(AgentAdapter):
         if isinstance(obj, (StateGraph, Pregel)):
             return True
         return False
+
+
+def _copy_compiled(graph: Any, update: dict[str, Any]) -> Any:
+    """``graph.copy(update)``, keeping the msgpack allowlist LangGraph built from the graph's schema.
+
+    ``Pregel.copy`` builds a new graph from the old one's attributes, and the
+    allowlist, which LangGraph builds when it compiles a graph and applies to
+    the checkpointer in its strict msgpack mode, is not one it takes over:
+    without it, a type the state schema declares would load as a dict in
+    that mode.
+    """
+    copied = graph.copy(update=update)
+    allowlist = getattr(graph, "_serde_allowlist", None)
+    if allowlist is not None and getattr(copied, "_serde_allowlist", None) is None:
+        copied._serde_allowlist = allowlist
+    return copied
