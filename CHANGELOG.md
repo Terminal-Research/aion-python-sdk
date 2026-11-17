@@ -17,6 +17,7 @@
 * **files:** a file whose address refuses a read is reported with what the address answered - it refused access, or no longer serves the file - instead of a download link that may have expired.
 * **server:** the push notifications of a turn ask for file links on behalf of the request whose turn it is, a message queued into a running task included, instead of the request that started the task's execution on the server.
 * **server:** a cancel runs with the usage attribution its request declares and sends, so what the executor does while cancelling - reading or storing files - is done on the canceller's behalf instead of the deployment's daemon.
+* **files:** a part an agent sends with a stored file's address and no `aion:file` reference - an ADK `file_data` part, a LangGraph URL block - gets the reference back, so the client receives a working download link instead of an address that never downloads.
 
 ## 0.1.0 (2026-11-16)
 

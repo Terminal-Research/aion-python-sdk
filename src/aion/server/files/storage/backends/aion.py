@@ -20,12 +20,16 @@ upload or the download grant), whose behalf the request acted on, and the
 A grant is issued again for a version stored earlier (``renew_link``): one
 attempt, with no upload behind it to protect, whose failure leaves the part
 with its address alone.
+
+The protected content address is also read back (``stored_file_at``): a
+part an agent sends with that address alone names the file version in it.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
@@ -34,6 +38,7 @@ from uuid import UUID, uuid4
 import httpx
 from aion.api import AionFileClient
 from aion.api.exceptions import AionAuthenticationError, AionFileStorageError
+from aion.core.a2a.files import StoredFile
 from aion.core.exceptions import AionDaemonIdentityRequired, AionError
 from aion.core.runtime.context import (
     ForwardedAttribution,
@@ -64,6 +69,14 @@ RETRY_BACKOFF_SECONDS = 0.5
 MAX_CONCURRENT_UPLOADS = 4
 
 _RETRYABLE_STATUSES = frozenset({408, 425, 429})
+
+# The tail of a content address (``AionFileClient.content_url``), at the very
+# end of the URL. Each id is one path segment of letters, digits, ``-`` and
+# ``_`` - what the Files API's ids are made of - so a dot segment or an
+# escape never becomes an id the server later puts into a request path.
+_CONTENT_ADDRESS_TAIL = re.compile(
+    r"/files/(?P<file_id>[A-Za-z0-9_-]+)/versions/(?P<version_id>[A-Za-z0-9_-]+)/content\Z"
+)
 
 
 class AionFileStorageBackend(FileStorageBackend):
@@ -138,6 +151,25 @@ class AionFileStorageBackend(FileStorageBackend):
                 FileUploadErrorCode.STORAGE_UNAVAILABLE, retryable=True, cause=error
             )
         return self._receipt({"id": file_id, "versionId": version_id}, grant)
+
+    def stored_file_at(self, url: str) -> StoredFile | None:
+        """The file version whose protected content address ``url`` is exactly, or None.
+
+        The ids are read from the end of the path, and the address
+        ``AionFileClient.content_url`` builds from them must be ``url``
+        itself: the same scheme, host and base path the client stores under,
+        and no query or fragment. A grant link (``...?grant=``), another
+        host or any other path is not this backend's address. Nothing else
+        is known of the file from its address: the reference carries no
+        access expiry and no retention.
+        """
+        match = _CONTENT_ADDRESS_TAIL.search(url)
+        if match is None:
+            return None
+        file_id, version_id = match["file_id"], match["version_id"]
+        if self._client.content_url(file_id, version_id) != url:
+            return None
+        return StoredFile.create(file_id, version_id)
 
     async def aclose(self) -> None:
         """Close the Files API client."""

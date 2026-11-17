@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 from typing import Callable, Iterable, Optional, Sequence
 
+from aion.core.a2a.files import StoredFile
+
 from .backends.base import FileStorageBackend
 from .context import UploadContext
 from .contracts import (
@@ -178,6 +180,10 @@ class FileUploadManager:
         if self._closed:
             return UploadFailure(FileUploadErrorCode.STORAGE_CLOSED)
         return await self._backend.renew_link(file_id, version_id, context=context)
+
+    def stored_file_at(self, url: str) -> Optional[StoredFile]:
+        """The file version ``url`` is the backend's own address of, or None; see :meth:`FileStorageBackend.stored_file_at`."""
+        return self._backend.stored_file_at(url)
 
     def held(self, uri: str) -> Optional[bytes]:
         """The content of a file the backend holds in this process at ``uri``; see :meth:`FileStorageBackend.held`."""

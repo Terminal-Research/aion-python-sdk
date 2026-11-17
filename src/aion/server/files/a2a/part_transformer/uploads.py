@@ -28,7 +28,7 @@ class TurnUploads:
     framework's order. The second ask for the same content, media type and
     retention gets the outcome of the first - waiting for it while the upload
     is under way - so the file is stored once and both places hold the same
-    link.
+    address and the same reference to it.
 
     The name is not part of a file's identity: the same bytes under two names
     are one file, stored under the name the first ask gave. A file that could

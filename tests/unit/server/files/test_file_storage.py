@@ -290,6 +290,21 @@ class TestStubBackend:
 
         assert Elsewhere().held("https://files.test/1") is None
 
+    async def test_its_addresses_name_no_stored_file(self):
+        """The stub's addresses carry no file version, so a part with one gets no reference."""
+        backend = StubFileStorageBackend()
+        [receipt] = await backend.store_many([FileUpload(data=b"bytes", media_type="text/plain")], context=upload_context())
+
+        assert backend.stored_file_at(receipt.uri) is None
+        assert FileUploadManager(backend).stored_file_at(receipt.uri) is None
+
+    def test_a_backend_recognises_no_address_by_default(self):
+        class Elsewhere(FileStorageBackend):
+            async def store_many(self, uploads, *, context):
+                return []
+
+        assert Elsewhere().stored_file_at("https://files.test/files/f-1/versions/v-1/content") is None
+
 
 class TestLeafName:
     def _upload(self, filename, media_type="application/octet-stream"):
