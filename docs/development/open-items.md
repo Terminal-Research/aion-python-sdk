@@ -36,10 +36,11 @@ the files an agent reads. The Files API grants a link to the file's owner -
 the identity of the usage attribution it was stored under - and refuses the
 deployment's daemon (HTTP 403). A message and a read of a task or a context
 ask with the attribution they activated, and a turn's push deliveries with
-that of the turn's message. An answer that activated none - a read from a
-client that sends no attribution, the push of an abandoned task's settlement
-or of a cancel for a context's deletion - asks on behalf of the daemon, and
-so is refused; so is a caller the file does not belong to. Meanwhile those
+that of the request whose turn it is. An answer that activated none - a read
+from a client that sends no attribution, the push of an abandoned task's
+settlement or of a cancel for the deletion of a context whose task runs on
+another server - asks on behalf of the daemon, and so is refused; so is a
+caller the file does not belong to. Meanwhile those
 answers carry the part's address, which does not download without
 authorization; the owner gets a working link by reading the task with its
 attribution. A refused link costs nothing more: the refusal is logged with

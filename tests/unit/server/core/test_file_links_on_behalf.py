@@ -98,11 +98,20 @@ class _RecordingBackend(FileStorageBackend):
         )
 
 
-def _stored_file_part() -> Part:
+def _stored_file_part(file_id: str = "file-1") -> Part:
     """A part as the Aion backend stores it: the version's address, which works only with authorization."""
-    part = Part(url=STORED_ADDRESS, filename="report.pdf", media_type="application/pdf")
-    StoredFile.create("file-1", "version-1", retention_expires_at=NOW + timedelta(days=29)).write_to(part)
+    address = STORED_ADDRESS.replace("file-1", file_id)
+    part = Part(url=address, filename=f"{file_id}.pdf", media_type="application/pdf")
+    StoredFile.create(file_id, "version-1", retention_expires_at=NOW + timedelta(days=29)).write_to(part)
     return part
+
+
+def _file_artifact(context: RequestContext, artifact_id: str, file_id: str = "file-1") -> TaskArtifactUpdateEvent:
+    return TaskArtifactUpdateEvent(
+        task_id=context.task_id,
+        context_id=context.context_id,
+        artifact=Artifact(artifact_id=artifact_id, parts=[_stored_file_part(file_id)]),
+    )
 
 
 class _AnsweringWithAFile(AgentExecutor):
@@ -113,16 +122,43 @@ class _AnsweringWithAFile(AgentExecutor):
         await event_queue.enqueue_event(
             Task(id=task_id, context_id=context_id, status=TaskStatus(state=TaskState.TASK_STATE_SUBMITTED))
         )
-        await event_queue.enqueue_event(
-            TaskArtifactUpdateEvent(
-                task_id=task_id,
-                context_id=context_id,
-                artifact=Artifact(artifact_id="report", parts=[_stored_file_part()]),
-            )
-        )
+        await event_queue.enqueue_event(_file_artifact(context, "report"))
         await event_queue.enqueue_event(
             TaskStatusUpdateEvent(
                 task_id=task_id, context_id=context_id, status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED)
+            )
+        )
+
+    async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
+        pass
+
+
+class _AnsweringTwoMessages(AgentExecutor):
+    """The first message's turn answers with one file and waits; the next message's answers with another."""
+
+    def __init__(self) -> None:
+        self.first_turn_waits = asyncio.Event()
+        self.release_first_turn = asyncio.Event()
+
+    async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
+        if context.current_task is None:
+            await event_queue.enqueue_event(
+                Task(
+                    id=context.task_id,
+                    context_id=context.context_id,
+                    status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
+                )
+            )
+            await event_queue.enqueue_event(_file_artifact(context, "first-report", "file-1"))
+            self.first_turn_waits.set()
+            await self.release_first_turn.wait()
+            return
+        await event_queue.enqueue_event(_file_artifact(context, "second-report", "file-2"))
+        await event_queue.enqueue_event(
+            TaskStatusUpdateEvent(
+                task_id=context.task_id,
+                context_id=context.context_id,
+                status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
             )
         )
 
@@ -146,13 +182,18 @@ def _webhook() -> Mock:
     return client
 
 
-def _handler(backend: _RecordingBackend, webhook: Mock, store: InMemoryTaskStore) -> AionRequestHandler:
+def _handler(
+        backend: _RecordingBackend,
+        webhook: Mock,
+        store: InMemoryTaskStore,
+        agent_executor: AgentExecutor | None = None,
+) -> AionRequestHandler:
     links = StoredFileLinks(FileUploadManager(backend), now=lambda: NOW)
     configs = InMemoryPushNotificationConfigStore()
     card = Mock()
     card.capabilities.streaming = True
     return AionRequestHandler(
-        agent_executor=_AnsweringWithAFile(),
+        agent_executor=agent_executor or _AnsweringWithAFile(),
         task_store=store,
         agent_card=card,
         push_config_store=configs,
@@ -195,6 +236,68 @@ async def test_a_turns_answer_and_pushes_ask_for_links_on_the_senders_behalf(exe
     assert pushed and STORED_ADDRESS not in pushed
     assert _urls(answer) and STORED_ADDRESS not in _urls(answer)
     assert backend.asked_by and set(backend.asked_by) == {"carrier-1"}
+
+
+def _askers(payload, backend: _RecordingBackend) -> set[str | None]:
+    """On whose behalf each link in ``payload`` was issued: the backend numbers its links in the order asked."""
+    return {backend.asked_by[int(url.rsplit("new-", 1)[1]) - 1] for url in _urls(payload)}
+
+
+@pytest.mark.anyio
+async def test_a_message_queued_into_a_running_task_has_its_turns_pushes_ask_on_its_senders_behalf(execution_scope):
+    """The second message runs its turn on the task's live ``ActiveTask``; its pushes ask as its sender."""
+    backend, webhook, agent = _RecordingBackend(), _webhook(), _AnsweringTwoMessages()
+    handler = _handler(backend, webhook, InMemoryTaskStore(), agent)
+    first = SendMessageRequest(
+        message=Message(message_id="m-1", role=Role.ROLE_USER, parts=[Part(text="the first report, please")]),
+        configuration=SendMessageConfiguration(
+            task_push_notification_config=TaskPushNotificationConfig(url=WEBHOOK_URL),
+            return_immediately=True,
+        ),
+    )
+
+    started = await handler.on_message_send(first, _call_context("carrier-1"))
+    await agent.first_turn_waits.wait()
+    active_task = await handler._active_task_registry.get(started.id)
+    queued, enqueue = asyncio.Event(), active_task.enqueue_request
+
+    async def enqueue_and_signal(request_context):
+        request_id = await enqueue(request_context)
+        queued.set()
+        return request_id
+
+    active_task.enqueue_request = enqueue_and_signal
+    second = SendMessageRequest(
+        message=Message(
+            message_id="m-2",
+            role=Role.ROLE_USER,
+            task_id=started.id,
+            context_id=started.context_id,
+            parts=[Part(text="and the second one")],
+        ),
+    )
+    answering = asyncio.create_task(handler.on_message_send(second, _call_context("carrier-2")))
+    await queued.wait()
+    agent.release_first_turn.set()
+    answer = await answering
+
+    def completed_tasks() -> list[dict]:
+        return [
+            call.kwargs["json"] for call in webhook.post.await_args_list
+            if call.kwargs["json"].get("task", {}).get("status", {}).get("state") == "TASK_STATE_COMPLETED"
+        ]
+
+    await _until(lambda: bool(completed_tasks()))
+    artifact_updates = {
+        call.kwargs["json"]["artifactUpdate"]["artifact"]["artifactId"]: _askers(call.kwargs["json"], backend)
+        for call in webhook.post.await_args_list
+        if "artifactUpdate" in call.kwargs["json"]
+    }
+    completed = completed_tasks()
+    assert answer.status.state == TaskState.TASK_STATE_COMPLETED
+    assert artifact_updates == {"first-report": {"carrier-1"}, "second-report": {"carrier-2"}}
+    assert len(completed) == 1 and len(_urls(completed[0])) == 2
+    assert _askers(completed[0], backend) == {"carrier-2"}
 
 
 async def _stored_task(store: InMemoryTaskStore) -> Task:

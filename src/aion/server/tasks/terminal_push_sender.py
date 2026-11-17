@@ -5,11 +5,29 @@ from a2a.server.tasks.push_notification_sender import PushNotificationEvent, Pus
 from a2a.types import Task, TaskState, TaskStatusUpdateEvent
 
 from aion.server.a2a.constants import NON_ACTIVE_TASK_STATES
+from aion.server.files.links import link_scope_of
 from aion.server.files.storage import UploadContext
 from aion.server.tasks.protocols import AionTaskManagerProtocol
 from aion.server.tasks.push_sender import send_with_link_scope
 
 logger = logging.getLogger(__name__)
+
+
+def current_link_scope(task_manager: object) -> UploadContext | None:
+    """The scope the request ``task_manager`` acts for asks for file links in; None asks as the daemon.
+
+    a2a-sdk's ``ActiveTask`` points its task manager at the call context of
+    the request it acts for: ``start`` at the request that created the
+    ``ActiveTask``, the producer at each request as its turn begins, and
+    ``cancel`` at the canceller's, at once. The producer moves on only after
+    the consumer has handled every event of the turn before - it waits for
+    the request lock the consumer releases at ``_RequestCompleted`` - so an
+    event the consumer pushes is pushed while the manager acts for the
+    request whose turn produced it, or for the request that cancelled that
+    turn. The scope is the one that request's handler kept
+    (``link_scope_of``).
+    """
+    return link_scope_of(getattr(task_manager, "_call_context", None))
 
 
 class TerminalTaskPushSender(PushNotificationSender):
@@ -34,32 +52,35 @@ class TerminalTaskPushSender(PushNotificationSender):
     That makes the wrapper per-task — it is bound by the registry that creates
     the ActiveTask, not installed globally on the handler.
 
-    Its deliveries ask for the download links of stored files on behalf of
-    ``link_scope``: the usage attribution of the request the ActiveTask was
-    created for. The registry creates one for each turn, so that is the
-    message that started the turn, on whose behalf the turn stores and reads
-    its files.
+    Each delivery asks for the download links of stored files in the scope
+    of the request the manager acts for when it is sent
+    (``current_link_scope``): the usage attribution of the message whose
+    turn produced the event, on whose behalf the turn stores and reads its
+    files. A message queued into a running task runs its turn on the same
+    ``ActiveTask``, and its pushes ask on its own behalf. After a cancel on
+    this server, what is left of the cancelled turn - its ``CANCELED``
+    among it - asks on the canceller's behalf. A webhook is not bound to
+    an attribution: the push configs of a task receive every push of it.
     """
 
     def __init__(
         self,
         inner: PushNotificationSender,
         task_manager: AionTaskManagerProtocol,
-        link_scope: UploadContext | None = None,
     ) -> None:
         self._inner = inner
         self._task_manager = task_manager
-        self._link_scope = link_scope
         # The non-active state of the last outcome whose delivery through
         # this wrapper returned, compared with the manager's
         # ``written_outcome``.
         self._pushed_outcome: TaskState | None = None
 
     async def send_notification(self, task_id: str, event: PushNotificationEvent) -> None:
+        link_scope = current_link_scope(self._task_manager)
         if self._is_non_active_status(event):
             event = await self._outcome_snapshot(task_id, event)
 
-        await send_with_link_scope(self._inner, task_id, event, self._link_scope)
+        await send_with_link_scope(self._inner, task_id, event, link_scope)
         # Recorded once the delivery has returned. A delivery cut off halfway -
         # its consumer cancelled during the request - did not deliver the
         # outcome, and ``push_unsent_outcome`` sends it again.
@@ -98,10 +119,12 @@ class TerminalTaskPushSender(PushNotificationSender):
         it writes itself; what is left is an outcome written past it - the
         ``FAILED`` a2a-sdk's producer stores when the agent raises before it
         queued a final status - or one whose delivery the consumer's
-        cancellation cut off. The stored Task is sent, as for any outcome.
-        An outcome another writer stored (a cancel from another server, the
-        abandoned-task settlement) is not this manager's write, and its
-        writer has pushed it.
+        cancellation cut off. The stored Task is sent, as for any outcome,
+        in the scope of the request the manager acts for: the one whose turn
+        wrote the outcome, or the canceller of that turn. An outcome another
+        writer stored (a cancel from another server, the abandoned-task
+        settlement) is not this manager's write, and its writer has pushed
+        it.
 
         Args:
             task_id: Identifier of the task.
@@ -127,4 +150,4 @@ class TerminalTaskPushSender(PushNotificationSender):
         )
 
 
-__all__ = ['TerminalTaskPushSender']
+__all__ = ['TerminalTaskPushSender', 'current_link_scope']

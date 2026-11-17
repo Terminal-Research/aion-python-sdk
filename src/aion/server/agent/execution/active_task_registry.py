@@ -15,11 +15,11 @@ from a2a.utils.errors import TaskNotCancelableError, TaskNotFoundError
 from aion.core.a2a.enums import TaskSettlementReason
 from aion.server.a2a.constants import TERMINAL_TASK_STATES
 from aion.server.agent.execution.scope import set_task_manager
-from aion.server.files.links import link_scope_of
 from aion.server.files.storage import UploadContext
 from aion.server.shutdown import shutdown_budget
 from aion.server.tasks import AionTaskManager, TerminalTaskPushSender, settled_task
 from aion.server.tasks.push_sender import send_with_link_scope
+from aion.server.tasks.terminal_push_sender import current_link_scope
 
 logger = logging.getLogger(__name__)
 
@@ -82,8 +82,9 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
 
     * the task manager is ``AionTaskManager`` and the push sender is wrapped
       per task in ``TerminalTaskPushSender``, so the push channel carries what
-      the task stores; an outcome the execution stored past its consumer is
-      pushed once the execution is over;
+      the task stores, each push asking for file links on behalf of the
+      request whose turn it belongs to; an outcome the execution stored past
+      its consumer is pushed once the execution is over;
     * an ``ActiveTask`` is retired once its task reaches ``INPUT_REQUIRED`` or
       ``AUTH_REQUIRED``: it is no longer handed out, and it is closed as soon
       as its consumer has handled the interrupt - pushed it among the rest.
@@ -255,14 +256,15 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
 
         # Push dispatch runs in the background consumer with no request
         # context, so the outbound projection is bound per task, to the
-        # manager that carries its call context, and to the scope the
-        # request asks for file links in: the turn's usage attribution.
+        # manager that carries the call context of the request it acts for.
+        # Every request this ActiveTask serves - the one creating it here,
+        # each message queued into it later - becomes that request in turn,
+        # so each push reads its link scope from the manager when it is sent.
         push_sender = self._push_sender
         if push_sender is not None:
             push_sender = TerminalTaskPushSender(
                 inner=push_sender,
                 task_manager=task_manager,
-                link_scope=link_scope_of(call_context),
             )
 
         active_task = ActiveTask(
@@ -435,8 +437,7 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
                     try:
                         task = await self._settle_interrupted_task(task_manager)
                         if task is not None:
-                            scope = link_scope_of(getattr(task_manager, "_call_context", None))
-                            settled.append((task, scope))
+                            settled.append((task, current_link_scope(task_manager)))
                     except ConcurrentTaskModificationError:
                         logger.info(
                             "Task %s was moved on by another writer; not settling it after shutdown",
@@ -461,11 +462,13 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
     ) -> None:
         """Push the tasks the shutdown settled, all at once, until ``deadline``.
 
-        Each task's links are asked for in the scope of the turn the shutdown
-        interrupted. A receiver that has not answered by the end of the
-        settlement window is not waited for: the process is about to stop,
-        and the settled task stays readable through ``GetTask``. Each failed
-        or unfinished push is logged as a WARNING.
+        Each task's links are asked for in the scope of the request its
+        manager acts for, as every push of the task is
+        (``current_link_scope``): the one whose turn the shutdown
+        interrupted, or the canceller of that turn. A receiver that has not
+        answered by the end of the settlement window is not waited for: the
+        process is about to stop, and the settled task stays readable through
+        ``GetTask``. Each failed or unfinished push is logged as a WARNING.
         """
         if not settled or self._push_sender is None:
             return

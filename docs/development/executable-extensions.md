@@ -251,9 +251,10 @@ read grant for the same version:
 | --- | --- | --- |
 | The answer to `SendMessage`, and every event of its stream | Every part's address that is no working link - one that needs authorization, or a link that expires within five minutes - is replaced in a copy of what is sent. | The message's sender: the usage attribution the message activated |
 | The answer to `GetTask`, `ListTasks`, `CancelTask`, `SubscribeToTask`, `GetContext` | The same. | The caller: the usage attribution the read activated; without one, the deployment's daemon |
-| A push delivery of a turn (`TerminalTaskPushSender`), and of a task the shutdown settled | The same, before the event is posted. | The turn: the usage attribution of the message that started it |
+| A push delivery of a turn (`TerminalTaskPushSender`), and of a task the shutdown settled | The same, before the event is posted. | The request the task's manager acts for when the event is sent: the message whose turn it is, or, once a cancel on this server has reached the task, the canceller |
 | The push delivery of a remote cancel (`_write_cancel`) | The same. | The cancel's caller, as for its answer |
-| The push delivery of an abandoned task's settlement, or of a cancel for a context's deletion | The same. | The deployment's daemon |
+| The push delivery of a cancel for a context's deletion | The same. | Of a task running on this server, as for a turn's push - the owner's latest request; of one running elsewhere, the deployment's daemon |
+| The push delivery of an abandoned task's settlement | The same. | The deployment's daemon |
 | An agent's read (`ConversationFile.read`, `ConversationFile.link`) | The part's own link while it works, otherwise one supplied for it. | The turn's attribution |
 
 A read carries no message, so the request handler activates the usage
@@ -264,10 +265,16 @@ read, and a declaration that does not verify leaves the answer to ask as the
 daemon rather than refusing the read; a carrier sent without the declaration
 is logged once. The scope of every request is kept in `call_context.state`
 (`FILE_LINK_SCOPE_KEY`, read with `link_scope_of`): for a message once it is
-accepted, for a read as it starts. The registry binds each turn's
-`TerminalTaskPushSender` to the scope of the request it creates the
-`ActiveTask` for, so the turn's pushes, which a2a-sdk sends from the
-background consumer, ask on the same behalf as its answer.
+accepted, for a read as it starts. a2a-sdk sends a turn's pushes from the
+background consumer of the task's `ActiveTask`, which serves every request
+the task takes - a message queued into a running task included - so
+`TerminalTaskPushSender` reads the scope when it sends
+(`current_link_scope`), from the call context the task's manager holds:
+a2a-sdk switches it to each request as that request's turn starts, after the
+previous turn's events have all been sent, and to the canceller when a
+cancel reaches the task. Push configurations are not bound to an
+attribution: every webhook of the task receives what the task's owner
+registered it for.
 
 The stored task is never rewritten: it keeps the address it was written
 with, and a link lives in the copy that leaves and in the process's memory.
@@ -488,9 +495,13 @@ task as it was, as a framework's does; an abandoned task is settled later
   turn, torn down before its outcome, asks its executor to stop
   (`within=None`). Nothing more is written into the task. Until that write
   the turn goes on: the delay is up to the executor's next durable event.
-- **No extension is activated.** A cancel runs with the caller's attribution
-  and none of the request's extensions: a daemon named in `A2A-Extensions`
-  has no payload on a cancel and must not fail it.
+- **Only the usage attribution is activated.** A cancel runs with the
+  caller's usage attribution, activated by the rules of a read
+  (`attribution_runtime_context`): its URI in `A2A-Extensions` and its
+  carrier in `Aion-Usage-Attribution`. No other extension is: a daemon named
+  in `A2A-Extensions` has no payload on a cancel and must not fail it, and a
+  declaration that does not verify leaves the cancel to run as the
+  deployment's daemon rather than refusing it.
 
 ### Stopping
 

@@ -10,9 +10,11 @@
 
 * **server:** a turn that ends the task with a `Task` in the outbox (`COMPLETED`, `FAILED`, `CANCELED`, `REJECTED`) sends its push notification with that Task and ends its execution; the callback received only `SUBMITTED`, and the task stayed held by the server.
 * **langgraph:** a state field declared as `Optional[A2AOutbox]` or `A2AOutbox` is kept out of the checkpoint, as `A2AOutboxField` is: the server gives it LangGraph's untracked channel in the graph it serves, so LangGraph no longer warns that it will refuse to load `aion.core.a2a.models.A2AOutbox`. A compiled graph the server copies keeps the msgpack allowlist LangGraph built from its state schema.
-* **files:** download links of stored files are issued on behalf of the caller's usage attribution: the answer to a message and its stream with the message's, a read (`GetTask`, `ListTasks`, `GetContext`, `SubscribeToTask`, `CancelTask`) with the one it declares in `A2A-Extensions` and `Aion-Usage-Attribution`, and a turn's push notifications with that of the message that started it, so they carry working links, which the Files API refuses to issue for the deployment's daemon.
+* **files:** download links of stored files are issued on behalf of the caller's usage attribution: the answer to a message and its stream with the message's, a read (`GetTask`, `ListTasks`, `GetContext`, `SubscribeToTask`, `CancelTask`) with the one it declares in `A2A-Extensions` and `Aion-Usage-Attribution`, and a turn's push notifications with that of the message whose turn it is, so they carry working links, which the Files API refuses to issue for the deployment's daemon.
 * **files:** a download link is handed out only on behalf of the usage attribution it was issued to, never to another caller or to the deployment's daemon, and a link refused to one of them no longer keeps another from asking for its own.
 * **server:** `aion.server.tasks` and `aion.server.contexts` can be imported before any other module of the server; they failed with a circular import.
+* **server:** the push notifications of a turn ask for file links on behalf of the request whose turn it is, a message queued into a running task included, instead of the request that started the task's execution on the server.
+* **server:** a cancel runs with the usage attribution its request declares and sends, so what the executor does while cancelling - reading or storing files - is done on the canceller's behalf instead of the deployment's daemon.
 
 ## 0.1.0 (2026-11-16)
 

@@ -130,13 +130,67 @@ async def test_background_work_inherits_only_its_explicit_execution_scope():
     await asyncio.gather(*pending)
 
 
-async def test_cancel_receives_current_request_attribution():
+def _cancel_request(*, carrier=None, declared=False, also_declared=()):
+    """A cancel of a task waiting for input, as a2a-sdk hands it to the executor."""
     context, _ = request(resume=True)
+    call = context.call_context
+    call.state["headers"] = {AION_USAGE_ATTRIBUTION_HEADER: carrier} if carrier is not None else {}
+    call.requested_extensions = {USAGE_ATTRIBUTION_EXTENSION_URI_V1, *also_declared} if declared else set(also_declared)
+    return context
+
+
+async def _cancel_seeing(context):
+    """Cancel through the request executor; the runtime context its executor's cancel ran in, and the queue."""
+    seen = []
+
     async def cancel(config, within):
-        assert get_aion_runtime_context().get_callback_attribution() is None
-    worker = request_executor(FakeFrameworkExecutor(cancel=cancel))
-    await worker.cancel(context, AsyncMock())
+        seen.append(get_aion_runtime_context())
+
+    queue = AsyncMock()
+    await request_executor(FakeFrameworkExecutor(cancel=cancel)).cancel(context, queue)
     assert get_aion_runtime_context() is None
+    return seen[0], queue
+
+
+def _cancelled(queue) -> bool:
+    return any(
+        call.args[0].status.state == TaskState.TASK_STATE_CANCELED for call in queue.enqueue_event.await_args_list
+    )
+
+
+async def test_a_cancel_runs_on_behalf_of_the_attribution_it_declares():
+    runtime, queue = await _cancel_seeing(_cancel_request(carrier="cancel-carrier", declared=True))
+
+    assert runtime.get_callback_attribution() == ForwardedAttribution("cancel-carrier")
+    assert _cancelled(queue)
+
+
+@pytest.mark.parametrize(
+    ("carrier", "declared"),
+    [(None, False), ("cancel-carrier", False), (None, True), ("", True)],
+    ids=["no attribution", "carrier without its declaration", "declaration without its carrier", "empty carrier"],
+)
+async def test_a_cancel_without_an_activated_attribution_runs_as_the_daemon_and_succeeds(carrier, declared):
+    runtime, queue = await _cancel_seeing(_cancel_request(carrier=carrier, declared=declared))
+
+    assert runtime.get_callback_attribution() is None
+    assert _cancelled(queue)
+
+
+async def test_a_cancel_activates_nothing_but_the_usage_attribution():
+    """A daemon or a distribution declared on a cancel carries no payload there and must not fail it."""
+    from aion.core.constants.a2a import DAEMON_EXTENSION_URI_V1, DISTRIBUTION_EXTENSION_URI_V1
+
+    context = _cancel_request(
+        carrier="cancel-carrier", declared=True, also_declared=(DAEMON_EXTENSION_URI_V1, DISTRIBUTION_EXTENSION_URI_V1)
+    )
+
+    runtime, queue = await _cancel_seeing(context)
+
+    assert runtime.extensions.activated_uris == (USAGE_ATTRIBUTION_EXTENSION_URI_V1,)
+    assert runtime.get_daemon() is None and runtime.get_distribution() is None
+    assert runtime.get_callback_attribution() == ForwardedAttribution("cancel-carrier")
+    assert _cancelled(queue)
 
 
 async def test_opaque_carrier_is_not_replaced_by_session_or_old_checkpoint():

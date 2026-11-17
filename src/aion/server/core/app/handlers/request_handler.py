@@ -56,6 +56,7 @@ import uuid
 
 from aion.server.agent.execution import AionActiveTaskRegistry
 from aion.server.agent.execution.context.attribution import callback_attribution
+from aion.server.agent.execution.request_executor import attribution_runtime_context
 from aion.server.agent.execution.pool import EXTENSION_ROUTE_STATE_KEY, refusal_data
 from aion.server.a2a.constants import ACTIVE_TASK_STATES, TERMINAL_TASK_STATES
 from aion.server.auth import has_individual_access
@@ -92,6 +93,11 @@ def _file_link_scope(
     asked for without one is asked for on behalf of the deployment's daemon.
     None when the request carries no attribution, or one that was not
     activated or cannot be resolved.
+
+    A push reads the scope off the call context the task's manager acts
+    for when the push is sent: the message's while its turn runs, whether
+    the message created the task's ``ActiveTask`` or was queued into a
+    running one (``aion.server.tasks.terminal_push_sender.current_link_scope``).
     """
     runtime = AionRuntimeContext(extensions=extensions)
     try:
@@ -489,31 +495,27 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         and a declaration that does not verify leaves the answer to ask as
         the deployment's daemon instead of refusing the read. So does a
         carrier sent without the declaration, which is logged once.
+
+        The scope a ``CancelTask`` keeps also serves the pushes of what is
+        left of a turn it cancels on this server: the task's manager acts
+        for the cancel from then on
+        (``aion.server.tasks.terminal_push_sender.current_link_scope``).
         """
         if call_context is None or self._file_links is None:
             return
         call_context.state[FILE_LINK_SCOPE_KEY] = self._declared_link_scope(call_context)
 
     def _declared_link_scope(self, call_context: ServerCallContext) -> UploadContext | None:
-        """The usage attribution a read declares, as a scope for file links; None asks as the daemon."""
-        declaration = SimpleNamespace(
-            message=None,
-            metadata={},
-            requested_extensions=call_context.requested_extensions,
-            call_context=call_context,
-        )
-        descriptors = [
-            descriptor
-            for descriptor in aion_a2a_extension_registry.get_all()
-            if descriptor.uri == USAGE_ATTRIBUTION_EXTENSION_URI_V1
-        ]
+        """The usage attribution a read declares, as a scope for file links; None asks as the daemon.
+
+        Activated as a cancel's is (``attribution_runtime_context``), so a
+        cancel's work and the links of its answer run on the same behalf.
+        """
         try:
-            extensions = AionRuntimeExtensions.collect(declaration, descriptors)
+            runtime = attribution_runtime_context(call_context)
         except ExtensionActivationError as error:
             logger.debug("A read's usage attribution was not activated: %s", error)
             return None
-        try:
-            callback_attribution(call_context, AionRuntimeContext(extensions=extensions))
         except AionAuthenticationError:
             if not self._warned_undeclared_attribution:
                 self._warned_undeclared_attribution = True
@@ -523,7 +525,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
                     USAGE_ATTRIBUTION_EXTENSION_URI_V1,
                 )
             return None
-        return _file_link_scope(extensions, call_context)
+        return _file_link_scope(runtime.extensions, call_context)
 
     async def _with_working_links(self, content, call_context: ServerCallContext | None = None):
         """``content`` as a client gets it: the expired links of its stored files replaced.

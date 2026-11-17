@@ -212,6 +212,27 @@ class TestSettlementPush:
         assert push_sender.send_notification.await_args.kwargs == {"link_scope": scope}
 
     @pytest.mark.anyio
+    async def test_the_settled_task_asks_for_links_on_behalf_of_the_request_whose_turn_was_interrupted(
+        self, execution_scope
+    ):
+        """A message queued into the task became the request its manager acts for; its turn is the one interrupted."""
+        from types import SimpleNamespace
+
+        from aion.server.files.links import FILE_LINK_SCOPE_KEY
+        from aion.server.files.storage import UploadContext
+        from aion.server.tasks.push_sender import AionPushNotificationSender
+
+        push_sender = Mock(spec=AionPushNotificationSender)
+        creating = SimpleNamespace(state={FILE_LINK_SCOPE_KEY: UploadContext(usage_attribution="carrier-1")})
+        registry, _, active_task = await _registry_holding(TaskState.TASK_STATE_WORKING, push_sender, creating)
+        queued = UploadContext(usage_attribution="carrier-2")
+        active_task._task_manager._call_context = SimpleNamespace(state={FILE_LINK_SCOPE_KEY: queued})
+
+        await registry.aclose()
+
+        assert push_sender.send_notification.await_args.kwargs == {"link_scope": queued}
+
+    @pytest.mark.anyio
     async def test_a_task_left_alone_is_not_pushed(self, execution_scope):
         push_sender = self._push_sender()
         registry, _, _ = await _registry_holding(TaskState.TASK_STATE_COMPLETED, push_sender)
