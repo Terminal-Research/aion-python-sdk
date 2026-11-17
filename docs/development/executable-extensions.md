@@ -255,7 +255,7 @@ read grant for the same version:
 | The push delivery of a remote cancel (`_write_cancel`) | The same. | The cancel's caller, as for its answer |
 | The push delivery of a cancel for a context's deletion | The same. | Of a task running on this server, as for a turn's push - the owner's latest request; of one running elsewhere, the deployment's daemon |
 | The push delivery of an abandoned task's settlement | The same. | The deployment's daemon |
-| An agent's read (`ConversationFile.read`, `ConversationFile.link`) | The part's own link while it works, otherwise one supplied for it. | The turn's attribution |
+| An agent's read (`ConversationFile.read`, `ConversationFile.link`) | The part's own link while it works, otherwise one supplied for it; a file the storage refuses to the turn's attribution raises `ConversationFileForbiddenError`, and the model helpers leave it out with a note. | The turn's attribution |
 
 A read carries no message, so the request handler activates the usage
 attribution extension alone for it (`_declare_link_scope`), by the rules a

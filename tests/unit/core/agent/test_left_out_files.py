@@ -18,6 +18,7 @@ from aion.core.a2a.files import StoredFile
 from aion.core.agent.left_out_files import (
     RefusedFileSearch,
     RequestFile,
+    forbidden_note,
     is_request_refusal,
     left_out_note,
     too_large_note,
@@ -241,6 +242,12 @@ class TestNotes:
         assert too_large_note("scan.pdf", "application/pdf", 20) == (
             '[File "scan.pdf" (application/pdf) is larger than the 20 bytes a model request may carry and was left out]'
         )
+
+    def test_a_file_not_available_to_the_sender(self) -> None:
+        assert forbidden_note("a.pdf", "application/pdf") == (
+            '[File "a.pdf" (application/pdf) is not available to this sender and was left out]'
+        )
+        assert forbidden_note(None, None) == "[A file is not available to this sender and was left out]"
 
 
 def test_a_stored_file_is_known_by_its_version_and_any_other_by_its_type_and_content() -> None:

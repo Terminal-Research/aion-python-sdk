@@ -24,8 +24,10 @@ messages it sends:
 Every file of the messages is sent, on every call: a model keeps nothing
 between requests, so a graph that should stop sending an old file leaves its
 message out, as it trims any history. A file larger than
-``AION_MODEL_FILE_MAX_BYTES`` is not read: a text note takes its block's
-place, and the conversation goes on without the file
+``AION_MODEL_FILE_MAX_BYTES`` is not read, and a stored file that is not
+available to the turn's sender - in a shared conversation, one another
+participant sent - is not downloaded: a text note takes its block's place,
+and the conversation goes on without the file
 (``aion.core.agent.left_out_files``). A file that cannot be read fails the
 task with a reason its caller reads (``aion.core.agent.model_files``).
 
@@ -48,8 +50,13 @@ from functools import cached_property
 from typing import Any, Optional, Union
 
 from aion.core.a2a.files import STORED_FILE_KEY, StoredFile
-from aion.core.agent.left_out_files import CHECK_TEXT, RequestFile, left_out_note, too_large_note
-from aion.core.agent.model_files import ModelFileTooLargeError, read_file_for_model, read_file_for_model_sync
+from aion.core.agent.left_out_files import CHECK_TEXT, RequestFile, forbidden_note, left_out_note, too_large_note
+from aion.core.agent.model_files import (
+    ModelFileForbiddenError,
+    ModelFileTooLargeError,
+    read_file_for_model,
+    read_file_for_model_sync,
+)
 from langchain_core.messages import BaseMessage, HumanMessage
 
 __all__ = ["inline_files", "inline_files_sync"]
@@ -60,7 +67,10 @@ FILE_BLOCK_TYPES = frozenset({"image", "audio", "video", "file"})
 OPENAI_FILE_BLOCK_TYPES = frozenset({"image_url", "input_audio"})
 """The content blocks in OpenAI's own format that carry a file."""
 
-_Read = Union[bytes, ModelFileTooLargeError]
+_LeftOut = (ModelFileTooLargeError, ModelFileForbiddenError)
+"""Why a file is left out of a model request, with a note in its place."""
+
+_Read = Union[bytes, ModelFileTooLargeError, ModelFileForbiddenError]
 """What reading a file for a model gave: its content, or why it is left out."""
 
 
@@ -105,6 +115,14 @@ def _with_content(block: dict, content: bytes) -> dict:
 
 def _text(text: str) -> dict:
     return {"type": "text", "text": text}
+
+
+def _note(left_out: Union[ModelFileTooLargeError, ModelFileForbiddenError], block: dict) -> dict:
+    """The text block that takes the place of a file block whose file is left out."""
+    name, mime_type = _name(block), block.get("mime_type")
+    if isinstance(left_out, ModelFileTooLargeError):
+        return _text(too_large_note(name, mime_type, left_out.limit))
+    return _text(forbidden_note(name, mime_type))
 
 
 @dataclass(frozen=True)
@@ -158,7 +176,7 @@ def _addresses(
 async def _read(url: str, name: Optional[str], stored: Optional[StoredFile]) -> _Read:
     try:
         return await read_file_for_model(url, name=name, stored=stored)
-    except ModelFileTooLargeError as error:
+    except _LeftOut as error:
         return error
 
 
@@ -179,7 +197,7 @@ def _read_all_sync(messages: Sequence[BaseMessage], unread: Optional[Unread] = N
     for url, (name, stored) in _addresses(messages, unread).items():
         try:
             read[url] = read_file_for_model_sync(url, name=name, stored=stored)
-        except ModelFileTooLargeError as error:
+        except _LeftOut as error:
             read[url] = error
     return read
 
@@ -204,9 +222,8 @@ def _assembled(messages: Sequence[BaseMessage], read: dict[str, _Read]) -> tuple
             if url is not None and url in read:
                 changed = True
                 file = read[url]
-                if isinstance(file, ModelFileTooLargeError):
-                    mime_type = block.get("mime_type")
-                    blocks.append(_text(too_large_note(_name(block), mime_type, file.limit)))
+                if isinstance(file, _LeftOut):
+                    blocks.append(_note(file, block))
                     continue
                 block = _with_content(block, file)
             files.append(FileBlock(position, len(blocks), block, stored))
@@ -220,8 +237,9 @@ async def inline_files(messages: Sequence[BaseMessage]) -> list[BaseMessage]:
 
     A message without such a file is returned as it is; one with a file is
     copied, so the messages passed in - the graph's state - keep the address.
-    A file larger than a model request may carry is replaced by a text note
-    that says so.
+    A file larger than a model request may carry, and a stored file that is
+    not available to the turn's sender, is replaced by a text note that says
+    so.
 
     Args:
         messages: The messages about to be sent to a model.

@@ -32,7 +32,14 @@ Issuing is best effort: a storage backend that issues no links, a refusal,
 a timeout or a file past its retention leaves the part with the address it
 has, and the refusal is remembered for a while for the attribution it was
 given to, so a file that cannot be vouched for is not asked about on every
-read.
+read. What is remembered is the kind of refusal too: the storage service
+refusing the grant to a usage attribution (``STORAGE_FORBIDDEN``, its answer
+to an attribution that is not the file's owner) means the file is not
+available to that sender. ``link_for`` then raises
+``ConversationFileForbiddenError``, so a reader does not fetch an address
+that would refuse it as well; any other refusal, and any refusal to the
+deployment's daemon, leaves the reader with the part's address. What the
+server hands out (``refresh``) keeps the part's address on every refusal.
 """
 
 from __future__ import annotations
@@ -44,15 +51,16 @@ import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Iterable, Optional, Sequence, TypeVar
+from typing import Any, Callable, Iterable, Optional, Sequence, TypeVar, Union
 
 from a2a.types import Artifact, Part, TaskStatus
 
 from aion.core.a2a.files import StoredFile
-from aion.core.exceptions import AionAuthenticationError
+from aion.core.exceptions import AionAuthenticationError, ConversationFileForbiddenError
 from aion.core.runtime.context import get_aion_runtime_context
 from aion.server.files.a2a.part_transformer import part_fields
 from aion.server.files.storage import (
+    FileUploadErrorCode,
     FileUploadManager,
     UploadContext,
     UploadFailure,
@@ -73,7 +81,7 @@ RENEWAL_TIMEOUT_SECONDS = 5.0
 """How long one answer or one read waits for the links it is missing."""
 
 RETRY_REFUSED_AFTER_SECONDS = 60.0
-"""How long a file version whose link was not issued is left alone."""
+"""How long a file version whose link was not issued is left alone, for the attribution it was refused to."""
 
 MAX_REMEMBERED = 2048
 """Links and refusals kept; past it the expired ones go, then the oldest."""
@@ -106,6 +114,20 @@ class _Link:
     file: StoredFile
 
 
+@dataclass(frozen=True)
+class _Refusal:
+    """A link that was not issued: when, by the monotonic clock, and whether the storage service forbade it.
+
+    ``forbidden`` is the storage service refusing the grant to the
+    attribution that asked (``STORAGE_FORBIDDEN``). A timeout, an
+    unavailable service, a missing daemon identity, a link too short-lived
+    to use and every other failure are not.
+    """
+
+    at: float
+    forbidden: bool = False
+
+
 class StoredFileLinks:
     """Issues download links to stored files again, and remembers them.
 
@@ -126,7 +148,7 @@ class StoredFileLinks:
         self._manager = upload_manager
         self._now = now
         self._links: dict[_Held, _Link] = {}
-        self._refused: dict[_Key, dict[_Asker, float]] = {}
+        self._refused: dict[_Key, dict[_Asker, _Refusal]] = {}
         if upload_manager is not None:
             upload_manager.on_stored(self._remember_upload)
 
@@ -136,23 +158,36 @@ class StoredFileLinks:
         return self._manager is not None
 
     async def link_for(self, part: Part, *, context: Optional[UploadContext] = None) -> Optional[str]:
-        """A working link to the stored file of ``part``.
+        """A working link to the stored file of ``part``, for the attribution that reads it.
 
         Args:
             part: A file part of a stored task.
-            context: Callback scope of the request asking, when it has one.
+            context: Callback scope of the request asking, when it has one;
+                without one, the attribution of the turn the call runs in.
 
         Returns:
             The link to use instead of the part's address, or None when the
             address is the one to use: it is a link that still works, the
             part names no file, or no link could be issued.
+
+        Raises:
+            ConversationFileForbiddenError: The storage service refused the
+                link to the usage attribution asking, now or within
+                ``RETRY_REFUSED_AFTER_SECONDS``: the file is not available
+                to that sender, and its address would refuse it too.
         """
         file = StoredFile.of(part)
         if file is None or not self._needs_link(file):
             return None
-        issued = await self._issue({(file.file_id, file.version_id): file}, context)
-        link = issued.get((file.file_id, file.version_id))
-        return link.uri if link is not None else None
+        key = (file.file_id, file.version_id)
+        asker = _asker(context)
+        issued, refused = await self._issue({key: file}, context, asker)
+        if key in issued:
+            return issued[key].uri
+        refusal = refused.get(key)
+        if asker is not None and refusal is not None and refusal.forbidden:
+            raise ConversationFileForbiddenError(part.filename or "file", part.media_type or None)
+        return None
 
     async def refresh(self, content: T, *, context: Optional[UploadContext] = None) -> T:
         """``content`` with a working link in place of every stored file's address that does not work.
@@ -182,7 +217,7 @@ class StoredFileLinks:
                     wanted.setdefault((file.file_id, file.version_id), file)
         if not wanted:
             return contents
-        issued = await self._issue(wanted, context)
+        issued, _ = await self._issue(wanted, context, _asker(context))
         if not issued:
             return contents
         return [self._with_links(content, issued) for content in contents]
@@ -201,31 +236,44 @@ class StoredFileLinks:
 
     # -- issuing ----------------------------------------------------------------
 
-    async def _issue(self, wanted: dict[_Key, StoredFile], context: Optional[UploadContext]) -> dict[_Key, _Link]:
-        """A working link for each wanted file version that has or gets one."""
+    async def _issue(
+            self, wanted: dict[_Key, StoredFile], context: Optional[UploadContext], asker: _Asker
+    ) -> tuple[dict[_Key, _Link], dict[_Key, _Refusal]]:
+        """For ``asker``: a working link for each wanted file version that has or gets one, and the refusals.
+
+        A version refused recently is not asked about again: its remembered
+        refusal answers. A version the backend gave no link for, or no
+        answer in time, is refused too. Without a backend nothing is asked,
+        and nothing is refused.
+        """
         found: dict[_Key, _Link] = {}
+        refused: dict[_Key, _Refusal] = {}
         missing: dict[_Key, StoredFile] = {}
         now = self._now()
-        asker = _asker(context)
         for key, file in wanted.items():
             link = self._links.get((*key, asker))
             if link is not None and not link.file.access_expired(now, margin=FRESH_LINK_MARGIN):
                 found[key] = link
-            elif not self._recently_refused(key, asker):
+                continue
+            refusal = self._recent_refusal(key, asker)
+            if refusal is None:
                 missing[key] = file
+            else:
+                refused[key] = refusal
         if not missing or self._manager is None:
-            return found
+            return found, refused
 
         answered: set[_Key] = set()
 
         async def renew(key: _Key, file: StoredFile) -> None:
-            link = await self._renew(file, context)
+            outcome = await self._renew(file, context)
             answered.add(key)
-            if link is None:
-                self._remember_refusal(key, asker)
+            if isinstance(outcome, _Refusal):
+                self._remember_refusal(key, asker, outcome)
+                refused[key] = outcome
             else:
-                self._remember_link(key, asker, link)
-                found[key] = link
+                self._remember_link(key, asker, outcome)
+                found[key] = outcome
 
         try:
             async with asyncio.timeout(RENEWAL_TIMEOUT_SECONDS):
@@ -233,24 +281,25 @@ class StoredFileLinks:
         except TimeoutError:
             unanswered = [key for key in missing if key not in answered]
             for key in unanswered:
-                self._remember_refusal(key, asker)
+                refused[key] = _Refusal(time.monotonic())
+                self._remember_refusal(key, asker, refused[key])
             logger.warning(
                 "No new download link for %d stored file(s) within %.0f s; their parts keep their addresses",
                 len(unanswered),
                 RENEWAL_TIMEOUT_SECONDS,
             )
-        return found
+        return found, refused
 
-    async def _renew(self, file: StoredFile, context: Optional[UploadContext]) -> Optional[_Link]:
-        """Ask the backend for a new link to ``file``; None when it gave none."""
+    async def _renew(self, file: StoredFile, context: Optional[UploadContext]) -> Union[_Link, _Refusal]:
+        """Ask the backend for a new link to ``file``: the link, or the refusal when it gave none."""
         try:
             outcome = await self._manager.renew_link(file.file_id, file.version_id, context=context)
         except Exception:
             # Identifiers only: a link is a credential and is never logged.
             logger.exception("Could not issue a new download link for stored file %s", file.file_id)
-            return None
+            return _Refusal(time.monotonic())
         if outcome is None:
-            return None
+            return _Refusal(time.monotonic())
         if isinstance(outcome, UploadFailure):
             logger.warning(
                 "No new download link for stored file %s: %s%s",
@@ -258,8 +307,8 @@ class StoredFileLinks:
                 outcome.error_code.value,
                 f" - {_brief(outcome.cause)}" if outcome.cause is not None else "",
             )
-            return None
-        return self._link(file, outcome)
+            return _Refusal(time.monotonic(), forbidden=outcome.error_code == FileUploadErrorCode.STORAGE_FORBIDDEN)
+        return self._link(file, outcome) or _Refusal(time.monotonic())
 
     def _link(self, file: StoredFile, receipt: UploadReceipt) -> Optional[_Link]:
         """The issued link - the receipt's ``link``, or its ``uri`` without one - unless it is too old to hand out."""
@@ -277,24 +326,25 @@ class StoredFileLinks:
 
     # -- remembering ------------------------------------------------------------
 
-    def _recently_refused(self, key: _Key, asker: _Asker) -> bool:
+    def _recent_refusal(self, key: _Key, asker: _Asker) -> Optional[_Refusal]:
+        """The refusal of a link to ``key`` for ``asker`` within ``RETRY_REFUSED_AFTER_SECONDS``; None without one."""
         refusals = self._refused.get(key, {})
-        refused_at = refusals.get(asker)
-        if refused_at is None:
-            return False
-        if time.monotonic() - refused_at < RETRY_REFUSED_AFTER_SECONDS:
-            return True
+        refusal = refusals.get(asker)
+        if refusal is None:
+            return None
+        if time.monotonic() - refusal.at < RETRY_REFUSED_AFTER_SECONDS:
+            return refusal
         del refusals[asker]
         if not refusals:
             del self._refused[key]
-        return False
+        return None
 
-    def _remember_refusal(self, key: _Key, asker: _Asker) -> None:
-        self._refused.setdefault(key, {})[asker] = time.monotonic()
+    def _remember_refusal(self, key: _Key, asker: _Asker, refusal: _Refusal) -> None:
+        self._refused.setdefault(key, {})[asker] = refusal
         if sum(len(refusals) for refusals in self._refused.values()) > MAX_REMEMBERED:
             horizon = time.monotonic() - RETRY_REFUSED_AFTER_SECONDS
             recent = {
-                k: {a: at for a, at in refusals.items() if at >= horizon}
+                k: {a: kept for a, kept in refusals.items() if kept.at >= horizon}
                 for k, refusals in self._refused.items()
             }
             self._refused = {k: refusals for k, refusals in recent.items() if refusals}

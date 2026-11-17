@@ -10,11 +10,17 @@ context being deleted, or one another holder presents under the same id,
 reads as empty. Within the context nothing is narrowed to the caller's own
 tasks: the participants of a shared context share the conversation.
 
-A stored file of the conversation is read through a download link that works
-now: when the link its part was stored with has expired, a new one is issued
-for the same file version (``aion.server.files.links``), in the scope of the
-turn that reads it. A storage backend that holds its files in this process -
-the stub one, for development - is asked for the file first
+A stored file's part keeps the file's address - with Aion's storage the
+version's protected content address, which works only with authorization -
+and names the file under ``aion:file``. The conversation reads such a file
+through a download link the server issues for the same file version on
+behalf of the turn's sender (``aion.server.files.links``). The storage
+service grants one only to the file's owner, the usage attribution it was
+stored under: in a shared context a participant's turn sees the files the
+others sent, and when the storage service refuses its attribution a link to
+one, the read and the link raise ``ConversationFileForbiddenError`` and the
+address is not fetched. A storage backend that holds its files in this
+process - the stub one, for development - is asked for the file first
 (``FileStorageBackend.held``).
 """
 
@@ -59,9 +65,9 @@ class StoredConversations:
             versions of one.
         owner_resolver: Resolves a call's owner, as the task store does; it
             gives the holder a caller was admitted as.
-        file_links: Issues a download link to a stored file whose part's
-            address is no link that works; omitted, a file is read through
-            the address its part holds.
+        file_links: Issues a download link to a stored file, on behalf of
+            the turn's sender, whose part's address is no link that works;
+            omitted, a file is read through the address its part holds.
         storage: The storage files are stored through, asked first for a file
             it holds in this process.
     """
@@ -199,7 +205,18 @@ class _StoredConversation(Conversation):
         return held
 
     async def file_link(self, part: Part) -> str:
-        """The part's own link while it works, otherwise one issued anew for the same file version."""
+        """A link issued for the turn's sender to the file version the part names; the part's address without one.
+
+        The part's address is given as it is when it is itself a link that
+        still works, when the part names no stored file, without a storage
+        backend, and when no link could be issued.
+
+        Raises:
+            ConversationFileError: The part carries no address.
+            ConversationFileForbiddenError: The storage service refused a link
+                to the turn's usage attribution: the file is not available to
+                this sender.
+        """
         stored = await super().file_link(part)
         if self._file_links is None:
             return stored

@@ -199,13 +199,15 @@ def select_artifacts(
 async def fetch_file(url: str, *, label: str, max_bytes: Optional[int] = DEFAULT_MAX_FILE_BYTES) -> bytes:
     """Download a file from its address into memory.
 
-    The address is fetched as it is stored, with no credentials of the
-    agent's added: a stored file's address is a download link that carries
-    its own access. Only public addresses are fetched, every redirect
-    included (``aion.core.http.file_transport``): the address may come from
-    whoever sent the message, and the server does not reach into its own
-    network for them. Errors name the file by ``label``, never by its
-    address, which may be a credential.
+    The address is fetched as it is given, with no credentials of the
+    agent's added. For a stored file that is the link ``Conversation.file_link``
+    gives - one the server issued for the turn's sender, which carries its
+    own access - and otherwise the address a message holds. Only public
+    addresses are fetched, every redirect included
+    (``aion.core.http.file_transport``): the address may come from whoever
+    sent the message, and the server does not reach into its own network for
+    them. Errors name the file by ``label``, never by its address, which may
+    be a credential.
 
     Args:
         url: The file's ``http`` or ``https`` address.
@@ -235,13 +237,9 @@ async def fetch_file(url: str, *, label: str, max_bytes: Optional[int] = DEFAULT
         ) as client:
             async with client.stream("GET", url) as response:
                 if response.status_code >= 400:
-                    expired = (
-                        " Its download link may have expired."
-                        if response.status_code in (401, 403, 404, 410)
-                        else ""
-                    )
                     raise ConversationFileError(
-                        f"File {label!r} could not be read: its address answered HTTP {response.status_code}.{expired}",
+                        f"File {label!r} could not be read: its address answered HTTP "
+                        f"{response.status_code}.{_refusal_meaning(response.status_code)}",
                         status_code=response.status_code,
                     )
                 async for chunk in response.aiter_bytes():
@@ -259,10 +257,18 @@ async def fetch_file(url: str, *, label: str, max_bytes: Optional[int] = DEFAULT
         raise ConversationFileError(
             f"File {label!r} could not be read: {type(error).__name__}."
         ) from error
-    # The host only: the address of a stored file is a download link that
-    # carries its own access.
+    # The host only: the address may be a link that carries its own access.
     logger.debug("Downloaded file %r (%d bytes) from %s", label, size, urlsplit(url).hostname)
     return b"".join(chunks)
+
+
+def _refusal_meaning(status_code: int) -> str:
+    """What an error status of a file's address says about the file, as a sentence to append; empty when nothing."""
+    if status_code in (401, 403):
+        return " The address refused access."
+    if status_code in (404, 410):
+        return " The address no longer serves the file."
+    return ""
 
 
 @dataclass(frozen=True)
@@ -505,17 +511,20 @@ class Conversation(ABC):
     async def file_link(self, part: Part) -> str:
         """A download link to the stored file of ``part`` that works now.
 
-        The address a part holds may need credentials, or be a download link
-        with a limited lifetime. A conversation read from a server gives the
-        part's own link while it works and otherwise a link issued for the
-        same file on behalf of the turn, for as long as the file is stored;
-        this default knows only the part and gives its address.
+        A stored file's part keeps the file's address, which works only with
+        the storage's authorization. A conversation read from a server gives
+        a link the server issues for the same file version on behalf of the
+        turn's sender, for as long as the file is stored; the storage service
+        issues one only to the file's owner, the usage attribution it was
+        stored under. This default knows only the part and gives its address.
 
         Args:
             part: A part that carries a file by its address (``url``).
 
         Raises:
             ConversationFileError: The part carries no address.
+            ConversationFileForbiddenError: The storage service refused a link
+                to the turn's sender: the file is not available to it.
         """
         if part.WhichOneof("content") != "url":
             raise ConversationFileError("The part carries no address of a stored file.")
@@ -525,11 +534,13 @@ class Conversation(ABC):
         """The bytes of a file part of a message or an artifact.
 
         An inline file is returned as it is. A stored file is downloaded
-        through :meth:`file_link`: the link its part holds while it works,
-        or one issued for the same file. A file that is no longer stored, or
-        one whose link cannot be issued, cannot be read. What was downloaded, and
-        what this server stored itself, is kept for the turn
-        (``aion.core.a2a.file_contents``), so a turn downloads the file once.
+        through :meth:`file_link`: a link issued for the turn's sender to the
+        file version the part names. A file that is no longer stored, or one
+        whose link cannot be issued, cannot be read; one the storage service
+        does not make available to the turn's sender is not downloaded at
+        all. What was downloaded, and what this server stored itself, is kept
+        for the turn (``aion.core.a2a.file_contents``), so a turn downloads
+        the file once.
 
         Args:
             part: A part that carries a file, ``raw`` or ``url``.
@@ -539,6 +550,8 @@ class Conversation(ABC):
             ConversationFileError: The part carries no file, its address
                 answered with an error or not at all, or the file is larger
                 than ``max_bytes``.
+            ConversationFileForbiddenError: The storage service refused a link
+                to the turn's sender: the file is not available to it.
         """
         kind = part.WhichOneof("content")
         if kind == "raw":
@@ -564,8 +577,9 @@ class Conversation(ABC):
         file that way. The address is that of a file part of one of the
         conversation's tasks - a message, the caller's or the agent's, or an
         artifact the agent sent; the part is what is read (:meth:`read_file`),
-        so an address whose link has expired still reads the file. An address
-        no task carries is fetched as it is.
+        through a link issued for the turn's sender to the file version it
+        names, so the protected address of a stored file reads the file too.
+        An address no task carries is fetched as it is.
 
         Args:
             url: The address a file part holds.
@@ -574,6 +588,7 @@ class Conversation(ABC):
 
         Raises:
             ConversationFileError: As :meth:`read_file`.
+            ConversationFileForbiddenError: As :meth:`read_file`.
         """
         content = file_contents().get_by_url(url)
         if content is None:

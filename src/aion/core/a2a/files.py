@@ -3,7 +3,8 @@
 ``files_of`` gives the files of a message, an artifact or parts as
 ``ConversationFile`` objects, the way ``text_of`` and ``data_of``
 (``aion.core.a2a.content``) give their text and data; a file's ``read()``
-gives its bytes and ``link()`` a download link that works now.
+gives its bytes and ``link()`` a download link that works now, issued for
+the turn's sender.
 
 
 A file the server stores reaches a task as a part with an address in
@@ -277,11 +278,16 @@ class ConversationFile:
     called (``aion.core.runtime.context.conversation``, which is built on
     this module and so is imported there, not at the top).
 
-    The address a stored file's part holds (``url``) is a download link with
-    a limited lifetime. ``read`` does not depend on it: the server reads the
-    file through a link that works now for as long as the file is stored.
-    ``link`` gives that link to code that passes an address on instead of
-    reading the bytes - to a model that takes a file by URL, say.
+    A stored file's part keeps the file's address (``url``): with Aion's
+    storage the version's protected content address, which works only with
+    authorization. ``read`` does not fetch it as it is: the server reads the
+    file through a link it issues for the turn's sender, for as long as the
+    file is stored. ``link`` gives that link to code that passes an address
+    on instead of reading the bytes - to a model that takes a file by URL,
+    say. The storage service issues such a link only to the file's owner,
+    the usage attribution it was stored under: in a shared conversation the
+    file another participant sent is not available to the turn's sender, and
+    ``read`` and ``link`` raise ``ConversationFileForbiddenError`` for it.
 
     Args:
         part: The file part: ``raw`` bytes or a ``url``.
@@ -291,7 +297,9 @@ class ConversationFile:
         part: The part the file was built from.
         name: The file's name: the part's ``filename``, or ``default_name``.
         media_type: The file's MIME type; empty when the part names none.
-        url: The address the part holds; None for an inline file.
+        url: The address the part holds; None for an inline file. For a
+            stored file it may work only with authorization: ``read`` and
+            ``link`` give the file.
     """
 
     def __init__(self, part: Part, *, default_name: Optional[str] = None) -> None:
@@ -327,12 +335,15 @@ class ConversationFile:
     async def link(self) -> str:
         """A download link to the file that works now.
 
-        The address the part holds while that still works, otherwise a link
-        the server issues anew for the same file. A link gives access to
-        whoever holds it: pass it on, do not log it.
+        For a stored file, a link the server issues for the turn's sender to
+        the file version the part names; for an address the server did not
+        store the file under, that address. A link gives access to whoever
+        holds it: pass it on, do not log it.
 
         Raises:
             ConversationFileError: The file is inline and has no address.
+            ConversationFileForbiddenError: The storage service refused a link
+                to the turn's sender: the file is not available to it.
             ConversationUnavailableError: No turn is running here.
         """
         from aion.core.runtime.context.conversation import current_conversation
@@ -348,6 +359,9 @@ class ConversationFile:
         Raises:
             ConversationFileError: The file could not be read (see
                 ``aion.core.runtime.context.conversation.Conversation.read_file``).
+            ConversationFileForbiddenError: The storage service refused a link
+                to the turn's sender: the file is not available to it, and is
+                not downloaded.
             ConversationUnavailableError: The file is stored and no turn is
                 running here.
         """
