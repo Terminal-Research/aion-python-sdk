@@ -192,6 +192,167 @@ async def test_a_refusal_leaves_the_stored_link_and_is_not_repeated(links, backe
     assert (await links.refresh(task)).artifacts[0].parts[0].url != STORED_LINK
 
 
+async def test_a_refusal_to_the_daemon_does_not_keep_a_caller_from_asking(links, backend, clock) -> None:
+    """Aion Files grants a caller's request what it refuses the deployment's daemon."""
+    from aion.server.files.storage import UploadContext
+
+    caller = UploadContext(usage_attribution="carrier-1")
+    task = task_with(stored_part())
+    clock.advance(hours=2)
+
+    backend.answer = UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)
+    assert await links.refresh(task) is task
+
+    backend.answer = None
+    fresh = await links.refresh(task, context=caller)
+
+    assert fresh.artifacts[0].parts[0].url != STORED_LINK
+    assert backend.asked == [("file-1", "version-1"), ("file-1", "version-1")]
+
+
+async def test_a_refusal_is_remembered_for_the_attribution_it_was_given_to(links, backend, clock) -> None:
+    """A caller who is not the file's owner is refused; the owner asking after them is not kept waiting."""
+    from aion.server.files.storage import UploadContext
+
+    task = task_with(stored_part())
+    clock.advance(hours=2)
+    backend.answer = UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)
+
+    assert await links.refresh(task, context=UploadContext(usage_attribution="carrier-1")) is task
+    assert await links.refresh(task, context=UploadContext(usage_attribution="carrier-1")) is task
+    assert backend.asked == [("file-1", "version-1")]
+
+    backend.answer = None
+    fresh = await links.refresh(task, context=UploadContext(usage_attribution="carrier-2"))
+
+    assert fresh.artifacts[0].parts[0].url != STORED_LINK
+    assert backend.asked == [("file-1", "version-1"), ("file-1", "version-1")]
+
+
+async def test_a_refusal_is_remembered_without_its_carrier(links, backend, clock) -> None:
+    """A carrier is a credential: what is kept about a refusal cannot be used as one."""
+    from aion.server.files.storage import UploadContext
+
+    clock.advance(hours=2)
+    backend.answer = UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)
+
+    await links.refresh(task_with(stored_part()), context=UploadContext(usage_attribution="carrier-1"))
+
+    assert links._refused and "carrier-1" not in repr(links._refused)
+
+
+async def test_a_link_is_handed_out_only_on_behalf_of_whom_it_was_issued_to(links, backend, clock) -> None:
+    """A link is a credential: the owner's is not given to the daemon or to another caller."""
+    from aion.server.files.storage import UploadContext
+
+    task = task_with(stored_part())
+    clock.advance(hours=2)
+
+    granted = await links.refresh(task, context=UploadContext(usage_attribution="carrier-1"))
+    again = await links.refresh(task, context=UploadContext(usage_attribution="carrier-1"))
+    backend.answer = UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)
+    pushed = await links.refresh(task)
+    other = await links.refresh(task, context=UploadContext(usage_attribution="carrier-2"))
+
+    assert again.artifacts[0].parts[0].url == granted.artifacts[0].parts[0].url != STORED_LINK
+    assert pushed is task and other is task
+    assert backend.asked == [("file-1", "version-1")] * 3
+
+
+def protected_part(file_id="file-1", *, byte_size=None) -> Part:
+    """A part as the Aion backend stores it: the version's address, which works only with authorization."""
+    part = Part(url=f"https://files.test/files/{file_id}/versions/version-1/content", filename="report.pdf")
+    StoredFile.create(
+        file_id, "version-1", retention_expires_at=NOON + timedelta(days=30), byte_size=byte_size
+    ).write_to(part)
+    return part
+
+
+async def store(manager: FileUploadManager, carrier) -> None:
+    """Store one file through ``manager`` on behalf of ``carrier``; the backend issues its link with it."""
+    from aion.server.files.storage import FileUpload, UploadContext
+
+    await manager.store_many([FileUpload(b"%PDF")], context=UploadContext(usage_attribution=carrier))
+
+
+class UploadingBackend(LinkBackend):
+    """Stores files as the Aion backend does: the address in ``uri``, the link issued with it in ``link``."""
+
+    async def store_many(self, uploads, *, context):
+        return [
+            UploadReceipt(
+                uri="https://files.test/files/file-1/versions/version-1/content",
+                link="https://files.test/content?grant=upload",
+                file_id="file-1",
+                version_id="version-1",
+                access_expires_at=(self._clock() + timedelta(hours=1)).isoformat(),
+            )
+            for _ in uploads
+        ]
+
+
+async def test_a_part_with_a_protected_address_is_always_given_a_link(links, backend) -> None:
+    part = protected_part()
+
+    assert await links.link_for(part) is not None
+    fresh = await links.refresh(task_with(part))
+    assert fresh.artifacts[0].parts[0].url.startswith("https://files.test/content?grant=new")
+    assert StoredFile.of(fresh.artifacts[0].parts[0]).access_expires_at is not None
+
+
+async def test_the_link_a_file_was_stored_with_serves_whoever_stored_it(clock) -> None:
+    from aion.server.files.storage import UploadContext
+
+    backend = UploadingBackend(clock)
+    manager = FileUploadManager(backend)
+    links = StoredFileLinks(manager, now=clock)
+    await store(manager, "carrier-1")
+    task = task_with(protected_part())
+
+    answered = await links.refresh(task, context=UploadContext(usage_attribution="carrier-1"))
+    other = await links.refresh(task, context=UploadContext(usage_attribution="carrier-2"))
+
+    assert answered.artifacts[0].parts[0].url == "https://files.test/content?grant=upload"
+    assert other.artifacts[0].parts[0].url != "https://files.test/content?grant=upload"
+    assert backend.asked == [("file-1", "version-1")]
+
+
+async def test_a_turn_reads_the_files_it_stored_by_the_link_they_were_stored_with(clock, monkeypatch) -> None:
+    """Inside a turn a read asks with the turn's attribution, which is the one its files were stored under."""
+    from aion.core.runtime.context import AionRuntimeContext, ForwardedAttribution
+
+    backend = UploadingBackend(clock)
+    manager = FileUploadManager(backend)
+    links = StoredFileLinks(manager, now=clock)
+    await store(manager, "carrier-1")
+    turn = AionRuntimeContext(callback_attribution=ForwardedAttribution("carrier-1"))
+    monkeypatch.setattr(links_module, "get_aion_runtime_context", lambda: turn)
+
+    link = await links.link_for(protected_part())
+
+    assert link == "https://files.test/content?grant=upload"
+    assert backend.asked == []
+
+
+async def test_a_link_keeps_the_parts_own_reference(links, backend) -> None:
+    fresh = await links.refresh(task_with(protected_part(byte_size=4096)))
+
+    assert StoredFile.of(fresh.artifacts[0].parts[0]).byte_size == 4096
+
+
+def test_the_link_scope_is_read_from_the_call_context() -> None:
+    from types import SimpleNamespace
+
+    from aion.server.files.links import FILE_LINK_SCOPE_KEY, link_scope_of
+    from aion.server.files.storage import UploadContext
+
+    scope = UploadContext(usage_attribution="carrier-1")
+
+    assert link_scope_of(SimpleNamespace(state={FILE_LINK_SCOPE_KEY: scope})) is scope
+    assert link_scope_of(SimpleNamespace(state={})) is None
+    assert link_scope_of(None) is None
+
+
 async def test_a_backend_that_issues_no_links_leaves_the_stored_one(clock) -> None:
     class NoLinks(FileStorageBackend):
         async def store_many(self, uploads, *, context):
@@ -328,3 +489,123 @@ async def test_a_closed_manager_issues_no_links(backend, clock) -> None:
 
     assert await links.refresh(task) is task
     assert backend.asked == []
+
+
+class TestRefusedToTheReader:
+    """The storage service refusing the grant to the attribution reading a file means it is not available to it.
+
+    Only that refusal (``STORAGE_FORBIDDEN`` for a usage attribution) raises
+    ``ConversationFileForbiddenError`` from ``link_for``; every other failure
+    leaves the reader with the part's address, and an answer keeps the
+    address of a part whose link was refused either way.
+    """
+
+    @staticmethod
+    def _as(carrier: str):
+        from aion.server.files.storage import UploadContext
+
+        return UploadContext(usage_attribution=carrier)
+
+    async def test_a_file_refused_to_the_reader_is_not_available_to_it(self, links, backend) -> None:
+        from aion.core.exceptions import ConversationFileForbiddenError
+
+        backend.answer = UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)
+        part = protected_part()
+        part.media_type = "application/pdf"
+
+        with pytest.raises(ConversationFileForbiddenError) as refused:
+            await links.link_for(part, context=self._as("carrier-1"))
+        # The refusal is remembered for the attribution, and answers the next read.
+        with pytest.raises(ConversationFileForbiddenError):
+            await links.link_for(part, context=self._as("carrier-1"))
+
+        assert str(refused.value) == "File 'report.pdf' (application/pdf) is not available to this sender."
+        assert not any(secret in str(refused.value) for secret in ("https://", "grant", "carrier-1"))
+        assert backend.asked == [("file-1", "version-1")]
+
+    async def test_a_reader_in_a_turn_is_refused_on_behalf_of_the_turns_attribution(self, links, backend, monkeypatch) -> None:
+        from aion.core.exceptions import ConversationFileForbiddenError
+        from aion.core.runtime.context import AionRuntimeContext, ForwardedAttribution
+
+        backend.answer = UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)
+        turn = AionRuntimeContext(callback_attribution=ForwardedAttribution("carrier-1"))
+        monkeypatch.setattr(links_module, "get_aion_runtime_context", lambda: turn)
+
+        with pytest.raises(ConversationFileForbiddenError):
+            await links.link_for(protected_part())
+
+    async def test_a_refusal_to_one_attribution_does_not_make_the_file_unavailable_to_another(self, links, backend) -> None:
+        from aion.core.exceptions import ConversationFileForbiddenError
+
+        part = protected_part()
+        backend.answer = UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)
+        with pytest.raises(ConversationFileForbiddenError):
+            await links.link_for(part, context=self._as("carrier-1"))
+
+        backend.answer = UploadFailure(FileUploadErrorCode.STORAGE_UNAVAILABLE, retryable=True)
+        assert await links.link_for(part, context=self._as("carrier-2")) is None
+        backend.answer = None
+        assert await links.link_for(part, context=self._as("carrier-3")) == "https://files.test/content?grant=new-3"
+        assert backend.asked == [("file-1", "version-1")] * 3
+
+    @pytest.mark.parametrize("answer", [
+        UploadFailure(FileUploadErrorCode.STORAGE_UNAVAILABLE, retryable=True),
+        UploadFailure(FileUploadErrorCode.STORAGE_REJECTED),
+        UploadFailure(FileUploadErrorCode.STORAGE_UNAUTHORIZED),
+        UploadFailure(FileUploadErrorCode.NO_DAEMON_IDENTITY),
+        RuntimeError("storage is down"),
+    ], ids=["unavailable", "rejected", "unauthorized", "no daemon identity", "error"])
+    async def test_any_other_failure_leaves_the_reader_with_the_address(self, links, backend, answer) -> None:
+        backend.answer = answer
+
+        assert await links.link_for(protected_part(), context=self._as("carrier-1")) is None
+        # Remembered, it still is no refusal of the file to the reader.
+        assert await links.link_for(protected_part(), context=self._as("carrier-1")) is None
+        assert backend.asked == [("file-1", "version-1")]
+
+    async def test_a_timeout_leaves_the_reader_with_the_address(self, links, backend, monkeypatch) -> None:
+        monkeypatch.setattr(links_module, "RENEWAL_TIMEOUT_SECONDS", 0.05)
+        backend.delay = 5
+
+        assert await asyncio.wait_for(links.link_for(protected_part(), context=self._as("carrier-1")), timeout=1) is None
+        assert await links.link_for(protected_part(), context=self._as("carrier-1")) is None
+
+    async def test_a_refusal_to_the_daemon_leaves_the_reader_with_the_address(self, links, backend) -> None:
+        """Outside a turn, with no attribution, the grant is asked for as the deployment's daemon."""
+        backend.answer = UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)
+
+        assert await links.link_for(protected_part()) is None
+
+    async def test_an_answer_keeps_the_address_of_a_file_refused_to_its_requester(self, links, backend) -> None:
+        from aion.core.exceptions import ConversationFileForbiddenError
+
+        backend.answer = UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)
+        task = task_with(protected_part())
+
+        assert await links.refresh(task, context=self._as("carrier-1")) is task
+        # The refusal the answer met tells a reader of the same attribution, without asking again.
+        with pytest.raises(ConversationFileForbiddenError):
+            await links.link_for(task.artifacts[0].parts[0], context=self._as("carrier-1"))
+        assert await links.refresh(task, context=self._as("carrier-1")) is task
+        assert await links.refresh_many([task], context=self._as("carrier-1")) == [task]
+        assert task.artifacts[0].parts[0].url == "https://files.test/files/file-1/versions/version-1/content"
+        assert backend.asked == [("file-1", "version-1")]
+
+    async def test_the_owner_is_given_a_link_after_another_was_refused(self, clock) -> None:
+        from aion.core.exceptions import ConversationFileForbiddenError
+
+        class OwnerOnly(UploadingBackend):
+            async def renew_link(self, file_id, version_id, *, context=None):
+                self.asked.append((file_id, version_id))
+                return UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)
+
+        backend = OwnerOnly(clock)
+        manager = FileUploadManager(backend)
+        links = StoredFileLinks(manager, now=clock)
+        await store(manager, "carrier-owner")
+
+        with pytest.raises(ConversationFileForbiddenError):
+            await links.link_for(protected_part(), context=self._as("carrier-other"))
+        assert await links.link_for(protected_part(), context=self._as("carrier-owner")) == (
+            "https://files.test/content?grant=upload"
+        )

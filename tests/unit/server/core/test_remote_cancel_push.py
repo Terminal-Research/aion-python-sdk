@@ -67,3 +67,26 @@ async def test_a_failed_push_does_not_undo_the_cancel() -> None:
     cancelled = await handler.on_cancel_task(CancelTaskRequest(id=TASK_ID), CONTEXT)
 
     assert cancelled.status.state == TaskState.TASK_STATE_CANCELED
+
+
+@pytest.mark.anyio
+async def test_the_canceled_task_asks_for_links_on_the_cancels_behalf() -> None:
+    """The writer of the outcome pushes it with the attribution its cancel declared."""
+    from aion.core.constants import AION_USAGE_ATTRIBUTION_HEADER, USAGE_ATTRIBUTION_EXTENSION_URI_V1
+    from aion.core.runtime import aion_a2a_extension_registry
+    from aion.server.tasks.push_sender import AionPushNotificationSender
+
+    aion_a2a_extension_registry.reset_to_default()
+    push_sender = Mock(spec=AionPushNotificationSender)
+    handler = await _handler(push_sender)
+    handler._file_links = Mock()
+    handler._file_links.refresh = AsyncMock(side_effect=lambda content, context=None: content)
+    context = ServerCallContext(
+        user=_Caller(),
+        requested_extensions={USAGE_ATTRIBUTION_EXTENSION_URI_V1},
+        state={"headers": {AION_USAGE_ATTRIBUTION_HEADER: "carrier-1"}},
+    )
+
+    await handler.on_cancel_task(CancelTaskRequest(id=TASK_ID), context)
+
+    assert push_sender.send_notification.await_args.kwargs["link_scope"].usage_attribution == "carrier-1"

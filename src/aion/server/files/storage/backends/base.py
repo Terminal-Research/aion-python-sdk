@@ -13,6 +13,8 @@ from abc import ABC, abstractmethod
 import logging
 from typing import Iterable, Optional, Sequence
 
+from aion.core.a2a.files import StoredFile
+
 from ..context import UploadContext
 from ..contracts import FileUpload, UploadOutcome, UploadReceipt
 
@@ -73,10 +75,11 @@ class FileStorageBackend(ABC):
     ) -> Optional[UploadOutcome]:
         """Issue a new download link to a file version stored earlier.
 
-        A stored part keeps the link it was stored with, and that link stops
-        working before the file is removed. A backend that can vouch for the
-        same version again overrides this; the default has no link to give,
-        and the part keeps the one it has.
+        A stored part keeps the address it was stored under: one that works
+        only with credentials, or a link that stops working before the file
+        is removed. A backend that can vouch for the same version again
+        overrides this; the default has no link to give, and the part keeps
+        the address it has.
 
         Args:
             file_id: The file, as its receipt named it.
@@ -86,9 +89,30 @@ class FileStorageBackend(ABC):
                 in: an agent's turn, or the deployment itself.
 
         Returns:
-            A receipt for the same file and version with the new link and
-            its expiry, a failure saying why none was issued, or None when
-            the backend issues no links.
+            A receipt for the same file and version with the new link - its
+            ``link``, or ``uri`` without one - and its expiry, a failure
+            saying why none was issued, or None when the backend issues no
+            links.
+        """
+        return None
+
+    def stored_file_at(self, url: str) -> Optional[StoredFile]:
+        """The file version ``url`` is this backend's own address of, or None.
+
+        A backend whose stored parts keep an address that names the file and
+        its exact version overrides this, so that a part an agent sends with
+        that address alone is recognised as the stored file it is, and a
+        link can be issued for it. The address must be exactly the one the
+        backend gives its files; anything else - another host, another path,
+        a link with a query - is no address of this backend's. The default
+        recognises none.
+
+        Args:
+            url: The address a part carries.
+
+        Returns:
+            A reference to the file and version the address names, with
+            nothing else known of it, or None.
         """
         return None
 

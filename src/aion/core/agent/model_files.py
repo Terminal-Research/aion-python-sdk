@@ -1,21 +1,26 @@
 """Reading a file of the conversation to put it into a model request.
 
 A stored file reaches an agent as an address. A model provider cannot be
-relied on to fetch it: the address is a download link of the deployment's own
-storage, with a limited lifetime, and several model APIs take a file only by
-its content. So the SDK's model helpers send every file by its content, and
-read it here: from what the turn read or stored already
-(``aion.core.a2a.file_contents``), otherwise from storage, through the
-conversation of the turn, which reads a file whatever became of the link the
-message holds.
+relied on to fetch it: the address is that of the deployment's own storage -
+one that works only with its authorization, or a download link with a limited
+lifetime - and several model APIs take a file only by its content. So the SDK's
+model helpers send every file by its content, and read it here: from what the
+turn read or stored already (``aion.core.a2a.file_contents``), otherwise from
+storage, through the conversation of the turn, which reads a stored file
+through a link issued for the turn's sender.
 
 A file that cannot be read fails the turn's task with a reason its caller
-can read. A file larger than ``AION_MODEL_FILE_MAX_BYTES`` is not read:
-``ModelFileTooLargeError`` says so, and the SDK's helpers put a note in the
-file's place in the request (``aion.core.agent.left_out_files``), so the
-conversation goes on without the file. A stored file's reference records its
-size, so such a file is known without downloading it; any other is known
-once a read reaches the limit, and is not read again in the turn.
+can read. Two kinds of file are left out instead: the SDK's helpers put a
+note in the file's place in the request (``aion.core.agent.left_out_files``),
+so the conversation goes on without the file.
+
+* A file larger than ``AION_MODEL_FILE_MAX_BYTES`` is not read:
+  ``ModelFileTooLargeError`` says so. A stored file's reference records its
+  size, so such a file is known without downloading it; any other is known
+  once a read reaches the limit, and is not read again in the turn.
+* A stored file the storage service does not make available to the turn's
+  sender - in a shared conversation, a file another participant sent - is
+  not downloaded: ``ModelFileForbiddenError`` says so.
 """
 
 from __future__ import annotations
@@ -39,6 +44,7 @@ from aion.core.a2a.files import StoredFile
 from aion.core.agent.left_out_files import stored_label
 from aion.core.exceptions import (
     ConversationFileError,
+    ConversationFileForbiddenError,
     ConversationFileTooLargeError,
     ConversationUnavailableError,
     TaskFailedError,
@@ -49,6 +55,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "HeldDocuments",
+    "ModelFileForbiddenError",
     "ModelFileTooLargeError",
     "holding_documents",
     "place_held_documents",
@@ -74,6 +81,20 @@ class ModelFileTooLargeError(TaskFailedError):
     def __init__(self, label: str, limit: int) -> None:
         super().__init__(f"File {label!r} is larger than the {limit} bytes a model request may carry.")
         self.limit = limit
+
+
+class ModelFileForbiddenError(TaskFailedError):
+    """A stored file is not available to the turn's sender, so a model request cannot carry it.
+
+    The storage service gives access to a stored file only on behalf of its
+    owner, the usage attribution it was stored under, and refused the one the
+    turn runs under (``ConversationFileForbiddenError``). The SDK's model
+    helpers and ``inline_files`` put a note in the file's place instead of
+    failing; raised out of them, it fails the task with its reason.
+    """
+
+    def __init__(self, label: str) -> None:
+        super().__init__(f"File {label!r} is not available to this sender. It could not be sent to the model.")
 
 
 def _too_large(key: str, label: str, limit: int, stored: Optional[StoredFile]) -> ModelFileTooLargeError:
@@ -106,13 +127,16 @@ async def read_file_for_model(
         stored: The stored file the address links to, when the place that
             holds the address keeps it too - a framework's state does
             (``aion.server.files.turn``). The file is then read by it, through
-            a new link once ``url`` has expired, wherever the address came
-            from; without it the address is looked up in the conversation.
+            a link issued for the turn whenever ``url`` is no link that
+            works, wherever the address came from; without it the address is
+            looked up in the conversation.
 
     Raises:
         ModelFileTooLargeError: The file is larger than a model request may
             carry: by the size its reference records, or by a read in this
             turn.
+        ModelFileForbiddenError: The storage service does not make the
+            stored file available to the turn's sender.
         TaskFailedError: The file could not be read.
     """
     from aion.core.runtime.context.conversation import current_conversation, fetch_file
@@ -140,6 +164,8 @@ async def read_file_for_model(
                 content = await conversation.read_file_at(url, name=name, max_bytes=limit)
     except ConversationFileTooLargeError as error:
         raise _too_large(key, label, limit, stored) from error
+    except ConversationFileForbiddenError as error:
+        raise ModelFileForbiddenError(label) from error
     except ConversationFileError as error:
         raise TaskFailedError(f"{error} It could not be sent to the model.") from error
     if len(content) > limit:
@@ -169,9 +195,12 @@ def read_file_for_model_sync(
     Called on the event loop itself - ``invoke`` inside a coroutine, which
     blocks the loop it would have to wait for - or outside a turn, the file
     comes from memory or is fetched from its address as it is, and a file
-    whose link has expired cannot be read.
+    whose address is no link that works cannot be read.
 
     Raises:
+        ModelFileTooLargeError: As ``read_file_for_model``.
+        ModelFileForbiddenError: As ``read_file_for_model``, when the file is
+            read through the turn's conversation.
         TaskFailedError: As ``read_file_for_model``.
     """
     from aion.core.runtime.context.conversation import current_conversation

@@ -82,6 +82,17 @@ def _manager(task: Task | None, written_outcome: TaskState | None = None) -> Moc
     return manager
 
 
+def _scoped_call_context(carrier: str | None):
+    """A call context keeping the link scope a request's handler declares for ``carrier``."""
+    from types import SimpleNamespace
+
+    from aion.server.files.links import FILE_LINK_SCOPE_KEY
+    from aion.server.files.storage import UploadContext
+
+    scope = UploadContext(usage_attribution=carrier) if carrier is not None else None
+    return SimpleNamespace(state={FILE_LINK_SCOPE_KEY: scope})
+
+
 def _dispatched(inner: Mock):
     inner.send_notification.assert_awaited_once()
     task_id, event = inner.send_notification.await_args.args
@@ -267,6 +278,22 @@ class TestUnsentOutcome:
         assert inner.send_notification.await_args.args == (TASK_ID, stored)
 
     @pytest.mark.anyio
+    async def test_an_unsent_outcome_asks_for_links_on_behalf_of_the_request_the_manager_acts_for(self):
+        """The turn that wrote the outcome is the request the manager acts for once the execution is over."""
+        from aion.server.tasks.push_sender import AionPushNotificationSender
+
+        stored = _task(TaskState.TASK_STATE_FAILED)
+        inner = Mock(spec=AionPushNotificationSender)
+        manager = _manager(stored, written_outcome=TaskState.TASK_STATE_FAILED)
+        manager._call_context = _scoped_call_context("carrier-2")
+        sender = TerminalTaskPushSender(inner=inner, task_manager=manager)
+
+        await sender.push_unsent_outcome(TASK_ID)
+
+        inner.send_notification.assert_awaited_once()
+        assert inner.send_notification.await_args.kwargs["link_scope"].usage_attribution == "carrier-2"
+
+    @pytest.mark.anyio
     async def test_an_outcome_another_writer_stored_is_left_to_that_writer(self):
         """A cancel from another server is pushed by the server that wrote it."""
         inner = _inner()
@@ -312,6 +339,28 @@ class TestRegistryBinding:
         assert isinstance(wrapped, TerminalTaskPushSender)
         assert wrapped._inner is raw_sender
         assert wrapped._task_manager is bound_manager
+
+    @pytest.mark.anyio
+    async def test_each_push_asks_for_links_on_behalf_of_the_request_the_manager_acts_for(self, execution_scope):
+        """The scope is read when a push is sent, so a later request's turn pushes with its own."""
+        from aion.server.tasks.push_sender import AionPushNotificationSender
+
+        raw_sender = Mock(spec=AionPushNotificationSender)
+        registry = self._registry(raw_sender)
+        first, second = _scoped_call_context("carrier-1"), _scoped_call_context("carrier-2")
+
+        with patch("aion.server.agent.execution.active_task_registry.ActiveTask") as active_task_cls:
+            active_task_cls.return_value.start = AsyncMock()
+            await registry.get_or_create(TASK_ID, call_context=first, context_id=CONTEXT_ID)
+        wrapped = active_task_cls.call_args.kwargs["push_sender"]
+        manager = active_task_cls.call_args.kwargs["task_manager"]
+        await wrapped.send_notification(TASK_ID, _status(TaskState.TASK_STATE_WORKING))
+        # What a2a-sdk's producer does as the next request's turn begins.
+        manager._call_context = second
+        await wrapped.send_notification(TASK_ID, _status(TaskState.TASK_STATE_WORKING))
+
+        scopes = [call.kwargs["link_scope"] for call in raw_sender.send_notification.await_args_list]
+        assert [scope.usage_attribution for scope in scopes] == ["carrier-1", "carrier-2"]
 
     @pytest.mark.anyio
     async def test_absent_push_sender_stays_absent(self, execution_scope):

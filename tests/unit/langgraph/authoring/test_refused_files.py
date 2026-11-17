@@ -304,6 +304,75 @@ class TestFileTooLarge:
         ]
 
 
+class TestFileNotAvailable:
+    """A stored file the storage service does not make available to the turn's sender is a note, and the turn goes on.
+
+    In a shared conversation the file one participant sent stays in the
+    history the others' turns send to a model.
+    """
+
+    URL = "https://files.test/files/f-1/versions/v-1/content"
+    NOTE = '[File "a.pdf" (application/pdf) is not available to this sender and was left out]'
+
+    class _Refusing(InMemoryConversation):
+        def __init__(self) -> None:
+            super().__init__(files={TestFileNotAvailable.URL: b"%PDF-1.7 not for this sender"})
+            self.reads = 0
+
+        async def read_file(self, part, *, max_bytes=None):
+            from aion.core.exceptions import ConversationFileForbiddenError
+
+            self.reads += 1
+            raise ConversationFileForbiddenError(part.filename or "file", part.media_type or None)
+
+    def _question(self) -> HumanMessage:
+        block = create_file_block(url=self.URL, mime_type="application/pdf", filename="a.pdf")
+        block["extras"] = {**block.get("extras", {}), "aion:file": {"fileId": "f-1", "fileVersionId": "v-1"}}
+        return _question(block, _block(PDF, "application/pdf", "report.pdf"))
+
+    async def test_inline_files_puts_a_note_in_its_place(self) -> None:
+        with use_conversation(self._Refusing()):
+            [message] = await inline_files([self._question()])
+
+        assert message.content[1] == {"type": "text", "text": self.NOTE}
+        assert base64.b64decode(message.content[2]["base64"]) == PDF
+
+    async def test_inline_files_sync_puts_a_note_in_its_place(self) -> None:
+        """A synchronous node runs in a worker thread and reads on the turn's event loop."""
+        from aion.langgraph.authoring import inline_files_sync
+
+        with use_conversation(self._Refusing()):
+            [message] = await asyncio.to_thread(inline_files_sync, [self._question()])
+
+        assert message.content[1] == {"type": "text", "text": self.NOTE}
+
+    async def test_the_model_gets_the_note_and_answers(self, service: _ModelService) -> None:
+        with use_conversation(self._Refusing()):
+            answer = await _model().ainvoke([self._question()])
+
+        assert answer.content == "ok"
+        [request] = service.requests
+        assert _files_of(request) == [self.NOTE, "report.pdf"]
+
+    async def test_a_synchronous_model_call_gets_the_note_and_answers(self, service: _ModelService) -> None:
+        with use_conversation(self._Refusing()):
+            answer = await asyncio.to_thread(_model().invoke, [self._question()])
+
+        assert answer.content == "ok"
+        [request] = service.requests
+        assert _files_of(request) == [self.NOTE, "report.pdf"]
+
+    async def test_a_file_that_cannot_be_read_otherwise_still_fails_the_turn(self) -> None:
+        from aion.core.exceptions import ConversationFileError, TaskFailedError
+
+        class Unavailable(InMemoryConversation):
+            async def read_file(self, part, *, max_bytes=None):
+                raise ConversationFileError("File 'a.pdf' could not be read: its address answered HTTP 503.")
+
+        with use_conversation(Unavailable()), pytest.raises(TaskFailedError, match="HTTP 503"):
+            await inline_files([self._question()])
+
+
 class TestReading:
     """How the files of a request are read."""
 

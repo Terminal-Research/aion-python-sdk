@@ -325,16 +325,21 @@ async def test_a_download_follows_a_redirect_to_the_content(addresses) -> None:
     assert await fetch_file("https://api.test/grant", label="a.bin") == b"content"
 
 
-@pytest.mark.parametrize("status, expired", [(403, True), (410, True), (500, False)])
-async def test_a_refused_download_names_the_file_never_its_address(addresses, status, expired) -> None:
+@pytest.mark.parametrize("status, meaning", [
+    (401, " The address refused access."),
+    (403, " The address refused access."),
+    (404, " The address no longer serves the file."),
+    (410, " The address no longer serves the file."),
+    (500, ""),
+])
+async def test_a_refused_download_names_the_file_never_its_address(addresses, status, meaning) -> None:
     addresses["https://api.test/secret-grant"] = httpx.Response(status)
 
     with pytest.raises(conversation.ConversationFileError) as refused:
         await fetch_file("https://api.test/secret-grant", label="a.bin")
 
     assert refused.value.status_code == status
-    assert "a.bin" in str(refused.value) and "secret-grant" not in str(refused.value)
-    assert ("expired" in str(refused.value)) is expired
+    assert str(refused.value) == f"File 'a.bin' could not be read: its address answered HTTP {status}.{meaning}"
 
 
 async def test_a_download_stops_at_the_size_the_caller_allows(addresses) -> None:

@@ -3,17 +3,24 @@
 The SDK's model helpers send a model every file of the messages they are
 given, on every call (``aion.core.agent.model_files``). A message stays in
 the conversation's history, so a file the model cannot take would fail every
-later call too, not only the one it came with. Two kinds of file are left out
-of a request instead, each with a short text note in its place, so the model
-knows a file was there and can say so:
+later call too, not only the one it came with. Three kinds of file are left
+out of a request instead, each with a short text note in its place, so the
+model knows a file was there and can say so:
 
 * a file larger than ``AION_MODEL_FILE_MAX_BYTES``: the SDK does not read it
-  for a model at all (``too_large_note``). This holds for every path that
-  sends a conversation's files by their content, ``inline_files`` included.
+  for a model at all (``too_large_note``).
+* a stored file that is not available to the turn's sender: the storage
+  service gives access to a file only on behalf of its owner, the usage
+  attribution it was stored under, so in a shared conversation the file one
+  participant sent is not available to the turns of the others
+  (``forbidden_note``).
 * a file the model refused. A model's refusal does not say which file it is
   about, so ``RefusedFileSearch`` finds the file by the calls that go through
   without it (``left_out_note``). Only the models the SDK builds do this:
   they make the call, and see how it fails.
+
+The first two hold for every path that sends a conversation's files by their
+content, ``inline_files`` included.
 
 What a model's requests showed is kept for the life of the process
 (``MEMORY_ENTRIES``, the least recently used dropped first): a refused file is
@@ -47,6 +54,7 @@ __all__ = [
     "CHECK_TEXT",
     "RefusedFileSearch",
     "RequestFile",
+    "forbidden_note",
     "forget_verdicts",
     "is_known_refused",
     "is_request_refusal",
@@ -122,6 +130,11 @@ def left_out_note(file: RequestFile) -> str:
 def too_large_note(name: Optional[str], mime_type: Optional[str], limit: int) -> str:
     """The text that takes the place of a file larger than a model request may carry."""
     return f"[{_described(name, mime_type)} is larger than the {limit} bytes a model request may carry and was left out]"
+
+
+def forbidden_note(name: Optional[str], mime_type: Optional[str]) -> str:
+    """The text that takes the place of a stored file that is not available to the turn's sender."""
+    return f"[{_described(name, mime_type)} is not available to this sender and was left out]"
 
 
 def stored_label(stored: Optional[StoredFile]) -> str:

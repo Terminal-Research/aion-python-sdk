@@ -59,6 +59,7 @@ __all__ = [
     "ConversationUnavailableError",
     "ConversationFileError",
     "ConversationFileTooLargeError",
+    "ConversationFileForbiddenError",
 ]
 
 
@@ -286,9 +287,11 @@ class ConversationFileError(AionError):
     """A file of the conversation could not be read.
 
     Raised by ``ConversationFile.read`` and ``ArtifactVersion.read``: the
-    address answered with an error (a stored file's address is a download
-    link that expires), the address is not one the SDK fetches, or the file
-    is larger than the caller allowed.
+    address answered with an error, the address is not one the SDK fetches,
+    the file is larger than the caller allowed
+    (:class:`ConversationFileTooLargeError`), or the storage service does not
+    make a stored file available to the turn's sender
+    (:class:`ConversationFileForbiddenError`).
 
     Args:
         message: What could not be read and why.
@@ -315,3 +318,26 @@ class ConversationFileTooLargeError(ConversationFileError):
     def __init__(self, label: str, max_bytes: int) -> None:
         super().__init__(f"File {label!r} is larger than the {max_bytes} bytes this read allows.")
         self.max_bytes = max_bytes
+
+
+class ConversationFileForbiddenError(ConversationFileError):
+    """A stored file of the conversation is not available to the sender of the turn.
+
+    The storage service gives access to a stored file only on behalf of its
+    owner: the usage attribution the file was stored under. It refused the
+    attribution the turn runs under - in a shared conversation, the file
+    another participant sent is not available to the others. Raised by
+    ``ConversationFile.read`` and ``ConversationFile.link`` and by the
+    conversation's ``read_file``, ``read_file_at`` and ``file_link``; the
+    file's address is not fetched. The message names the file only, never
+    its address or a link to it.
+
+    Args:
+        label: How the message names the file.
+        media_type: The file's media type, when the part names one.
+    """
+
+    def __init__(self, label: str, media_type: Optional[str] = None) -> None:
+        described = f"File {label!r} ({media_type})" if media_type else f"File {label!r}"
+        super().__init__(f"{described} is not available to this sender.")
+        self.media_type = media_type

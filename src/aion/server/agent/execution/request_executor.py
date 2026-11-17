@@ -3,9 +3,11 @@ import asyncio
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Optional, Tuple
+from types import SimpleNamespace
+from typing import Any, Optional, Tuple
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
+from a2a.server.context import ServerCallContext
 from a2a.server.events import Event, EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import Part, Task, TaskState, TaskStatusUpdateEvent
@@ -21,11 +23,14 @@ from aion.core.a2a import codes
 from aion.core.a2a.enums import A2AMetadataKey
 from aion.core.a2a.errors import error_parts
 from aion.core.a2a.file_contents import CALL_CONTEXT_KEY, FileContents, keeping_file_contents
+from aion.core.constants import USAGE_ATTRIBUTION_EXTENSION_URI_V1
 from aion.core.exceptions import AionAuthenticationError, ExtensionRejection, InvalidPrincipalError
 from aion.core.runtime import (
     AionRuntimeContextBuilder,
     ExtensionActivationError,
+    aion_a2a_extension_registry,
 )
+from aion.core.runtime.context.extensions import AionRuntimeExtensions
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.core.runtime.context.models import AionRuntimeContext
 from aion.server.a2a.constants import ACTIVE_TASK_STATES, NON_ACTIVE_TASK_STATES, TERMINAL_TASK_STATES
@@ -42,9 +47,6 @@ from .context.attribution import callback_attribution
 from .event_pipeline import AionEventPipeline, OutboundFileNotStoredError
 from .extensions import ExtensionExecutor
 from .pool import EXTENSION_ROUTE_STATE_KEY, TaskExecutorPool, task_busy
-
-if TYPE_CHECKING:
-    from aion.core.runtime.context.extensions import AionRuntimeExtensions
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +101,52 @@ def public_reason_of(error: BaseException) -> Optional[str]:
             None if current.__suppress_context__ else current.__context__
         )
     return None
+
+
+def attribution_runtime_context(call_context: Optional[ServerCallContext]) -> AionRuntimeContext:
+    """The runtime context of a request that carries no message: its usage attribution and nothing else.
+
+    A request without a message - a read, a cancel - routes nothing and runs
+    no turn of its own, so of the extensions it declares only the usage
+    attribution is activated, by the rules a message follows: its URI
+    declared in ``A2A-Extensions`` and its carrier in
+    ``Aion-Usage-Attribution``. Every other declaration is left out of the
+    context, unverified: there is no message to carry its payload, and it
+    must not fail the request.
+
+    Args:
+        call_context: The request's call context; None declares nothing.
+
+    Returns:
+        A context whose extensions hold at most the usage attribution, with
+        the forwarded attribution set when the request activated it.
+
+    Raises:
+        ExtensionActivationError: The extension was declared and does not
+            verify: its carrier is missing or empty, or the agent does not
+            enable it.
+        AionAuthenticationError: A carrier was sent without the declaration.
+    """
+    requested = getattr(call_context, "requested_extensions", None) or ()
+    declaration = SimpleNamespace(
+        message=None,
+        metadata={},
+        requested_extensions={uri for uri in requested if uri == USAGE_ATTRIBUTION_EXTENSION_URI_V1},
+        call_context=call_context,
+    )
+    descriptors = [
+        descriptor
+        for descriptor in aion_a2a_extension_registry.get_all()
+        if descriptor.uri == USAGE_ATTRIBUTION_EXTENSION_URI_V1
+    ]
+    collected = AionRuntimeExtensions.collect(declaration, descriptors)
+    extensions = AionRuntimeExtensions(
+        {uri: collected.get(uri) for uri in collected.activated_uris}
+    )
+    runtime_context = AionRuntimeContext(extensions=extensions)
+    return runtime_context.replace(
+        callback_attribution=callback_attribution(call_context, runtime_context)
+    )
 
 
 @dataclass
@@ -522,12 +570,18 @@ class AionAgentRequestExecutor(AgentExecutor):
     async def cancel(
             self, context: RequestContext, event_queue: EventQueue
     ) -> None:
-        """Cancel with the current request's caller attribution, restoring any parent scope.
+        """Cancel with the usage attribution of the request the cancel runs for, restoring any parent scope.
 
-        A cancel activates none of the request's extensions: it carries no
-        message for their payloads, and an extension declared in its
-        ``A2A-Extensions`` header - a daemon, say - must not fail it, which
-        a2a-sdk would record as a ``FAILED`` task.
+        The cancel's work - the executor's cancel, the files it reads or
+        stores - runs on behalf of the usage attribution its request
+        activated (``attribution_runtime_context``): the extension's URI
+        declared in ``A2A-Extensions`` and its carrier in
+        ``Aion-Usage-Attribution``. No other extension the request declares
+        is activated: a cancel carries no message for their payloads.
+        Without an activated attribution the cancel runs as the deployment's
+        daemon; a declaration that does not verify, or a carrier sent
+        without its declaration, never fails the cancel, which a2a-sdk
+        would record as a ``FAILED`` task.
         """
         previous = await AionRuntimeContextRegistry.aget_current_context()
         try:
@@ -538,14 +592,17 @@ class AionAgentRequestExecutor(AgentExecutor):
 
     @staticmethod
     def _cancel_runtime_context(context: RequestContext) -> AionRuntimeContext:
-        """The runtime context a cancel runs in: the caller's attribution when it has one, no extensions."""
-        runtime_context = AionRuntimeContext()
+        """The runtime context a cancel runs in: its request's usage attribution, or none."""
         try:
-            attribution = callback_attribution(context.call_context, runtime_context)
-        except (AionAuthenticationError, InvalidPrincipalError) as error:
-            logger.debug("A cancel without callback attribution: %s", error)
-            return runtime_context
-        return AionRuntimeContext(callback_attribution=attribution)
+            return attribution_runtime_context(context.call_context)
+        except (ExtensionActivationError, AionAuthenticationError) as error:
+            logger.debug("A cancel runs without usage attribution: %s", error)
+        except Exception:
+            logger.warning(
+                "Could not read the usage attribution of a cancel; it runs as the deployment's daemon",
+                exc_info=True,
+            )
+        return AionRuntimeContext()
 
     async def _cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         """Request cancellation of an ongoing task.

@@ -147,11 +147,20 @@ class FileUpload:
 class UploadReceipt:
     """Proof that one file's bytes are stored and reachable at ``uri``.
 
-    ``uri`` is whatever the storage service returned, forwarded unchanged into
-    ``Part(url=...)``. The SDK does not rewrite, sign, or otherwise interpret
-    it - and does not log it either: a service is free to answer with a signed
-    URL whose query string is a credential.
-    Stable File/version IDs remain independent of access and storage deadlines.
+    ``uri`` is the file's address, forwarded unchanged into ``Part(url=...)``
+    and kept wherever the part is stored. ``link`` is a download link that
+    works without credentials, issued with the receipt, when ``uri`` itself
+    needs them: a stored part then keeps no credential, and the link is
+    handed out only to whom it was issued for (``aion.server.files.links``).
+    Without ``link``, ``uri`` is the link to hand out. The SDK does not
+    rewrite, sign, or otherwise interpret either - and does not log them: a
+    service is free to answer with a signed URL whose query string is a
+    credential. Stable File/version IDs remain independent of access and
+    storage deadlines.
+
+    Attributes:
+        access_expires_at: When the link handed out - ``link``, or ``uri``
+            without one - stops working.
     """
 
     uri: str
@@ -160,6 +169,7 @@ class UploadReceipt:
     revision: Optional[int] = None
     access_expires_at: Optional[str] = None
     retention_expires_at: Optional[str] = None
+    link: Optional[str] = None
 
 
 @dataclass(frozen=True)

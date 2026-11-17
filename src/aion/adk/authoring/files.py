@@ -1,8 +1,9 @@
 """Sending the files of a conversation to a model by their content.
 
 A file the server stored reaches an agent as ``file_data`` with the file's
-address. The address is a download link of the deployment's storage with a
-limited lifetime, and a model provider cannot be relied on to fetch it.
+address. The address is that of the deployment's storage - one that works
+only with its authorization, or a download link with a limited lifetime -
+and a model provider cannot be relied on to fetch it.
 ``inline_files`` replaces every such part of a model request with
 ``inline_data`` carrying the file's content. The session keeps the address:
 the content is put into the request only.
@@ -15,8 +16,8 @@ sends a tool's media to a model.
 
 The server names the stored file behind each address in the session, in the
 ``custom_metadata`` of the event that holds it (``STORED_FILES_KEY``), and a
-file is read by that name, through a new link once the address's own has
-expired. An address the session names no file for is read through the
+file is read by that name, through a link issued for the turn whenever the
+address is no link that works. An address the session names no file for is read through the
 conversation's tasks, which hold the files the agent was sent and sent.
 
 The model ``aion_lite_llm`` builds does this on every call. An agent with a
@@ -28,9 +29,11 @@ model of its own uses the callback:
 
 Every file of the request is sent, on every call: a model keeps nothing
 between requests. A file larger than ``AION_MODEL_FILE_MAX_BYTES`` is not
-read: a text note takes its part's place - for a tool's media, a text part
-right after the function response - and the conversation goes on without
-the file (``aion.core.agent.left_out_files``). A file that cannot be read
+read, and a stored file that is not available to the turn's sender - in a
+shared conversation, one another participant sent - is not downloaded: a
+text note takes its part's place - for a tool's media, a text part right
+after the function response - and the conversation goes on without the file
+(``aion.core.agent.left_out_files``). A file that cannot be read
 fails the task with a reason its caller reads (``aion.core.agent.model_files``).
 
 ``aion_lite_llm`` also leaves out a file its model refuses, with a note in
@@ -59,8 +62,13 @@ from functools import cached_property
 from typing import Any, Optional, Union
 
 from aion.core.a2a.files import StoredFile
-from aion.core.agent.left_out_files import CHECK_TEXT, RequestFile, left_out_note, too_large_note
-from aion.core.agent.model_files import HeldDocuments, ModelFileTooLargeError, read_file_for_model
+from aion.core.agent.left_out_files import CHECK_TEXT, RequestFile, forbidden_note, left_out_note, too_large_note
+from aion.core.agent.model_files import (
+    HeldDocuments,
+    ModelFileForbiddenError,
+    ModelFileTooLargeError,
+    read_file_for_model,
+)
 from google.genai import types
 
 __all__ = ["STORED_FILES_KEY", "inline_files", "inline_files_before_model"]
@@ -144,8 +152,9 @@ async def inline_files(llm_request: Any, *, documents: Optional[HeldDocuments] =
 
     The request gets new ``Content`` objects for the messages that change;
     the ones it was built from, and the session's events, are left as they
-    are. A file larger than a model request may carry is replaced by a text
-    note that says so.
+    are. A file larger than a model request may carry, and a stored file
+    that is not available to the turn's sender, is replaced by a text note
+    that says so.
 
     Args:
         llm_request: The ADK ``LlmRequest`` about to be sent.
@@ -165,8 +174,20 @@ async def inline_files(llm_request: Any, *, documents: Optional[HeldDocuments] =
 Unread = Callable[[StoredFile], bool]
 """Says which stored files a request leaves out without reading them."""
 
-_Read = Union[bytes, ModelFileTooLargeError]
+_LeftOut = (ModelFileTooLargeError, ModelFileForbiddenError)
+"""Why a file is left out of a model request, with a note in its place."""
+
+_Read = Union[bytes, ModelFileTooLargeError, ModelFileForbiddenError]
 """What reading a file for a model gave: its content, or why it is left out."""
+
+
+def _note(
+        left_out: Union[ModelFileTooLargeError, ModelFileForbiddenError], name: Optional[str], mime_type: str
+) -> types.Part:
+    """The text part that takes the place of a file that is left out."""
+    if isinstance(left_out, ModelFileTooLargeError):
+        return types.Part(text=too_large_note(name, mime_type, left_out.limit))
+    return types.Part(text=forbidden_note(name, mime_type))
 
 
 async def prepare_request(
@@ -230,7 +251,7 @@ async def _read_all(addresses: dict[str, Optional[str]], stored: dict[str, Store
 async def _read(url: str, name: Optional[str], stored: Optional[StoredFile]) -> _Read:
     try:
         return await read_file_for_model(url, name=name, stored=stored)
-    except ModelFileTooLargeError as error:
+    except _LeftOut as error:
         return error
 
 
@@ -253,8 +274,8 @@ def _inline(
             files.append(FilePart(content, index, None, name, mime_type, uri=url, stored=reference))
             return part
         data = read[url]
-        if isinstance(data, ModelFileTooLargeError):
-            return types.Part(text=too_large_note(name, mime_type, data.limit))
+        if isinstance(data, _LeftOut):
+            return _note(data, name, mime_type)
     elif part.inline_data is not None and part.inline_data.data:
         name = part.inline_data.display_name
         mime_type = part.inline_data.mime_type or FALLBACK_MIME_TYPE
@@ -319,8 +340,8 @@ def _with_media_content(
         name = item.file_data.display_name
         mime_type = item.file_data.mime_type or FALLBACK_MIME_TYPE
         data = read[url]
-        if isinstance(data, ModelFileTooLargeError):
-            notes.append(types.Part(text=too_large_note(name, mime_type, data.limit)))
+        if isinstance(data, _LeftOut):
+            notes.append(_note(data, name, mime_type))
             continue
         files.append(FilePart(content, index, len(kept), name, mime_type, data=data, stored=stored.get(url)))
         kept.append(types.FunctionResponsePart(

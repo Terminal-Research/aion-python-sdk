@@ -26,18 +26,23 @@ other configs without it.
 
 ## file-link-authority
 
-- **Status:** Needs verification
+- **Status:** Not supported yet
 - **Code:** `src/aion/server/files/storage/backends/aion.py`
 
-A stored file's download link is issued again once the one its part holds
-has expired (`aion.server.files.links`): for what the server answers with
-and pushes, and for the files an agent reads. A new link is asked for in a
-scope other than the one the file was uploaded in - an answer to `GetTask`
-or a push delivery runs outside any agent turn and carries no callback
-attribution, so Aion acts as the deployment's daemon, and a later turn can
-carry another attribution than the turn that stored the file. Whether the
-Files API grants a link in each of those scopes has not been confirmed
-against the live service. Meanwhile a link that is not issued costs
-nothing: the part leaves with the link it was stored with, the refusal is
-logged with the file's id, and the file version is not asked about again
-for a minute.
+A stored file's part keeps the file's address, which with the Aion backend
+works only with authorization, and the server hands out a download link for
+it (`aion.server.files.links`): in what it answers with and pushes, and for
+the files an agent reads. The Files API grants a link to the file's owner -
+the identity of the usage attribution it was stored under - and refuses the
+deployment's daemon (HTTP 403). A message and a read of a task or a context
+ask with the attribution they activated, and a turn's push deliveries with
+that of the request whose turn it is. An answer that activated none - a read
+from a client that sends no attribution, the push of an abandoned task's
+settlement or of a cancel for the deletion of a context whose task runs on
+another server - asks on behalf of the daemon, and so is refused; so is a
+caller the file does not belong to. Meanwhile those
+answers carry the part's address, which does not download without
+authorization; the owner gets a working link by reading the task with its
+attribution. A refused link costs nothing more: the refusal is logged with
+the file's id, and the file version is not asked about again on the same
+behalf for a minute.

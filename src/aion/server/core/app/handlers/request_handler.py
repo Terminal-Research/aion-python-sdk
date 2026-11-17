@@ -43,7 +43,10 @@ from aion.core.a2a import (
     GetContextParams,
     GetContextsParams,
 )
+from aion.core.constants import USAGE_ATTRIBUTION_EXTENSION_URI_V1
+from aion.core.exceptions import AionAuthenticationError
 from aion.core.runtime import ExtensionActivationError, aion_a2a_extension_registry
+from aion.core.runtime.context import AionRuntimeContext
 from aion.core.runtime.context.extensions import AionRuntimeExtensions
 from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from google.protobuf import json_format
@@ -52,12 +55,16 @@ from typing import override
 import uuid
 
 from aion.server.agent.execution import AionActiveTaskRegistry
+from aion.server.agent.execution.context.attribution import callback_attribution
+from aion.server.agent.execution.request_executor import attribution_runtime_context
 from aion.server.agent.execution.pool import EXTENSION_ROUTE_STATE_KEY, refusal_data
 from aion.server.a2a.constants import ACTIVE_TASK_STATES, TERMINAL_TASK_STATES
 from aion.server.auth import has_individual_access
-from aion.server.files.links import StoredFileLinks
+from aion.server.files.links import FILE_LINK_SCOPE_KEY, StoredFileLinks, link_scope_of
+from aion.server.files.storage import UploadContext, resolve_upload_context
 from aion.server.tasks.abandoned import AbandonedTasks
 from aion.server.tasks.admission import ContextAdmission, InMemoryContextAdmission, holder_of
+from aion.server.tasks.push_sender import send_with_link_scope
 from aion.server.tasks.stores import BaseTaskStore
 from aion.server.contexts import ContextService, ContextStateDeleter
 from aion.server.tasks.contexts import ContextCatalog, InMemoryContextCatalog
@@ -66,6 +73,45 @@ from .terminal_task_projection import TerminalTaskProjection
 from aion.server.a2a.response_extensions import ResponseServiceParameters
 
 logger = logging.getLogger(__name__)
+
+
+def _file_link_scope(
+        extensions: AionRuntimeExtensions,
+        call_context: ServerCallContext,
+        *,
+        context_id: str | None = None,
+        task_id: str | None = None,
+) -> UploadContext | None:
+    """The scope a request's answer asks for new download links in: the usage attribution it activated.
+
+    A message carries the usage attribution of whoever sent it, and the turn
+    it starts stores and reads files on that behalf; the files are the
+    owner's. Its answer - the task, the stream's events, the turn's push
+    notifications - asks for new links on the same behalf, so they are
+    granted as the turn's are; so does a read of a task or a context that
+    declares the caller's attribution (``_declared_link_scope``). A link
+    asked for without one is asked for on behalf of the deployment's daemon.
+    None when the request carries no attribution, or one that was not
+    activated or cannot be resolved.
+
+    A push reads the scope off the call context the task's manager acts
+    for when the push is sent: the message's while its turn runs, whether
+    the message created the task's ``ActiveTask`` or was queued into a
+    running one (``aion.server.tasks.terminal_push_sender.current_link_scope``).
+    """
+    runtime = AionRuntimeContext(extensions=extensions)
+    try:
+        attribution = callback_attribution(call_context, runtime)
+    except AionAuthenticationError:
+        return None
+    if attribution is None:
+        return None
+    resolution = resolve_upload_context(
+        runtime.replace(callback_attribution=attribution),
+        context_id=context_id,
+        task_id=task_id,
+    )
+    return resolution if isinstance(resolution, UploadContext) else None
 
 
 def _unversioned(versioned_store) -> BaseTaskStore:
@@ -126,11 +172,13 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         ``file_links`` keeps the download links of stored files working in
         everything this handler answers with: a task, a list of tasks, a
         stream event or a context leaves with a new link in place of each
-        expired one (``aion.server.files.links``). Omitted, an answer
+        expired one (``aion.server.files.links``), asked for on behalf of
+        the usage attribution the request activated. Omitted, an answer
         carries the links its task was stored with.
         """
         super().__init__(*args, **kwargs)
         self._file_links = file_links
+        self._warned_undeclared_attribution = False
         self._active_task_registry = AionActiveTaskRegistry(
             agent_executor=self.agent_executor,
             task_store=self._versioned_store,
@@ -192,6 +240,13 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         )
 
         await self._run_preprocessors(params, context)
+        if call_context is not None:
+            call_context.state[FILE_LINK_SCOPE_KEY] = _file_link_scope(
+                extensions,
+                call_context,
+                context_id=params.message.context_id or None,
+                task_id=params.message.task_id or None,
+            )
         try:
             return await super()._setup_active_task(params, call_context)
         except Exception:
@@ -428,32 +483,81 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         ResponseServiceParameters(verified.activated_uris).record(call_context)
         return verified
 
-    async def _with_working_links(self, content):
+    def _declare_link_scope(self, call_context: ServerCallContext | None) -> None:
+        """Keep on a request with no message the scope its answer asks for file links in.
+
+        A read - ``GetTask``, ``ListTasks``, ``GetContext``,
+        ``SubscribeToTask``, ``CancelTask`` - carries no message to verify, so
+        only the usage attribution extension is activated here, by the rules
+        a message follows: its URI declared in ``A2A-Extensions`` and its
+        carrier in ``Aion-Usage-Attribution``. Every other declared
+        extension is left alone - a read neither routes nor runs anything -
+        and a declaration that does not verify leaves the answer to ask as
+        the deployment's daemon instead of refusing the read. So does a
+        carrier sent without the declaration, which is logged once.
+
+        The scope a ``CancelTask`` keeps also serves the pushes of what is
+        left of a turn it cancels on this server: the task's manager acts
+        for the cancel from then on
+        (``aion.server.tasks.terminal_push_sender.current_link_scope``).
+        """
+        if call_context is None or self._file_links is None:
+            return
+        call_context.state[FILE_LINK_SCOPE_KEY] = self._declared_link_scope(call_context)
+
+    def _declared_link_scope(self, call_context: ServerCallContext) -> UploadContext | None:
+        """The usage attribution a read declares, as a scope for file links; None asks as the daemon.
+
+        Activated as a cancel's is (``attribution_runtime_context``), so a
+        cancel's work and the links of its answer run on the same behalf.
+        """
+        try:
+            runtime = attribution_runtime_context(call_context)
+        except ExtensionActivationError as error:
+            logger.debug("A read's usage attribution was not activated: %s", error)
+            return None
+        except AionAuthenticationError:
+            if not self._warned_undeclared_attribution:
+                self._warned_undeclared_attribution = True
+                logger.warning(
+                    "A read carried a usage attribution without declaring %s in A2A-Extensions; "
+                    "the links of its answer are asked for on behalf of the deployment's daemon",
+                    USAGE_ATTRIBUTION_EXTENSION_URI_V1,
+                )
+            return None
+        return _file_link_scope(runtime.extensions, call_context)
+
+    async def _with_working_links(self, content, call_context: ServerCallContext | None = None):
         """``content`` as a client gets it: the expired links of its stored files replaced.
 
         Every answer that carries a task, a message or an event passes
-        through here. The stored task is not changed.
+        through here. The stored task is not changed. The new links are
+        asked for in the scope the request keeps (``link_scope_of``): on
+        behalf of the usage attribution it activated, or of the deployment's
+        daemon.
         """
         if content is None or self._file_links is None:
             return content
-        return await self._file_links.refresh(content)
+        return await self._file_links.refresh(content, context=link_scope_of(call_context))
 
     @override
     async def on_get_task(self, params: GetTaskRequest, context: ServerCallContext) -> Task | None:
         """The caller's own task; a caller without individual access has none."""
         _require_individual_access(context, params.id)
-        return await self._with_working_links(await super().on_get_task(params, context))
+        self._declare_link_scope(context)
+        return await self._with_working_links(await super().on_get_task(params, context), context)
 
     @override
     async def on_list_tasks(self, params: ListTasksRequest, context: ServerCallContext) -> ListTasksResponse:
         """The caller's own tasks; a caller without individual access lists none."""
         if not has_individual_access(context):
             return ListTasksResponse()
+        self._declare_link_scope(context)
         response = await super().on_list_tasks(params, context)
         if self._file_links is None or not response.tasks:
             return response
         tasks = list(response.tasks)
-        fresh = await self._file_links.refresh_many(tasks)
+        fresh = await self._file_links.refresh_many(tasks, context=link_scope_of(context))
         if all(after is before for after, before in zip(fresh, tasks)):
             return response
         answer = ListTasksResponse()
@@ -520,15 +624,20 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         Raises:
             ContextNotFound: The caller cannot see the context.
         """
-        return await self._context_with_working_links(await self._contexts.get_context(params, context))
+        self._declare_link_scope(context)
+        return await self._context_with_working_links(await self._contexts.get_context(params, context), context)
 
-    async def _context_with_working_links(self, view: ContextView) -> ContextView:
+    async def _context_with_working_links(
+            self, view: ContextView, call_context: ServerCallContext | None = None,
+    ) -> ContextView:
         """The context view with the expired links of its messages and artifacts replaced."""
         if self._file_links is None:
             return view
         messages = list(view.history)
         artifacts = [item.artifact for item in view.artifacts]
-        fresh = await self._file_links.refresh_many([*messages, *artifacts, view.status])
+        fresh = await self._file_links.refresh_many(
+            [*messages, *artifacts, view.status], context=link_scope_of(call_context)
+        )
         if all(after is before for after, before in zip(fresh, [*messages, *artifacts, view.status])):
             return view
         fresh_artifacts = fresh[len(messages):len(messages) + len(artifacts)]
@@ -615,7 +724,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         """
         result = await super().on_message_send(params, context)
         if isinstance(result, Task):
-            return await self._with_working_links(result)
+            return await self._with_working_links(result, context)
 
         task_id = result.task_id or params.message.task_id
         # The store is read directly: ActiveTask.get_task() waits on a flag that
@@ -634,7 +743,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
                 message="Agent answered with a Message instead of a Task."
             )
 
-        return await self._with_working_links(apply_history_length(task, params.configuration))
+        return await self._with_working_links(apply_history_length(task, params.configuration), context)
 
     async def on_message_send_stream(
             self,
@@ -663,7 +772,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             task_transform=lambda task: apply_history_length(task, params.configuration),
         )
         async for event in projection.project(super().on_message_send_stream(params, context)):
-            yield await self._with_working_links(event)
+            yield await self._with_working_links(event, context)
 
     @override
     async def on_cancel_task(
@@ -681,9 +790,10 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         or the outcome its own turn reached in the meantime.
         """
         _require_individual_access(context, params.id)
+        self._declare_link_scope(context)
         async with self._cancelling(params.id):
             cancelled = await super().on_cancel_task(params, context)
-        return await self._with_working_links(cancelled)
+        return await self._with_working_links(cancelled, context)
 
     @override
     async def _write_cancel(
@@ -698,13 +808,14 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         The server executing the task learns of the cancel at its next write
         and stops without writing, and nothing on this server delivers the
         outcome either, so the push notification of the ``CANCELED`` task is
-        sent here, once, by the writer of the state. A failed delivery is
-        logged and does not undo the cancel.
+        sent here, once, by the writer of the state, its links asked for on
+        behalf of the usage attribution the cancel declared. A failed
+        delivery is logged and does not undo the cancel.
         """
         cancelled = await super()._write_cancel(task_id, current, version, context)
         if self._push_sender is not None:
             try:
-                await self._push_sender.send_notification(task_id, cancelled)
+                await send_with_link_scope(self._push_sender, task_id, cancelled, link_scope_of(context))
             except Exception:
                 logger.exception("Could not push the cancellation of task %s", task_id)
         return cancelled
@@ -755,6 +866,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         the task with its outcome.
         """
         _require_individual_access(context, params.id)
+        self._declare_link_scope(context)
         stored = await self._versioned_store.get(params.id, context)
         if stored is None:
             raise TaskNotFoundError
@@ -776,7 +888,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             task_id=params.id,
         )
         async for event in projection.project(source):
-            yield await self._with_working_links(event)
+            yield await self._with_working_links(event, context)
 
     @staticmethod
     async def _while_cancelling(task: Task, cancels: list[asyncio.Event]) -> AsyncGenerator[Event]:

@@ -212,6 +212,82 @@ class TestToolMedia:
         ]
 
 
+class TestFileNotAvailable:
+    """A stored file the storage service does not make available to the turn's sender is a note, and the turn goes on.
+
+    In a shared conversation the file one participant sent stays in the
+    session the others' turns send to a model.
+    """
+
+    NOTE = '[File "report.pdf" (application/pdf) is not available to this sender and was left out]'
+
+    class _Refusing(InMemoryConversation):
+        """Refuses the report to the turn's sender; reads every other file as the test conversation does."""
+
+        def __init__(self) -> None:
+            super().__init__(files={PDF_URL: PDF, PNG_URL: PNG})
+
+        async def read_file(self, part, *, max_bytes=None):
+            from aion.core.exceptions import ConversationFileForbiddenError
+
+            if part.url == PDF_URL:
+                raise ConversationFileForbiddenError(part.filename or "file", part.media_type or None)
+            return await super().read_file(part, max_bytes=max_bytes)
+
+    async def test_inline_files_puts_a_note_in_its_place(self) -> None:
+        request, _ = _request()
+
+        with use_conversation(self._Refusing()):
+            await inline_files(request)
+
+        text, pdf, png = request.contents[0].parts
+        assert pdf.text == self.NOTE
+        assert png.inline_data.data == PNG
+
+    async def test_a_tools_media_is_a_note_after_the_function_response(self) -> None:
+        media = types.FunctionResponsePart(
+            file_data=types.FunctionResponseFileData(file_uri=PDF_URL, mime_type="application/pdf", display_name="report.pdf")
+        )
+        response = types.FunctionResponse(id="call-1", name="fetch_report", response={}, parts=[media])
+        request = LlmRequest(model="gpt-test", contents=[types.Content(role="user", parts=[types.Part(function_response=response)])])
+
+        with use_conversation(self._Refusing()):
+            await inline_files(request)
+
+        answer, note = request.contents[0].parts
+        assert answer.function_response.name == "fetch_report" and not answer.function_response.parts
+        assert note.text == self.NOTE
+
+    async def test_the_aion_model_gets_the_note_and_answers(self) -> None:
+        seen: list = []
+
+        class _Base:
+            async def generate_content_async(self, llm_request, stream=False):
+                seen.extend(llm_request.contents[0].parts)
+                yield "response"
+
+        request, _ = _request()
+        model = _file_inlining_lite_llm(_Base)()
+
+        with use_conversation(self._Refusing()):
+            responses = [response async for response in model.generate_content_async(request)]
+
+        assert responses == ["response"]
+        assert seen[1].text == self.NOTE
+        assert seen[2].inline_data.data == PNG
+
+    async def test_a_file_that_cannot_be_read_otherwise_still_fails_the_turn(self) -> None:
+        from aion.core.exceptions import ConversationFileError, TaskFailedError
+
+        class Unavailable(InMemoryConversation):
+            async def read_file(self, part, *, max_bytes=None):
+                raise ConversationFileError("File 'report.pdf' could not be read: its address answered HTTP 503.")
+
+        request, _ = _request()
+        with use_conversation(Unavailable()), pytest.raises(TaskFailedError, match="HTTP 503"):
+            await inline_files(request)
+
+
 class TestReadingByTheStoredFile:
     """The session names the stored file behind an address; the file is read by that name."""
 

@@ -4,12 +4,13 @@ import asyncio
 import httpx
 import logging
 from a2a.server.tasks.base_push_notification_sender import BasePushNotificationSender
-from a2a.server.tasks.push_notification_sender import PushNotificationEvent
+from a2a.server.tasks.push_notification_sender import PushNotificationEvent, PushNotificationSender
 from a2a.types import Task
 from a2a.types.a2a_pb2 import TaskPushNotificationConfig
 from a2a.utils.proto_utils import to_stream_response
 from aion.server.a2a.utils import NO_TEXT, describe_event, extract_event_preview
 from aion.server.files.links import StoredFileLinks
+from aion.server.files.storage import UploadContext
 from google.protobuf.json_format import MessageToDict
 
 logger = logging.getLogger(__name__)
@@ -117,8 +118,10 @@ class AionPushNotificationSender(BasePushNotificationSender):
 
     An event is delivered with working download links: given ``file_links``,
     every expired link of a stored file is replaced before the event is sent
-    (``aion.server.files.links``). The outcome of a long task carries files
-    written more than a link's lifetime ago.
+    (``aion.server.files.links``), asked for on behalf of ``link_scope`` - the
+    usage attribution of the turn the event belongs to - or, without one, of
+    the deployment's daemon. The outcome of a long task carries files written
+    more than a link's lifetime ago.
 
     The base class builds its request and logs its outcome inline, with no
     extension point, so ``_dispatch_notification`` and ``send_notification``
@@ -137,7 +140,11 @@ class AionPushNotificationSender(BasePushNotificationSender):
         await self._client.aclose()
 
     async def send_notification(
-            self, task_id: str, event: PushNotificationEvent
+            self,
+            task_id: str,
+            event: PushNotificationEvent,
+            *,
+            link_scope: UploadContext | None = None,
     ) -> None:
         """Delivers one event to every webhook registered for the task.
 
@@ -160,6 +167,9 @@ class AionPushNotificationSender(BasePushNotificationSender):
         Args:
             task_id: Identifier of the task the event belongs to.
             event: The event to deliver.
+            link_scope: The scope new download links are asked for in: the
+                usage attribution of the turn the event belongs to. None asks
+                on behalf of the deployment's daemon.
         """
         try:
             push_configs = await self._config_store.get_info_for_dispatch(task_id)
@@ -172,7 +182,7 @@ class AionPushNotificationSender(BasePushNotificationSender):
         if not push_configs:
             return
         if self._file_links is not None:
-            event = await self._file_links.refresh(event)
+            event = await self._file_links.refresh(event, context=link_scope)
 
         results = await asyncio.gather(
             *[
@@ -322,4 +332,21 @@ class AionPushNotificationSender(BasePushNotificationSender):
         return headers
 
 
-__all__ = ['AionPushNotificationSender']
+async def send_with_link_scope(
+        sender: PushNotificationSender,
+        task_id: str,
+        event: PushNotificationEvent,
+        link_scope: UploadContext | None,
+) -> None:
+    """Deliver ``event`` through ``sender``, the links of its files asked for in ``link_scope``.
+
+    Only ``AionPushNotificationSender`` issues links again, so only it is
+    given the scope; any other sender delivers the event as it is.
+    """
+    if isinstance(sender, AionPushNotificationSender):
+        await sender.send_notification(task_id, event, link_scope=link_scope)
+    else:
+        await sender.send_notification(task_id, event)
+
+
+__all__ = ['AionPushNotificationSender', 'send_with_link_scope']

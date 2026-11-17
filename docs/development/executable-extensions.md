@@ -229,40 +229,74 @@ task keeps it.
 
 ### Stored files and their links
 
-The link a stored part holds in `url` stops working long before the file is
-removed: an hour against thirty days, with the Aion backend's defaults. So
+A stored part holds in `url` the file's address. With the Aion backend it
+is the version's content address (`AionFileClient.content_url`), which
+works only with authorization: the receipt carries the download grant
+issued with the upload as its `link`, and the part keeps no credential. So
 a part the server stores also names the file. Under `aion:file` in the
 part's metadata (`aion.core.a2a.files.StoredFile`) the file transformer
-writes `fileId`, `fileVersionId`, `accessExpiresAt` and
-`retentionExpiresAt`, whenever the storage backend's receipt names the file
-and its version; the stub backend names no version, and its parts carry the
-link alone. The key is the server's: `FilePartPreprocessor` removes it from
+writes `fileId`, `fileVersionId` and `retentionExpiresAt`, whenever the
+storage backend's receipt names the file and its version, and
+`accessExpiresAt` only when the address is itself a link that expires; the
+stub backend names no version, and its parts carry the address alone. The key is the server's: `FilePartPreprocessor` removes it from
 every part of a message a caller sends, since the server later issues links
-for the file it names with the deployment's own rights.
+for the file it names and hands them to whoever reads the task.
 
-`StoredFileLinks` (`aion.server.files.links`) issues the link again, through
+`StoredFileLinks` (`aion.server.files.links`) supplies a link, through
 `FileStorageBackend.renew_link`, which the Aion backend answers with a new
 read grant for the same version:
 
-| Where | What happens |
-| --- | --- |
-| An answer of `AionRequestHandler` - `GetTask`, `ListTasks`, `SendMessage`, a stream event, `CancelTask`, `SubscribeToTask`, `GetContext` | Every link that has expired, or will within five minutes, is replaced in a copy of what is sent. |
-| A push delivery (`AionPushNotificationSender`) | The same, before the event is posted. |
-| An agent's read (`ConversationFile.read`, `ConversationFile.link`) | The part's own link while it works, a new one afterwards. |
+| Where | What happens | On whose behalf |
+| --- | --- | --- |
+| The answer to `SendMessage`, and every event of its stream | Every part's address that is no working link - one that needs authorization, or a link that expires within five minutes - is replaced in a copy of what is sent. | The message's sender: the usage attribution the message activated |
+| The answer to `GetTask`, `ListTasks`, `CancelTask`, `SubscribeToTask`, `GetContext` | The same. | The caller: the usage attribution the read activated; without one, the deployment's daemon |
+| A push delivery of a turn (`TerminalTaskPushSender`), and of a task the shutdown settled | The same, before the event is posted. | The request the task's manager acts for when the event is sent: the message whose turn it is, or, once a cancel on this server has reached the task, the canceller |
+| The push delivery of a remote cancel (`_write_cancel`) | The same. | The cancel's caller, as for its answer |
+| The push delivery of a cancel for a context's deletion | The same. | Of a task running on this server, as for a turn's push - the owner's latest request; of one running elsewhere, the deployment's daemon |
+| The push delivery of an abandoned task's settlement | The same. | The deployment's daemon |
+| An agent's read (`ConversationFile.read`, `ConversationFile.link`) | The part's own link while it works, otherwise one supplied for it; a file the storage refuses to the turn's attribution raises `ConversationFileForbiddenError`, and the model helpers leave it out with a note. | The turn's attribution |
 
-The stored task is never rewritten: it keeps the link and the expiry it was
-written with, and a new link lives in the copy that leaves and in the
-process's memory, where everything that asks for the same file version
-reuses it until five minutes before it expires. Issuing is best effort. A
-backend that issues no links, a refusal, no answer within five seconds or a
-file past its retention leaves the part with the link it has - what a
-reader got before the link expired - and a file version whose link was not
-issued is not asked about again for a minute. The scope a new link is asked
-in is the open question recorded as `file-link-authority` in
-[open-items.md](open-items.md).
+A read carries no message, so the request handler activates the usage
+attribution extension alone for it (`_declare_link_scope`), by the rules a
+message follows: its URI in `A2A-Extensions` and its carrier in
+`Aion-Usage-Attribution`. Other declared extensions are not verified on a
+read, and a declaration that does not verify leaves the answer to ask as the
+daemon rather than refusing the read; a carrier sent without the declaration
+is logged once. The scope of every request is kept in `call_context.state`
+(`FILE_LINK_SCOPE_KEY`, read with `link_scope_of`): for a message once it is
+accepted, for a read as it starts. a2a-sdk sends a turn's pushes from the
+background consumer of the task's `ActiveTask`, which serves every request
+the task takes - a message queued into a running task included - so
+`TerminalTaskPushSender` reads the scope when it sends
+(`current_link_scope`), from the call context the task's manager holds:
+a2a-sdk switches it to each request as that request's turn starts, after the
+previous turn's events have all been sent, and to the canceller when a
+cancel reaches the task. Push configurations are not bound to an
+attribution: every webhook of the task receives what the task's owner
+registered it for.
+
+The stored task is never rewritten: it keeps the address it was written
+with, and a link lives in the copy that leaves and in the process's memory.
+A link is a credential to whoever holds it, so the memory keeps it for the
+attribution it was issued to - told apart by a digest of its carrier, or
+the daemon - and hands it out only on that behalf, until five minutes
+before it expires: the link a file was stored with
+(`FileUploadManager.on_stored`), for the attribution of the upload, and
+every link issued later, for the one that asked. Another attribution asks
+for its own. Issuing is best effort. A backend that issues no links, a
+refusal, no answer within five seconds or a file past its retention leaves
+the part with the address it has, and a file version whose link was not
+issued is not asked about again for a minute on behalf of the same
+attribution; anyone else may ask. The Files API grants a link to the file's
+owner - the identity of the usage attribution it was stored under - and
+refuses the deployment's daemon, so an answer on the daemon's behalf, or on
+that of a caller the file does not belong to, carries the part's address,
+which does not download without authorization: the open item
+`file-link-authority` in [open-items.md](open-items.md).
 
 A handler method that answers with a task, a message or an event passes it
-through `_with_working_links`; one added later must do the same.
+through `_with_working_links` with its call context, and a read declares its
+scope first; one added later must do the same.
 
 ### Artifact versions
 
@@ -460,9 +494,13 @@ task as it was, as a framework's does; an abandoned task is settled later
   turn, torn down before its outcome, asks its executor to stop
   (`within=None`). Nothing more is written into the task. Until that write
   the turn goes on: the delay is up to the executor's next durable event.
-- **No extension is activated.** A cancel runs with the caller's attribution
-  and none of the request's extensions: a daemon named in `A2A-Extensions`
-  has no payload on a cancel and must not fail it.
+- **Only the usage attribution is activated.** A cancel runs with the
+  caller's usage attribution, activated by the rules of a read
+  (`attribution_runtime_context`): its URI in `A2A-Extensions` and its
+  carrier in `Aion-Usage-Attribution`. No other extension is: a daemon named
+  in `A2A-Extensions` has no payload on a cancel and must not fail it, and a
+  declaration that does not verify leaves the cancel to run as the
+  deployment's daemon rather than refusing it.
 
 ### Stopping
 

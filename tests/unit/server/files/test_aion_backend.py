@@ -117,13 +117,15 @@ class TestRequestShape:
         result = (await transformer.transform(event, upload_context=upload_context())).event
 
         assert len(requests) == 1
-        assert result.artifact.parts[0].url.endswith("?grant=secret")
+        # The part keeps the version's address, which works only with
+        # authorization: the grant is no part of what is stored.
+        assert result.artifact.parts[0].url == "https://api.aion.test/files/file-1/versions/v-1/content"
         assert not result.artifact.parts[0].raw
         stored = result.artifact.parts[0]
         # The part keeps what the agent wrote and gains the reference to the file.
         reference = StoredFile.of(stored)
         assert (reference.file_id, reference.version_id) == ("file-1", "v-1")
-        assert reference.access_expires_at == datetime(2026, 10, 6, 1, tzinfo=timezone.utc)
+        assert reference.access_expires_at is None
         assert forget_stored_file(stored)
         assert stored.metadata == artifact.parts[0].metadata
         if action is not None:
@@ -179,7 +181,8 @@ class TestRequestShape:
         after = datetime.now(timezone.utc)
 
         assert outcome == UploadReceipt(
-            uri="https://api.aion.test/files/file-1/versions/v-1/content?grant=secret",
+            uri="https://api.aion.test/files/file-1/versions/v-1/content",
+            link="https://api.aion.test/files/file-1/versions/v-1/content?grant=secret",
             file_id="file-1",
             version_id="v-1",
             revision=1,
@@ -455,7 +458,8 @@ class TestStoredAddress:
 
         outcome = await backend(handle).store(upload(), context=upload_context())
 
-        assert outcome.uri == "https://api.aion.test/files/f-1/versions/v-9/content?grant=secret"
+        assert outcome.uri == "https://api.aion.test/files/f-1/versions/v-9/content"
+        assert outcome.link == "https://api.aion.test/files/f-1/versions/v-9/content?grant=secret"
         assert outcome.file_id == "f-1" and outcome.version_id == "v-9"
 
     async def test_missing_exact_version_never_falls_back_to_upload_url(self):
@@ -511,6 +515,81 @@ class TestStoredAddress:
         assert len(uploads) == 1 and len(grants) == 1
 
 
+FILE_ID = "0b7f3c1e-2d4a-4f6b-9c8d-1e2f3a4b5c6d"
+VERSION_ID = "5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d"
+
+
+def addressing(base_url: str) -> tuple[AionFileStorageBackend, AionFileClient]:
+    """A backend over a client storing under ``base_url``, and that client; neither sends a request."""
+    async def refuse(request):
+        raise AssertionError("recognising an address sends no request")
+
+    client = AionFileClient(
+        jwt_manager=StaticTokenManager(),
+        base_url=base_url,
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(refuse)),
+    )
+    return AionFileStorageBackend(client), client
+
+
+class TestContentAddressRecognition:
+    """The backend names the file version of its own content address, and of nothing else."""
+
+    @pytest.mark.parametrize("base_url", [
+        "https://api.aion.test",
+        "https://api.aion.test/",
+        "https://api.aion.test/platform/v2",
+        "http://localhost:8080",
+    ])
+    def test_its_own_content_address_names_the_file_version(self, base_url):
+        storage, client = addressing(base_url)
+
+        reference = storage.stored_file_at(client.content_url(FILE_ID, VERSION_ID))
+
+        assert reference == StoredFile.create(FILE_ID, VERSION_ID)
+        assert reference.access_expires_at is None and reference.retention_expires_at is None
+
+    async def test_the_address_a_stored_part_keeps_names_its_file_version(self):
+        async def handle(request):
+            return accepted()
+
+        storage = backend(handle)
+        outcome = await storage.store(upload(), context=upload_context())
+
+        assert storage.stored_file_at(outcome.uri) == StoredFile.create("file-1", "v-1")
+        assert FileUploadManager(storage).stored_file_at(outcome.uri) == StoredFile.create("file-1", "v-1")
+
+    @pytest.mark.parametrize("url", [
+        pytest.param(f"https://api.aion.test/files/{FILE_ID}/versions/{VERSION_ID}/content?grant=secret", id="grant-link"),
+        pytest.param(f"https://api.aion.test/files/{FILE_ID}/versions/{VERSION_ID}/content?", id="empty-query"),
+        pytest.param(f"https://api.aion.test/files/{FILE_ID}/versions/{VERSION_ID}/content#part", id="fragment"),
+        pytest.param(f"https://files.elsewhere.test/files/{FILE_ID}/versions/{VERSION_ID}/content", id="other-host"),
+        pytest.param(f"http://api.aion.test/files/{FILE_ID}/versions/{VERSION_ID}/content", id="other-scheme"),
+        pytest.param(f"https://api.aion.test:8443/files/{FILE_ID}/versions/{VERSION_ID}/content", id="other-port"),
+        pytest.param(f"https://user@api.aion.test/files/{FILE_ID}/versions/{VERSION_ID}/content", id="user-info"),
+        pytest.param(f"https://api.aion.test/v2/files/{FILE_ID}/versions/{VERSION_ID}/content", id="other-base-path"),
+        pytest.param(f"https://api.aion.test/files/{FILE_ID}/versions/{VERSION_ID}/content/", id="trailing-slash"),
+        pytest.param(f"https://api.aion.test/files/{FILE_ID}/versions/{VERSION_ID}/content/more", id="longer-path"),
+        pytest.param(f"https://api.aion.test/files/{FILE_ID}/versions/{VERSION_ID}", id="no-content"),
+        pytest.param(f"https://api.aion.test/files/{FILE_ID}/content", id="no-version"),
+        pytest.param(f"https://api.aion.test/files//versions/{VERSION_ID}/content", id="empty-file-id"),
+        pytest.param(f"https://api.aion.test/files/../versions/{VERSION_ID}/content", id="dot-segment"),
+        pytest.param(f"https://api.aion.test/files/%2e%2e/versions/{VERSION_ID}/content", id="escaped-segment"),
+        pytest.param(f"https://api.aion.test/files/{FILE_ID}/versions/{VERSION_ID}/grants", id="other-route"),
+        pytest.param("data:application/pdf;base64,JVBERi0=", id="data-url"),
+        pytest.param("", id="empty"),
+    ])
+    def test_any_other_url_names_no_file(self, url):
+        storage, _ = addressing("https://api.aion.test")
+
+        assert storage.stored_file_at(url) is None
+
+    def test_an_address_outside_the_base_path_names_no_file(self):
+        storage, _ = addressing("https://api.aion.test/platform")
+
+        assert storage.stored_file_at(f"https://api.aion.test/files/{FILE_ID}/versions/{VERSION_ID}/content") is None
+
+
 class TestLifecycle:
     async def test_from_settings_refuses_to_start_without_credentials(self, monkeypatch):
         from aion.core.settings import api_settings
@@ -557,7 +636,8 @@ class TestRenewLink:
         outcome = await backend(never_uploads).renew_link("file-1", "v-1")
 
         assert outcome == UploadReceipt(
-            uri="https://api.aion.test/files/file-1/versions/v-1/content?grant=secret",
+            uri="https://api.aion.test/files/file-1/versions/v-1/content",
+            link="https://api.aion.test/files/file-1/versions/v-1/content?grant=secret",
             file_id="file-1",
             version_id="v-1",
             access_expires_at="2026-10-06T01:00:00Z",

@@ -4,7 +4,7 @@ Walks a message, event or task for parts that carry file content inline -
 ``raw`` bytes or a ``data:`` URL (``inline``) - and replaces each one with
 ``Part(url=...)`` once the content is stored. Storage is awaited, so a URL only
 ever names content that exists. Every such part is stored, whatever its media
-type: a JSX Card the agent sends leaves as a link like any other file.
+type: a JSX Card the agent sends is stored like any other file.
 
 Every inline part of one message, event or task is collected first and stored
 in a single batch. Sequential storage would add up the round trips; the batch
@@ -15,6 +15,11 @@ The bytes of every file stored are kept for the turn it was stored for
 a model request later in the turn reads the file without downloading what was
 just uploaded. The part's reference records the file's size too, so a reader
 knows whether the file fits a model request without downloading it.
+
+A part the agent sends with the storage backend's own address of a stored
+file and no reference to it (``aion:file``) gets the reference back: a
+framework that keeps only the URL of a file it was given sends the file on
+that way, and without the reference the server issues no link for it.
 
 With no upload manager configured the transformer is a no-op and inline
 content passes through unchanged - the one place where "keep the bytes in the
@@ -31,7 +36,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from itertools import islice
-from typing import Any
+from typing import Any, NamedTuple
 
 from google.protobuf.json_format import MessageToDict
 from pydantic import ValidationError
@@ -118,6 +123,9 @@ class Transform:
 class A2AFileTransformer:
     """Rewrites a part with inline file content into ``Part(url=...)``.
 
+    It also gives an agent's part that carries a stored file's address back
+    the reference to that file.
+
     If ``upload_manager`` is omitted, one is built from settings. With no
     backend configured every method is a pass-through, so the transformer can
     be constructed unconditionally.
@@ -179,11 +187,23 @@ class A2AFileTransformer:
         A part without a filename of its own is uploaded under its artifact's
         name, which is where ``file_artifact()`` puts it.
 
-        A stored part carries the download link in ``url`` and, when the
-        storage service names the file and its version, the reference to the
-        file under ``aion:file`` in its metadata (``aion.core.a2a.files``),
-        from which the link is issued again after it expires
+        A stored part carries the file's address in ``url`` - with the Aion
+        backend the version's protected content address, which works only
+        with authorization - and, when the storage service names the file and
+        its version, the reference to the file under ``aion:file`` in its
+        metadata (``aion.core.a2a.files``). The server issues a working link
+        from that reference whenever it hands the part out
         (``aion.server.files.links``).
+
+        A part the agent sends with exactly the backend's own address of a
+        stored file version and no reference
+        (``FileUploadManager.stored_file_at``) gets the reference back, with
+        nothing but the file's and the version's ids, so the server issues a
+        link for it whenever it hands the part out. Only the agent's parts are
+        given one - those of an event transformed with
+        ``PartRetention.REQUESTED``, outside a message with the user role. A
+        caller's part is left as it is: a reference taken from a caller's
+        address would name a file of the caller's choosing.
 
         Args:
             event: Message, task, status update or artifact update.
@@ -192,35 +212,48 @@ class A2AFileTransformer:
             upload_context: Resolved projection to store against. Defaults to
                 the one projected from the active runtime context.
             turn: What the turn has stored already: a file it stored is not
-                stored again, its part gets the same link. ``None`` stores
-                every file it is given.
+                stored again, its part gets the same address and reference.
+                ``None`` stores every file it is given.
 
         Returns:
-            The event, transformed when it carried inline content, and a
-            report of what happened. The event is the original object when
-            nothing changed.
+            The event, transformed when it carried inline content or an
+            agent's part got its reference back, and a report of what
+            happened. The event is the original object when nothing changed.
         """
         if self._upload_manager is None:
             return Transform(event, TransformReport())
 
-        fields = part_fields(event)
-        if not any(carries_inline_content(part) for parts, _ in fields for part in parts):
+        lists = _part_lists(event)
+        event_parts = [part for part_list in lists for part in part_list.parts]
+        inline = any(carries_inline_content(part) for part in event_parts)
+        references = (
+            self._references(lists) if retention is PartRetention.REQUESTED else {}
+        )
+        if not inline and not references:
             return Transform(event, TransformReport())
 
-        context_id, task_id = _event_ids(event)
-        resolution = upload_context or self._current_context(
-            context_id=context_id, task_id=task_id
-        )
-        results, report = await self._transform_parts(
-            [part for parts, _ in fields for part in parts],
-            resolution,
-            default_filenames=[name for parts, name in fields for _ in parts],
-            retention=retention,
-            turn=turn,
-            origin=_origin(event),
-            task_id=task_id,
-            context_id=context_id,
-        )
+        if inline:
+            context_id, task_id = _event_ids(event)
+            resolution = upload_context or self._current_context(
+                context_id=context_id, task_id=task_id
+            )
+            results, report = await self._transform_parts(
+                event_parts,
+                resolution,
+                default_filenames=[
+                    part_list.default_filename for part_list in lists for _ in part_list.parts
+                ],
+                retention=retention,
+                turn=turn,
+                origin=_origin(event),
+                task_id=task_id,
+                context_id=context_id,
+            )
+        else:
+            results, report = list(event_parts), TransformReport()
+        for index, reference in references.items():
+            results[index] = _with_reference(event_parts[index], reference)
+            report.changed = True
         if not report.changed:
             return Transform(event, report)
 
@@ -231,6 +264,38 @@ class A2AFileTransformer:
             del parts[:]
             parts.extend(kept)
         return Transform(_without_emptied(event, new_event), report)
+
+    def _references(self, lists: list[_PartList]) -> dict[int, StoredFile]:
+        """The references the agent's parts get back, by position among all the event's parts.
+
+        A part qualifies when it is in one of the agent's part lists, carries
+        an address rather than inline content, has no reference of its own,
+        and its address is exactly one the storage backend gives a stored
+        file version.
+        """
+        references: dict[int, StoredFile] = {}
+        position = 0
+        for part_list in lists:
+            for part in part_list.parts:
+                if part_list.agents and (reference := self._addressed_file(part)) is not None:
+                    logger.debug(
+                        "Agent part addresses stored file %s version %s without its reference; restoring it",
+                        reference.file_id,
+                        reference.version_id,
+                    )
+                    references[position] = reference
+                position += 1
+        return references
+
+    def _addressed_file(self, part: Part) -> StoredFile | None:
+        """The stored file version a part without a reference addresses, or None."""
+        if (
+            part.WhichOneof("content") != "url"
+            or carries_inline_content(part)
+            or StoredFile.of(part) is not None
+        ):
+            return None
+        return self._upload_manager.stored_file_at(part.url)
 
     @staticmethod
     def _current_context(
@@ -402,7 +467,7 @@ class A2AFileTransformer:
 
 
 def _keep_content(part: Part, content: bytes) -> None:
-    """Keep the bytes of a file just stored for the turn it was stored in, under the identity its part now carries, and its link."""
+    """Keep the bytes of a file just stored for the turn it was stored in, under the identity its part now carries, and its address."""
     key = content_key(part)
     if key is not None:
         file_contents().put(key, content, url=part.url)
@@ -423,7 +488,7 @@ def _stored_part(
         metadata: Any = None,
         byte_size: int | None = None,
 ) -> Part:
-    """The part that stands for a stored file: its link, and the reference to it when there is one.
+    """The part that stands for a stored file: its address, and the reference to it when there is one.
 
     It carries the media type and the name the file was stored under, so a
     file stored under its artifact's name keeps that name in the part too.
@@ -435,12 +500,24 @@ def _stored_part(
     return part
 
 
-def _reference(receipt: UploadReceipt, byte_size: int | None = None) -> StoredFile | None:
-    """What the stored part records of the file besides its link.
+def _with_reference(part: Part, reference: StoredFile) -> Part:
+    """A copy of ``part`` that carries ``reference``; the part itself is left as it is."""
+    referenced = Part()
+    referenced.CopyFrom(part)
+    reference.write_to(referenced)
+    return referenced
 
-    A storage service that names the file and its exact version lets the
-    link be issued again once it has expired; one that names neither leaves
-    the part with its link alone. The size lets a reader tell whether the
+
+def _reference(receipt: UploadReceipt, byte_size: int | None = None) -> StoredFile | None:
+    """What the stored part records of the file besides its address.
+
+    A storage service that names the file and its exact version lets a link
+    be issued for it whenever one is needed; one that names neither leaves
+    the part with its address alone. A part whose address works only with
+    credentials records no access expiry - it has no link of its own, and
+    the link issued with the receipt is handed out from
+    ``aion.server.files.links`` - while one whose address is the link
+    records when it stops working. The size lets a reader tell whether the
     file fits a model request without downloading it.
     """
     if not receipt.file_id or not receipt.version_id:
@@ -448,7 +525,7 @@ def _reference(receipt: UploadReceipt, byte_size: int | None = None) -> StoredFi
     return StoredFile.create(
         receipt.file_id,
         receipt.version_id,
-        access_expires_at=receipt.access_expires_at,
+        access_expires_at=None if receipt.link else receipt.access_expires_at,
         retention_expires_at=receipt.retention_expires_at,
         byte_size=byte_size,
     )
@@ -471,24 +548,49 @@ def part_fields(event: Event) -> list[tuple[Any, str | None]]:
     one. The order is fixed, so two calls on an event and its deep copy line
     up position by position.
     """
+    return [(part_list.parts, part_list.default_filename) for part_list in _part_lists(event)]
+
+
+class _PartList(NamedTuple):
+    """One part list of an event, the name its unnamed files are stored under, and whose parts it holds.
+
+    ``agents`` is False for the parts of a message with the user role - the
+    caller's - and True for every other message and every artifact.
+    """
+
+    parts: Any
+    default_filename: str | None
+    agents: bool
+
+
+def _part_lists(event: Event) -> list[_PartList]:
+    """Every part list of an event, in the order ``part_fields`` gives them."""
     if isinstance(event, TaskStatusUpdateEvent):
-        return _status_part_fields(event.status)
+        return _status_part_lists(event.status)
     if isinstance(event, TaskArtifactUpdateEvent):
-        return [(event.artifact.parts, event.artifact.name or None)]
+        return [_artifact_part_list(event.artifact)]
     if isinstance(event, Message):
-        return [(event.parts, None)]
+        return [_message_part_list(event)]
     if isinstance(event, Task):
         return (
-            _status_part_fields(event.status)
-            + [(message.parts, None) for message in event.history]
-            + [(artifact.parts, artifact.name or None) for artifact in event.artifacts]
+            _status_part_lists(event.status)
+            + [_message_part_list(message) for message in event.history]
+            + [_artifact_part_list(artifact) for artifact in event.artifacts]
         )
     return []
 
 
-def _status_part_fields(status: TaskStatus) -> list[tuple[Any, str | None]]:
+def _status_part_lists(status: TaskStatus) -> list[_PartList]:
     """The status message's part list, when the status carries a message."""
-    return [(status.message.parts, None)] if status.HasField("message") else []
+    return [_message_part_list(status.message)] if status.HasField("message") else []
+
+
+def _message_part_list(message: Message) -> _PartList:
+    return _PartList(message.parts, None, agents=message.role != Role.ROLE_USER)
+
+
+def _artifact_part_list(artifact: Artifact) -> _PartList:
+    return _PartList(artifact.parts, artifact.name or None, agents=True)
 
 
 def _event_ids(event: Event) -> tuple[str, str]:

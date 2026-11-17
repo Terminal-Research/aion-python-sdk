@@ -71,12 +71,15 @@ An `ArtifactVersion` gives its content without walking protobuf parts: `text`,
 text, whether the artifact holds text, an inline file or a stored one. A
 stored file is downloaded on the first read and kept on the object.
 
-The address a stored file's part holds is a download link that expires long
-before the file is removed. A read does not depend on it: the server reads
-the file through a link that works now, issuing a new one for the same file
-once the stored one has expired, for as long as the file is stored. A file
-that is no longer stored, or one whose link cannot be issued again, raises
-`ConversationFileError`. `await file.link()` gives the working link to code
+The address a stored file's part holds is not a link to read it by: with
+Aion's storage it is the version's address, which works only with
+authorization. A read does not depend on it: the server reads the file
+through a link issued for the same file on behalf of the turn's sender, for
+as long as the file is stored. A file the storage does not make available to
+the turn's sender - one another participant of a shared conversation stored,
+say - raises `ConversationFileForbiddenError`; a file that is no longer
+stored, or one whose link cannot be issued for another reason, raises
+`ConversationFileError`, which the first one is a kind of. `await file.link()` gives the working link to code
 that passes an address on - to a model that takes a file by URL - and
 `file.stored` says where the server keeps the file: `file_id`,
 `version_id`, `access_expires_at`, `retention_expires_at`; it is None for
