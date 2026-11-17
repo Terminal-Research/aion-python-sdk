@@ -1,8 +1,15 @@
 import pytest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+from a2a.types import Task
+
 from aion.core.a2a import DeleteContextParams, GetContextParams, GetContextsParams
+from aion.core.constants import AION_USAGE_ATTRIBUTION_HEADER, USAGE_ATTRIBUTION_EXTENSION_URI_V1
+from aion.core.runtime import aion_a2a_extension_registry
+from aion.server.core.app.handlers import request_handler
 from aion.server.core.app.handlers.request_handler import AionRequestHandler
+from aion.server.files.storage import UploadContext
 from aion.server.tasks.admission import InMemoryContextAdmission
 from aion.server.tasks.contexts import InMemoryContextCatalog
 from aion.server.tasks.stores import InMemoryTaskStore
@@ -21,6 +28,14 @@ def _handler(**kwargs) -> AionRequestHandler:
         agent_card=Mock(),
         **kwargs,
     )
+
+
+def _read_context(carrier: str | None = None, *, declared: bool = False, also_declared=()) -> SimpleNamespace:
+    """The call context of a read: the extensions it declares and the headers it carries."""
+    aion_a2a_extension_registry.reset_to_default()
+    headers = {AION_USAGE_ATTRIBUTION_HEADER: carrier} if carrier is not None else {}
+    requested = {USAGE_ATTRIBUTION_EXTENSION_URI_V1} if declared else set()
+    return SimpleNamespace(state={"headers": headers}, requested_extensions=requested | set(also_declared))
 
 
 class TestContextMethods:
@@ -289,7 +304,7 @@ class TestWorkingFileLinks:
     @staticmethod
     def _links():
         links = Mock()
-        links.refresh = AsyncMock(side_effect=lambda content: ("fresh", content))
+        links.refresh = AsyncMock(side_effect=lambda content, context=None: ("fresh", content))
         return links
 
     @pytest.mark.anyio
@@ -330,7 +345,9 @@ class TestWorkingFileLinks:
         monkeypatch.setattr(DefaultRequestHandlerV2, "on_list_tasks", AsyncMock(return_value=stored))
         monkeypatch.setattr(request_handler, "has_individual_access", lambda context: True)
         links = Mock()
-        links.refresh_many = AsyncMock(side_effect=lambda tasks: [tasks[0], Task(id="t2", context_id="refreshed")])
+        links.refresh_many = AsyncMock(
+            side_effect=lambda tasks, context=None: [tasks[0], Task(id="t2", context_id="refreshed")]
+        )
         handler = _handler(file_links=links)
 
         answer = await handler.on_list_tasks(Mock(), None)
@@ -349,7 +366,7 @@ class TestWorkingFileLinks:
         monkeypatch.setattr(DefaultRequestHandlerV2, "on_list_tasks", AsyncMock(return_value=stored))
         monkeypatch.setattr(request_handler, "has_individual_access", lambda context: True)
         links = Mock()
-        links.refresh_many = AsyncMock(side_effect=lambda tasks: list(tasks))
+        links.refresh_many = AsyncMock(side_effect=lambda tasks, context=None: list(tasks))
 
         assert await _handler(file_links=links).on_list_tasks(Mock(), None) is stored
 
@@ -378,6 +395,132 @@ class TestWorkingFileLinks:
         assert sent == [("fresh", "first"), ("fresh", "second")]
 
     @pytest.mark.anyio
+    async def test_the_answer_to_a_message_asks_for_links_on_its_senders_behalf(self, monkeypatch):
+        """The scope the request kept reaches the refresh: links are granted as the turn's files are."""
+        from a2a.server.request_handlers.default_request_handler_v2 import DefaultRequestHandlerV2
+        from aion.server.core.app.handlers import request_handler
+
+        async def events(self, params, context):
+            yield "event"
+
+        class PassThrough:
+            def __init__(self, **kwargs):
+                pass
+
+            def project(self, source):
+                return source
+
+        monkeypatch.setattr(DefaultRequestHandlerV2, "on_message_send_stream", events)
+        monkeypatch.setattr(DefaultRequestHandlerV2, "on_message_send", AsyncMock(return_value=Task(id="t1")))
+        monkeypatch.setattr(request_handler, "TerminalTaskProjection", PassThrough)
+        links = self._links()
+        handler = _handler(file_links=links)
+        scope = UploadContext(usage_attribution="carrier-1")
+        call_context = SimpleNamespace(state={request_handler.FILE_LINK_SCOPE_KEY: scope})
+
+        [event async for event in handler.on_message_send_stream(Mock(), call_context)]
+        await handler.on_message_send(Mock(), call_context)
+
+        assert [call.kwargs["context"] for call in links.refresh.await_args_list] == [scope, scope]
+
+    @pytest.mark.anyio
+    async def test_a_read_without_attribution_asks_for_links_as_the_daemon(self, monkeypatch):
+        from a2a.server.request_handlers.default_request_handler_v2 import DefaultRequestHandlerV2
+
+        monkeypatch.setattr(DefaultRequestHandlerV2, "on_get_task", AsyncMock(return_value="stored task"))
+        monkeypatch.setattr(request_handler, "has_individual_access", lambda context: True)
+        links = self._links()
+
+        await _handler(file_links=links).on_get_task(Mock(id="t1"), _read_context())
+
+        assert links.refresh.await_args.kwargs["context"] is None
+
+    READS = {"on_get_task", "on_list_tasks", "on_get_context", "on_cancel_task", "on_subscribe_to_task"}
+    """The answers that carry files and reply to no message: each declares its own link scope."""
+
+    def test_every_read_declares_its_link_scope(self):
+        """A read asks for links on behalf of the attribution it declares, never of the message before it."""
+        import inspect
+
+        assert self.READS == self.CARRY_CONTENT - {"on_message_send", "on_message_send_stream"}
+        for name in self.READS:
+            assert "self._declare_link_scope(" in inspect.getsource(getattr(AionRequestHandler, name)), name
+
+    @pytest.mark.anyio
+    async def test_a_task_read_with_attribution_asks_for_links_on_the_callers_behalf(self, monkeypatch):
+        from a2a.server.request_handlers.default_request_handler_v2 import DefaultRequestHandlerV2
+
+        monkeypatch.setattr(DefaultRequestHandlerV2, "on_get_task", AsyncMock(return_value="stored task"))
+        monkeypatch.setattr(request_handler, "has_individual_access", lambda context: True)
+        links = self._links()
+
+        await _handler(file_links=links).on_get_task(Mock(id="t1"), _read_context("carrier-1", declared=True))
+
+        assert links.refresh.await_args.kwargs["context"].usage_attribution == "carrier-1"
+
+    @pytest.mark.anyio
+    async def test_a_list_read_with_attribution_asks_for_links_on_the_callers_behalf(self, monkeypatch):
+        from a2a.server.request_handlers.default_request_handler_v2 import DefaultRequestHandlerV2
+        from a2a.types import ListTasksResponse
+
+        stored = ListTasksResponse(tasks=[Task(id="t1")])
+        monkeypatch.setattr(DefaultRequestHandlerV2, "on_list_tasks", AsyncMock(return_value=stored))
+        monkeypatch.setattr(request_handler, "has_individual_access", lambda context: True)
+        links = Mock()
+        links.refresh_many = AsyncMock(side_effect=lambda tasks, context=None: list(tasks))
+
+        await _handler(file_links=links).on_list_tasks(Mock(), _read_context("carrier-1", declared=True))
+
+        assert links.refresh_many.await_args.kwargs["context"].usage_attribution == "carrier-1"
+
+
+class TestFileLinkScope:
+    """A message's answer asks for links with the usage attribution the message carries."""
+
+    @staticmethod
+    def _extensions(carrier=None):
+        from aion.core.constants import USAGE_ATTRIBUTION_EXTENSION_URI_V1
+        from aion.core.runtime.context.extensions import AionRuntimeExtensions
+
+        verified = {USAGE_ATTRIBUTION_EXTENSION_URI_V1: carrier} if carrier is not None else {}
+        return AionRuntimeExtensions(verified)
+
+    @staticmethod
+    def _message():
+        from a2a.types import Message, Role
+
+        return Message(message_id="m-1", context_id="ctx-1", task_id="t-1", role=Role.ROLE_USER)
+
+    def test_a_message_with_attribution_scopes_its_answers_links(self):
+        from aion.server.core.app.handlers.request_handler import _file_link_scope
+
+        scope = _file_link_scope(
+            self._extensions("carrier-1"),
+            SimpleNamespace(state={}, requested_extensions=set()),
+            context_id="ctx-1",
+            task_id="t-1",
+        )
+
+        assert isinstance(scope, UploadContext)
+        assert scope.usage_attribution == "carrier-1"
+        assert (scope.context_id, scope.task_id) == ("ctx-1", "t-1")
+
+    def test_a_message_without_attribution_has_no_scope(self):
+        from aion.server.core.app.handlers.request_handler import _file_link_scope
+
+        call_context = SimpleNamespace(state={}, requested_extensions=set())
+
+        assert _file_link_scope(self._extensions(), call_context) is None
+
+    def test_an_attribution_that_was_not_activated_gives_no_scope(self):
+        from aion.core.constants import AION_USAGE_ATTRIBUTION_HEADER
+        from aion.server.core.app.handlers.request_handler import _file_link_scope
+
+        call_context = SimpleNamespace(state={"headers": {AION_USAGE_ATTRIBUTION_HEADER: "x"}}, requested_extensions=set())
+
+        assert _file_link_scope(self._extensions(), call_context) is None
+
+    @pytest.mark.anyio
     async def test_a_context_is_answered_with_working_links(self):
         from datetime import datetime, timezone
 
@@ -395,7 +538,7 @@ class TestWorkingFileLinks:
             last_activity_at=datetime(2026, 11, 10, tzinfo=timezone.utc),
         )
 
-        def renewed(contents):
+        def renewed(contents, context=None):
             fresh = []
             for content in contents:
                 if getattr(content, "parts", None):
@@ -414,3 +557,57 @@ class TestWorkingFileLinks:
         assert answer.history[0].parts[0].url == "new-1"
         assert answer.artifacts[0].artifact.parts[0].url == "new-2" and answer.artifacts[0].task_id == "t1"
         assert view.history[0].parts[0].url == "old-1" and view.artifacts[0].artifact.parts[0].url == "old-2"
+
+
+class TestDeclaredLinkScope:
+    """A read activates the usage attribution alone, by a message's rules, and never fails over it."""
+
+    def test_a_declared_attribution_scopes_the_reads_links(self):
+        scope = _handler()._declared_link_scope(_read_context("carrier-1", declared=True))
+
+        assert isinstance(scope, UploadContext) and scope.usage_attribution == "carrier-1"
+
+    def test_a_read_without_attribution_asks_as_the_daemon(self):
+        assert _handler()._declared_link_scope(_read_context()) is None
+
+    def test_a_declaration_without_its_carrier_asks_as_the_daemon(self):
+        assert _handler()._declared_link_scope(_read_context(declared=True)) is None
+
+    def test_a_carrier_without_its_declaration_asks_as_the_daemon_and_is_logged_once(self, caplog):
+        import logging
+
+        handler = _handler()
+        with caplog.at_level(logging.WARNING, logger=request_handler.__name__):
+            assert handler._declared_link_scope(_read_context("carrier-1")) is None
+            assert handler._declared_link_scope(_read_context("carrier-1")) is None
+
+        warnings = [record for record in caplog.records if USAGE_ATTRIBUTION_EXTENSION_URI_V1 in record.getMessage()]
+        assert len(warnings) == 1
+        assert "carrier-1" not in caplog.text
+
+    def test_other_declared_extensions_do_not_matter_to_a_read(self):
+        """A read neither routes nor runs: an extension whose payload only a message carries is not verified."""
+        from aion.core.constants.a2a import DAEMON_EXTENSION_URI_V1, DISTRIBUTION_EXTENSION_URI_V1
+
+        call_context = _read_context(
+            "carrier-1", declared=True, also_declared={DISTRIBUTION_EXTENSION_URI_V1, DAEMON_EXTENSION_URI_V1}
+        )
+
+        assert _handler()._declared_link_scope(call_context).usage_attribution == "carrier-1"
+
+    def test_a_read_keeps_its_scope_only_when_links_are_refreshed(self):
+        call_context = _read_context("carrier-1", declared=True)
+
+        _handler()._declare_link_scope(call_context)
+        assert request_handler.FILE_LINK_SCOPE_KEY not in call_context.state
+
+        _handler(file_links=Mock())._declare_link_scope(call_context)
+        assert call_context.state[request_handler.FILE_LINK_SCOPE_KEY].usage_attribution == "carrier-1"
+
+    def test_a_read_replaces_the_scope_a_reused_call_context_kept(self):
+        call_context = _read_context()
+        call_context.state[request_handler.FILE_LINK_SCOPE_KEY] = UploadContext(usage_attribution="earlier")
+
+        _handler(file_links=Mock())._declare_link_scope(call_context)
+
+        assert call_context.state[request_handler.FILE_LINK_SCOPE_KEY] is None

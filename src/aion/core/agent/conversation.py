@@ -29,8 +29,7 @@ narrowed by its arguments, and ``get_*`` one object, or None without it.
 The content of a message, an artifact or a task is read with the functions
 of ``aion.core.a2a``: ``text_of``, ``data_of``, ``answer_text``, and
 ``files_of`` for its files as ``ConversationFile``. A file is read with its
-``read()`` for as long as it is stored, whatever became of the download link
-its part holds; its ``link()`` gives a link that works now, and its
+``read()`` for as long as it is stored, whatever address its part holds; its ``link()`` gives a link that works now, and its
 ``stored`` says where the server keeps it.
 
 ``current()`` gives the conversation itself, to hand to code that reads it

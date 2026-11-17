@@ -192,6 +192,167 @@ async def test_a_refusal_leaves_the_stored_link_and_is_not_repeated(links, backe
     assert (await links.refresh(task)).artifacts[0].parts[0].url != STORED_LINK
 
 
+async def test_a_refusal_to_the_daemon_does_not_keep_a_caller_from_asking(links, backend, clock) -> None:
+    """Aion Files grants a caller's request what it refuses the deployment's daemon."""
+    from aion.server.files.storage import UploadContext
+
+    caller = UploadContext(usage_attribution="carrier-1")
+    task = task_with(stored_part())
+    clock.advance(hours=2)
+
+    backend.answer = UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)
+    assert await links.refresh(task) is task
+
+    backend.answer = None
+    fresh = await links.refresh(task, context=caller)
+
+    assert fresh.artifacts[0].parts[0].url != STORED_LINK
+    assert backend.asked == [("file-1", "version-1"), ("file-1", "version-1")]
+
+
+async def test_a_refusal_is_remembered_for_the_attribution_it_was_given_to(links, backend, clock) -> None:
+    """A caller who is not the file's owner is refused; the owner asking after them is not kept waiting."""
+    from aion.server.files.storage import UploadContext
+
+    task = task_with(stored_part())
+    clock.advance(hours=2)
+    backend.answer = UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)
+
+    assert await links.refresh(task, context=UploadContext(usage_attribution="carrier-1")) is task
+    assert await links.refresh(task, context=UploadContext(usage_attribution="carrier-1")) is task
+    assert backend.asked == [("file-1", "version-1")]
+
+    backend.answer = None
+    fresh = await links.refresh(task, context=UploadContext(usage_attribution="carrier-2"))
+
+    assert fresh.artifacts[0].parts[0].url != STORED_LINK
+    assert backend.asked == [("file-1", "version-1"), ("file-1", "version-1")]
+
+
+async def test_a_refusal_is_remembered_without_its_carrier(links, backend, clock) -> None:
+    """A carrier is a credential: what is kept about a refusal cannot be used as one."""
+    from aion.server.files.storage import UploadContext
+
+    clock.advance(hours=2)
+    backend.answer = UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)
+
+    await links.refresh(task_with(stored_part()), context=UploadContext(usage_attribution="carrier-1"))
+
+    assert links._refused and "carrier-1" not in repr(links._refused)
+
+
+async def test_a_link_is_handed_out_only_on_behalf_of_whom_it_was_issued_to(links, backend, clock) -> None:
+    """A link is a credential: the owner's is not given to the daemon or to another caller."""
+    from aion.server.files.storage import UploadContext
+
+    task = task_with(stored_part())
+    clock.advance(hours=2)
+
+    granted = await links.refresh(task, context=UploadContext(usage_attribution="carrier-1"))
+    again = await links.refresh(task, context=UploadContext(usage_attribution="carrier-1"))
+    backend.answer = UploadFailure(FileUploadErrorCode.STORAGE_FORBIDDEN)
+    pushed = await links.refresh(task)
+    other = await links.refresh(task, context=UploadContext(usage_attribution="carrier-2"))
+
+    assert again.artifacts[0].parts[0].url == granted.artifacts[0].parts[0].url != STORED_LINK
+    assert pushed is task and other is task
+    assert backend.asked == [("file-1", "version-1")] * 3
+
+
+def protected_part(file_id="file-1", *, byte_size=None) -> Part:
+    """A part as the Aion backend stores it: the version's address, which works only with authorization."""
+    part = Part(url=f"https://files.test/files/{file_id}/versions/version-1/content", filename="report.pdf")
+    StoredFile.create(
+        file_id, "version-1", retention_expires_at=NOON + timedelta(days=30), byte_size=byte_size
+    ).write_to(part)
+    return part
+
+
+async def store(manager: FileUploadManager, carrier) -> None:
+    """Store one file through ``manager`` on behalf of ``carrier``; the backend issues its link with it."""
+    from aion.server.files.storage import FileUpload, UploadContext
+
+    await manager.store_many([FileUpload(b"%PDF")], context=UploadContext(usage_attribution=carrier))
+
+
+class UploadingBackend(LinkBackend):
+    """Stores files as the Aion backend does: the address in ``uri``, the link issued with it in ``link``."""
+
+    async def store_many(self, uploads, *, context):
+        return [
+            UploadReceipt(
+                uri="https://files.test/files/file-1/versions/version-1/content",
+                link="https://files.test/content?grant=upload",
+                file_id="file-1",
+                version_id="version-1",
+                access_expires_at=(self._clock() + timedelta(hours=1)).isoformat(),
+            )
+            for _ in uploads
+        ]
+
+
+async def test_a_part_with_a_protected_address_is_always_given_a_link(links, backend) -> None:
+    part = protected_part()
+
+    assert await links.link_for(part) is not None
+    fresh = await links.refresh(task_with(part))
+    assert fresh.artifacts[0].parts[0].url.startswith("https://files.test/content?grant=new")
+    assert StoredFile.of(fresh.artifacts[0].parts[0]).access_expires_at is not None
+
+
+async def test_the_link_a_file_was_stored_with_serves_whoever_stored_it(clock) -> None:
+    from aion.server.files.storage import UploadContext
+
+    backend = UploadingBackend(clock)
+    manager = FileUploadManager(backend)
+    links = StoredFileLinks(manager, now=clock)
+    await store(manager, "carrier-1")
+    task = task_with(protected_part())
+
+    answered = await links.refresh(task, context=UploadContext(usage_attribution="carrier-1"))
+    other = await links.refresh(task, context=UploadContext(usage_attribution="carrier-2"))
+
+    assert answered.artifacts[0].parts[0].url == "https://files.test/content?grant=upload"
+    assert other.artifacts[0].parts[0].url != "https://files.test/content?grant=upload"
+    assert backend.asked == [("file-1", "version-1")]
+
+
+async def test_a_turn_reads_the_files_it_stored_by_the_link_they_were_stored_with(clock, monkeypatch) -> None:
+    """Inside a turn a read asks with the turn's attribution, which is the one its files were stored under."""
+    from aion.core.runtime.context import AionRuntimeContext, ForwardedAttribution
+
+    backend = UploadingBackend(clock)
+    manager = FileUploadManager(backend)
+    links = StoredFileLinks(manager, now=clock)
+    await store(manager, "carrier-1")
+    turn = AionRuntimeContext(callback_attribution=ForwardedAttribution("carrier-1"))
+    monkeypatch.setattr(links_module, "get_aion_runtime_context", lambda: turn)
+
+    link = await links.link_for(protected_part())
+
+    assert link == "https://files.test/content?grant=upload"
+    assert backend.asked == []
+
+
+async def test_a_link_keeps_the_parts_own_reference(links, backend) -> None:
+    fresh = await links.refresh(task_with(protected_part(byte_size=4096)))
+
+    assert StoredFile.of(fresh.artifacts[0].parts[0]).byte_size == 4096
+
+
+def test_the_link_scope_is_read_from_the_call_context() -> None:
+    from types import SimpleNamespace
+
+    from aion.server.files.links import FILE_LINK_SCOPE_KEY, link_scope_of
+    from aion.server.files.storage import UploadContext
+
+    scope = UploadContext(usage_attribution="carrier-1")
+
+    assert link_scope_of(SimpleNamespace(state={FILE_LINK_SCOPE_KEY: scope})) is scope
+    assert link_scope_of(SimpleNamespace(state={})) is None
+    assert link_scope_of(None) is None
+
+
 async def test_a_backend_that_issues_no_links_leaves_the_stored_one(clock) -> None:
     class NoLinks(FileStorageBackend):
         async def store_many(self, uploads, *, context):

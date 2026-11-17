@@ -73,10 +73,11 @@ class FileStorageBackend(ABC):
     ) -> Optional[UploadOutcome]:
         """Issue a new download link to a file version stored earlier.
 
-        A stored part keeps the link it was stored with, and that link stops
-        working before the file is removed. A backend that can vouch for the
-        same version again overrides this; the default has no link to give,
-        and the part keeps the one it has.
+        A stored part keeps the address it was stored under: one that works
+        only with credentials, or a link that stops working before the file
+        is removed. A backend that can vouch for the same version again
+        overrides this; the default has no link to give, and the part keeps
+        the address it has.
 
         Args:
             file_id: The file, as its receipt named it.
@@ -86,9 +87,10 @@ class FileStorageBackend(ABC):
                 in: an agent's turn, or the deployment itself.
 
         Returns:
-            A receipt for the same file and version with the new link and
-            its expiry, a failure saying why none was issued, or None when
-            the backend issues no links.
+            A receipt for the same file and version with the new link - its
+            ``link``, or ``uri`` without one - and its expiry, a failure
+            saying why none was issued, or None when the backend issues no
+            links.
         """
         return None
 

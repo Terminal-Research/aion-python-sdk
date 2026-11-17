@@ -505,11 +505,11 @@ class Conversation(ABC):
     async def file_link(self, part: Part) -> str:
         """A download link to the stored file of ``part`` that works now.
 
-        The address a part holds is a download link with its own access and
-        a limited lifetime. A conversation read from a server gives the part's
-        own link while it works and a link issued anew for the same file
-        afterwards, for as long as the file is stored; this default knows
-        only the part and gives its address.
+        The address a part holds may need credentials, or be a download link
+        with a limited lifetime. A conversation read from a server gives the
+        part's own link while it works and otherwise a link issued for the
+        same file on behalf of the turn, for as long as the file is stored;
+        this default knows only the part and gives its address.
 
         Args:
             part: A part that carries a file by its address (``url``).
@@ -525,9 +525,9 @@ class Conversation(ABC):
         """The bytes of a file part of a message or an artifact.
 
         An inline file is returned as it is. A stored file is downloaded
-        through :meth:`file_link`: the link its part holds, or a new one
-        once that has expired. A file that is no longer stored, or one whose
-        link cannot be issued again, cannot be read. What was downloaded, and
+        through :meth:`file_link`: the link its part holds while it works,
+        or one issued for the same file. A file that is no longer stored, or
+        one whose link cannot be issued, cannot be read. What was downloaded, and
         what this server stored itself, is kept for the turn
         (``aion.core.a2a.file_contents``), so a turn downloads the file once.
 

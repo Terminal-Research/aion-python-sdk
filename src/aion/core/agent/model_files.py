@@ -1,9 +1,9 @@
 """Reading a file of the conversation to put it into a model request.
 
 A stored file reaches an agent as an address. A model provider cannot be
-relied on to fetch it: the address is a download link of the deployment's own
-storage, with a limited lifetime, and several model APIs take a file only by
-its content. So the SDK's model helpers send every file by its content, and
+relied on to fetch it: the address is that of the deployment's own storage -
+one that works only with its authorization, or a download link with a limited
+lifetime - and several model APIs take a file only by its content. So the SDK's model helpers send every file by its content, and
 read it here: from what the turn read or stored already
 (``aion.core.a2a.file_contents``), otherwise from storage, through the
 conversation of the turn, which reads a file whatever became of the link the
@@ -106,8 +106,9 @@ async def read_file_for_model(
         stored: The stored file the address links to, when the place that
             holds the address keeps it too - a framework's state does
             (``aion.server.files.turn``). The file is then read by it, through
-            a new link once ``url`` has expired, wherever the address came
-            from; without it the address is looked up in the conversation.
+            a link issued for the turn whenever ``url`` is no link that
+            works, wherever the address came from; without it the address is
+            looked up in the conversation.
 
     Raises:
         ModelFileTooLargeError: The file is larger than a model request may
@@ -169,7 +170,7 @@ def read_file_for_model_sync(
     Called on the event loop itself - ``invoke`` inside a coroutine, which
     blocks the loop it would have to wait for - or outside a turn, the file
     comes from memory or is fetched from its address as it is, and a file
-    whose link has expired cannot be read.
+    whose address is no link that works cannot be read.
 
     Raises:
         TaskFailedError: As ``read_file_for_model``.

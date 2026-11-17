@@ -92,7 +92,7 @@ def task_manager():
         context_id=CONTEXT_ID,
         initial_message=None,
     )
-    with patch("aion.server.tasks.task_manager.set_task_status", Mock()):
+    with patch("aion.server.agent.execution.scope.set_task_status", Mock()):
         yield manager
 
 

@@ -23,7 +23,6 @@ from aion.server.a2a.utils import (
     join_streamed_answer,
     record_closing_message,
 )
-from aion.server.agent.execution.scope import set_task_status
 from typing import override
 
 
@@ -399,6 +398,12 @@ class AionTaskManager(TaskManager):
     @staticmethod
     def _track_task_status(event: Event) -> None:
         """Update task status in ExecutionScope when a TaskStatusUpdateEvent is received."""
+        # Imported here, not with the module: importing any module of
+        # ``aion.server.agent`` runs that package's ``__init__``, which loads
+        # the request executor, which imports this package. At module level
+        # that would make ``aion.server.tasks`` fail to import on its own.
+        from aion.server.agent.execution.scope import set_task_status
+
         if not isinstance(event, TaskStatusUpdateEvent):
             return
 

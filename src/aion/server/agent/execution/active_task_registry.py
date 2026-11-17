@@ -15,8 +15,11 @@ from a2a.utils.errors import TaskNotCancelableError, TaskNotFoundError
 from aion.core.a2a.enums import TaskSettlementReason
 from aion.server.a2a.constants import TERMINAL_TASK_STATES
 from aion.server.agent.execution.scope import set_task_manager
+from aion.server.files.links import link_scope_of
+from aion.server.files.storage import UploadContext
 from aion.server.shutdown import shutdown_budget
 from aion.server.tasks import AionTaskManager, TerminalTaskPushSender, settled_task
+from aion.server.tasks.push_sender import send_with_link_scope
 
 logger = logging.getLogger(__name__)
 
@@ -252,12 +255,14 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
 
         # Push dispatch runs in the background consumer with no request
         # context, so the outbound projection is bound per task, to the
-        # manager that carries its call context.
+        # manager that carries its call context, and to the scope the
+        # request asks for file links in: the turn's usage attribution.
         push_sender = self._push_sender
         if push_sender is not None:
             push_sender = TerminalTaskPushSender(
                 inner=push_sender,
                 task_manager=task_manager,
+                link_scope=link_scope_of(call_context),
             )
 
         active_task = ActiveTask(
@@ -423,14 +428,15 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
             await asyncio.gather(*self._interruption_tasks, return_exceptions=True)
 
         deadline = asyncio.get_running_loop().time() + settlement_seconds
-        settled: list[Task] = []
+        settled: list[tuple[Task, UploadContext | None]] = []
         try:
             async with asyncio.timeout_at(deadline):
                 for task_manager in task_managers:
                     try:
                         task = await self._settle_interrupted_task(task_manager)
                         if task is not None:
-                            settled.append(task)
+                            scope = link_scope_of(getattr(task_manager, "_call_context", None))
+                            settled.append((task, scope))
                     except ConcurrentTaskModificationError:
                         logger.info(
                             "Task %s was moved on by another writer; not settling it after shutdown",
@@ -450,26 +456,29 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
         with self._lock:
             self._task_managers.clear()
 
-    async def _push_settled(self, settled: list[Task], deadline: float) -> None:
+    async def _push_settled(
+        self, settled: list[tuple[Task, UploadContext | None]], deadline: float
+    ) -> None:
         """Push the tasks the shutdown settled, all at once, until ``deadline``.
 
-        A receiver that has not answered by the end of the settlement window
-        is not waited for: the process is about to stop, and the settled task
-        stays readable through ``GetTask``. Each failed or unfinished push is
-        logged as a WARNING.
+        Each task's links are asked for in the scope of the turn the shutdown
+        interrupted. A receiver that has not answered by the end of the
+        settlement window is not waited for: the process is about to stop,
+        and the settled task stays readable through ``GetTask``. Each failed
+        or unfinished push is logged as a WARNING.
         """
         if not settled or self._push_sender is None:
             return
 
-        async def push(task: Task) -> None:
+        async def push(task: Task, link_scope: UploadContext | None) -> None:
             try:
-                await self._push_sender.send_notification(task.id, task)
+                await send_with_link_scope(self._push_sender, task.id, task, link_scope)
             except Exception:
                 logger.warning(
                     "Could not push the shutdown settlement of task %s", task.id, exc_info=True
                 )
 
-        pushes = [asyncio.create_task(push(task)) for task in settled]
+        pushes = [asyncio.create_task(push(task, scope)) for task, scope in settled]
         _, pending = await asyncio.wait(
             pushes, timeout=max(0.0, deadline - asyncio.get_running_loop().time())
         )

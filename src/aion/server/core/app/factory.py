@@ -99,7 +99,9 @@ class AppFactory:
         self.upload_manager = upload_manager or FileUploadManager.from_settings()
         self.file_transformer = A2AFileTransformer(self.upload_manager)
         # One issuer of download links for the answers, the push deliveries and
-        # the agent's own reads, so a link issued for one serves the others.
+        # the agent's own reads, so a link issued on one's behalf serves the
+        # others asking on the same behalf; it learns the link each upload is
+        # issued with from the upload manager.
         self.file_links = StoredFileLinks(self.upload_manager)
 
         self.fastapi_app: Optional[FastAPI] = None

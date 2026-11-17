@@ -6,14 +6,18 @@
 gives its bytes and ``link()`` a download link that works now.
 
 
-A file the server stores reaches a task as a part with a download link in
-``url``. The link gives access to whoever holds it and stops working long
-before the file is removed, so the part also names the file itself: under
-``aion:file`` in its metadata the server writes the file's id, the id of the
-exact version, when the link stops working and when the file is removed.
-Whoever holds those ids and has the right to the file can get a new link to
-the same version; the server does so for the links it hands out and for the
-files an agent reads (``aion.core.agent.conversation``).
+A file the server stores reaches a task as a part with an address in
+``url``. With Aion's storage the address is the exact version's content
+address, which works only with authorization; the task keeps no credential.
+The part also names the file itself: under ``aion:file`` in its metadata the
+server writes the file's id, the id of the exact version and when the file
+is removed. Whoever holds those ids and has the right to the file - its
+owner, on whose behalf it was stored - can get a download link to the same
+version; the server does so in everything it hands out and for the files an
+agent reads (``aion.core.agent.conversation``), on behalf of whoever asks.
+A part that leaves the server with such a link carries it in ``url`` and
+when it stops working in ``accessExpiresAt``; a link gives access to whoever
+holds it.
 
 The key belongs to the server: it is written when the server stores a file,
 and removed from the parts of a message a caller sends.
@@ -21,17 +25,28 @@ and removed from the parts of a message a caller sends.
 A part with the reference, as a task holds it:
 
     {
-      "url": "https://api.aion.to/files/<fileId>/versions/<fileVersionId>/content?grant=...",
+      "url": "https://api.aion.to/files/<fileId>/versions/<fileVersionId>/content",
       "filename": "report.pdf",
       "mediaType": "application/pdf",
       "metadata": {
         "aion:file": {
           "fileId": "<fileId>",
           "fileVersionId": "<fileVersionId>",
-          "accessExpiresAt": "2026-11-10T13:00:00Z",
           "retentionExpiresAt": "2026-12-10T12:00:00Z"
         }
       }
+    }
+
+and as an answer hands it out, with a link that works for an hour:
+
+    {
+      "url": "https://api.aion.to/files/<fileId>/versions/<fileVersionId>/content?grant=...",
+      ...
+        "aion:file": {
+          ...
+          "accessExpiresAt": "2026-11-10T13:00:00Z",
+          "retentionExpiresAt": "2026-12-10T12:00:00Z"
+        }
     }
 """
 
@@ -96,7 +111,8 @@ class StoredFile:
         file_id: The file's id in the storage service.
         version_id: The id of the exact version the part's link reads.
         access_expires_at: When the part's link stops working; None when the
-            storage service did not say.
+            part's address is no link of its own - it works only with
+            authorization - or the storage service did not say.
         retention_expires_at: When the file is removed; None when it is kept
             indefinitely or the storage service did not say.
         byte_size: The file's size in bytes, when the server recorded it: a

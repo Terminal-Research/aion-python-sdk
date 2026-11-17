@@ -1,9 +1,11 @@
 """Store agent output and obtain an exact-version recipient download grant.
 
-Aion resolves the owner and payer from authenticated callback evidence. A
-protected content address alone is not deliverable to an unauthenticated
-recipient. Keep stable File IDs separately from the temporary granted URL;
-historical URLs are not automatically refreshed.
+Aion resolves the owner and payer from authenticated callback evidence: the
+file belongs to the usage attribution it was stored under. A receipt names
+the version's protected content address, which a stored part keeps and which
+works only with authorization, and carries the grant as its ``link`` - a
+download link anyone holding it can use until it expires, which the server
+hands out only on behalf of the attribution it was issued to.
 
 Every attempt at one file reuses the same ``operation_id``: the API treats it
 as the idempotency key, so a retry after a lost response cannot create a second
@@ -15,9 +17,9 @@ the failure's cause carries what that line needs. For refused credentials
 upload or the download grant), whose behalf the request acted on, and the
 ``operation_id`` the platform logs the upload under.
 
-The same grant is issued again for a version stored earlier (``renew_link``):
-one attempt, with no upload behind it to protect, whose failure leaves the
-stored link as the only one.
+A grant is issued again for a version stored earlier (``renew_link``): one
+attempt, with no upload behind it to protect, whose failure leaves the part
+with its address alone.
 """
 
 from __future__ import annotations
@@ -223,11 +225,17 @@ class AionFileStorageBackend(FileStorageBackend):
             )
         return UploadFailure(FileUploadErrorCode.STORAGE_REJECTED, cause=error)
 
-    @staticmethod
     def _receipt(
-        response: dict[str, Any], grant: dict[str, Any]
+        self, response: dict[str, Any], grant: dict[str, Any]
     ) -> UploadOutcome:
-        """Accept only an exact-version grant, never a protected fallback URL."""
+        """The version's protected address, and the exact-version grant issued with it.
+
+        The part keeps the address (``FileServiceClient.content_url``), which
+        carries no credential and works only with authorization; the grant
+        is the receipt's ``link``, which the server hands out on behalf of
+        the attribution it was issued to. A grant for another version, or
+        one without an expiry, is not accepted.
+        """
         file_id = _optional_str(response.get("id"))
         version_id = _optional_str(response.get("versionId"))
         uri = grant.get("url")
@@ -239,7 +247,8 @@ class AionFileStorageBackend(FileStorageBackend):
             return UploadFailure(FileUploadErrorCode.STORAGE_UNAVAILABLE)
         revision = response.get("revision")
         return UploadReceipt(
-            uri=uri,
+            uri=self._client.content_url(file_id, version_id),
+            link=uri,
             file_id=file_id,
             version_id=version_id,
             revision=revision if isinstance(revision, int) else None,

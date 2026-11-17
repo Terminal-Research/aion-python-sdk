@@ -1,15 +1,16 @@
 """Sending the files of a conversation to a model by their content.
 
 A file the server stored reaches a graph as a content block with the file's
-address. The address is a download link of the deployment's storage with a
-limited lifetime, and a model provider cannot be relied on to fetch it;
-OpenAI's Chat Completions takes no file by address at all. ``inline_files``
+address. The address is that of the deployment's storage - one that works
+only with its authorization, or a download link with a limited lifetime -
+and a model provider cannot be relied on to fetch it; OpenAI's Chat
+Completions takes no file by address at all. ``inline_files``
 replaces every such block with the same block carrying the file's content,
 right before a model request. The graph's state keeps the address: the
 content is put into the request only, never into a checkpoint. A block of a
 stored file names the file too (``aion:file`` in ``extras``), and the file is
-read by that name, through a new link once the block's own has expired; the
-name is left out of the request.
+read by that name, through a link issued for the turn whenever the block's
+address is no link that works; the name is left out of the request.
 
 The models ``aion_chat_openai`` and ``aion_chat_model`` build do this on every
 call. A graph that builds its own model calls ``inline_files`` on the
@@ -238,8 +239,8 @@ def inline_files_sync(messages: Sequence[BaseMessage]) -> list[BaseMessage]:
     on the turn's event loop and waited for, so the result is the one
     ``inline_files`` gives. Called from a coroutine instead - ``invoke``
     inside an ``async def`` node - a file comes from memory or from the
-    address its block holds as it is, and one whose link has expired fails
-    the task: use ``ainvoke`` there.
+    address its block holds as it is, and one whose address is no link that
+    works fails the task: use ``ainvoke`` there.
     """
     return prepare_request_sync(messages)[0]
 

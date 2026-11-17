@@ -158,7 +158,7 @@ async def gql_client(api):
 
 
 async def test_artifact_delivery_and_explicit_fresh_grant_over_real_http(api):
-    """Recipients need only the grant; refresh uses Version credentials and IDs.
+    """Recipients need only the grant, which the stored address does not carry; refresh uses Version credentials and IDs.
 
     This is transport-contract coverage. Real grant persistence, expiration and
     object cleanup are exercised by the backend's disposable lifecycle suite.
@@ -171,10 +171,12 @@ async def test_artifact_delivery_and_explicit_fresh_grant_over_real_http(api):
             context=UploadContext(usage_attribution="opaque-forwarded"))
         assert isinstance(receipt, UploadReceipt)
         assert receipt.retention_expires_at is None
+        assert receipt.uri == api.url + "/files/file-1/versions/version-1/content"
         async with httpx.AsyncClient() as recipient:
-            assert (await recipient.get(receipt.uri)).content == b"recipient bytes"
-            api.grant_number += 1  # Invalidate the fixture's first capability.
             assert (await recipient.get(receipt.uri)).status_code == 410
+            assert (await recipient.get(receipt.link)).content == b"recipient bytes"
+            api.grant_number += 1  # Invalidate the fixture's first capability.
+            assert (await recipient.get(receipt.link)).status_code == 410
             fresh = await files.create_read_grant(receipt.file_id, receipt.version_id,
                 usage_attribution="opaque-forwarded")
             assert (await recipient.get(fresh["url"])).content == b"recipient bytes"

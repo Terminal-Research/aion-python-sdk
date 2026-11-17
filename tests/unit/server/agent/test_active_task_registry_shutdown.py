@@ -42,7 +42,7 @@ def _task(state: TaskState) -> Task:
     return Task(id=TASK_ID, context_id=CONTEXT_ID, status=TaskStatus(state=state))
 
 
-async def _registry_holding(state: TaskState, push_sender=None):
+async def _registry_holding(state: TaskState, push_sender=None, call_context=None):
     """Build a registry with one registered task whose store reports ``state``."""
     store = AsyncMock()
     store.get.return_value = _task(state)
@@ -59,7 +59,7 @@ async def _registry_holding(state: TaskState, push_sender=None):
         active_task_cls.return_value.aclose = AsyncMock()
         await registry.get_or_create(
             TASK_ID,
-            call_context=Mock(),
+            call_context=call_context or Mock(),
             context_id=CONTEXT_ID,
         )
 
@@ -193,6 +193,23 @@ class TestSettlementPush:
         assert task_id == TASK_ID
         assert pushed == _settled(store)
         assert pushed.status.state == TaskState.TASK_STATE_FAILED
+
+    @pytest.mark.anyio
+    async def test_the_settled_task_asks_for_links_on_its_turns_behalf(self, execution_scope):
+        from types import SimpleNamespace
+
+        from aion.server.files.links import FILE_LINK_SCOPE_KEY
+        from aion.server.files.storage import UploadContext
+        from aion.server.tasks.push_sender import AionPushNotificationSender
+
+        push_sender = Mock(spec=AionPushNotificationSender)
+        scope = UploadContext(usage_attribution="carrier-1")
+        call_context = SimpleNamespace(state={FILE_LINK_SCOPE_KEY: scope})
+        registry, _, _ = await _registry_holding(TaskState.TASK_STATE_WORKING, push_sender, call_context)
+
+        await registry.aclose()
+
+        assert push_sender.send_notification.await_args.kwargs == {"link_scope": scope}
 
     @pytest.mark.anyio
     async def test_a_task_left_alone_is_not_pushed(self, execution_scope):

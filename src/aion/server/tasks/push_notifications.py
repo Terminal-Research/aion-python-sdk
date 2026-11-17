@@ -71,9 +71,9 @@ class PushNotificationFactory:
             push_url_validator: The check every delivery's URL must pass
                 first; ``None`` delivers to any URL. See
                 ``push_url_validator()``.
-            file_links: Replaces the expired download links of stored files
-                in every event delivered; ``None`` delivers the links as
-                stored.
+            file_links: Puts a working download link in place of every
+                stored file's address that is none in every event
+                delivered; ``None`` delivers the addresses as stored.
         """
         if db_manager and db_manager.is_initialized:
             config_store: PushNotificationConfigStore = cls._create_postgres_store(

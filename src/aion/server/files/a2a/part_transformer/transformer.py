@@ -402,7 +402,7 @@ class A2AFileTransformer:
 
 
 def _keep_content(part: Part, content: bytes) -> None:
-    """Keep the bytes of a file just stored for the turn it was stored in, under the identity its part now carries, and its link."""
+    """Keep the bytes of a file just stored for the turn it was stored in, under the identity its part now carries, and its address."""
     key = content_key(part)
     if key is not None:
         file_contents().put(key, content, url=part.url)
@@ -423,7 +423,7 @@ def _stored_part(
         metadata: Any = None,
         byte_size: int | None = None,
 ) -> Part:
-    """The part that stands for a stored file: its link, and the reference to it when there is one.
+    """The part that stands for a stored file: its address, and the reference to it when there is one.
 
     It carries the media type and the name the file was stored under, so a
     file stored under its artifact's name keeps that name in the part too.
@@ -436,11 +436,15 @@ def _stored_part(
 
 
 def _reference(receipt: UploadReceipt, byte_size: int | None = None) -> StoredFile | None:
-    """What the stored part records of the file besides its link.
+    """What the stored part records of the file besides its address.
 
-    A storage service that names the file and its exact version lets the
-    link be issued again once it has expired; one that names neither leaves
-    the part with its link alone. The size lets a reader tell whether the
+    A storage service that names the file and its exact version lets a link
+    be issued for it whenever one is needed; one that names neither leaves
+    the part with its address alone. A part whose address works only with
+    credentials records no access expiry - it has no link of its own, and
+    the link issued with the receipt is handed out from
+    ``aion.server.files.links`` - while one whose address is the link
+    records when it stops working. The size lets a reader tell whether the
     file fits a model request without downloading it.
     """
     if not receipt.file_id or not receipt.version_id:
@@ -448,7 +452,7 @@ def _reference(receipt: UploadReceipt, byte_size: int | None = None) -> StoredFi
     return StoredFile.create(
         receipt.file_id,
         receipt.version_id,
-        access_expires_at=receipt.access_expires_at,
+        access_expires_at=None if receipt.link else receipt.access_expires_at,
         retention_expires_at=receipt.retention_expires_at,
         byte_size=byte_size,
     )

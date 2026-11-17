@@ -314,6 +314,29 @@ class TestRegistryBinding:
         assert wrapped._task_manager is bound_manager
 
     @pytest.mark.anyio
+    async def test_the_turns_pushes_ask_for_links_on_its_messages_behalf(self, execution_scope):
+        """The scope the message's request kept is the one every push of its turn asks for links in."""
+        from types import SimpleNamespace
+
+        from aion.server.files.links import FILE_LINK_SCOPE_KEY
+        from aion.server.files.storage import UploadContext
+        from aion.server.tasks.push_sender import AionPushNotificationSender
+
+        raw_sender = Mock(spec=AionPushNotificationSender)
+        registry = self._registry(raw_sender)
+        scope = UploadContext(usage_attribution="carrier-1")
+        call_context = SimpleNamespace(state={FILE_LINK_SCOPE_KEY: scope})
+
+        with patch("aion.server.agent.execution.active_task_registry.ActiveTask") as active_task_cls:
+            active_task_cls.return_value.start = AsyncMock()
+            await registry.get_or_create(TASK_ID, call_context=call_context, context_id=CONTEXT_ID)
+        wrapped = active_task_cls.call_args.kwargs["push_sender"]
+        event = _status(TaskState.TASK_STATE_WORKING)
+        await wrapped.send_notification(TASK_ID, event)
+
+        raw_sender.send_notification.assert_awaited_once_with(TASK_ID, event, link_scope=scope)
+
+    @pytest.mark.anyio
     async def test_absent_push_sender_stays_absent(self, execution_scope):
         """No sender configured means nothing to wrap."""
         registry = self._registry(None)

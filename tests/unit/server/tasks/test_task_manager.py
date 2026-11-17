@@ -108,7 +108,7 @@ def task_manager():
         context_id=CONTEXT_ID,
         initial_message=None,
     )
-    with patch("aion.server.tasks.task_manager.set_task_status", Mock()):
+    with patch("aion.server.agent.execution.scope.set_task_status", Mock()):
         yield manager
 
 
@@ -423,7 +423,7 @@ class TestTheSDKsOwnArtifacts:
         await manager.process(stream_delta_chunk(task_id=TASK_ID, context_id=CONTEXT_ID, parts=[Part(text="lo")], append=True))
         await manager.process(stream_delta_end(task_id=TASK_ID, context_id=CONTEXT_ID))
 
-        with patch("aion.server.tasks.task_manager.set_task_status", Mock()):
+        with patch("aion.server.agent.execution.scope.set_task_status", Mock()):
             await manager.process(_status(state, _message("msg-final")))
 
         [streamed] = [a for a in store.task.artifacts if a.artifact_id == ArtifactId.STREAM_DELTA.value]
@@ -459,7 +459,7 @@ class TestTheSDKsOwnArtifacts:
         await manager.process(stream_delta_chunk(task_id=TASK_ID, context_id=CONTEXT_ID, parts=[Part(text="it is")], append=True))
         await manager.process(stream_delta_end(task_id=TASK_ID, context_id=CONTEXT_ID))
         await manager.process(_artifact_update(ArtifactId.THINKING_DELTA.value, "done"))
-        with patch("aion.server.tasks.task_manager.set_task_status", Mock()):
+        with patch("aion.server.agent.execution.scope.set_task_status", Mock()):
             await manager.process(_status(TaskState.TASK_STATE_COMPLETED, _message("msg-final")))
 
         assert _stored_parts(store.task) == {

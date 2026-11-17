@@ -173,6 +173,32 @@ class TestFileUploadManager:
         )
         assert [getattr(o, "uri", None) for o in outcomes] == ["u-0", None, "u-2"]
 
+    async def test_every_receipt_is_announced_with_its_context(self):
+        """``StoredFileLinks`` learns the link a file was stored with, and on whose behalf, this way."""
+        backend = OutcomeBackend(
+            [UploadReceipt(uri="u-0"), UploadFailure(FileUploadErrorCode.STORAGE_REJECTED), UploadReceipt(uri="u-2")]
+        )
+        manager = FileUploadManager(backend)
+        heard = []
+        manager.on_stored(lambda receipt, context: heard.append((receipt.uri, context)))
+        context = upload_context()
+
+        await manager.store_many([FileUpload(b"a"), FileUpload(b"b"), FileUpload(b"c")], context=context)
+
+        assert heard == [("u-0", context), ("u-2", context)]
+
+    async def test_a_failing_listener_does_not_fail_the_store(self, caplog):
+        manager = FileUploadManager(OutcomeBackend([UploadReceipt(uri="u-0", file_id="file-1")]))
+
+        def broken(receipt, context):
+            raise RuntimeError("listener bug")
+
+        manager.on_stored(broken)
+        outcomes = await manager.store_many([FileUpload(b"a")], context=upload_context())
+
+        assert [o.uri for o in outcomes] == ["u-0"]
+        assert "file-1" in caplog.text
+
     async def test_empty_batch_does_not_reach_the_backend(self):
         backend = RecordingBackend()
         manager = FileUploadManager(backend)

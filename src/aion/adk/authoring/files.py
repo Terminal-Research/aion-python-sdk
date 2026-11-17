@@ -1,8 +1,9 @@
 """Sending the files of a conversation to a model by their content.
 
 A file the server stored reaches an agent as ``file_data`` with the file's
-address. The address is a download link of the deployment's storage with a
-limited lifetime, and a model provider cannot be relied on to fetch it.
+address. The address is that of the deployment's storage - one that works
+only with its authorization, or a download link with a limited lifetime -
+and a model provider cannot be relied on to fetch it.
 ``inline_files`` replaces every such part of a model request with
 ``inline_data`` carrying the file's content. The session keeps the address:
 the content is put into the request only.
@@ -15,8 +16,8 @@ sends a tool's media to a model.
 
 The server names the stored file behind each address in the session, in the
 ``custom_metadata`` of the event that holds it (``STORED_FILES_KEY``), and a
-file is read by that name, through a new link once the address's own has
-expired. An address the session names no file for is read through the
+file is read by that name, through a link issued for the turn whenever the
+address is no link that works. An address the session names no file for is read through the
 conversation's tasks, which hold the files the agent was sent and sent.
 
 The model ``aion_lite_llm`` builds does this on every call. An agent with a

@@ -59,9 +59,9 @@ class StoredConversations:
             versions of one.
         owner_resolver: Resolves a call's owner, as the task store does; it
             gives the holder a caller was admitted as.
-        file_links: Issues a download link to a stored file again once the
-            one its part holds has expired; omitted, a file is read through
-            the link it was stored with.
+        file_links: Issues a download link to a stored file whose part's
+            address is no link that works; omitted, a file is read through
+            the address its part holds.
         storage: The storage files are stored through, asked first for a file
             it holds in this process.
     """

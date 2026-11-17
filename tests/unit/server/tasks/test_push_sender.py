@@ -786,8 +786,39 @@ class TestWorkingFileLinks:
 
         await sender.send_notification(TASK_ID, stored)
 
-        links.refresh.assert_awaited_once_with(stored)
+        links.refresh.assert_awaited_once_with(stored, context=None)
         assert client.post.await_args.kwargs["json"]["task"]["contextId"] == "refreshed"
+
+    @pytest.mark.anyio
+    async def test_the_links_are_asked_for_in_the_turns_scope(self):
+        from aion.server.files.storage import UploadContext
+
+        links = Mock()
+        links.refresh = AsyncMock(side_effect=lambda event, context=None: event)
+        sender = AionPushNotificationSender(
+            httpx_client=_client(), config_store=_store(_config()), file_links=links
+        )
+        scope = UploadContext(usage_attribution="carrier-1")
+
+        await sender.send_notification(TASK_ID, _event(), link_scope=scope)
+
+        assert links.refresh.await_args.kwargs["context"] is scope
+
+    @pytest.mark.anyio
+    async def test_a_scope_reaches_only_a_sender_that_issues_links(self):
+        from aion.server.files.storage import UploadContext
+        from aion.server.tasks.push_sender import send_with_link_scope
+
+        scope = UploadContext(usage_attribution="carrier-1")
+        aion_sender = Mock(spec=AionPushNotificationSender)
+        other_sender = Mock()
+        other_sender.send_notification = AsyncMock()
+
+        await send_with_link_scope(aion_sender, TASK_ID, "event", scope)
+        await send_with_link_scope(other_sender, TASK_ID, "event", scope)
+
+        aion_sender.send_notification.assert_awaited_once_with(TASK_ID, "event", link_scope=scope)
+        other_sender.send_notification.assert_awaited_once_with(TASK_ID, "event")
 
     @pytest.mark.anyio
     async def test_nothing_is_refreshed_for_a_task_without_webhooks(self):

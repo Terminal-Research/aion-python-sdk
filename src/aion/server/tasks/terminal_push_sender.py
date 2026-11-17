@@ -5,7 +5,9 @@ from a2a.server.tasks.push_notification_sender import PushNotificationEvent, Pus
 from a2a.types import Task, TaskState, TaskStatusUpdateEvent
 
 from aion.server.a2a.constants import NON_ACTIVE_TASK_STATES
+from aion.server.files.storage import UploadContext
 from aion.server.tasks.protocols import AionTaskManagerProtocol
+from aion.server.tasks.push_sender import send_with_link_scope
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +33,23 @@ class TerminalTaskPushSender(PushNotificationSender):
     context, and the manager carries the call context the store is scoped by.
     That makes the wrapper per-task — it is bound by the registry that creates
     the ActiveTask, not installed globally on the handler.
+
+    Its deliveries ask for the download links of stored files on behalf of
+    ``link_scope``: the usage attribution of the request the ActiveTask was
+    created for. The registry creates one for each turn, so that is the
+    message that started the turn, on whose behalf the turn stores and reads
+    its files.
     """
 
-    def __init__(self, inner: PushNotificationSender, task_manager: AionTaskManagerProtocol) -> None:
+    def __init__(
+        self,
+        inner: PushNotificationSender,
+        task_manager: AionTaskManagerProtocol,
+        link_scope: UploadContext | None = None,
+    ) -> None:
         self._inner = inner
         self._task_manager = task_manager
+        self._link_scope = link_scope
         # The non-active state of the last outcome whose delivery through
         # this wrapper returned, compared with the manager's
         # ``written_outcome``.
@@ -45,7 +59,7 @@ class TerminalTaskPushSender(PushNotificationSender):
         if self._is_non_active_status(event):
             event = await self._outcome_snapshot(task_id, event)
 
-        await self._inner.send_notification(task_id, event)
+        await send_with_link_scope(self._inner, task_id, event, self._link_scope)
         # Recorded once the delivery has returned. A delivery cut off halfway -
         # its consumer cancelled during the request - did not deliver the
         # outcome, and ``push_unsent_outcome`` sends it again.

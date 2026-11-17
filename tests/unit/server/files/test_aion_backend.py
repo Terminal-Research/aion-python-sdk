@@ -117,13 +117,15 @@ class TestRequestShape:
         result = (await transformer.transform(event, upload_context=upload_context())).event
 
         assert len(requests) == 1
-        assert result.artifact.parts[0].url.endswith("?grant=secret")
+        # The part keeps the version's address, which works only with
+        # authorization: the grant is no part of what is stored.
+        assert result.artifact.parts[0].url == "https://api.aion.test/files/file-1/versions/v-1/content"
         assert not result.artifact.parts[0].raw
         stored = result.artifact.parts[0]
         # The part keeps what the agent wrote and gains the reference to the file.
         reference = StoredFile.of(stored)
         assert (reference.file_id, reference.version_id) == ("file-1", "v-1")
-        assert reference.access_expires_at == datetime(2026, 10, 6, 1, tzinfo=timezone.utc)
+        assert reference.access_expires_at is None
         assert forget_stored_file(stored)
         assert stored.metadata == artifact.parts[0].metadata
         if action is not None:
@@ -179,7 +181,8 @@ class TestRequestShape:
         after = datetime.now(timezone.utc)
 
         assert outcome == UploadReceipt(
-            uri="https://api.aion.test/files/file-1/versions/v-1/content?grant=secret",
+            uri="https://api.aion.test/files/file-1/versions/v-1/content",
+            link="https://api.aion.test/files/file-1/versions/v-1/content?grant=secret",
             file_id="file-1",
             version_id="v-1",
             revision=1,
@@ -455,7 +458,8 @@ class TestStoredAddress:
 
         outcome = await backend(handle).store(upload(), context=upload_context())
 
-        assert outcome.uri == "https://api.aion.test/files/f-1/versions/v-9/content?grant=secret"
+        assert outcome.uri == "https://api.aion.test/files/f-1/versions/v-9/content"
+        assert outcome.link == "https://api.aion.test/files/f-1/versions/v-9/content?grant=secret"
         assert outcome.file_id == "f-1" and outcome.version_id == "v-9"
 
     async def test_missing_exact_version_never_falls_back_to_upload_url(self):
@@ -557,7 +561,8 @@ class TestRenewLink:
         outcome = await backend(never_uploads).renew_link("file-1", "v-1")
 
         assert outcome == UploadReceipt(
-            uri="https://api.aion.test/files/file-1/versions/v-1/content?grant=secret",
+            uri="https://api.aion.test/files/file-1/versions/v-1/content",
+            link="https://api.aion.test/files/file-1/versions/v-1/content?grant=secret",
             file_id="file-1",
             version_id="v-1",
             access_expires_at="2026-10-06T01:00:00Z",

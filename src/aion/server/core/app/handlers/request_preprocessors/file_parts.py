@@ -41,8 +41,8 @@ class FilePartPreprocessor:
 
     A caller's parts never keep a reference to a stored file (``aion:file``):
     the server writes that key for the files it stores itself, and reads it
-    back to issue download links with the deployment's own rights. One taken
-    from a caller would name a file of the caller's choosing.
+    back to issue download links for the file it names. One taken from a
+    caller would name a file of the caller's choosing.
 
     Receipts produced during ``process`` are tracked per async context, so
     concurrent requests compensate only their own uploads.
