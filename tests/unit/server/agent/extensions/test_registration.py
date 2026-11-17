@@ -86,6 +86,9 @@ def test_an_extension_the_agent_does_not_enable_is_registered_inactive(isolated_
 
     assert enabled == []
     assert registered(isolated_registry, URI).active is False
+    assert DAEMON_EXTENSION_URI_V1 in {
+        item.uri for item in isolated_registry.get_advertised()
+    }
 
 
 def test_an_enabled_extension_is_active_and_returned_with_its_options(isolated_registry) -> None:

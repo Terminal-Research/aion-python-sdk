@@ -11,15 +11,16 @@ what it refuses: an extension this deployment has not enabled, and one
 declared without the extension it requires. Both are refused before any task
 exists, which is the part that is asserted rather than assumed.
 
-The deployment is the default one, which enables nothing beyond what the SDK
-registers as active; the daemon deployment has
-[test_daemon.py](test_daemon.py).
+The deployment uses the SDK defaults. Daemon payload scenarios in
+[test_daemon.py](test_daemon.py) also use default extension support.
 """
 
 from __future__ import annotations
 
 import pytest
 from a2a.utils.errors import InvalidParamsError
+
+from aion.core.constants.a2a import WELCOME_MESSAGE_EXTENSION_URI_V1
 
 from tests.scenarios.commands import ExtResponse, echo_text
 from tests.scenarios.extensions import SCENARIO_REQUIRES_EXTENSION_URI
@@ -28,7 +29,6 @@ from tests.scenarios.harness import (
     DISTRIBUTION_EXTENSION_URI,
     Ev,
     ScenarioClient,
-    daemon_metadata,
     distribution_metadata,
     final_task,
     reply_texts,
@@ -106,18 +106,17 @@ async def test_an_extension_this_deployment_has_not_enabled_is_refused(
     client: ScenarioClient,
 ) -> None:
     """A known extension is not an available one: the deployment decides."""
-    context_id = "daemon-not-enabled"
+    context_id = "welcome-not-enabled"
 
     with pytest.raises(InvalidParamsError) as error:
         await client.send(
-            "ext",
+            "",
             context_id=context_id,
-            metadata=daemon_metadata(),
-            extensions=[DAEMON_EXTENSION_URI],
+            extensions=[WELCOME_MESSAGE_EXTENSION_URI_V1],
         )
 
     message = str(error.value)
-    assert DAEMON_EXTENSION_URI in message
+    assert WELCOME_MESSAGE_EXTENSION_URI_V1 in message
     assert "enabled_extensions" in message
     assert await client.tasks_in_context(context_id) == []
 

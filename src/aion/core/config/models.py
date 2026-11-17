@@ -234,11 +234,11 @@ class AgentConfig(BaseModel):
 
     enabled_extensions: List[Union[str, Dict[str, Optional[Dict[str, Any]]]]] = Field(
         default_factory=list,
-        description="Optional A2A extensions this agent additionally activates "
-                    "(opt-in extensions, e.g. daemon and behavior evolution). "
+        description="Optional A2A extensions this agent additionally enables "
+                    "(opt-in extensions, e.g. welcome messages and behavior evolution). "
                     "Each entry is the extension's URI, or a mapping of the URI "
                     "to the options of an executable extension; an empty block "
-                    "keeps the defaults. Extensions that are active by default "
+                    "keeps the defaults. Extensions that are enabled by default "
                     "(e.g. distribution, messaging) are unaffected by this list.")
 
     @field_validator('enabled_extensions')

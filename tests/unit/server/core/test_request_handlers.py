@@ -88,12 +88,12 @@ class TestVerifyDeclaredExtensions:
     def test_declared_inactive_extension_rejected_as_invalid_params(self):
         from a2a.types import Message, Role, SendMessageRequest
         from a2a.utils.errors import InvalidParamsError
-        from aion.core.constants.a2a import DAEMON_EXTENSION_URI_V1
+        from aion.core.constants.a2a import WELCOME_MESSAGE_EXTENSION_URI_V1
         from aion.core.runtime import aion_a2a_extension_registry
 
         aion_a2a_extension_registry.reset_to_default()
         message = Message(message_id="m-1", role=Role.ROLE_USER)
-        message.extensions.append(DAEMON_EXTENSION_URI_V1)
+        message.extensions.append(WELCOME_MESSAGE_EXTENSION_URI_V1)
         params = SendMessageRequest(message=message)
 
         with pytest.raises(InvalidParamsError, match="not enabled for this agent") as refusal:
@@ -103,14 +103,14 @@ class TestVerifyDeclaredExtensions:
     def test_header_declared_inactive_extension_rejected(self):
         from a2a.types import Message, Role, SendMessageRequest
         from a2a.utils.errors import InvalidParamsError
-        from aion.core.constants.a2a import DAEMON_EXTENSION_URI_V1
+        from aion.core.constants.a2a import WELCOME_MESSAGE_EXTENSION_URI_V1
         from aion.core.runtime import aion_a2a_extension_registry
 
         aion_a2a_extension_registry.reset_to_default()
         params = SendMessageRequest(message=Message(message_id="m-1", role=Role.ROLE_USER))
 
         with pytest.raises(InvalidParamsError):
-            self._verify(params, self._call_context({DAEMON_EXTENSION_URI_V1}))
+            self._verify(params, self._call_context({WELCOME_MESSAGE_EXTENSION_URI_V1}))
 
     def test_request_without_declared_extensions_passes(self):
         from a2a.types import Message, Role, SendMessageRequest

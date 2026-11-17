@@ -19,11 +19,16 @@ descriptor's collector, and the result exposed on the runtime context. A URI
 with no descriptor is carried as an inert `UnknownExtension` — visible for
 logging and forwarding, never verified and never routed.
 
-**Active.** The extension is enabled for the agent now running. Most
-protocol-level extensions register `active=True`; agent-specific features
-register `active=False` and are switched on by `enabled_extensions` in the
-agent's `aion.yaml`, through `activate()`. A request declaring an inactive
-extension is rejected, and the message names `enabled_extensions` as the fix.
+**Enabled (`active`).** The extension is available for the agent to use.
+Protocol metadata extensions, including Cron and Daemon, default to
+`active=True`. Welcome messages and executable extensions default to
+`active=False`. The agent enables them with `enabled_extensions` in
+`aion.yaml`, through `activate()`.
+
+This setting does not activate an extension on every request. The request
+must carry its declaration or a supported metadata signal, and its payload
+must pass validation. A request that declares a disabled extension fails
+with an error that names `enabled_extensions` as the fix.
 
 **Advertised.** The extension may be published on the generated `AgentCard`.
 `AionAgentCard.from_config` reads `get_advertised()` and nothing else.
@@ -35,11 +40,10 @@ server could never answer is worse than one that stays quiet about it. That
 is a floor rather than a guarantee — an advertised extension has what the
 deployment owes it, and a request declaring it can still be refused by
 `_verify()` for a per-request co-activation the card cannot know about.
-Behavior evolution, which requires the daemon extension, is the case that
-makes the prerequisite check matter: `activate()` is additive and expands
-nothing, so an agent that lists evolution in `enabled_extensions` without the
-daemon extension has an extension that is active and refused on every
-request.
+For example, behavior evolution requires Daemon support. Daemon support is
+enabled by default, but an evolution request still needs the Daemon
+declaration or metadata and its valid payload. An unavailable prerequisite
+also keeps dependent extensions off the card.
 
 **Unavailable.** The extension is enabled but cannot function on this
 deployment, and the component that owns it records the reason on the
@@ -56,8 +60,8 @@ inactive until the agent enables it, and a descriptor registered with
 
 | Extension | `active` | `advertised` | On a standard card |
 | --- | --- | --- | --- |
-| Distribution, messaging, cards, event, traceability, usage attribution, Context | `True` | `True` | yes |
-| Daemon, executable extensions (behavior evolution) | `False` | `True` | only once the agent enables it |
+| Cron, Daemon, Distribution, messaging, cards, event, traceability, usage attribution, Context | `True` | `True` | yes |
+| Welcome messages, executable extensions (behavior evolution) | `False` | `True` | only once the agent enables it |
 
 ## Extension points and transport bindings
 

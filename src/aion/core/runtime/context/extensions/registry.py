@@ -225,10 +225,9 @@ class AionA2AExtensionRegistry(metaclass=Singleton):
         That is a floor, not a guarantee: a published extension has what the
         deployment owes it, and a request declaring it can still be refused
         by _verify() for a per-request co-activation this cannot see.
-        Behavior evolution, which requires the daemon extension, is the case
-        that makes the prerequisite check matter: enabling it without the daemon extension
-        leaves every request declaring it refused, so the card must not offer
-        it.
+        A disabled or unavailable prerequisite prevents an extension from
+        appearing on the card. Request verification separately checks that
+        the request declares each prerequisite alongside the extension.
         """
         servable = self._servable_uris()
         return tuple(
@@ -248,7 +247,7 @@ aion_a2a_extension_registry = AionA2AExtensionRegistry()
 
 
 def register_protocol_extensions(registry: AionA2AExtensionRegistry) -> None:
-    """Register the protocol extensions the SDK defines, each with its default activation.
+    """Register the protocol extensions the SDK defines, each with its default enablement.
 
     Args:
         registry: The registry to register them in; the server passes
@@ -290,7 +289,6 @@ def register_protocol_extensions(registry: AionA2AExtensionRegistry) -> None:
             uri=DAEMON_EXTENSION_URI_V1,
             collector=TaskMetadataCollector(DaemonExtensionPayload),
             description="Daemon-scoped invocation context: daemon identity, behavior, and environment.",
-            active=False,
         )
     )
     registry.register(

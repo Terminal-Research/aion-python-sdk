@@ -1,14 +1,12 @@
 """Daemon-scoped requests: who the platform says is asking, and about what.
 
 The daemon extension carries an identity pair, a behavior and an environment
-in request metadata. The deployment has to have turned the extension on, the
-payload has to validate, and what reaches the agent has to be the record the
-platform sent - not the distribution's principal, which is a different
-payload with a different meaning.
+in request metadata. The SDK enables support by default. The payload must
+validate, and the agent must receive the record the platform sent, distinct
+from the distribution's principal.
 
-The deployment here is the default one with the daemon URI in
-``enabled_extensions``; the scenarios for a deployment that has not enabled it
-are in [test_extensions.py](test_extensions.py).
+The deployment uses no ``enabled_extensions`` entries. These scenarios check
+default support, payload validation, and per-request co-activation.
 """
 
 from __future__ import annotations
@@ -43,12 +41,12 @@ from tests.scenarios.harness import (
 
 pytestmark = pytest.mark.daemon
 
-DAEMON = ServeVariant(name="daemon", enabled_extensions=(DAEMON_EXTENSION_URI,))
+DAEMON = ServeVariant(name="daemon")
 
 
 @pytest.fixture(scope="session")
 def daemon_server(server_for) -> ServeProcess:
-    """A deployment that has enabled the daemon extension."""
+    """A deployment with the SDK's default Daemon support."""
     return server_for(DAEMON)
 
 

@@ -27,12 +27,13 @@ class TestCapabilities:
     def _registry(self, isolated_registry):
         pass
 
-    def test_cron_support_is_advertised_once_and_optional(self):
-        """The typed Cron collector is discoverable without requiring its use."""
+    @pytest.mark.parametrize("uri", [CRON_EXTENSION_URI_V1, DAEMON_EXTENSION_URI_V1])
+    def test_scheduled_work_support_is_advertised_once_and_optional(self, uri):
+        """Cron and Daemon support are discoverable without requiring their use."""
         card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
         declarations = [
             extension for extension in card.capabilities.extensions
-            if extension.uri == CRON_EXTENSION_URI_V1
+            if extension.uri == uri
         ]
         assert len(declarations) == 1
         assert not declarations[0].required
@@ -73,33 +74,23 @@ class TestCapabilities:
         assert EXTENSION_URI not in {ext.uri for ext in card.capabilities.extensions}
 
     def test_an_executable_extension_is_advertised_once_enabled(self):
-        """Enabling it through enabled_extensions is what puts it on the card.
-
-        With the daemon extension it requires, because without it the card
-        would be offering something every request is refused for - see the
-        test below.
-        """
+        """Enabling the feature is enough when its Daemon prerequisite defaults on."""
         self._register_executable_extension()
-        aion_a2a_extension_registry.activate([EXTENSION_URI, DAEMON_EXTENSION_URI_V1])
+        aion_a2a_extension_registry.activate([EXTENSION_URI])
 
         card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
 
         assert EXTENSION_URI in {ext.uri for ext in card.capabilities.extensions}
 
     def test_an_extension_missing_a_required_extension_is_not_advertised(self):
-        """`requires` is a condition on advertising, not only on verification.
-
-        `activate()` is additive and expands nothing, so an agent listing the
-        extension alone in enabled_extensions leaves the daemon extension it
-        requires inactive. Every request declaring the extension is then refused
-        for the missing co-activation, and a card advertising it would have
-        promised exactly that call.
-        """
-        self._register_executable_extension()
-        aion_a2a_extension_registry.activate([EXTENSION_URI])
-        descriptors = {d.uri: d for d in aion_a2a_extension_registry.get_all()}
-        assert descriptors[EXTENSION_URI].active is True
-        assert descriptors[DAEMON_EXTENSION_URI_V1].active is False
+        """A disabled prerequisite keeps an enabled extension off the card."""
+        dependency_uri = "https://example.invalid/extensions/dependency/1.0.0"
+        aion_a2a_extension_registry.register(
+            ExtensionDescriptor(uri=dependency_uri, active=False)
+        )
+        aion_a2a_extension_registry.register(
+            ExtensionDescriptor(uri=EXTENSION_URI, requires=(dependency_uri,))
+        )
 
         card = AionAgentCard.from_config(_make_config(), "http://localhost:8000")
 

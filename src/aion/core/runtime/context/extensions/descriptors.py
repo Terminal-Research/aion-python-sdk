@@ -398,10 +398,10 @@ class ExtensionDescriptor:
         active: Whether this extension is enabled for the current agent.
             Defaults to True - most protocol-level extensions
             (traceability, distribution, ...) are active out of the box.
-            Agent-specific features (the daemon extension, executable extensions)
-            register with active=False and rely on
-            AgentConfig.enabled_extensions to turn them on. Enablement only: it says nothing about whether
-            the extension is published on the AgentCard.
+            Agent-specific features (welcome messages and executable
+            extensions) register with active=False and rely on
+            AgentConfig.enabled_extensions to turn them on. This is agent
+            enablement, not per-request activation or AgentCard publication.
         unavailable_reason: When set, the extension is enabled but cannot
             actually function on this deployment - a request declaring it is
             rejected with exactly this user-facing message. None means available. Marked
@@ -410,9 +410,7 @@ class ExtensionDescriptor:
         advertised: Whether this extension may be published on the
             generated AgentCard. Defaults to True. Independent of `active`
             in both directions: an extension can be enabled for the agent
-            and deliberately kept off the card (the Aion context-read
-            extensions, which are an internal surface rather than a
-            capability a standard agent announces), or advertised and
+            and deliberately kept off the card, or advertised and
             registered inactive, so it appears on the card only once the
             agent opts into it. Advertisement is a publication decision,
             not an access-control one - a non-advertised extension is

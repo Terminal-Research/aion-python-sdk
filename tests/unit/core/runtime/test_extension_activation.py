@@ -355,22 +355,24 @@ class TestAionA2AExtensionRegistry:
         assert descriptor.description == "A test extension."
 
     def test_core_protocol_extensions_default_active(self):
-        """Per the A2A extension specs, traceability/distribution/messaging/
-        event/cards all activate without any agent-level opt-in - only
-        opt-in features (daemon-scoped invocation, toolkits) default
-        inactive and require AgentConfig.enabled_extensions. Regression
-        guard for registry.py's registration defaults."""
+        """Protocol support defaults on, while welcome generation remains opt-in."""
         from aion.core.constants.a2a import (
             CARDS_EXTENSION_URI_V1,
+            CONTEXT_EXTENSION_URI_V1,
+            CRON_EXTENSION_URI_V1,
             DAEMON_EXTENSION_URI_V1,
             DISTRIBUTION_EXTENSION_URI_V1,
             EVENT_EXTENSION_URI_V1,
             MESSAGING_EXTENSION_URI_V1,
             TRACEABILITY_EXTENSION_URI_V1,
+            WELCOME_MESSAGE_EXTENSION_URI_V1,
         )
 
         descriptors = {d.uri: d for d in aion_a2a_extension_registry.get_all()}
         for uri in (
+            CONTEXT_EXTENSION_URI_V1,
+            CRON_EXTENSION_URI_V1,
+            DAEMON_EXTENSION_URI_V1,
             TRACEABILITY_EXTENSION_URI_V1,
             DISTRIBUTION_EXTENSION_URI_V1,
             MESSAGING_EXTENSION_URI_V1,
@@ -378,7 +380,7 @@ class TestAionA2AExtensionRegistry:
             CARDS_EXTENSION_URI_V1,
         ):
             assert descriptors[uri].active is True
-        assert descriptors[DAEMON_EXTENSION_URI_V1].active is False
+        assert descriptors[WELCOME_MESSAGE_EXTENSION_URI_V1].active is False
 
 
 class TestMarkUnavailable:

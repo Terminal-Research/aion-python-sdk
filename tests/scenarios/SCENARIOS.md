@@ -178,13 +178,13 @@ Daemon-scoped requests: who the platform says is asking, and about what.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [Every field of the daemon payload arrives as the platform sent it.](core/test_daemon.py#L72 "test_the_daemon_payload_reaches_the_agent_whole") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
-| [The requester is optional; the daemon it is addressed to is not.](core/test_daemon.py#L90 "test_a_daemon_request_without_a_requester_is_still_addressed") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
-| [Two payloads on one request stay two payloads: the daemon answers for itself.](core/test_daemon.py#L107 "test_the_daemon_identity_is_not_the_distribution_principal") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
-| [Declaring the extension is a promise to carry it; an empty request breaks it.](core/test_daemon.py#L129 "test_a_declared_daemon_extension_without_a_payload_is_refused") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
-| [A payload that does not validate names the field, and opens no task.](core/test_daemon.py#L148 "test_a_malformed_daemon_payload_is_refused_by_field") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
-| [Co-activation satisfied: the request is served, not refused.](core/test_daemon.py#L171 "test_an_extension_gets_what_it_requires_when_both_are_declared") | `extensions`, `daemon` | `whoami` | `daemon` | ✓ | ✓ |
-| [``A2A-Extensions`` naming the daemon on ``GetTask`` and ``CancelTask``: no payload is looked for, nothing fails.](core/test_daemon.py#L188 "test_reading_and_cancelling_a_task_with_the_daemon_declared_activates_nothing") | `daemon` | `slow` | `daemon` | ✓ | ✓ |
+| [Every field of the daemon payload arrives as the platform sent it.](core/test_daemon.py#L70 "test_the_daemon_payload_reaches_the_agent_whole") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
+| [The requester is optional; the daemon it is addressed to is not.](core/test_daemon.py#L88 "test_a_daemon_request_without_a_requester_is_still_addressed") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
+| [Two payloads on one request stay two payloads: the daemon answers for itself.](core/test_daemon.py#L105 "test_the_daemon_identity_is_not_the_distribution_principal") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
+| [Declaring the extension is a promise to carry it; an empty request breaks it.](core/test_daemon.py#L127 "test_a_declared_daemon_extension_without_a_payload_is_refused") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
+| [A payload that does not validate names the field, and opens no task.](core/test_daemon.py#L146 "test_a_malformed_daemon_payload_is_refused_by_field") | `daemon` | `whoami` | `daemon` | ✓ | ✓ |
+| [Co-activation satisfied: the request is served, not refused.](core/test_daemon.py#L169 "test_an_extension_gets_what_it_requires_when_both_are_declared") | `extensions`, `daemon` | `whoami` | `daemon` | ✓ | ✓ |
+| [``A2A-Extensions`` naming the daemon on ``GetTask`` and ``CancelTask``: no payload is looked for, nothing fails.](core/test_daemon.py#L186 "test_reading_and_cancelling_a_task_with_the_daemon_declared_activates_nothing") | `daemon` | `slow` | `daemon` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_errors.py`
 
@@ -259,8 +259,8 @@ End-to-end extension payload delivery to the agent.
 | [An extension the server does not recognize lands in ``unknown``.](core/test_extensions.py#L72 "test_unknown_extension_is_reported") | `extensions` | `ext` | `default` | ✓ | ✓ |
 | [Both a known and an unknown extension can arrive on the same request.](core/test_extensions.py#L85 "test_distribution_present_alongside_unknown") | `extensions` | `ext` | `default` | ✓ | ✓ |
 | [A known extension is not an available one: the deployment decides.](core/test_extensions.py#L104 "test_an_extension_this_deployment_has_not_enabled_is_refused") | `extensions` | `ext` | `default` | ✓ | ✓ |
-| [Co-activation is checked before the agent runs, and the refusal names the gap.](core/test_extensions.py#L125 "test_an_extension_declared_without_what_it_requires_is_refused") | `extensions` | `ext` | `default` | ✓ | ✓ |
-| [A rejected request is one request: the next ordinary one is answered.](core/test_extensions.py#L145 "test_a_refused_declaration_leaves_the_agent_serving") | `extensions` | `echo` | `default` | ✓ | ✓ |
+| [Co-activation is checked before the agent runs, and the refusal names the gap.](core/test_extensions.py#L124 "test_an_extension_declared_without_what_it_requires_is_refused") | `extensions` | `ext` | `default` | ✓ | ✓ |
+| [A rejected request is one request: the next ordinary one is answered.](core/test_extensions.py#L144 "test_a_refused_declaration_leaves_the_agent_serving") | `extensions` | `echo` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_files.py`
 

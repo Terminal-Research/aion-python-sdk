@@ -68,7 +68,6 @@ executable extension:
 
 ```yaml
 enabled_extensions:
-  - "https://docs.aion.to/a2a/extensions/aion/daemon/1.0.0"
   - "https://docs.aion.to/a2a/extensions/aion/behavior/evolution/1.0.0":
       callers: [platform, anonymous_session]
 ```
