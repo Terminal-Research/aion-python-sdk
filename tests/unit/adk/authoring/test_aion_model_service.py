@@ -51,11 +51,6 @@ def _serve(monkeypatch, service: AionModelService) -> AionModelService:
             api_key="key", base_url="https://models.test/v1", max_retries=0,
             http_client=httpx.AsyncClient(transport=service.transport),
         )
-        if kwargs.get("tools"):
-            # LiteLLM loads its MCP handler for a request with tools, and that
-            # needs an mcp release newer than the one langchain-mcp-adapters
-            # allows in an environment with both frameworks; it has no part here.
-            kwargs["_skip_mcp_handler"] = True
         return await send(**kwargs, client=client)
 
     async def acreate_file(**kwargs):

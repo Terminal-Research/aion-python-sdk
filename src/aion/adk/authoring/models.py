@@ -47,6 +47,13 @@ def _aion_lite_llm_client(base_client_type: type[Any]) -> Any:
     the run of an agent behind an ``AgentTool``, or a run without
     ``StreamingMode.SSE`` - is streamed, read to its end, and answered with
     the response its chunks make (``_assembled``).
+
+    Every request also skips LiteLLM's MCP gateway (``_skip_mcp_handler``).
+    LiteLLM imports the gateway for any request with tools, and since
+    LiteLLM 1.103 that import needs an mcp release ``langchain-mcp-adapters``
+    does not allow, so with both frameworks installed every such request
+    failed before it was sent. The gateway serves only MCP tools that name
+    LiteLLM's proxy, and ADK sends a model its tools as functions.
     """
 
     class AionLiteLlmClient(base_client_type):
@@ -72,6 +79,7 @@ def _aion_lite_llm_client(base_client_type: type[Any]) -> Any:
             messages = place_held_documents(messages)
             streamed = bool(request_kwargs.get("stream"))
             request_kwargs["stream"] = True
+            request_kwargs["_skip_mcp_handler"] = True
             try:
                 result = litellm.completion(
                     model=_routed(model), messages=messages, tools=tools, **request_kwargs,
@@ -105,6 +113,7 @@ def _aion_lite_llm_client(base_client_type: type[Any]) -> Any:
             messages = place_held_documents(messages)
             streamed = bool(request_kwargs.get("stream"))
             request_kwargs["stream"] = True
+            request_kwargs["_skip_mcp_handler"] = True
             try:
                 result = await litellm.acompletion(
                     model=_routed(model), messages=messages, tools=tools, **request_kwargs,

@@ -42,6 +42,13 @@ a request without a stream - a run without SSE, the agent behind an
 make. Any other client of the service, LiteLLM called directly included, has
 to ask for a stream.
 
+Every request also skips LiteLLM's MCP gateway. LiteLLM imports the gateway
+for any request with tools, and since LiteLLM 1.103 that import needs an `mcp`
+release `langchain-mcp-adapters` does not allow, so with both frameworks
+installed such a request would fail before it is sent. The gateway serves only
+MCP tools that name LiteLLM's proxy, and ADK sends a model its tools as
+functions.
+
 A model picked per turn:
 
 ```python

@@ -194,6 +194,25 @@ def test_lite_llm_client_allows_deployment_initiated_work(monkeypatch):
         assert call.get("extra_headers", {}) == {}
 
 
+@pytest.mark.parametrize("stream", [False, True])
+def test_every_request_skips_litellms_mcp_gateway(monkeypatch, stream):
+    """LiteLLM imports its MCP gateway for a request with tools, and since 1.103 the
+    import needs an mcp release langchain-mcp-adapters does not allow: with both
+    frameworks installed, the request would fail before it is sent. ADK sends its
+    tools as functions, which the gateway never serves."""
+    calls = _fake_adk_modules(monkeypatch)
+    monkeypatch.setattr(models, "aion_openai_config", lambda: FakeConfig())
+    monkeypatch.setattr(models, "aion_model_api_key", lambda: "fresh-jwt")
+    monkeypatch.setattr(models, "aion_model_request_headers", lambda existing=None: {})
+    client = aion_lite_llm("model-id").kwargs["llm_client"]
+    tools = [{"type": "function", "function": {"name": "lookup", "parameters": {"type": "object"}}}]
+
+    client.completion(model="openai/model-id", messages=[], tools=tools, stream=stream)
+    asyncio.run(client.acompletion(model="openai/model-id", messages=[], tools=tools, stream=stream))
+
+    assert [call["_skip_mcp_handler"] for call in calls] == [True, True]
+
+
 @pytest.mark.parametrize("asynchronous", [False, True])
 @pytest.mark.parametrize("partial", [False, True])
 @pytest.mark.parametrize("code", ["daemon_identity_required", "provider_unavailable"])
