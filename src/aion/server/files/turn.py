@@ -2,12 +2,12 @@
 
 An agent's file can reach storage on two paths in one turn. The event
 pipeline stores the files the agent sends out, so that the task holds their
-links. A framework adapter stores the files its framework is about to keep in
-its own state - a LangGraph checkpoint, an ADK session - so that the state
-holds the link too and the database never holds the bytes. ``TurnFiles``
-serves both paths of a turn: whichever asks first stores the file, and the
-other gets the same link (``TurnUploads``), whatever order the framework
-produces them in. The task and the framework's state then point at one
+addresses. A framework adapter stores the files its framework is about to
+keep in its own state - a LangGraph checkpoint, an ADK session - so that the
+state holds the address too and the database never holds the bytes.
+``TurnFiles`` serves both paths of a turn: whichever asks first stores the
+file, and the other gets the same stored file (``TurnUploads``), whatever
+order the framework produces them in. The task and the framework's state then point at one
 stored file.
 
 The server opens one for every turn (``turn_files``); a framework adapter
