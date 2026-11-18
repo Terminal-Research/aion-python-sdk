@@ -42,11 +42,12 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 import threading
 from collections import OrderedDict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from aion.core.a2a.files import StoredFile
 from aion.core.exceptions import AionError
@@ -71,7 +72,11 @@ CHECK_TEXT = "Reply with OK."
 """The text sent with a file in a request that checks whether the model takes that file alone."""
 
 REFUSAL_STATUS_CODES = frozenset({400, 413, 415, 422})
-"""The HTTP statuses with which a model service refuses what a request carries."""
+"""The statuses with which a model service refuses what a request carries.
+
+An HTTP status, or the provider's status a stream error event names
+(``is_request_refusal``).
+"""
 
 MEMORY_ENTRIES = 10_000
 """How many verdicts on files the process keeps."""
@@ -156,17 +161,71 @@ def is_request_refusal(error: BaseException) -> bool:
 
     That is a ``ValueError`` the model class raised while it built the
     request - LangChain's for a content block OpenAI does not take, ADK's
-    for a part it cannot convert - or an HTTP status of
-    ``REFUSAL_STATUS_CODES`` from the model service. A failure of the SDK
-    itself (any ``AionError``), of access, of a rate limit, of the service or
-    of the connection is not.
+    for a part it cannot convert - or a status of ``REFUSAL_STATUS_CODES``
+    from the model service.
+
+    Aion's model service answers every request with HTTP 200 and a stream,
+    and reports a failure as the stream's error event, with no HTTP status
+    (``_stream_error``). A provider's refusal is an ``api_error`` whose
+    message starts with the provider's status
+    (``OpenRouter API request failed: 400 Bad Request - ...``,
+    ``_provider_status``); that status decides, before any status the client
+    library inferred from the message. Any other error event - the
+    service's own, such as a model it does not serve - is not a refusal.
+
+    A failure of the SDK itself (any ``AionError``), of access, of a rate
+    limit, of the service or of the connection is not a refusal either.
     """
     if isinstance(error, AionError):
         return False
+    event = _stream_error(error)
+    if event is not None:
+        return _provider_status(event) in REFUSAL_STATUS_CODES
     status = _status_code(error)
     if status is not None:
         return status in REFUSAL_STATUS_CODES
     return isinstance(error, ValueError)
+
+
+_PROVIDER_STATUS = re.compile(r"[^\n:]{1,80} API request failed: (\d{3})\b")
+"""The start of the message of a provider's failure that Aion's model service sends, with its status."""
+
+
+def _stream_error(error: BaseException) -> Optional[Mapping[str, Any]]:
+    """The error object of a model service's stream error event, when ``error`` comes from one.
+
+    The OpenAI client raises the event ``{"error": {"message", "type",
+    "param", "code"}}`` as an error without an HTTP status whose ``body`` is
+    that error object. LiteLLM raises an error of its own while handling it,
+    so the event is looked for along the chain of causes as a traceback
+    follows it. An error with an HTTP status answered the request itself and
+    is not an event.
+    """
+    seen: set[int] = set()
+    current: Optional[BaseException] = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        body = getattr(current, "body", None)
+        has_status = isinstance(getattr(current, "status_code", None), int)
+        if not has_status and isinstance(body, Mapping) and isinstance(body.get("type"), str):
+            return body
+        current = current.__cause__ if current.__cause__ is not None else (
+            None if current.__suppress_context__ else current.__context__
+        )
+    return None
+
+
+def _provider_status(event: Mapping[str, Any]) -> Optional[int]:
+    """The provider's status a stream error event of Aion's model service names, if it names one.
+
+    Only the start of an ``api_error``'s message is read: the provider's own
+    answer follows it and may repeat the request, numbers included.
+    """
+    message = event.get("message")
+    if event.get("type") != "api_error" or not isinstance(message, str):
+        return None
+    match = _PROVIDER_STATUS.match(message)
+    return int(match.group(1)) if match else None
 
 
 def _status_code(error: BaseException) -> Optional[int]:

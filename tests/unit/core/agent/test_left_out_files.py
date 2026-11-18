@@ -227,6 +227,63 @@ class TestRefusal:
         assert not is_request_refusal(error)
 
 
+def _stream_error(message: str, error_type: str = "api_error", code: Optional[str] = None) -> Exception:
+    """The error the OpenAI client raises for an error event of Aion's model service stream: no HTTP status."""
+    import httpx
+    import openai
+
+    body = {"message": message, "type": error_type, "param": None, "code": code}
+    return openai.APIError(message, request=httpx.Request("POST", "https://models.test/v1/chat/completions"), body=body)
+
+
+def _raised_while_handling(event: Exception, status: int) -> Exception:
+    """An error a client library raises while handling ``event``, with a status it inferred, as LiteLLM does."""
+
+    class _Inferred(Exception):
+        status_code = status
+
+    try:
+        try:
+            raise event
+        except Exception:
+            raise _Inferred("inferred from the message")
+    except _Inferred as error:
+        return error
+
+
+PROVIDER_BODY = '{"error":{"message":"Provider returned error","code":400}}'
+
+
+class TestRefusalInAStream:
+    """Aion's model service answers with HTTP 200 and a stream, and reports a failure as an error event of it."""
+
+    @pytest.mark.parametrize("status", [400, 413, 415, 422])
+    def test_a_provider_status_that_refuses_the_request(self, status: int) -> None:
+        assert is_request_refusal(_stream_error(f"OpenRouter API request failed: {status} Bad Request - {PROVIDER_BODY}"))
+
+    @pytest.mark.parametrize("status", [401, 429, 500, 503])
+    def test_a_provider_status_that_does_not(self, status: int) -> None:
+        assert not is_request_refusal(_stream_error(f"OpenRouter API request failed: {status} Error - {PROVIDER_BODY}"))
+
+    def test_only_the_start_of_the_message_names_the_status(self) -> None:
+        """The provider's answer that follows may repeat the request, numbers included."""
+        assert not is_request_refusal(_stream_error('OpenRouter API request failed: 429 Too Many Requests - {"echo": "400"}'))
+        assert not is_request_refusal(_stream_error("The provider said: OpenRouter API request failed: 400 Bad Request"))
+
+    def test_the_services_own_error_is_not_a_refusal(self) -> None:
+        error = _stream_error(
+            "Model 'probe/none' is not available for text chat completions.", "invalid_request_error", "model_not_supported"
+        )
+        assert not is_request_refusal(error)
+
+    def test_the_event_decides_over_a_status_a_library_inferred(self) -> None:
+        refusal = _stream_error(f"OpenRouter API request failed: 400 Bad Request - {PROVIDER_BODY}")
+        assert is_request_refusal(_raised_while_handling(refusal, 500))
+
+        own_error = _stream_error("Model 'probe/none' is not available.", "invalid_request_error", "model_not_supported")
+        assert not is_request_refusal(_raised_while_handling(own_error, 400))
+
+
 class TestNotes:
     def test_a_refused_file(self) -> None:
         assert left_out_note(RequestFile(key="k", name="c.mp4", mime_type="video/mp4")) == (

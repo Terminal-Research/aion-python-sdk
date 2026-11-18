@@ -146,7 +146,8 @@ def _file_inlining_chat_openai(chat_openai: Optional[type] = None) -> type:
         file out from the start; the caller sees one call
         (``RefusedFileSearch``). Only the try that goes through reaches the
         call's callbacks: the others fail before their first chunk, and a
-        request that checks one file alone is made without callbacks.
+        request that checks one file alone is made without callbacks, and
+        streamed whatever the call is.
         """
 
         def _generate(self, messages, stop=None, run_manager=None, **kwargs):
@@ -244,10 +245,16 @@ def _file_inlining_chat_openai(chat_openai: Optional[type] = None) -> type:
             return is_known_refused(self.model_name, stored)
 
         def _check_alone(self, block):
-            """How a request with ``block`` alone failed, or None when the model took it."""
+            """How a request with ``block`` alone failed, or None when the model took it.
+
+            The request is streamed, read to its end: Aion's model service
+            answers every request with a stream, which ``ChatOpenAI`` cannot
+            read as the answer to a request without one.
+            """
             token = _inner_call.set(True)
             try:
-                super()._generate(check_request(block))
+                for _ in super()._stream(check_request(block)):
+                    pass
             except Exception as error:
                 return error
             finally:
@@ -255,10 +262,11 @@ def _file_inlining_chat_openai(chat_openai: Optional[type] = None) -> type:
             return None
 
         async def _acheck_alone(self, block):
-            """How a request with ``block`` alone failed, or None when the model took it."""
+            """How a request with ``block`` alone failed, or None when the model took it; streamed, as ``_check_alone``."""
             token = _inner_call.set(True)
             try:
-                await super()._agenerate(check_request(block))
+                async for _ in super()._astream(check_request(block)):
+                    pass
             except Exception as error:
                 return error
             finally:

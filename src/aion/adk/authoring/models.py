@@ -239,7 +239,8 @@ def _file_inlining_lite_llm(lite_llm: type) -> type:
         file, a note in its place, and later requests leave the file out from
         the start; ADK sees one call (``RefusedFileSearch``). Only the try
         that goes through gives responses: the others fail before their
-        first one.
+        first one. A request that checks one file alone is streamed whatever
+        the call is.
         """
 
         _choose_model: Optional[ModelChoice]
@@ -284,11 +285,16 @@ def _file_inlining_lite_llm(lite_llm: type) -> type:
                     search.checked(suspect, await self._check_alone(model, part))
 
         async def _check_alone(self, model, file):
-            """How a request with ``file`` alone failed, or None when the model took it."""
+            """How a request with ``file`` alone failed, or None when the model took it.
+
+            The request is streamed, read to its end: Aion's model service
+            answers every request with a stream, which LiteLLM cannot read
+            as the answer to a request without one.
+            """
             request, held = check_request(model, file)
             with holding_documents(held):
                 try:
-                    async for _ in super().generate_content_async(request, stream=False):
+                    async for _ in super().generate_content_async(request, stream=True):
                         pass
                 except Exception as error:
                     return error

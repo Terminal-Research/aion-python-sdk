@@ -55,7 +55,15 @@ class _ModelService:
             raise self.failure
         if any(f"data:{REFUSED};" in str(part) for part in content):
             raise litellm.BadRequestError(message="Invalid file data", model=kwargs["model"], llm_provider="openai")
+        if kwargs.get("stream"):
+            return _streamed("ok")
         return litellm.ModelResponse(choices=[{"message": {"role": "assistant", "content": "ok"}}])
+
+
+async def _streamed(text: str):
+    yield litellm.ModelResponseStream(
+        choices=[{"index": 0, "delta": {"role": "assistant", "content": text}, "finish_reason": "stop"}]
+    )
 
 
 class _Config:
