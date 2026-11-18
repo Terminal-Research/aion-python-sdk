@@ -19,7 +19,9 @@ one that keeps nothing, and every read downloads.
 
 A file larger than ``AION_MODEL_FILE_MAX_BYTES`` is not kept: no model
 request carries it. The turn remembers such a file instead
-(``mark_too_large``), so it is not downloaded again only to be left out.
+(``mark_too_large``), so it is not downloaded again only to be left out. It
+remembers a stored file that is no longer stored the same way
+(``mark_removed``), so the storage service is not asked about it again.
 
 An entry is kept under the file's own identity (``content_key``) - the id of
 the stored version, or the address for a file the server did not store - and
@@ -70,6 +72,7 @@ class FileContents:
         self._entries: dict[str, bytes] = {}
         self._keys_by_url: dict[str, str] = {}
         self._too_large: set[str] = set()
+        self._removed: set[str] = set()
         self._loading: dict[str, asyncio.Future[bytes]] = {}
         self._lock = threading.Lock()
 
@@ -146,6 +149,21 @@ class FileContents:
             if key in self._too_large:
                 return False
             self._too_large.add(key)
+            return True
+
+    def is_removed(self, key: str) -> bool:
+        """Whether the turn found the file ``key`` names no longer stored."""
+        with self._lock:
+            return key in self._removed
+
+    def mark_removed(self, key: str) -> bool:
+        """Remember that the file ``key`` names is no longer stored; whether it is news to the turn."""
+        if not self._keeps:
+            return True
+        with self._lock:
+            if key in self._removed:
+                return False
+            self._removed.add(key)
             return True
 
 

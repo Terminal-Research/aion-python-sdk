@@ -10,7 +10,7 @@ storage, through the conversation of the turn, which reads a stored file
 through a link issued for the turn's sender.
 
 A file that cannot be read fails the turn's task with a reason its caller
-can read. Two kinds of file are left out instead: the SDK's helpers put a
+can read. Three kinds of file are left out instead: the SDK's helpers put a
 note in the file's place in the request (``aion.core.agent.left_out_files``),
 so the conversation goes on without the file.
 
@@ -21,6 +21,12 @@ so the conversation goes on without the file.
 * A stored file the storage service does not make available to the turn's
   sender - in a shared conversation, a file another participant sent - is
   not downloaded: ``ModelFileForbiddenError`` says so.
+* A stored file that is no longer stored is not downloaded:
+  ``ModelFileRemovedError`` says so. The SDK stores a conversation's files
+  for 30 days from their upload, and the file's message stays in the
+  history; the turn's conversation knows a file is removed by the retention
+  deadline its reference records, or by the storage service's answer that
+  it no longer exists. The turn remembers such a file, and logs it once.
 """
 
 from __future__ import annotations
@@ -45,6 +51,7 @@ from aion.core.agent.left_out_files import stored_label
 from aion.core.exceptions import (
     ConversationFileError,
     ConversationFileForbiddenError,
+    ConversationFileRemovedError,
     ConversationFileTooLargeError,
     ConversationUnavailableError,
     TaskFailedError,
@@ -56,6 +63,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "HeldDocuments",
     "ModelFileForbiddenError",
+    "ModelFileRemovedError",
     "ModelFileTooLargeError",
     "holding_documents",
     "place_held_documents",
@@ -97,6 +105,19 @@ class ModelFileForbiddenError(TaskFailedError):
         super().__init__(f"File {label!r} is not available to this sender. It could not be sent to the model.")
 
 
+class ModelFileRemovedError(TaskFailedError):
+    """A stored file is no longer stored, so a model request cannot carry it.
+
+    Its retention deadline has passed, or the storage service answered that
+    it no longer exists (``ConversationFileRemovedError``). The SDK's model
+    helpers and ``inline_files`` put a note in the file's place instead of
+    failing; raised out of them, it fails the task with its reason.
+    """
+
+    def __init__(self, label: str) -> None:
+        super().__init__(f"File {label!r} is no longer available. It could not be sent to the model.")
+
+
 def _too_large(key: str, label: str, limit: int, stored: Optional[StoredFile]) -> ModelFileTooLargeError:
     """The error for a file too large for a model request; the turn remembers the file, and logs it once."""
     if file_contents().mark_too_large(key):
@@ -107,6 +128,17 @@ def _too_large(key: str, label: str, limit: int, stored: Optional[StoredFile]) -
             limit,
         )
     return ModelFileTooLargeError(label, limit)
+
+
+def _removed(key: str, label: str, stored: Optional[StoredFile]) -> ModelFileRemovedError:
+    """The error for a file that is no longer stored; the turn remembers the file, and logs it once."""
+    if file_contents().mark_removed(key):
+        logger.warning(
+            "File %r (%s) is no longer stored; a note takes its place in the model request.",
+            label,
+            stored_label(stored),
+        )
+    return ModelFileRemovedError(label)
 
 
 def _known_too_large(key: str, limit: int, stored: Optional[StoredFile]) -> bool:
@@ -137,6 +169,7 @@ async def read_file_for_model(
             turn.
         ModelFileForbiddenError: The storage service does not make the
             stored file available to the turn's sender.
+        ModelFileRemovedError: The stored file is no longer stored.
         TaskFailedError: The file could not be read.
     """
     from aion.core.runtime.context.conversation import current_conversation, fetch_file
@@ -145,6 +178,8 @@ async def read_file_for_model(
     label = name or "file"
     part = _stored_part(url, name, stored)
     key = content_key(part) if part is not None else f"url:{url}"
+    if file_contents().is_removed(key):
+        raise _removed(key, label, stored)
     if _known_too_large(key, limit, stored):
         raise _too_large(key, label, limit, stored)
     try:
@@ -166,6 +201,8 @@ async def read_file_for_model(
         raise _too_large(key, label, limit, stored) from error
     except ConversationFileForbiddenError as error:
         raise ModelFileForbiddenError(label) from error
+    except ConversationFileRemovedError as error:
+        raise _removed(key, label, stored) from error
     except ConversationFileError as error:
         raise TaskFailedError(f"{error} It could not be sent to the model.") from error
     if len(content) > limit:
@@ -201,6 +238,7 @@ def read_file_for_model_sync(
         ModelFileTooLargeError: As ``read_file_for_model``.
         ModelFileForbiddenError: As ``read_file_for_model``, when the file is
             read through the turn's conversation.
+        ModelFileRemovedError: As ``read_file_for_model``.
         TaskFailedError: As ``read_file_for_model``.
     """
     from aion.core.runtime.context.conversation import current_conversation
@@ -242,6 +280,8 @@ def _read_from_address(url: str, *, name: Optional[str], stored: Optional[Stored
     contents = file_contents()
     part = _stored_part(url, name, stored)
     key = content_key(part) if part is not None else f"url:{url}"
+    if contents.is_removed(key):
+        raise _removed(key, label, stored)
     if _known_too_large(key, limit, stored):
         raise _too_large(key, label, limit, stored)
     content = contents.get_by_url(url)

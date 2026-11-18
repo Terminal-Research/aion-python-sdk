@@ -19,7 +19,9 @@ service grants one only to the file's owner, the usage attribution it was
 stored under: in a shared context a participant's turn sees the files the
 others sent, and when the storage service refuses its attribution a link to
 one, the read and the link raise ``ConversationFileForbiddenError`` and the
-address is not fetched. A storage backend that holds its files in this
+address is not fetched. A file past the retention deadline its part records,
+or one the storage service says no longer exists, raises
+``ConversationFileRemovedError`` the same way. A storage backend that holds its files in this
 process - the stub one, for development - is asked for the file first
 (``FileStorageBackend.held``).
 """
@@ -216,6 +218,8 @@ class _StoredConversation(Conversation):
             ConversationFileForbiddenError: The storage service refused a link
                 to the turn's usage attribution: the file is not available to
                 this sender.
+            ConversationFileRemovedError: The file is past its retention
+                deadline, or the storage service says it no longer exists.
         """
         stored = await super().file_link(part)
         if self._file_links is None:

@@ -288,6 +288,57 @@ class TestFileNotAvailable:
             await inline_files(request)
 
 
+class TestFileRemoved:
+    """A stored file that is no longer stored is a note, and the turn goes on.
+
+    The SDK stores a conversation's files for 30 days from their upload; the
+    event with the file stays in the session every later turn sends.
+    """
+
+    NOTE = '[File "report.pdf" (application/pdf) is no longer available and was left out]'
+
+    class _Removed(InMemoryConversation):
+        """The report is no longer stored; every other file reads as the test conversation does."""
+
+        def __init__(self) -> None:
+            super().__init__(files={PDF_URL: PDF, PNG_URL: PNG})
+
+        async def read_file(self, part, *, max_bytes=None):
+            from aion.core.exceptions import ConversationFileRemovedError
+
+            if part.url == PDF_URL:
+                raise ConversationFileRemovedError(part.filename or "file", part.media_type or None)
+            return await super().read_file(part, max_bytes=max_bytes)
+
+    async def test_inline_files_puts_a_note_in_its_place(self) -> None:
+        request, _ = _request()
+
+        with use_conversation(self._Removed()):
+            await inline_files(request)
+
+        text, pdf, png = request.contents[0].parts
+        assert pdf.text == self.NOTE
+        assert png.inline_data.data == PNG
+
+    async def test_the_aion_model_gets_the_note_and_answers(self) -> None:
+        seen: list = []
+
+        class _Base:
+            async def generate_content_async(self, llm_request, stream=False):
+                seen.extend(llm_request.contents[0].parts)
+                yield "response"
+
+        request, _ = _request()
+        model = _file_inlining_lite_llm(_Base)()
+
+        with use_conversation(self._Removed()):
+            responses = [response async for response in model.generate_content_async(request)]
+
+        assert responses == ["response"]
+        assert seen[1].text == self.NOTE
+        assert seen[2].inline_data.data == PNG
+
+
 class TestReadingByTheStoredFile:
     """The session names the stored file behind an address; the file is read by that name."""
 

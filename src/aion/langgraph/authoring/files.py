@@ -26,7 +26,9 @@ between requests, so a graph that should stop sending an old file leaves its
 message out, as it trims any history. A file larger than
 ``AION_MODEL_FILE_MAX_BYTES`` is not read, and a stored file that is not
 available to the turn's sender - in a shared conversation, one another
-participant sent - is not downloaded: a text note takes its block's place,
+participant sent - or no longer stored - the SDK stores a conversation's
+files for 30 days from their upload - is not downloaded: a text note takes
+its block's place,
 and the conversation goes on without the file
 (``aion.core.agent.left_out_files``). A file that cannot be read fails the
 task with a reason its caller reads (``aion.core.agent.model_files``).
@@ -50,9 +52,17 @@ from functools import cached_property
 from typing import Any, Optional, Union
 
 from aion.core.a2a.files import STORED_FILE_KEY, StoredFile
-from aion.core.agent.left_out_files import CHECK_TEXT, RequestFile, forbidden_note, left_out_note, too_large_note
+from aion.core.agent.left_out_files import (
+    CHECK_TEXT,
+    RequestFile,
+    forbidden_note,
+    left_out_note,
+    removed_note,
+    too_large_note,
+)
 from aion.core.agent.model_files import (
     ModelFileForbiddenError,
+    ModelFileRemovedError,
     ModelFileTooLargeError,
     read_file_for_model,
     read_file_for_model_sync,
@@ -67,10 +77,10 @@ FILE_BLOCK_TYPES = frozenset({"image", "audio", "video", "file"})
 OPENAI_FILE_BLOCK_TYPES = frozenset({"image_url", "input_audio"})
 """The content blocks in OpenAI's own format that carry a file."""
 
-_LeftOut = (ModelFileTooLargeError, ModelFileForbiddenError)
+_LeftOut = (ModelFileTooLargeError, ModelFileForbiddenError, ModelFileRemovedError)
 """Why a file is left out of a model request, with a note in its place."""
 
-_Read = Union[bytes, ModelFileTooLargeError, ModelFileForbiddenError]
+_Read = Union[bytes, ModelFileTooLargeError, ModelFileForbiddenError, ModelFileRemovedError]
 """What reading a file for a model gave: its content, or why it is left out."""
 
 
@@ -117,11 +127,15 @@ def _text(text: str) -> dict:
     return {"type": "text", "text": text}
 
 
-def _note(left_out: Union[ModelFileTooLargeError, ModelFileForbiddenError], block: dict) -> dict:
+def _note(
+        left_out: Union[ModelFileTooLargeError, ModelFileForbiddenError, ModelFileRemovedError], block: dict
+) -> dict:
     """The text block that takes the place of a file block whose file is left out."""
     name, mime_type = _name(block), block.get("mime_type")
     if isinstance(left_out, ModelFileTooLargeError):
         return _text(too_large_note(name, mime_type, left_out.limit))
+    if isinstance(left_out, ModelFileRemovedError):
+        return _text(removed_note(name, mime_type))
     return _text(forbidden_note(name, mime_type))
 
 

@@ -30,8 +30,9 @@ model of its own uses the callback:
 Every file of the request is sent, on every call: a model keeps nothing
 between requests. A file larger than ``AION_MODEL_FILE_MAX_BYTES`` is not
 read, and a stored file that is not available to the turn's sender - in a
-shared conversation, one another participant sent - is not downloaded: a
-text note takes its part's place - for a tool's media, a text part right
+shared conversation, one another participant sent - or no longer stored -
+the SDK stores a conversation's files for 30 days from their upload - is not
+downloaded: a text note takes its part's place - for a tool's media, a text part right
 after the function response - and the conversation goes on without the file
 (``aion.core.agent.left_out_files``). A file that cannot be read
 fails the task with a reason its caller reads (``aion.core.agent.model_files``).
@@ -62,10 +63,18 @@ from functools import cached_property
 from typing import Any, Optional, Union
 
 from aion.core.a2a.files import StoredFile
-from aion.core.agent.left_out_files import CHECK_TEXT, RequestFile, forbidden_note, left_out_note, too_large_note
+from aion.core.agent.left_out_files import (
+    CHECK_TEXT,
+    RequestFile,
+    forbidden_note,
+    left_out_note,
+    removed_note,
+    too_large_note,
+)
 from aion.core.agent.model_files import (
     HeldDocuments,
     ModelFileForbiddenError,
+    ModelFileRemovedError,
     ModelFileTooLargeError,
     read_file_for_model,
 )
@@ -174,19 +183,23 @@ async def inline_files(llm_request: Any, *, documents: Optional[HeldDocuments] =
 Unread = Callable[[StoredFile], bool]
 """Says which stored files a request leaves out without reading them."""
 
-_LeftOut = (ModelFileTooLargeError, ModelFileForbiddenError)
+_LeftOut = (ModelFileTooLargeError, ModelFileForbiddenError, ModelFileRemovedError)
 """Why a file is left out of a model request, with a note in its place."""
 
-_Read = Union[bytes, ModelFileTooLargeError, ModelFileForbiddenError]
+_Read = Union[bytes, ModelFileTooLargeError, ModelFileForbiddenError, ModelFileRemovedError]
 """What reading a file for a model gave: its content, or why it is left out."""
 
 
 def _note(
-        left_out: Union[ModelFileTooLargeError, ModelFileForbiddenError], name: Optional[str], mime_type: str
+        left_out: Union[ModelFileTooLargeError, ModelFileForbiddenError, ModelFileRemovedError],
+        name: Optional[str],
+        mime_type: str,
 ) -> types.Part:
     """The text part that takes the place of a file that is left out."""
     if isinstance(left_out, ModelFileTooLargeError):
         return types.Part(text=too_large_note(name, mime_type, left_out.limit))
+    if isinstance(left_out, ModelFileRemovedError):
+        return types.Part(text=removed_note(name, mime_type))
     return types.Part(text=forbidden_note(name, mime_type))
 
 

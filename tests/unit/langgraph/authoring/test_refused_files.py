@@ -373,6 +373,51 @@ class TestFileNotAvailable:
             await inline_files([self._question()])
 
 
+class TestFileRemoved:
+    """A stored file that is no longer stored is a note, and the turn goes on.
+
+    The SDK stores a conversation's files for 30 days from their upload; the
+    message with the file stays in the state every later turn sends.
+    """
+
+    URL = "https://files.test/files/f-1/versions/v-1/content"
+    NOTE = '[File "a.pdf" (application/pdf) is no longer available and was left out]'
+
+    class _Removed(InMemoryConversation):
+        async def read_file(self, part, *, max_bytes=None):
+            from aion.core.exceptions import ConversationFileRemovedError
+
+            raise ConversationFileRemovedError(part.filename or "file", part.media_type or None)
+
+    def _question(self) -> HumanMessage:
+        block = create_file_block(url=self.URL, mime_type="application/pdf", filename="a.pdf")
+        block["extras"] = {**block.get("extras", {}), "aion:file": {"fileId": "f-1", "fileVersionId": "v-1"}}
+        return _question(block, _block(PDF, "application/pdf", "report.pdf"))
+
+    async def test_inline_files_puts_a_note_in_its_place(self) -> None:
+        with use_conversation(self._Removed()):
+            [message] = await inline_files([self._question()])
+
+        assert message.content[1] == {"type": "text", "text": self.NOTE}
+        assert base64.b64decode(message.content[2]["base64"]) == PDF
+
+    async def test_the_model_gets_the_note_and_answers(self, service: _ModelService) -> None:
+        with use_conversation(self._Removed()):
+            answer = await _model().ainvoke([self._question()])
+
+        assert answer.content == "ok"
+        [request] = service.requests
+        assert _files_of(request) == [self.NOTE, "report.pdf"]
+
+    async def test_a_synchronous_model_call_gets_the_note_and_answers(self, service: _ModelService) -> None:
+        with use_conversation(self._Removed()):
+            answer = await asyncio.to_thread(_model().invoke, [self._question()])
+
+        assert answer.content == "ok"
+        [request] = service.requests
+        assert _files_of(request) == [self.NOTE, "report.pdf"]
+
+
 class TestReading:
     """How the files of a request are read."""
 

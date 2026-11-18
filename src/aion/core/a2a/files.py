@@ -287,7 +287,9 @@ class ConversationFile:
     say. The storage service issues such a link only to the file's owner,
     the usage attribution it was stored under: in a shared conversation the
     file another participant sent is not available to the turn's sender, and
-    ``read`` and ``link`` raise ``ConversationFileForbiddenError`` for it.
+    ``read`` and ``link`` raise ``ConversationFileForbiddenError`` for it. A
+    file past its retention deadline, or one the storage service says no
+    longer exists, raises ``ConversationFileRemovedError``.
 
     Args:
         part: The file part: ``raw`` bytes or a ``url``.
@@ -344,6 +346,7 @@ class ConversationFile:
             ConversationFileError: The file is inline and has no address.
             ConversationFileForbiddenError: The storage service refused a link
                 to the turn's sender: the file is not available to it.
+            ConversationFileRemovedError: The file is no longer stored.
             ConversationUnavailableError: No turn is running here.
         """
         from aion.core.runtime.context.conversation import current_conversation
@@ -361,6 +364,8 @@ class ConversationFile:
                 ``aion.core.runtime.context.conversation.Conversation.read_file``).
             ConversationFileForbiddenError: The storage service refused a link
                 to the turn's sender: the file is not available to it, and is
+                not downloaded.
+            ConversationFileRemovedError: The file is no longer stored, and is
                 not downloaded.
             ConversationUnavailableError: The file is stored and no turn is
                 running here.

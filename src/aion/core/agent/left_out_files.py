@@ -3,7 +3,7 @@
 The SDK's model helpers send a model every file of the messages they are
 given, on every call (``aion.core.agent.model_files``). A message stays in
 the conversation's history, so a file the model cannot take would fail every
-later call too, not only the one it came with. Three kinds of file are left
+later call too, not only the one it came with. Four kinds of file are left
 out of a request instead, each with a short text note in its place, so the
 model knows a file was there and can say so:
 
@@ -14,12 +14,15 @@ model knows a file was there and can say so:
   attribution it was stored under, so in a shared conversation the file one
   participant sent is not available to the turns of the others
   (``forbidden_note``).
+* a stored file that is no longer stored: past the retention deadline its
+  reference records - the SDK stores a conversation's files for 30 days from
+  their upload - or removed earlier (``removed_note``).
 * a file the model refused. A model's refusal does not say which file it is
   about, so ``RefusedFileSearch`` finds the file by the calls that go through
   without it (``left_out_note``). Only the models the SDK builds do this:
   they make the call, and see how it fails.
 
-The first two hold for every path that sends a conversation's files by their
+The first three hold for every path that sends a conversation's files by their
 content, ``inline_files`` included.
 
 What a model's requests showed is kept for the life of the process
@@ -59,6 +62,7 @@ __all__ = [
     "is_known_refused",
     "is_request_refusal",
     "left_out_note",
+    "removed_note",
     "stored_label",
     "too_large_note",
 ]
@@ -135,6 +139,11 @@ def too_large_note(name: Optional[str], mime_type: Optional[str], limit: int) ->
 def forbidden_note(name: Optional[str], mime_type: Optional[str]) -> str:
     """The text that takes the place of a stored file that is not available to the turn's sender."""
     return f"[{_described(name, mime_type)} is not available to this sender and was left out]"
+
+
+def removed_note(name: Optional[str], mime_type: Optional[str]) -> str:
+    """The text that takes the place of a stored file that is no longer stored."""
+    return f"[{_described(name, mime_type)} is no longer available and was left out]"
 
 
 def stored_label(stored: Optional[StoredFile]) -> str:
