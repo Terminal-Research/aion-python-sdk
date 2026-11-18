@@ -14,6 +14,10 @@ requires the exact headers the push configuration declared and refuses
 everything else - the same two channels the A2A configuration carries:
 ``authentication`` becomes ``Authorization``, ``token`` becomes
 ``X-A2A-Notification-Token``.
+
+A callback that answers its first delivery 503 shows that a delivery the
+receiver could not take is tried again, and the task's later events wait for
+it.
 """
 
 from __future__ import annotations
@@ -204,6 +208,16 @@ async def callback() -> AsyncIterator[CallbackServer]:
 
 
 @pytest.fixture
+async def unavailable_callback() -> AsyncIterator[CallbackServer]:
+    """A callback that answers its first delivery 503, as a receiver that cannot take it yet."""
+    server = await CallbackServer.start(unavailable_first=1)
+    try:
+        yield server
+    finally:
+        await server.stop()
+
+
+@pytest.fixture
 async def authenticated_callback() -> AsyncIterator[CallbackServer]:
     """A callback that refuses anything not carrying the declared credentials."""
     server = await CallbackServer.start(required_headers=EXPECTED_HEADERS)
@@ -228,7 +242,8 @@ async def test_push_notification_reaches_callback(
     task_ev = final_task(events)
     assert task_ev.state == "COMPLETED"
 
-    notifications = await callback.wait(timeout=15)
+    # The answer does not wait for the webhook: the pushes may still be on their way.
+    notifications = await _wait_for_terminal(callback)
     assert len(notifications) >= 1, "no push notification received"
 
     terminal = _find_terminal(notifications)
@@ -458,7 +473,10 @@ async def test_a_declared_credential_is_presented_to_the_callback(
     )
     task_ev = final_task(events)
 
-    notifications = await authenticated_callback.wait(timeout=15)
+    notifications = await _wait_until(
+        authenticated_callback,
+        lambda received: _find_terminal([n for n in received if n.accepted]) is not None,
+    )
     assert notifications, "no push notification received"
     accepted = [n for n in notifications if n.accepted]
     assert accepted, "every delivery was refused: the credentials did not arrive"
@@ -473,6 +491,35 @@ async def test_a_declared_credential_is_presented_to_the_callback(
     assert _task_from_notification(terminal).get("status", {}).get("state") == (
         "TASK_STATE_COMPLETED"
     )
+
+
+@pytest.mark.variant("push")
+@pytest.mark.command("echo")
+async def test_a_delivery_the_callback_could_not_take_is_tried_again(
+    push_client: ScenarioClient,
+    unavailable_callback: CallbackServer,
+) -> None:
+    """The first delivery is answered 503; it arrives again, and the turn's other events follow it in order."""
+    events = await push_client.send(
+        "echo again",
+        push_notification_url=unavailable_callback.url,
+    )
+    task_ev = final_task(events)
+
+    notifications = await _wait_until(
+        unavailable_callback,
+        lambda received: _find_terminal([n for n in received if n.accepted]) is not None,
+    )
+
+    refused, retried = notifications[0], notifications[1]
+    assert not refused.accepted
+    assert retried.accepted
+    assert retried.body == refused.body
+    accepted = [n for n in notifications if n.accepted]
+    states = _pushed_states(accepted)
+    assert states[0] == "TASK_STATE_SUBMITTED", f"pushed states: {states}"
+    assert states[-1] == "TASK_STATE_COMPLETED", f"pushed states: {states}"
+    assert all(_task_id_from_notification(n) == task_ev.task_id for n in notifications)
 
 
 @pytest.mark.variant("push")

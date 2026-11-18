@@ -808,9 +808,11 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         The server executing the task learns of the cancel at its next write
         and stops without writing, and nothing on this server delivers the
         outcome either, so the push notification of the ``CANCELED`` task is
-        sent here, once, by the writer of the state, its links asked for on
-        behalf of the usage attribution the cancel declared. A failed
-        delivery is logged and does not undo the cancel.
+        queued here, once, by the writer of the state, its links asked for on
+        behalf of the usage attribution the cancel declared. The sender
+        delivers it in the background, retried as every push is; the answer
+        to the cancel does not wait for it, and a delivery that fails is
+        logged and does not undo the cancel.
         """
         cancelled = await super()._write_cancel(task_id, current, version, context)
         if self._push_sender is not None:

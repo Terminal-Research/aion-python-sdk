@@ -109,7 +109,7 @@ def _registry(
     """
     pushes: list[tuple[str, str | None]] = []
 
-    async def record(task_id: str, event, *, link_scope: UploadContext | None = None) -> None:
+    async def record(task_id: str, event, *, link_scope: UploadContext | None = None) -> bool:
         if isinstance(event, TaskArtifactUpdateEvent):
             label = f"artifact {event.artifact.name}"
         elif isinstance(event, TaskStatusUpdateEvent):
@@ -117,6 +117,7 @@ def _registry(
         else:
             label = f"task {TaskState.Name(event.status.state)}"
         pushes.append((label, link_scope.usage_attribution if link_scope is not None else None))
+        return True
 
     push_sender = Mock(spec=AionPushNotificationSender)
     push_sender.send_notification.side_effect = record

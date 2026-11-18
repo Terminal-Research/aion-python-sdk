@@ -260,6 +260,24 @@ class TestUnsentOutcome:
         inner.send_notification.assert_awaited_once()
 
     @pytest.mark.anyio
+    async def test_an_outcome_the_sender_did_not_take_is_pushed_again(self):
+        """A sender that queued nothing - its push configs unreadable - has not taken the outcome."""
+        from aion.server.tasks.push_sender import AionPushNotificationSender
+
+        stored = _task(TaskState.TASK_STATE_FAILED)
+        inner = Mock(spec=AionPushNotificationSender)
+        inner.send_notification.side_effect = [False, True]
+        sender = TerminalTaskPushSender(
+            inner=inner, task_manager=_manager(stored, written_outcome=TaskState.TASK_STATE_FAILED)
+        )
+        await sender.send_notification(TASK_ID, _status(TaskState.TASK_STATE_FAILED))
+
+        await sender.push_unsent_outcome(TASK_ID)
+
+        assert inner.send_notification.await_count == 2
+        assert inner.send_notification.await_args.args == (TASK_ID, stored)
+
+    @pytest.mark.anyio
     async def test_an_outcome_whose_delivery_was_cut_off_is_pushed_again(self):
         """A consumer cancelled during the request has not delivered the outcome."""
         stored = _task(TaskState.TASK_STATE_INPUT_REQUIRED)

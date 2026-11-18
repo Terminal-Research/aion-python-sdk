@@ -8,7 +8,7 @@ from aion.server.a2a.constants import NON_ACTIVE_TASK_STATES
 from aion.server.files.links import link_scope_of
 from aion.server.files.storage import UploadContext
 from aion.server.tasks.protocols import AionTaskManagerProtocol
-from aion.server.tasks.push_sender import send_with_link_scope
+from aion.server.tasks.push_sender import is_task_outcome, send_with_link_scope
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ def current_link_scope(task_manager: object) -> UploadContext | None:
     ``cancel`` at the canceller's, at once. The producer moves on only after
     the consumer has handled every event of the turn before - it waits for
     the request lock the consumer releases at ``_RequestCompleted`` - so an
-    event the consumer pushes is pushed while the manager acts for the
+    event the consumer pushes is queued while the manager acts for the
     request whose turn produced it, or for the request that cancelled that
     turn. The scope is the one that request's handler kept
     (``link_scope_of``).
@@ -43,8 +43,9 @@ class TerminalTaskPushSender(PushNotificationSender):
     An outcome can also be written without an event the consumer pushes: when
     the agent raises, a2a-sdk's producer writes ``FAILED`` into the store
     directly. ``push_unsent_outcome`` sends that one once the execution is
-    over, and an outcome whose delivery was cut off by a cancelled consumer
-    as well.
+    over, and an outcome a cancelled consumer stopped before it was queued
+    as well. Once queued, an event is the sender's to deliver: its queue
+    retries it, and logs it when it gives up (``AionPushNotificationSender``).
 
     The snapshot is read through the task's own manager rather than the task
     store: push dispatch runs in the background consumer, which has no request
@@ -53,10 +54,10 @@ class TerminalTaskPushSender(PushNotificationSender):
     the ActiveTask, not installed globally on the handler.
 
     Each delivery asks for the download links of stored files in the scope
-    of the request the manager acts for when it is sent
-    (``current_link_scope``): the usage attribution of the message whose
-    turn produced the event, on whose behalf the turn stores and reads its
-    files. A message queued into a running task runs its turn on the same
+    of the request the manager acts for when the event is queued
+    (``current_link_scope``), kept with it while it waits: the usage
+    attribution of the message whose turn produced the event, on whose
+    behalf the turn stores and reads its files. A message queued into a running task runs its turn on the same
     ``ActiveTask``, and its pushes ask on its own behalf. After a cancel on
     this server, what is left of the cancelled turn - its ``CANCELED``
     among it - asks on the canceller's behalf. A webhook is not bound to
@@ -70,25 +71,21 @@ class TerminalTaskPushSender(PushNotificationSender):
     ) -> None:
         self._inner = inner
         self._task_manager = task_manager
-        # The non-active state of the last outcome whose delivery through
-        # this wrapper returned, compared with the manager's
-        # ``written_outcome``.
-        self._pushed_outcome: TaskState | None = None
+        # The non-active state of the last outcome this wrapper handed to the
+        # sender, compared with the manager's ``written_outcome``.
+        self._queued_outcome: TaskState | None = None
 
     async def send_notification(self, task_id: str, event: PushNotificationEvent) -> None:
         link_scope = current_link_scope(self._task_manager)
         if self._is_non_active_status(event):
             event = await self._outcome_snapshot(task_id, event)
 
-        await send_with_link_scope(self._inner, task_id, event, link_scope)
-        # Recorded once the delivery has returned. A delivery cut off halfway -
-        # its consumer cancelled during the request - did not deliver the
-        # outcome, and ``push_unsent_outcome`` sends it again.
-        if (
-            isinstance(event, Task | TaskStatusUpdateEvent)
-            and event.status.state in NON_ACTIVE_TASK_STATES
-        ):
-            self._pushed_outcome = event.status.state
+        taken = await send_with_link_scope(self._inner, task_id, event, link_scope)
+        # Recorded once the sender has taken the outcome. One it did not take -
+        # its config store unreadable, or its consumer cancelled before the
+        # outcome was queued - is sent again by ``push_unsent_outcome``.
+        if taken and is_task_outcome(event):
+            self._queued_outcome = event.status.state
 
     async def _outcome_snapshot(
         self, task_id: str, event: TaskStatusUpdateEvent
@@ -118,8 +115,9 @@ class TerminalTaskPushSender(PushNotificationSender):
         Called once the execution is over. The consumer pushes every outcome
         it writes itself; what is left is an outcome written past it - the
         ``FAILED`` a2a-sdk's producer stores when the agent raises before it
-        queued a final status - or one whose delivery the consumer's
-        cancellation cut off. The stored Task is sent, as for any outcome,
+        queued a final status - or one the sender did not take: its consumer
+        cancelled before the outcome was queued, or the push configs
+        unreadable. The stored Task is sent, as for any outcome,
         in the scope of the request the manager acts for: the one whose turn
         wrote the outcome, or the canceller of that turn. An outcome another
         writer stored (a cancel from another server, the abandoned-task
@@ -130,7 +128,7 @@ class TerminalTaskPushSender(PushNotificationSender):
             task_id: Identifier of the task.
         """
         outcome = self._task_manager.written_outcome
-        if outcome is None or outcome == self._pushed_outcome:
+        if outcome is None or outcome == self._queued_outcome:
             return
         task = await self._task_manager.get_task()
         if task is None or task.status.state != outcome:

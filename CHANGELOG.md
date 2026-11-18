@@ -18,6 +18,7 @@
 * **server:** the push notifications of a turn ask for file links on behalf of the request whose turn it is, a message queued into a running task included, instead of the request that started the task's execution on the server.
 * **server:** a cancel runs with the usage attribution its request declares and sends, so what the executor does while cancelling - reading or storing files - is done on the canceller's behalf instead of the deployment's daemon.
 * **files:** a part an agent sends with a stored file's address and no `aion:file` reference - an ADK `file_data` part, a LangGraph URL block - gets the reference back, so the client receives a working download link instead of an address that never downloads.
+* **server:** a push notification the webhook does not acknowledge is tried again: a timeout, a failed connection, HTTP 408, 429 and 5xx get up to five more attempts, after 1, 2, 4, 8 and 16 s, or after the receiver's `Retry-After` up to 16 s; a delivery that gives up is logged as a warning, and the task's outcome counts as pushed only once it is queued, so an outcome that never reached the sender is still pushed when the execution ends. Each webhook receives a task's events in order from a queue of its own, so the stream, `message/send` and a cancel no longer wait for the webhook.
 
 ## 0.1.0 (2026-11-16)
 

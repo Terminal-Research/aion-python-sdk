@@ -94,11 +94,12 @@ class PushNotificationFactory:
     def _build_timeout() -> httpx.Timeout:
         """Builds the timeout policy for webhook deliveries.
 
-        A task's deliveries are made one at a time from its event loop, and
-        each holds back the task's later events on every channel until the
-        webhook answers or the budget runs out. Waiting on the response is
-        therefore kept short by default and configurable for a receiver that
-        is known to answer slowly.
+        A webhook receives a task's events one at a time, in order, and each
+        attempt holds back that webhook's later events of the task until the
+        webhook answers or the budget runs out; an attempt that times out is
+        tried again. Waiting on the response is therefore kept short by
+        default and configurable for a receiver that is known to answer
+        slowly.
 
         Connecting has its own short budget: a host that cannot be reached
         should fail immediately rather than hold the delivery open.

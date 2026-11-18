@@ -48,6 +48,7 @@ def _response(status: int, reason: str) -> bytes:
 
 HTTP_200 = _response(200, "OK")
 HTTP_401 = _response(401, "Unauthorized")
+HTTP_503 = _response(503, "Service Unavailable")
 
 
 @dataclass
@@ -90,11 +91,17 @@ class CallbackServer:
             await server.stop()
     """
 
-    def __init__(self, port: int, required_headers: Optional[Mapping[str, str]] = None) -> None:
+    def __init__(
+        self,
+        port: int,
+        required_headers: Optional[Mapping[str, str]] = None,
+        unavailable_first: int = 0,
+    ) -> None:
         self.port = port
         self.url = f"http://127.0.0.1:{port}/callback"
         self.notifications: list[Notification] = []
         self._required = {name.casefold(): value for name, value in (required_headers or {}).items()}
+        self._unavailable_left = unavailable_first
         self._lock = threading.Lock()
         self._arrived = threading.Event()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -103,7 +110,10 @@ class CallbackServer:
 
     @classmethod
     async def start(
-        cls, *, required_headers: Optional[Mapping[str, str]] = None
+        cls,
+        *,
+        required_headers: Optional[Mapping[str, str]] = None,
+        unavailable_first: int = 0,
     ) -> "CallbackServer":
         """Start the callback server on a free port in a background thread.
 
@@ -113,9 +123,11 @@ class CallbackServer:
                 value for it, is answered 401 - which is what makes an
                 authenticated delivery a claim about the sender rather than a
                 header this server happened to write down.
+            unavailable_first: How many deliveries, the first ones, are
+                answered 503, as a receiver that cannot take them yet.
         """
         port = _free_port()
-        instance = cls(port, required_headers)
+        instance = cls(port, required_headers, unavailable_first)
         ready = threading.Event()
         instance._thread = threading.Thread(
             target=instance._run_loop, args=(ready,), daemon=True
@@ -149,7 +161,7 @@ class CallbackServer:
     async def _handle_connection(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ) -> None:
-        """Read one HTTP request and answer 200."""
+        """Read one HTTP request and answer it: 200, 401 without the required headers, 503 while unavailable."""
         try:
             raw = await asyncio.wait_for(reader.read(1024 * 1024), timeout=10)
             headers_part, _, body = raw.partition(b"\r\n\r\n")
@@ -178,14 +190,17 @@ class CallbackServer:
             except json.JSONDecodeError:
                 parsed_body = {}
 
-            accepted = self._accepts(parsed_headers)
             with self._lock:
+                unavailable = self._unavailable_left > 0
+                if unavailable:
+                    self._unavailable_left -= 1
+                accepted = not unavailable and self._accepts(parsed_headers)
                 self.notifications.append(
                     Notification(body=parsed_body, headers=parsed_headers, accepted=accepted)
                 )
             self._arrived.set()
 
-            writer.write(HTTP_200 if accepted else HTTP_401)
+            writer.write(HTTP_503 if unavailable else HTTP_200 if accepted else HTTP_401)
             await writer.drain()
         except Exception:
             pass
