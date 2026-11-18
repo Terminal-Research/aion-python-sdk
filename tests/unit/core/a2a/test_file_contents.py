@@ -145,3 +145,69 @@ def test_a_file_too_large_is_news_to_the_turn_once() -> None:
     assert contents.mark_too_large("f")
     assert not contents.mark_too_large("f")
     assert contents.is_too_large("f") and not contents.is_too_large("g")
+
+
+class TestStoredFileByContent:
+    """The turn finds the stored file a copy of its bytes came from, when exactly one stored file has them."""
+
+    ADDRESS = "https://files.test/files/f-1/versions/v-1/content"
+    REPORT = StoredFile.create("f-1", "v-1", retention_expires_at="2026-12-18T00:00:00Z", byte_size=7)
+
+    def test_the_one_stored_file_with_the_bytes_is_found(self) -> None:
+        contents = FileContents()
+        contents.put("file:f-1:v-1", b"content", url=self.ADDRESS, stored=self.REPORT)
+
+        assert contents.stored_file_with(b"content") == (self.ADDRESS, self.REPORT)
+        assert contents.stored_file_with(b"other") is None
+
+    def test_content_kept_without_its_stored_file_leads_nowhere(self) -> None:
+        contents = FileContents()
+        contents.put("url:https://example.test/a.pdf", b"content", url="https://example.test/a.pdf")
+
+        assert contents.stored_file_with(b"content") is None
+
+    def test_bytes_of_two_stored_files_lead_to_neither(self) -> None:
+        contents = FileContents()
+        contents.put("file:f-1:v-1", b"content", url=self.ADDRESS, stored=self.REPORT)
+        contents.put("file:f-2:v-1", b"content", url="https://files.test/f-2", stored=StoredFile.create("f-2", "v-1"))
+
+        assert contents.stored_file_with(b"content") is None
+
+    def test_the_same_file_read_again_is_still_one(self) -> None:
+        contents = FileContents()
+        contents.put("file:f-1:v-1", b"content", url=self.ADDRESS, stored=self.REPORT)
+        contents.put("file:f-1:v-1", b"content", url="https://files.test/f-1?grant=g", stored=self.REPORT)
+
+        assert contents.stored_file_with(b"content") == (self.ADDRESS, self.REPORT)
+
+    async def test_a_load_keeps_the_stored_file_it_read(self) -> None:
+        contents = FileContents()
+
+        async def download() -> bytes:
+            return b"content"
+
+        await contents.load("file:f-1:v-1", download, url=self.ADDRESS, stored=self.REPORT)
+
+        assert contents.stored_file_with(b"content") == (self.ADDRESS, self.REPORT)
+
+    def test_a_media_type_asked_for_must_be_the_one_kept(self) -> None:
+        """A stored version is its bytes and its type: the same bytes with another type are another file."""
+        contents = FileContents()
+        contents.put("file:f-1:v-1", b"content", url=self.ADDRESS, stored=self.REPORT, media_type="application/pdf")
+
+        assert contents.stored_file_with(b"content", media_type="application/pdf") == (self.ADDRESS, self.REPORT)
+        assert contents.stored_file_with(b"content", media_type="Application/PDF; q=1") == (self.ADDRESS, self.REPORT)
+        assert contents.stored_file_with(b"content", media_type="text/plain") is None
+        assert contents.stored_file_with(b"content") == (self.ADDRESS, self.REPORT)
+
+    def test_a_media_type_asked_for_is_not_matched_by_one_unknown(self) -> None:
+        contents = FileContents()
+        contents.put("file:f-1:v-1", b"content", url=self.ADDRESS, stored=self.REPORT)
+
+        assert contents.stored_file_with(b"content", media_type="application/pdf") is None
+
+    def test_outside_a_turn_nothing_is_found(self) -> None:
+        outside = FileContents(keeps=False)
+        outside.put("file:f-1:v-1", b"content", url=self.ADDRESS, stored=self.REPORT)
+
+        assert outside.stored_file_with(b"content") is None

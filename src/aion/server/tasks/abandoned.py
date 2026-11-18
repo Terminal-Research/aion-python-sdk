@@ -256,8 +256,9 @@ class AbandonedTasks:
         stale_tasks: The store's side (``StoreManager.get_stale_tasks``).
         timeout: ``AION_STALE_TASK_TIMEOUT``: seconds without a durable write
             after which a running task is abandoned; 0 settles nothing.
-        push_sender: Sends the settled task's push notification: no
-            execution is left to send it.
+        push_sender: Delivers the settled task's push notification: no
+            execution is left to send it. The settlement queues it and does
+            not wait for the receiver.
     """
 
     def __init__(self, stale_tasks: StaleTasks, *, timeout: float, push_sender: Any = None) -> None:

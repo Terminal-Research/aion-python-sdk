@@ -1,4 +1,4 @@
-"""Files in an ADK session: kept as links to stored files, not as bytes.
+"""Files in an ADK session: kept as the addresses of stored files, not as bytes.
 
 An event can carry a file inline: ``inline_data`` in its content, written by
 the agent, a callback, a model or ``thread.post``; a tool's media in its
@@ -10,14 +10,15 @@ session does.
 
 Every write to the session goes through ``TurnSessionService``, which gives
 the session service a copy of the event with each such file stored through
-the turn's files (``aion.server.files.turn``) and linked: ``inline_data``
-becomes ``file_data`` with the link, keeping the media type and name, and the
-outbox's parts hold links. The copy names each stored file by its link in
-``custom_metadata`` (``STORED_FILES_KEY``), which the session keeps and a
-model is never sent: the SDK's models read a linked file by it, through a new
-link once this one has expired (``aion.adk.authoring.files``). A file the
-turn also sends to the client is stored once, and the task and the session
-link to the same stored file.
+the turn's files (``aion.server.files.turn``): ``inline_data`` becomes
+``file_data`` with the stored file's address, keeping the media type and
+name, and the outbox's parts hold addresses. An address works only with
+authorization, so the session holds no credential. The copy names each
+stored file by its address in ``custom_metadata`` (``STORED_FILES_KEY``),
+which the session keeps and a model is never sent: the SDK's models read the
+file by it, through a link issued for the turn's sender
+(``aion.adk.authoring.files``). A file the turn also sends to the client is
+stored once, and the task and the session name the same stored file.
 
 The running invocation is not affected: the event the Runner hands on is not
 changed, and the invocation's own session goes on with the event's content as

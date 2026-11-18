@@ -1,4 +1,4 @@
-"""Files in a graph's checkpoints: kept as links to stored files, not as bytes.
+"""Files in a graph's checkpoints: kept as the addresses of stored files, not as bytes.
 
 A message in a graph's state can carry a file inline: a node or a model
 returns an ``AIMessage`` with a ``base64`` block, a tool answers with a
@@ -9,11 +9,12 @@ database for as long as the thread does.
 The checkpointers the server gives a graph store such a file before a
 checkpoint or a pending write is saved, through the turn's files
 (``aion.server.files.turn``): a file the turn also sends to the client is
-stored once, and the task and the checkpoint link to the same stored file.
-The saved block keeps its kind, media type and name, and holds the link in
-``url`` and the reference to the stored file under ``aion:file`` in
-``extras``, by which the SDK's models read it after the link has expired
-(``aion.langgraph.authoring.files``). The graph's own objects are not
+stored once, and the task and the checkpoint name the same stored file.
+The saved block keeps its kind, media type and name, and holds the stored
+file's address in ``url`` - it works only with authorization, so the
+checkpoint holds no credential - and the reference to the stored file under
+``aion:file`` in ``extras``, by which the SDK's models read it through a link
+issued for the turn's sender (``aion.langgraph.authoring.files``). The graph's own objects are not
 changed: what is saved is a copy, and the run goes on with the content it
 has.
 
@@ -142,7 +143,7 @@ def _inline_file(block: Any) -> Optional[dict]:
 
 
 def _linked_block(block: dict, part: Part) -> dict:
-    """The standard block for a stored file: the block's own keys, the link and the reference."""
+    """The standard block for a stored file: the block's own keys, the address and the reference."""
     linked = {key: value for key, value in block.items() if key not in INLINE_KEYS}
     linked["url"] = part.url
     stored = StoredFile.of(part)

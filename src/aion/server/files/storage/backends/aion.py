@@ -70,6 +70,10 @@ MAX_CONCURRENT_UPLOADS = 4
 
 _RETRYABLE_STATUSES = frozenset({408, 425, 429})
 
+# The Files API's codes for a file, or a version of it, that no longer exists:
+# removed at its retention deadline or before it.
+_REMOVED_CODES = frozenset({"file_expired", "file_not_found"})
+
 # The tail of a content address (``AionFileClient.content_url``), at the very
 # end of the URL. Each id is one path segment of letters, digits, ``-`` and
 # ``_`` - what the Files API's ids are made of - so a dot segment or an
@@ -245,7 +249,9 @@ class AionFileStorageBackend(FileStorageBackend):
     def _classify(
         self, error: AionFileStorageError, refused: _Refused
     ) -> UploadFailure:
-        """Map an API refusal onto an outcome by what the status says."""
+        """Map an API refusal onto an outcome by its code for a file that is gone, else by its status."""
+        if error.code in _REMOVED_CODES:
+            return UploadFailure(FileUploadErrorCode.STORAGE_FILE_REMOVED, cause=error)
         status = error.response.status_code
         if status == 401:
             return _credentials_failure(error, refused)

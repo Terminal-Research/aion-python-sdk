@@ -493,11 +493,25 @@ same task.
 
 Push carries every outcome the task stores, including those the run did not
 write itself: a cancel written by another server, the `FAILED` of an agent
-that raised, a task settled at shutdown or as abandoned. Deliveries are made
-one at a time from the task's event loop, each after its change is stored, so
-a webhook that answers slowly holds back the delivery of the run's later
-events, on every channel, for up to `PUSH_NOTIFICATION_TIMEOUT_SECONDS`
-(default 5 s) per delivery.
+that raised, a task settled at shutdown or as abandoned. Each change is
+queued for every webhook of the task once it is stored, and a webhook
+receives the task's events one at a time, in order, in the background: the
+stream, the answers and a cancel do not wait for it, so a push can arrive
+after the same change reached a stream or an answer. Each attempt waits up
+to `PUSH_NOTIFICATION_TIMEOUT_SECONDS` (default 5 s) for the webhook.
+
+A delivery is acknowledged by a success status. A timeout, a connection
+that failed, or HTTP 408, 429 or 5xx is tried again after 1, 2, 4, 8 and
+16 s - six attempts in all; a `Retry-After` of the receiver replaces the
+next pause, up to 16 s. A timed-out request may have reached the receiver,
+so a webhook can receive an event twice. Any other refusal is not tried
+again. A delivery that gives up is logged as a warning; the task keeps its
+state, readable through `GetTask`. While a webhook keeps failing, an outcome
+queued for it replaces the events waiting in front of it - the outcome is
+the whole `Task` - and the event being tried keeps its attempts. A webhook
+holds at most 1000 waiting events of a task; past that the oldest one that
+is not an outcome is dropped. The queues live in the server process: what
+they hold when it stops is not delivered.
 
 A stream that closes on a `Task` that is still `SUBMITTED` or `WORKING`, and
 a `SendMessage` answered with one, did not see the run end: a2a-sdk drops a
@@ -559,9 +573,9 @@ servers of one agent can share the database. The rules are a2a-sdk's:
   `server_shutdown`, and a stream open on it receives that outcome. uvicorn then waits for the
   connections still open, so a stream on any other task does not hold the
   shutdown, and the tasks the server was still running are settled as
-  `FAILED` with `aion:settledReason=server_shutdown` and pushed; a webhook
-  that has not answered by the end of the settlement's share is not waited
-  for. `AION_SHUTDOWN_TIMEOUT`
+  `FAILED` with `aion:settledReason=server_shutdown` and pushed; the push
+  queues get what is left of the settlement's share, and what they have
+  not delivered by then is given up. `AION_SHUTDOWN_TIMEOUT`
   (seconds, default 25) bounds all of it: `aion serve` kills an agent that
   has not stopped by then, and the agent divides it among the steps
   (`aion.server.shutdown`) - by default 15 s for the running turns, which

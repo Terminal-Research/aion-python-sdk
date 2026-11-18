@@ -135,6 +135,8 @@ def _file_inlining_chat_openai(chat_openai: Optional[type] = None) -> type:
     if built is not None:
         return built
 
+    from langchain_core.language_models.chat_models import agenerate_from_stream, generate_from_stream
+
     from aion.core.agent.left_out_files import RefusedFileSearch, is_known_refused
     from aion.langgraph.authoring.files import check_request, leave_out, prepare_request, prepare_request_sync
 
@@ -147,19 +149,26 @@ def _file_inlining_chat_openai(chat_openai: Optional[type] = None) -> type:
         (``RefusedFileSearch``). Only the try that goes through reaches the
         call's callbacks: the others fail before their first chunk, and a
         request that checks one file alone is made without callbacks.
+
+        Every request is streamed: Aion's model service answers every
+        request with a stream, a request without one included, and
+        ``ChatOpenAI`` cannot read that as the answer to a call without one.
+        A call without a stream (``invoke`` outside a run that streams the
+        graph's messages, a model with ``disable_streaming``) reads the
+        stream to its end and returns the one answer it makes
+        (``_generate_from_stream``); its callbacks see the answer, not its
+        chunks.
         """
 
         def _generate(self, messages, stop=None, run_manager=None, **kwargs):
             if _inner_call.get():
-                return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+                return self._generate_from_stream(messages, stop, **kwargs)
             messages, files = prepare_request_sync(messages, unread=self._refused_before)
             search = RefusedFileSearch(self.model_name, [file.file for file in files])
             while True:
                 token = _inner_call.set(True)
                 try:
-                    return_value = super()._generate(
-                        leave_out(messages, files, search.left_out), stop=stop, run_manager=run_manager, **kwargs
-                    )
+                    return_value = self._generate_from_stream(leave_out(messages, files, search.left_out), stop, **kwargs)
                 except Exception as error:
                     failure = error
                 else:
@@ -195,14 +204,14 @@ def _file_inlining_chat_openai(chat_openai: Optional[type] = None) -> type:
 
         async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
             if _inner_call.get():
-                return await super()._agenerate(messages, stop=stop, run_manager=run_manager, **kwargs)
+                return await self._agenerate_from_stream(messages, stop, **kwargs)
             messages, files = await prepare_request(messages, unread=self._refused_before)
             search = RefusedFileSearch(self.model_name, [file.file for file in files])
             while True:
                 token = _inner_call.set(True)
                 try:
-                    return_value = await super()._agenerate(
-                        leave_out(messages, files, search.left_out), stop=stop, run_manager=run_manager, **kwargs
+                    return_value = await self._agenerate_from_stream(
+                        leave_out(messages, files, search.left_out), stop, **kwargs
                     )
                 except Exception as error:
                     failure = error
@@ -239,15 +248,27 @@ def _file_inlining_chat_openai(chat_openai: Optional[type] = None) -> type:
                 async for chunk in chunks:
                     yield chunk
 
+        def _generate_from_stream(self, messages, stop, **kwargs):
+            """The answer to a call without a stream, read from a streamed request."""
+            return generate_from_stream(super()._stream(messages, stop=stop, **kwargs))
+
+        async def _agenerate_from_stream(self, messages, stop, **kwargs):
+            """The answer to a call without a stream, read from a streamed request."""
+            return await agenerate_from_stream(super()._astream(messages, stop=stop, **kwargs))
+
         def _refused_before(self, stored):
             """Whether this model refused the stored file before: it is left out without being read."""
             return is_known_refused(self.model_name, stored)
 
         def _check_alone(self, block):
-            """How a request with ``block`` alone failed, or None when the model took it."""
+            """How a request with ``block`` alone failed, or None when the model took it.
+
+            The request is streamed and read to its end, as every request.
+            """
             token = _inner_call.set(True)
             try:
-                super()._generate(check_request(block))
+                for _ in super()._stream(check_request(block)):
+                    pass
             except Exception as error:
                 return error
             finally:
@@ -255,10 +276,11 @@ def _file_inlining_chat_openai(chat_openai: Optional[type] = None) -> type:
             return None
 
         async def _acheck_alone(self, block):
-            """How a request with ``block`` alone failed, or None when the model took it."""
+            """How a request with ``block`` alone failed, or None when the model took it; streamed, as ``_check_alone``."""
             token = _inner_call.set(True)
             try:
-                await super()._agenerate(check_request(block))
+                async for _ in super()._astream(check_request(block)):
+                    pass
             except Exception as error:
                 return error
             finally:

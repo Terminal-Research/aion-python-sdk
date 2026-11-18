@@ -3,7 +3,7 @@
 The SDK's model helpers send a model every file of the messages they are
 given, on every call (``aion.core.agent.model_files``). A message stays in
 the conversation's history, so a file the model cannot take would fail every
-later call too, not only the one it came with. Three kinds of file are left
+later call too, not only the one it came with. Four kinds of file are left
 out of a request instead, each with a short text note in its place, so the
 model knows a file was there and can say so:
 
@@ -14,21 +14,29 @@ model knows a file was there and can say so:
   attribution it was stored under, so in a shared conversation the file one
   participant sent is not available to the turns of the others
   (``forbidden_note``).
+* a stored file that is no longer stored: past the retention deadline its
+  reference records - the SDK stores a conversation's files for 30 days from
+  their upload - or removed earlier (``removed_note``).
 * a file the model refused. A model's refusal does not say which file it is
   about, so ``RefusedFileSearch`` finds the file by the calls that go through
   without it (``left_out_note``). Only the models the SDK builds do this:
   they make the call, and see how it fails.
 
-The first two hold for every path that sends a conversation's files by their
+The first three hold for every path that sends a conversation's files by their
 content, ``inline_files`` included.
 
 What a model's requests showed is kept for the life of the process
 (``MEMORY_ENTRIES``, the least recently used dropped first): a refused file is
 left out of the next request to the same model right away, without being
 read, and a file the model took is not suspected again. Another process, or
-this one after a restart, learns it again from its own calls. Which files are
-too large is known from the size a stored file's reference records, or else
-for the turn (``aion.core.agent.model_files``).
+this one after a restart, learns it again from its own calls. A stored file
+is known by its version, whether the request names it, names an address the
+turn stored or read it at - the files of ADK's run request - or carries bytes
+the turn has from it - a tool's media, a block ``inline_files`` gave a graph
+(``model_files.stored_file_at``, ``stored_file_holding``) - so what one turn
+learned holds in the next. Which
+files are too large is known from the size a stored file's reference records,
+or else for the turn (``aion.core.agent.model_files``).
 
 Nothing of this reaches the conversation: the task, the framework's state and
 the client see the messages as they were sent, and the note is in the model
@@ -39,11 +47,12 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 import threading
 from collections import OrderedDict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from aion.core.a2a.files import StoredFile
 from aion.core.exceptions import AionError
@@ -59,6 +68,7 @@ __all__ = [
     "is_known_refused",
     "is_request_refusal",
     "left_out_note",
+    "removed_note",
     "stored_label",
     "too_large_note",
 ]
@@ -67,7 +77,11 @@ CHECK_TEXT = "Reply with OK."
 """The text sent with a file in a request that checks whether the model takes that file alone."""
 
 REFUSAL_STATUS_CODES = frozenset({400, 413, 415, 422})
-"""The HTTP statuses with which a model service refuses what a request carries."""
+"""The statuses with which a model service refuses what a request carries.
+
+An HTTP status, or the provider's status a stream error event names
+(``is_request_refusal``).
+"""
 
 MEMORY_ENTRIES = 10_000
 """How many verdicts on files the process keeps."""
@@ -137,6 +151,11 @@ def forbidden_note(name: Optional[str], mime_type: Optional[str]) -> str:
     return f"[{_described(name, mime_type)} is not available to this sender and was left out]"
 
 
+def removed_note(name: Optional[str], mime_type: Optional[str]) -> str:
+    """The text that takes the place of a stored file that is no longer stored."""
+    return f"[{_described(name, mime_type)} is no longer available and was left out]"
+
+
 def stored_label(stored: Optional[StoredFile]) -> str:
     """How a log line names the stored file behind a file of a request."""
     return f"file {stored.file_id} version {stored.version_id}" if stored is not None else "not stored"
@@ -147,17 +166,71 @@ def is_request_refusal(error: BaseException) -> bool:
 
     That is a ``ValueError`` the model class raised while it built the
     request - LangChain's for a content block OpenAI does not take, ADK's
-    for a part it cannot convert - or an HTTP status of
-    ``REFUSAL_STATUS_CODES`` from the model service. A failure of the SDK
-    itself (any ``AionError``), of access, of a rate limit, of the service or
-    of the connection is not.
+    for a part it cannot convert - or a status of ``REFUSAL_STATUS_CODES``
+    from the model service.
+
+    Aion's model service answers every request with HTTP 200 and a stream,
+    and reports a failure as the stream's error event, with no HTTP status
+    (``_stream_error``). A provider's refusal is an ``api_error`` whose
+    message starts with the provider's status
+    (``OpenRouter API request failed: 400 Bad Request - ...``,
+    ``_provider_status``); that status decides, before any status the client
+    library inferred from the message. Any other error event - the
+    service's own, such as a model it does not serve - is not a refusal.
+
+    A failure of the SDK itself (any ``AionError``), of access, of a rate
+    limit, of the service or of the connection is not a refusal either.
     """
     if isinstance(error, AionError):
         return False
+    event = _stream_error(error)
+    if event is not None:
+        return _provider_status(event) in REFUSAL_STATUS_CODES
     status = _status_code(error)
     if status is not None:
         return status in REFUSAL_STATUS_CODES
     return isinstance(error, ValueError)
+
+
+_PROVIDER_STATUS = re.compile(r"[^\n:]{1,80} API request failed: (\d{3})\b")
+"""The start of the message of a provider's failure that Aion's model service sends, with its status."""
+
+
+def _stream_error(error: BaseException) -> Optional[Mapping[str, Any]]:
+    """The error object of a model service's stream error event, when ``error`` comes from one.
+
+    The OpenAI client raises the event ``{"error": {"message", "type",
+    "param", "code"}}`` as an error without an HTTP status whose ``body`` is
+    that error object. LiteLLM raises an error of its own while handling it,
+    so the event is looked for along the chain of causes as a traceback
+    follows it. An error with an HTTP status answered the request itself and
+    is not an event.
+    """
+    seen: set[int] = set()
+    current: Optional[BaseException] = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        body = getattr(current, "body", None)
+        has_status = isinstance(getattr(current, "status_code", None), int)
+        if not has_status and isinstance(body, Mapping) and isinstance(body.get("type"), str):
+            return body
+        current = current.__cause__ if current.__cause__ is not None else (
+            None if current.__suppress_context__ else current.__context__
+        )
+    return None
+
+
+def _provider_status(event: Mapping[str, Any]) -> Optional[int]:
+    """The provider's status a stream error event of Aion's model service names, if it names one.
+
+    Only the start of an ``api_error``'s message is read: the provider's own
+    answer follows it and may repeat the request, numbers included.
+    """
+    message = event.get("message")
+    if event.get("type") != "api_error" or not isinstance(message, str):
+        return None
+    match = _PROVIDER_STATUS.match(message)
+    return int(match.group(1)) if match else None
 
 
 def _status_code(error: BaseException) -> Optional[int]:

@@ -69,21 +69,9 @@ def test_aion_lite_llm_configures_google_adk_litellm(monkeypatch):
     }
     assert isinstance(captured["llm_client"], FakeLiteLLMClient)
 
-    litellm = ModuleType("litellm")
-    completion_calls = []
-    acompletion_calls = []
-
-    def completion(**kwargs):
-        completion_calls.append(kwargs)
-        return "completion"
-
-    async def acompletion(**kwargs):
-        acompletion_calls.append(kwargs)
-        return "acompletion"
-
-    litellm.completion = completion
-    litellm.acompletion = acompletion
-    monkeypatch.setitem(sys.modules, "litellm", litellm)
+    litellm = _fake_litellm(monkeypatch)
+    completion_calls = litellm.completion_calls
+    acompletion_calls = litellm.acompletion_calls
 
     sync_result = captured["llm_client"].completion(
         model="openai/model-id",
@@ -100,8 +88,12 @@ def test_aion_lite_llm_configures_google_adk_litellm(monkeypatch):
         )
     )
 
-    assert sync_result == "completion"
-    assert async_result == "acompletion"
+    # The model service answers every request with a stream: one without a
+    # stream is streamed and answered with what its chunks make.
+    assert sync_result == ("assembled", ["completion chunk"])
+    assert async_result == ("assembled", ["acompletion chunk"])
+    assert completion_calls[0]["stream"] is True
+    assert acompletion_calls[0]["stream"] is True
     # LiteLLM takes the first segment off as the provider and sends the rest:
     # the catalog id reaches the model service whole.
     assert completion_calls[0]["model"] == "openai/openai/model-id"
@@ -152,21 +144,34 @@ def _fake_adk_modules(monkeypatch):
     monkeypatch.setitem(sys.modules, "google.adk.models", google_adk_models)
     monkeypatch.setitem(sys.modules, "google.adk.models.lite_llm", lite_llm)
 
-    calls = []
+    litellm = _fake_litellm(monkeypatch)
+    return litellm.calls
+
+
+def _fake_litellm(monkeypatch) -> ModuleType:
+    """A stand-in for litellm whose completions stream one chunk; it records each call."""
     litellm = ModuleType("litellm")
+    litellm.calls, litellm.completion_calls, litellm.acompletion_calls = [], [], []
 
     def completion(**kwargs):
-        calls.append(kwargs)
-        return "completion"
+        litellm.calls.append(kwargs)
+        litellm.completion_calls.append(kwargs)
+        return iter(["completion chunk"])
 
     async def acompletion(**kwargs):
-        calls.append(kwargs)
-        return "acompletion"
+        litellm.calls.append(kwargs)
+        litellm.acompletion_calls.append(kwargs)
+
+        async def chunks():
+            yield "acompletion chunk"
+
+        return chunks()
 
     litellm.completion = completion
     litellm.acompletion = acompletion
+    litellm.stream_chunk_builder = lambda chunks: ("assembled", chunks)
     monkeypatch.setitem(sys.modules, "litellm", litellm)
-    return calls
+    return litellm
 
 
 def test_lite_llm_client_allows_deployment_initiated_work(monkeypatch):
@@ -187,6 +192,25 @@ def test_lite_llm_client_allows_deployment_initiated_work(monkeypatch):
     for call in calls:
         assert call["api_key"] == "fresh-jwt"
         assert call.get("extra_headers", {}) == {}
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_every_request_skips_litellms_mcp_gateway(monkeypatch, stream):
+    """LiteLLM imports its MCP gateway for a request with tools, and since 1.103 the
+    import needs an mcp release langchain-mcp-adapters does not allow: with both
+    frameworks installed, the request would fail before it is sent. ADK sends its
+    tools as functions, which the gateway never serves."""
+    calls = _fake_adk_modules(monkeypatch)
+    monkeypatch.setattr(models, "aion_openai_config", lambda: FakeConfig())
+    monkeypatch.setattr(models, "aion_model_api_key", lambda: "fresh-jwt")
+    monkeypatch.setattr(models, "aion_model_request_headers", lambda existing=None: {})
+    client = aion_lite_llm("model-id").kwargs["llm_client"]
+    tools = [{"type": "function", "function": {"name": "lookup", "parameters": {"type": "object"}}}]
+
+    client.completion(model="openai/model-id", messages=[], tools=tools, stream=stream)
+    asyncio.run(client.acompletion(model="openai/model-id", messages=[], tools=tools, stream=stream))
+
+    assert [call["_skip_mcp_handler"] for call in calls] == [True, True]
 
 
 @pytest.mark.parametrize("asynchronous", [False, True])
@@ -276,7 +300,17 @@ class _ModelService:
         import litellm
 
         self.models.append(kwargs["model"])
+        if kwargs.get("stream"):
+            return _streamed("4")
         return litellm.ModelResponse(choices=[{"message": {"role": "assistant", "content": "4"}}])
+
+
+async def _streamed(text: str):
+    import litellm
+
+    yield litellm.ModelResponseStream(
+        choices=[{"index": 0, "delta": {"role": "assistant", "content": text}, "finish_reason": "stop"}]
+    )
 
 
 @pytest.fixture

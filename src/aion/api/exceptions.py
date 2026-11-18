@@ -56,6 +56,21 @@ class AionFileStorageError(AionError, httpx.HTTPStatusError):
         self.request_id = request_id
 
     @property
+    def code(self) -> str | None:
+        """The Files API's code for the refusal, such as ``file_expired``; None when the response names none.
+
+        The Files API answers a refusal of a file operation with the JSON
+        envelope ``{"error": {"code": ..., "message": ...}}``.
+        """
+        try:
+            payload = self.response.json()
+        except (ValueError, httpx.ResponseNotRead):
+            return None
+        error = payload.get("error") if isinstance(payload, dict) else None
+        code = error.get("code") if isinstance(error, dict) else None
+        return code if isinstance(code, str) and code else None
+
+    @property
     def summary(self) -> str:
         """The refusal in a few words: status, detail and request id, no URL."""
         text = f"HTTP {self.response.status_code}"

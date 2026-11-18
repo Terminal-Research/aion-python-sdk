@@ -18,7 +18,7 @@ from aion.server.agent.execution.scope import set_task_manager
 from aion.server.files.storage import UploadContext
 from aion.server.shutdown import shutdown_budget
 from aion.server.tasks import AionTaskManager, TerminalTaskPushSender, settled_task
-from aion.server.tasks.push_sender import send_with_link_scope
+from aion.server.tasks.push_sender import AionPushNotificationSender, send_with_link_scope
 from aion.server.tasks.terminal_push_sender import current_link_scope
 
 logger = logging.getLogger(__name__)
@@ -460,17 +460,19 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
     async def _push_settled(
         self, settled: list[tuple[Task, UploadContext | None]], deadline: float
     ) -> None:
-        """Push the tasks the shutdown settled, all at once, until ``deadline``.
+        """Push the tasks the shutdown settled, then wait for the push queues until ``deadline``.
 
         Each task's links are asked for in the scope of the request its
         manager acts for, as every push of the task is
         (``current_link_scope``): the one whose turn the shutdown
-        interrupted, or the canceller of that turn. A receiver that has not
-        answered by the end of the settlement window is not waited for: the
-        process is about to stop, and the settled task stays readable through
-        ``GetTask``. Each failed or unfinished push is logged as a WARNING.
+        interrupted, or the canceller of that turn. The pushes join the
+        sender's queues, behind whatever earlier events of the task still
+        wait there, and the queues - every task's - are given what is left of
+        the settlement window. What they have not delivered by then is given
+        up when the sender closes, and logged there: the process is about to
+        stop, and the settled task stays readable through ``GetTask``.
         """
-        if not settled or self._push_sender is None:
+        if self._push_sender is None:
             return
 
         async def push(task: Task, link_scope: UploadContext | None) -> None:
@@ -481,20 +483,22 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
                     "Could not push the shutdown settlement of task %s", task.id, exc_info=True
                 )
 
-        pushes = [asyncio.create_task(push(task, scope)) for task, scope in settled]
-        _, pending = await asyncio.wait(
-            pushes, timeout=max(0.0, deadline - asyncio.get_running_loop().time())
-        )
-        for unfinished in pending:
-            unfinished.cancel()
-        if pending:
-            await asyncio.gather(*pending, return_exceptions=True)
-            logger.warning(
-                "%d of %d shutdown settlement push(es) did not finish within the "
-                "settlement window; the receivers get no notification of them",
-                len(pending),
-                len(settled),
-            )
+        loop = asyncio.get_running_loop()
+        if settled:
+            pushes = [asyncio.create_task(push(task, scope)) for task, scope in settled]
+            _, pending = await asyncio.wait(pushes, timeout=max(0.0, deadline - loop.time()))
+            for unfinished in pending:
+                unfinished.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+                logger.warning(
+                    "%d of %d shutdown settlement push(es) could not be queued within the "
+                    "settlement window; the receivers get no notification of them",
+                    len(pending),
+                    len(settled),
+                )
+        if isinstance(self._push_sender, AionPushNotificationSender):
+            await self._push_sender.drain(timeout=max(0.0, deadline - loop.time()))
 
     @staticmethod
     async def _settle_interrupted_task(task_manager: AionTaskManager) -> Task | None:

@@ -17,8 +17,7 @@ the repository is scoped to where it sits — the root `README.md` and
 `RELEASE.md`, subpackage README files, and one beside a test suite that needs
 explaining. Everything user-facing — installation, `aion.yaml`, environment
 variables, the CLI, the HTTP endpoints, the extension specifications — is
-published at <https://docs.aion.to> from the
-`aion-docs-mintlify` repository. It is not mirrored here, not even as
+published at <https://docs.aion.to>. It is not mirrored here, not even as
 forwarding files: one copy of a subject is the point.
 
 ## Testing

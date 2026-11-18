@@ -691,6 +691,26 @@ class TestRenewLink:
         assert (outcome.error_code, outcome.retryable) == (code, retryable)
         assert len(attempts) == 1
 
+    @pytest.mark.parametrize("status,code", [(404, "file_not_found"), (410, "file_expired"), (409, "file_expired")])
+    async def test_a_file_the_storage_no_longer_holds_is_removed(self, status, code):
+        """The Files API names a file that no longer exists by its error code, whatever the status."""
+
+        async def grant(request):
+            return httpx.Response(status, json={"error": {"code": code, "message": "Gone"}})
+
+        outcome = await backend(None, grant_handler=grant).renew_link("file-1", "v-1")
+
+        assert isinstance(outcome, UploadFailure)
+        assert (outcome.error_code, outcome.retryable) == (FileUploadErrorCode.STORAGE_FILE_REMOVED, False)
+
+    async def test_another_code_is_judged_by_its_status(self):
+        async def grant(request):
+            return httpx.Response(404, json={"error": {"code": "invalid_file_request"}})
+
+        outcome = await backend(None, grant_handler=grant).renew_link("file-1", "v-1")
+
+        assert outcome.error_code is FileUploadErrorCode.STORAGE_REJECTED
+
     async def test_storage_that_cannot_be_reached_is_a_failure(self):
         async def grant(request):
             raise httpx.ConnectError("no route")

@@ -36,6 +36,7 @@ class FileUploadErrorCode(str, Enum):
     STORAGE_REJECTED = "STORAGE_REJECTED"
     STORAGE_UNAUTHORIZED = "STORAGE_UNAUTHORIZED"
     STORAGE_FORBIDDEN = "STORAGE_FORBIDDEN"
+    STORAGE_FILE_REMOVED = "STORAGE_FILE_REMOVED"
     STORAGE_CLOSED = "STORAGE_CLOSED"
 
     @property
@@ -88,6 +89,9 @@ _PUBLIC_REASONS: dict[FileUploadErrorCode, str] = {
     FileUploadErrorCode.STORAGE_FORBIDDEN: (
         "File content could not be delivered: the storage service does not permit "
         "this file operation."
+    ),
+    FileUploadErrorCode.STORAGE_FILE_REMOVED: (
+        "File content could not be delivered: the file is no longer stored."
     ),
     FileUploadErrorCode.STORAGE_CLOSED: (
         "File content could not be delivered: the server is shutting down."

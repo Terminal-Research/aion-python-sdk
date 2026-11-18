@@ -20,9 +20,14 @@ from a2a.types import Message, Part, Role, Task, TaskState, TaskStatus
 
 import aion.core.runtime.context.conversation as conversation_module
 from aion.core.a2a.files import StoredFile, files_of
-from aion.core.agent.model_files import ModelFileForbiddenError, read_file_for_model
+from aion.core.agent.model_files import ModelFileForbiddenError, ModelFileRemovedError, read_file_for_model
 from aion.core.agent.testing import use_conversation
-from aion.core.exceptions import ConversationFileError, ConversationFileForbiddenError, TaskFailedError
+from aion.core.exceptions import (
+    ConversationFileError,
+    ConversationFileForbiddenError,
+    ConversationFileRemovedError,
+    TaskFailedError,
+)
 from aion.core.runtime.context import ForwardedAttribution, get_aion_runtime_context
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.files import links as links_module
@@ -233,3 +238,58 @@ class TestAFailureThatIsNoRefusal:
 
         assert not isinstance(failed.value, ConversationFileForbiddenError)
         assert fetched == [ADDRESS]
+
+
+class TestARemovedFile:
+    """A file no longer stored reads as removed for every participant, its owner included, and is never fetched.
+
+    The SDK stores a conversation's files for 30 days from their upload; the
+    message with the file stays in the history every later turn reads.
+    """
+
+    REMOVED = "File 'a.pdf' (application/pdf) is no longer available."
+
+    @staticmethod
+    def _conversation(links: StoredFileLinks) -> _StoredConversation:
+        return _StoredConversation(
+            None, _Runs(_stored_part()), None, context_id="shared", task_id="bobs-task", holder=object(), file_links=links
+        )
+
+    def _reads(self, conversation: _StoredConversation) -> list:
+        part = _stored_part()
+        file = files_of(Message(message_id="m-1", role=Role.ROLE_USER, parts=[part]))[0]
+        return [
+            file.read(),
+            file.link(),
+            conversation.read_file(part),
+            conversation.read_file_at(ADDRESS),
+            conversation.file_link(part),
+        ]
+
+    async def test_past_its_retention_it_is_removed_without_asking(self, backend, fetched) -> None:
+        conversation = self._conversation(StoredFileLinks(FileUploadManager(backend), now=lambda: NOW + timedelta(days=30)))
+
+        with turn_of(OWNER, conversation):
+            for read in self._reads(conversation):
+                with pytest.raises(ConversationFileRemovedError) as removed:
+                    await read
+                assert str(removed.value) == self.REMOVED
+            with pytest.raises(ModelFileRemovedError):
+                await read_file_for_model(ADDRESS, name="a.pdf", stored=StoredFile.of(_stored_part()))
+
+        assert fetched == []
+        assert backend.asked_by == []
+
+    @pytest.mark.parametrize("carrier", [OWNER, OTHER])
+    async def test_gone_by_the_storages_word_it_is_removed(self, conversation, backend, fetched, carrier) -> None:
+        backend.failure = UploadFailure(FileUploadErrorCode.STORAGE_FILE_REMOVED)
+
+        with turn_of(carrier, conversation):
+            for read in self._reads(conversation):
+                with pytest.raises(ConversationFileRemovedError):
+                    await read
+            with pytest.raises(ModelFileRemovedError):
+                await read_file_for_model(ADDRESS, name="a.pdf")
+
+        assert fetched == []
+        assert backend.asked_by == [carrier]

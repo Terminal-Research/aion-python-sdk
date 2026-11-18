@@ -286,3 +286,21 @@ async def test_a_tools_image_reaches_the_model_and_the_session_keeps_its_link() 
     ]
     assert [(media.inline_data, media.file_data.file_uri) for media in kept] == [(None, LINK)]
     assert len(backend.stored) == 1
+
+
+async def test_a_file_the_turn_read_is_linked_to_its_stored_file_not_stored_again() -> None:
+    """A tool that returns the bytes of a file it read gives the session that stored file's link."""
+    from aion.core.a2a.file_contents import file_contents
+    from aion.core.a2a.files import StoredFile
+
+    address = "https://files.test/files/inbound/versions/v-1/content"
+    inbound = StoredFile.create("inbound", "v-1", retention_expires_at="2026-12-18T00:00:00Z", byte_size=len(PDF))
+    file_contents().put("file:inbound:v-1", PDF, url=address, stored=inbound)
+    backend = NumberingBackend()
+
+    _, stored = await _append(_event(_report(), _tool_answer(PDF)), backend)
+
+    report, answer = stored.events[-1].content.parts
+    assert backend.stored == []
+    assert report.file_data.file_uri == answer.function_response.parts[0].file_data.file_uri == address
+    assert stored.events[-1].custom_metadata[STORED_FILES_KEY] == {address: inbound.to_metadata()}

@@ -39,12 +39,14 @@ class AppSettings(BaseEnvSettings):
         default=5.0,
         alias="PUSH_NOTIFICATION_TIMEOUT_SECONDS",
         description=(
-            "Read/write timeout for each webhook delivery, in seconds; the default "
-            "matches httpx's. A task's deliveries are made one at a time from its "
-            "event loop, and each holds back the task's later events on every "
-            "channel, so a webhook that does not answer costs up to this much per "
-            "event. Raise it only for a receiver that is known to answer slowly. "
-            "Connect timeout stays at 5s: an unreachable host should fail fast."
+            "Read/write timeout for each attempt to deliver a push notification, in "
+            "seconds; the default matches httpx's. A webhook receives a task's events "
+            "one at a time, in order, and an attempt that times out is tried again, "
+            "so a webhook that does not answer costs up to this much per attempt and "
+            "holds back that webhook's later events of the task; the task's stream "
+            "and answers do not wait for it. Raise it only for a receiver that is "
+            "known to answer slowly. Connect timeout stays at 5s: an unreachable "
+            "host should fail fast."
         )
     )
 

@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-269 scenarios in 50 files, 609 runs across 2 frameworks: 565 run, 43 skipped, 1 independent of the framework.
+270 scenarios in 50 files, 611 runs across 2 frameworks: 567 run, 43 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -76,7 +76,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `daemon` | daemon extension identity and environment | 7 | `make tests-scenarios TAGS=daemon` |
 | `authentication` | bearer tokens: required, verified, and naming the caller | 6 | `make tests-scenarios TAGS=authentication` |
 | `config` | aion.yaml configuration and deployment variants | 8 | `make tests-scenarios TAGS=config` |
-| `lifecycle` | cancel, concurrency, push notifications, startup | 14 | `make tests-scenarios TAGS=lifecycle` |
+| `lifecycle` | cancel, concurrency, push notifications, startup | 15 | `make tests-scenarios TAGS=lifecycle` |
 | `contexts` | Context extension: list, read and delete conversations | 6 | `make tests-scenarios TAGS=contexts` |
 | `evolution` | the evolution extension through the SDK's wrapper and a stand-in toolkit: the standard path, refusals as REJECTED tasks, a cancel | 15 | `make tests-scenarios TAGS=evolution` |
 | `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 21 | `make tests-scenarios-persistence` |
@@ -334,19 +334,20 @@ Push notification delivery to a real HTTP callback.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The server POSTs a terminal notification to the registered URL.](core/test_push_notifications.py#L216 "test_push_notification_reaches_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
-| [Every stream-delta update the stream carried reaches the callback, in order; the task pushed last holds the whole text.](core/test_push_notifications.py#L262 "test_a_streamed_answer_is_pushed_as_it_was_streamed") | `lifecycle` | `stream` | `push` | ✓ | ✓ |
-| [Each thought reaches the callback as the update it was on the stream; the task pushed last holds them all.](core/test_push_notifications.py#L278 "test_thoughts_are_pushed") | `lifecycle` | `think` | `push` | ✓ | ✓ |
-| [The reaction reaches the callback as it reached the stream, and the task pushed last keeps it.](core/test_push_notifications.py#L292 "test_a_reaction_is_pushed") | `lifecycle` | `react` | `push` | ✓ | ✓ |
-| [The ``aion:assistant-answer`` update reaches the callback before the completed task, which holds it.](core/test_push_notifications.py#L321 "test_the_answer_of_a_task_that_only_talked_is_pushed") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
-| [The FAILED a crash leaves reaches the callback as the full Task.](core/test_push_notifications.py#L337 "test_a_crashed_agent_s_failure_is_pushed") | `lifecycle` | `fail` | `push` | ✓ | ✓ |
-| [A task that stops for input is pushed once, as the full Task, after the turn's earlier events.](core/test_push_notifications.py#L356 "test_an_interrupt_is_pushed_to_a_caller_that_returned_immediately") | `lifecycle` | `ask` | `push` | ✓ | ✓ |
-| [A unary send's notifications carry status times in the order of the turn.](core/test_push_notifications.py#L393 "test_pushed_status_times_follow_the_turn_of_a_unary_send") | `lifecycle` | `steps` | `default` | ✓ | ✓ |
-| [The pushed body identifies the task the notification is about.](core/test_push_notifications.py#L424 "test_push_notification_carries_the_task_id") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
-| [The callback accepts the delivery, because it arrived authenticated.](core/test_push_notifications.py#L447 "test_a_declared_credential_is_presented_to_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
-| [The callback really checks: the same delivery without credentials is rejected.](core/test_push_notifications.py#L478 "test_an_undeclared_credential_is_refused_by_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
-| [The four push config methods, on a task of this caller; a config created without an id takes the task's.](core/test_push_notifications.py#L500 "test_a_push_config_is_created_read_listed_and_deleted") | `lifecycle` | `echo` | `default` | ✓ | ✓ |
-| [A terminal state the agent hands over in an outbox Task reaches the callback once, as the full Task.](core/test_push_notifications.py#L526 "test_an_outcome_set_through_the_outbox_is_pushed") | `lifecycle` | `outbox-failed` | `push` | ✓ | ✓ |
+| [The server POSTs a terminal notification to the registered URL.](core/test_push_notifications.py#L230 "test_push_notification_reaches_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [Every stream-delta update the stream carried reaches the callback, in order; the task pushed last holds the whole text.](core/test_push_notifications.py#L277 "test_a_streamed_answer_is_pushed_as_it_was_streamed") | `lifecycle` | `stream` | `push` | ✓ | ✓ |
+| [Each thought reaches the callback as the update it was on the stream; the task pushed last holds them all.](core/test_push_notifications.py#L293 "test_thoughts_are_pushed") | `lifecycle` | `think` | `push` | ✓ | ✓ |
+| [The reaction reaches the callback as it reached the stream, and the task pushed last keeps it.](core/test_push_notifications.py#L307 "test_a_reaction_is_pushed") | `lifecycle` | `react` | `push` | ✓ | ✓ |
+| [The ``aion:assistant-answer`` update reaches the callback before the completed task, which holds it.](core/test_push_notifications.py#L336 "test_the_answer_of_a_task_that_only_talked_is_pushed") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The FAILED a crash leaves reaches the callback as the full Task.](core/test_push_notifications.py#L352 "test_a_crashed_agent_s_failure_is_pushed") | `lifecycle` | `fail` | `push` | ✓ | ✓ |
+| [A task that stops for input is pushed once, as the full Task, after the turn's earlier events.](core/test_push_notifications.py#L371 "test_an_interrupt_is_pushed_to_a_caller_that_returned_immediately") | `lifecycle` | `ask` | `push` | ✓ | ✓ |
+| [A unary send's notifications carry status times in the order of the turn.](core/test_push_notifications.py#L408 "test_pushed_status_times_follow_the_turn_of_a_unary_send") | `lifecycle` | `steps` | `default` | ✓ | ✓ |
+| [The pushed body identifies the task the notification is about.](core/test_push_notifications.py#L439 "test_push_notification_carries_the_task_id") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The callback accepts the delivery, because it arrived authenticated.](core/test_push_notifications.py#L462 "test_a_declared_credential_is_presented_to_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The first delivery is answered 503; it arrives again, and the turn's other events follow it in order.](core/test_push_notifications.py#L496 "test_a_delivery_the_callback_could_not_take_is_tried_again") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The callback really checks: the same delivery without credentials is rejected.](core/test_push_notifications.py#L525 "test_an_undeclared_credential_is_refused_by_the_callback") | `lifecycle` | `echo` | `push` | ✓ | ✓ |
+| [The four push config methods, on a task of this caller; a config created without an id takes the task's.](core/test_push_notifications.py#L547 "test_a_push_config_is_created_read_listed_and_deleted") | `lifecycle` | `echo` | `default` | ✓ | ✓ |
+| [A terminal state the agent hands over in an outbox Task reaches the callback once, as the full Task.](core/test_push_notifications.py#L573 "test_an_outcome_set_through_the_outbox_is_pushed") | `lifecycle` | `outbox-failed` | `push` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_reactions.py`
 
@@ -711,7 +712,7 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | Command | Summary | Tags | Scenarios | langgraph | adk |
 |---|---|---|---|---|---|
 | `help` | Show this menu | `smoke` | 1 | ✓ | ✓ |
-| `echo <text>` | Reply with the argument, unchanged | `smoke`, `events` | 24 | ✓ | ✓ |
+| `echo <text>` | Reply with the argument, unchanged | `smoke`, `events` | 25 | ✓ | ✓ |
 | `stream <n>` | Stream an answer in n chunks | `streaming` | 14 | ✓ | ✓ |
 | `stream-marked <n>` | Stream an answer in n chunks, marking the last one | `streaming` | 1 | ✓ | ✓ |
 | `think <n>` | Think n thoughts, then reply | `streaming` | 6 | ✓ | ✓ |

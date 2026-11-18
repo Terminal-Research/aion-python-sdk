@@ -32,14 +32,22 @@ Issuing is best effort: a storage backend that issues no links, a refusal,
 a timeout or a file past its retention leaves the part with the address it
 has, and the refusal is remembered for a while for the attribution it was
 given to, so a file that cannot be vouched for is not asked about on every
-read. What is remembered is the kind of refusal too: the storage service
-refusing the grant to a usage attribution (``STORAGE_FORBIDDEN``, its answer
-to an attribution that is not the file's owner) means the file is not
-available to that sender. ``link_for`` then raises
-``ConversationFileForbiddenError``, so a reader does not fetch an address
-that would refuse it as well; any other refusal, and any refusal to the
-deployment's daemon, leaves the reader with the part's address. What the
-server hands out (``refresh``) keeps the part's address on every refusal.
+read. What is remembered is the kind of refusal too, and two kinds stop a
+reader, so that it does not fetch an address that would refuse it as well:
+
+* the storage service refusing the grant to a usage attribution
+  (``STORAGE_FORBIDDEN``, its answer to an attribution that is not the
+  file's owner) means the file is not available to that sender, and
+  ``link_for`` raises ``ConversationFileForbiddenError``;
+* the storage service answering that the file or its version no longer
+  exists (``STORAGE_FILE_REMOVED``: removed before the retention deadline
+  its part records) means the file is gone for everyone, and ``link_for``
+  raises ``ConversationFileRemovedError``. A file past the retention deadline
+  its part records raises it too, without asking.
+
+Any other refusal, and a refusal to the deployment's daemon to grant a link,
+leaves the reader with the part's address. What the server hands out
+(``refresh``) keeps the part's address on every refusal.
 """
 
 from __future__ import annotations
@@ -56,7 +64,11 @@ from typing import Any, Callable, Iterable, Optional, Sequence, TypeVar, Union
 from a2a.types import Artifact, Part, TaskStatus
 
 from aion.core.a2a.files import StoredFile
-from aion.core.exceptions import AionAuthenticationError, ConversationFileForbiddenError
+from aion.core.exceptions import (
+    AionAuthenticationError,
+    ConversationFileForbiddenError,
+    ConversationFileRemovedError,
+)
 from aion.core.runtime.context import get_aion_runtime_context
 from aion.server.files.a2a.part_transformer import part_fields
 from aion.server.files.storage import (
@@ -116,16 +128,18 @@ class _Link:
 
 @dataclass(frozen=True)
 class _Refusal:
-    """A link that was not issued: when, by the monotonic clock, and whether the storage service forbade it.
+    """A link that was not issued: when, by the monotonic clock, and whether the storage service forbade it or the file is gone.
 
     ``forbidden`` is the storage service refusing the grant to the
-    attribution that asked (``STORAGE_FORBIDDEN``). A timeout, an
-    unavailable service, a missing daemon identity, a link too short-lived
-    to use and every other failure are not.
+    attribution that asked (``STORAGE_FORBIDDEN``); ``removed`` is its answer
+    that the file or its version no longer exists (``STORAGE_FILE_REMOVED``).
+    A timeout, an unavailable service, a missing daemon identity, a link too
+    short-lived to use and every other failure are neither.
     """
 
     at: float
     forbidden: bool = False
+    removed: bool = False
 
 
 class StoredFileLinks:
@@ -175,9 +189,17 @@ class StoredFileLinks:
                 link to the usage attribution asking, now or within
                 ``RETRY_REFUSED_AFTER_SECONDS``: the file is not available
                 to that sender, and its address would refuse it too.
+            ConversationFileRemovedError: The file is past the retention
+                deadline its part records - known without asking - or the
+                storage service answered, now or within
+                ``RETRY_REFUSED_AFTER_SECONDS``, that it no longer exists.
         """
         file = StoredFile.of(part)
-        if file is None or not self._needs_link(file):
+        if file is None:
+            return None
+        if file.retention_expired(self._now()):
+            raise ConversationFileRemovedError(part.filename or "file", part.media_type or None)
+        if not self._needs_link(file):
             return None
         key = (file.file_id, file.version_id)
         asker = _asker(context)
@@ -185,6 +207,8 @@ class StoredFileLinks:
         if key in issued:
             return issued[key].uri
         refusal = refused.get(key)
+        if refusal is not None and refusal.removed:
+            raise ConversationFileRemovedError(part.filename or "file", part.media_type or None)
         if asker is not None and refusal is not None and refusal.forbidden:
             raise ConversationFileForbiddenError(part.filename or "file", part.media_type or None)
         return None
@@ -307,7 +331,11 @@ class StoredFileLinks:
                 outcome.error_code.value,
                 f" - {_brief(outcome.cause)}" if outcome.cause is not None else "",
             )
-            return _Refusal(time.monotonic(), forbidden=outcome.error_code == FileUploadErrorCode.STORAGE_FORBIDDEN)
+            return _Refusal(
+                time.monotonic(),
+                forbidden=outcome.error_code == FileUploadErrorCode.STORAGE_FORBIDDEN,
+                removed=outcome.error_code == FileUploadErrorCode.STORAGE_FILE_REMOVED,
+            )
         return self._link(file, outcome) or _Refusal(time.monotonic())
 
     def _link(self, file: StoredFile, receipt: UploadReceipt) -> Optional[_Link]:

@@ -233,6 +233,22 @@ class TestSettlementPush:
         assert push_sender.send_notification.await_args.kwargs == {"link_scope": queued}
 
     @pytest.mark.anyio
+    @pytest.mark.parametrize("state", [TaskState.TASK_STATE_WORKING, TaskState.TASK_STATE_COMPLETED])
+    async def test_the_push_queues_get_what_is_left_of_the_settlement_window(self, execution_scope, state):
+        """Pushes queued earlier - not only the settlement's - are waited for until the window ends."""
+        from aion.server.tasks.push_sender import AionPushNotificationSender
+
+        push_sender = Mock(spec=AionPushNotificationSender)
+        registry, _, _ = await _registry_holding(state, push_sender)
+        budget = ShutdownBudget.of(5.0)
+
+        with patch("aion.server.agent.execution.active_task_registry.shutdown_budget", return_value=budget):
+            await registry.aclose()
+
+        push_sender.drain.assert_awaited_once()
+        assert 0.0 < push_sender.drain.await_args.kwargs["timeout"] <= budget.settlement
+
+    @pytest.mark.anyio
     async def test_a_task_left_alone_is_not_pushed(self, execution_scope):
         push_sender = self._push_sender()
         registry, _, _ = await _registry_holding(TaskState.TASK_STATE_COMPLETED, push_sender)

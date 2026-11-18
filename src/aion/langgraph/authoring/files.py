@@ -21,12 +21,21 @@ messages it sends:
     async def answer(state):
         return {"messages": [await model.ainvoke(await inline_files(state["messages"]))]}
 
+Only the model's answer goes back into the state. The messages ``inline_files``
+returns keep the ids of the ones they copy, so returning them replaces the
+messages of the state with copies that carry the files' content. The
+server's checkpointer then links each such file to the stored file the turn
+read it from, and stores it only when it cannot tell which one that is; a
+checkpointer of the graph's own keeps the bytes in every checkpoint.
+
 Every file of the messages is sent, on every call: a model keeps nothing
 between requests, so a graph that should stop sending an old file leaves its
 message out, as it trims any history. A file larger than
 ``AION_MODEL_FILE_MAX_BYTES`` is not read, and a stored file that is not
 available to the turn's sender - in a shared conversation, one another
-participant sent - is not downloaded: a text note takes its block's place,
+participant sent - or no longer stored - the SDK stores a conversation's
+files for 30 days from their upload - is not downloaded: a text note takes
+its block's place,
 and the conversation goes on without the file
 (``aion.core.agent.left_out_files``). A file that cannot be read fails the
 task with a reason its caller reads (``aion.core.agent.model_files``).
@@ -50,12 +59,21 @@ from functools import cached_property
 from typing import Any, Optional, Union
 
 from aion.core.a2a.files import STORED_FILE_KEY, StoredFile
-from aion.core.agent.left_out_files import CHECK_TEXT, RequestFile, forbidden_note, left_out_note, too_large_note
+from aion.core.agent.left_out_files import (
+    CHECK_TEXT,
+    RequestFile,
+    forbidden_note,
+    left_out_note,
+    removed_note,
+    too_large_note,
+)
 from aion.core.agent.model_files import (
     ModelFileForbiddenError,
+    ModelFileRemovedError,
     ModelFileTooLargeError,
     read_file_for_model,
     read_file_for_model_sync,
+    stored_file_holding,
 )
 from langchain_core.messages import BaseMessage, HumanMessage
 
@@ -67,10 +85,10 @@ FILE_BLOCK_TYPES = frozenset({"image", "audio", "video", "file"})
 OPENAI_FILE_BLOCK_TYPES = frozenset({"image_url", "input_audio"})
 """The content blocks in OpenAI's own format that carry a file."""
 
-_LeftOut = (ModelFileTooLargeError, ModelFileForbiddenError)
+_LeftOut = (ModelFileTooLargeError, ModelFileForbiddenError, ModelFileRemovedError)
 """Why a file is left out of a model request, with a note in its place."""
 
-_Read = Union[bytes, ModelFileTooLargeError, ModelFileForbiddenError]
+_Read = Union[bytes, ModelFileTooLargeError, ModelFileForbiddenError, ModelFileRemovedError]
 """What reading a file for a model gave: its content, or why it is left out."""
 
 
@@ -99,6 +117,23 @@ def _stored(block: dict) -> Optional[StoredFile]:
     return StoredFile.from_metadata(extras.get(STORED_FILE_KEY)) if isinstance(extras, dict) else None
 
 
+def _stored_by_content(block: dict) -> Optional[StoredFile]:
+    """The stored file whose bytes a block carries: one ``inline_files`` gave the graph, sent to a model again.
+
+    Its content is known by the stored file, as a later turn knows the
+    block by its address (``stored_file_holding``).
+    """
+    encoded = block.get("base64")
+    if not isinstance(encoded, str):
+        return None
+    try:
+        content = base64.b64decode(encoded, validate=True)
+    except ValueError:
+        return None
+    mime_type = block.get("mime_type")
+    return stored_file_holding(content, mime_type if isinstance(mime_type, str) else None)
+
+
 def _with_content(block: dict, content: bytes) -> dict:
     """The block with the file's content in place of its address and of the stored file's name."""
     inlined = {key: value for key, value in block.items() if key != "url"}
@@ -117,11 +152,15 @@ def _text(text: str) -> dict:
     return {"type": "text", "text": text}
 
 
-def _note(left_out: Union[ModelFileTooLargeError, ModelFileForbiddenError], block: dict) -> dict:
+def _note(
+        left_out: Union[ModelFileTooLargeError, ModelFileForbiddenError, ModelFileRemovedError], block: dict
+) -> dict:
     """The text block that takes the place of a file block whose file is left out."""
     name, mime_type = _name(block), block.get("mime_type")
     if isinstance(left_out, ModelFileTooLargeError):
         return _text(too_large_note(name, mime_type, left_out.limit))
+    if isinstance(left_out, ModelFileRemovedError):
+        return _text(removed_note(name, mime_type))
     return _text(forbidden_note(name, mime_type))
 
 
@@ -160,22 +199,23 @@ Unread = Callable[[StoredFile], bool]
 
 def _addresses(
         messages: Sequence[BaseMessage], unread: Optional[Unread]
-) -> dict[str, tuple[Optional[str], Optional[StoredFile]]]:
-    """The addresses of the files to read, each with the file's name and stored file."""
-    addresses: dict[str, tuple[Optional[str], Optional[StoredFile]]] = {}
+) -> dict[str, tuple[Optional[str], Optional[StoredFile], Optional[str]]]:
+    """The addresses of the files to read, each with the file's name, stored file and media type."""
+    addresses: dict[str, tuple[Optional[str], Optional[StoredFile], Optional[str]]] = {}
     for message in messages:
         if isinstance(message.content, list):
             for block in message.content:
                 url = _address(block)
                 stored = _stored(block) if url is not None else None
                 if url is not None and not (stored is not None and unread is not None and unread(stored)):
-                    addresses.setdefault(url, (_name(block), stored))
+                    mime_type = block.get("mime_type")
+                    addresses.setdefault(url, (_name(block), stored, mime_type if isinstance(mime_type, str) else None))
     return addresses
 
 
-async def _read(url: str, name: Optional[str], stored: Optional[StoredFile]) -> _Read:
+async def _read(url: str, name: Optional[str], stored: Optional[StoredFile], media_type: Optional[str]) -> _Read:
     try:
-        return await read_file_for_model(url, name=name, stored=stored)
+        return await read_file_for_model(url, name=name, stored=stored, media_type=media_type)
     except _LeftOut as error:
         return error
 
@@ -183,7 +223,10 @@ async def _read(url: str, name: Optional[str], stored: Optional[StoredFile]) -> 
 async def _read_all(messages: Sequence[BaseMessage], unread: Optional[Unread] = None) -> dict[str, _Read]:
     """The files of the messages, read at once rather than one after another."""
     addresses = _addresses(messages, unread)
-    reads = [asyncio.ensure_future(_read(url, name, stored)) for url, (name, stored) in addresses.items()]
+    reads = [
+        asyncio.ensure_future(_read(url, name, stored, media_type))
+        for url, (name, stored, media_type) in addresses.items()
+    ]
     try:
         return dict(zip(addresses, await asyncio.gather(*reads)))
     except BaseException:
@@ -194,9 +237,9 @@ async def _read_all(messages: Sequence[BaseMessage], unread: Optional[Unread] = 
 
 def _read_all_sync(messages: Sequence[BaseMessage], unread: Optional[Unread] = None) -> dict[str, _Read]:
     read: dict[str, _Read] = {}
-    for url, (name, stored) in _addresses(messages, unread).items():
+    for url, (name, stored, media_type) in _addresses(messages, unread).items():
         try:
-            read[url] = read_file_for_model_sync(url, name=name, stored=stored)
+            read[url] = read_file_for_model_sync(url, name=name, stored=stored, media_type=media_type)
         except _LeftOut as error:
             read[url] = error
     return read
@@ -219,6 +262,8 @@ def _assembled(messages: Sequence[BaseMessage], read: dict[str, _Read]) -> tuple
                 continue
             stored = _stored(block)
             url = _address(block)
+            if stored is None and url is None:
+                stored = _stored_by_content(block)
             if url is not None and url in read:
                 changed = True
                 file = read[url]
@@ -236,10 +281,12 @@ async def inline_files(messages: Sequence[BaseMessage]) -> list[BaseMessage]:
     """The messages with every file given by its address replaced by its content.
 
     A message without such a file is returned as it is; one with a file is
-    copied, so the messages passed in - the graph's state - keep the address.
-    A file larger than a model request may carry, and a stored file that is
-    not available to the turn's sender, is replaced by a text note that says
-    so.
+    copied, under the same id, so the messages passed in - the graph's state -
+    keep the address. Send the copies to the model and return only its answer
+    into the state: returned, the copies replace the state's messages and
+    bring the files' content into it. A file larger than a model request may
+    carry, a stored file that is not available to the turn's sender, and one
+    that is no longer stored, is replaced by a text note that says so.
 
     Args:
         messages: The messages about to be sent to a model.

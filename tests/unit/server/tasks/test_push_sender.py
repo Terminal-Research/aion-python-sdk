@@ -1,10 +1,10 @@
 """Tests for AionPushNotificationSender.
 
-The sender delivers exactly as a2a-sdk's base class does - the notification
-token and the config's ``authentication`` as headers, the push URL check, the
-concurrent fan-out - and adds a diagnostic log of every delivery. These tests
-pin the headers, the URL check, and the failure handling and reports around
-them.
+The sender delivers what a2a-sdk's base class does - the notification token
+and the config's ``authentication`` as headers, the push URL check, every
+webhook of the task - and adds a diagnostic log of every delivery. These
+tests pin the headers, the URL check, and the failure handling and reports
+around them; ``test_push_retries`` pins the queues and the retries.
 """
 
 import datetime
@@ -126,6 +126,16 @@ def _client(
     return client
 
 
+async def _no_pause(_seconds: float) -> None:
+    """Stands in for the pause before a retry: the tests do not wait it out."""
+
+
+async def _send(sender: AionPushNotificationSender, event, **kwargs) -> None:
+    """Queue ``event`` for the task's webhooks and wait until every delivery is done."""
+    await sender.send_notification(TASK_ID, event, **kwargs)
+    await sender.drain()
+
+
 def _store(config: TaskPushNotificationConfig) -> Mock:
     """Returns a config store stand-in that dispatches to a single webhook."""
     store = Mock()
@@ -135,7 +145,7 @@ def _store(config: TaskPushNotificationConfig) -> Mock:
 
 def _sender(config: TaskPushNotificationConfig, client: Mock) -> AionPushNotificationSender:
     return AionPushNotificationSender(
-        httpx_client=client, config_store=_store(config)
+        httpx_client=client, config_store=_store(config), sleep=_no_pause
     )
 
 
@@ -163,7 +173,7 @@ def _fan_out_sender(
 
         client = Mock()
         client.post = AsyncMock(side_effect=post)
-    return AionPushNotificationSender(httpx_client=client, config_store=store)
+    return AionPushNotificationSender(httpx_client=client, config_store=store, sleep=_no_pause)
 
 
 def _our_records(caplog) -> list[logging.LogRecord]:
@@ -186,7 +196,7 @@ class TestAuthorizationHeader:
         client = _client()
         sender = _sender(_config(scheme="Bearer", credentials=CREDENTIALS), client)
 
-        await sender.send_notification(TASK_ID, _event())
+        await _send(sender, _event())
 
         assert _sent_headers(client)["Authorization"] == f"Bearer {CREDENTIALS}"
 
@@ -196,7 +206,7 @@ class TestAuthorizationHeader:
         client = _client()
         sender = _sender(_config(scheme="Basic", credentials="dXNlcjpwYXNz"), client)
 
-        await sender.send_notification(TASK_ID, _event())
+        await _send(sender, _event())
 
         assert _sent_headers(client)["Authorization"] == "Basic dXNlcjpwYXNz"
 
@@ -210,7 +220,7 @@ class TestAuthorizationHeader:
         client = _client()
         sender = _sender(_config(scheme="", credentials=CREDENTIALS), client)
 
-        await sender.send_notification(TASK_ID, _event())
+        await _send(sender, _event())
 
         assert _sent_headers(client)["Authorization"] == f"Bearer {CREDENTIALS}"
 
@@ -221,7 +231,7 @@ class TestAuthorizationHeader:
         sender = _sender(_config(scheme="Bearer", credentials=""), client)
 
         with caplog.at_level(logging.WARNING):
-            await sender.send_notification(TASK_ID, _event())
+            await _send(sender, _event())
 
         assert _sent_headers(client) is None
         assert any("no credentials" in r.getMessage() for r in _our_records(caplog))
@@ -236,7 +246,7 @@ class TestBaseBehaviourIsPreserved:
         client = _client()
         sender = _sender(_config(token="notify-token"), client)
 
-        await sender.send_notification(TASK_ID, _event())
+        await _send(sender, _event())
 
         headers = _sent_headers(client)
         assert headers == {"X-A2A-Notification-Token": "notify-token"}
@@ -250,7 +260,7 @@ class TestBaseBehaviourIsPreserved:
             client,
         )
 
-        await sender.send_notification(TASK_ID, _event())
+        await _send(sender, _event())
 
         assert _sent_headers(client) == {
             "X-A2A-Notification-Token": "notify-token",
@@ -263,7 +273,7 @@ class TestBaseBehaviourIsPreserved:
         client = _client()
         sender = _sender(_config(), client)
 
-        await sender.send_notification(TASK_ID, _event())
+        await _send(sender, _event())
 
         assert _sent_headers(client) is None
 
@@ -273,7 +283,7 @@ class TestBaseBehaviourIsPreserved:
         client = _client()
         sender = _sender(_config(scheme="Bearer", credentials=CREDENTIALS), client)
 
-        await sender.send_notification(TASK_ID, _event())
+        await _send(sender, _event())
 
         url = client.post.await_args.args[0]
         payload = client.post.await_args.kwargs["json"]
@@ -295,7 +305,7 @@ class TestPushUrlCheck:
             push_url_validator=validator,
         )
 
-        await sender.send_notification(TASK_ID, _event())
+        await _send(sender, _event())
 
         validator.assert_awaited_once_with(WEBHOOK_URL)
         client.post.assert_not_awaited()
@@ -309,7 +319,7 @@ class TestPushUrlCheck:
             push_url_validator=AsyncMock(return_value=True),
         )
 
-        await sender.send_notification(TASK_ID, _event())
+        await _send(sender, _event())
 
         client.post.assert_awaited_once()
 
@@ -345,7 +355,7 @@ class TestFailureHandling:
         sender = AionPushNotificationSender(httpx_client=client, config_store=store)
 
         with caplog.at_level(logging.ERROR, logger="aion.server.tasks.push_sender"):
-            await sender.send_notification(TASK_ID, _event())
+            await _send(sender, _event())
 
         client.post.assert_not_awaited()
         [record] = caplog.records
@@ -362,7 +372,7 @@ class TestFailureHandling:
         client = _client(status_code=401)
         sender = _sender(_config(scheme="Bearer", credentials=CREDENTIALS), client)
 
-        await sender.send_notification(TASK_ID, _event())
+        await _send(sender, _event())
 
         client.post.assert_awaited_once()
 
@@ -396,7 +406,7 @@ class TestFailureHandling:
         sender = _sender(_config(scheme="Bearer", credentials=CREDENTIALS), client)
 
         with caplog.at_level(logging.DEBUG):
-            await sender.send_notification(TASK_ID, _event())
+            await _send(sender, _event())
 
         assert CREDENTIALS not in caplog.text
         assert WEBHOOK_URL in caplog.text
@@ -412,7 +422,7 @@ class TestFailureHandling:
         sender = _sender(_config(scheme="Bearer", credentials=CREDENTIALS), client)
 
         with caplog.at_level(logging.DEBUG):
-            await sender.send_notification(TASK_ID, _event())
+            await _send(sender, _event())
 
         record = next(r for r in caplog.records if r.name.endswith("push_sender"))
         assert record.levelno == logging.WARNING
@@ -426,7 +436,7 @@ class TestFailureHandling:
         sender = _sender(_config(scheme="Bearer", credentials=CREDENTIALS), client)
 
         with caplog.at_level(logging.DEBUG):
-            await sender.send_notification(TASK_ID, _event())
+            await _send(sender, _event())
 
         assert "upstream connect error" in caplog.text
 
@@ -437,7 +447,7 @@ class TestFailureHandling:
         sender = _sender(_config(scheme="Bearer", credentials=CREDENTIALS), client)
 
         with caplog.at_level(logging.DEBUG):
-            await sender.send_notification(TASK_ID, _event())
+            await _send(sender, _event())
 
         record = next(r for r in caplog.records if r.name.endswith("push_sender"))
         assert len(record.getMessage()) < 600
@@ -450,7 +460,7 @@ class TestFailureHandling:
         sender = _sender(_config(scheme="Bearer", credentials=CREDENTIALS), client)
 
         with caplog.at_level(logging.DEBUG):
-            await sender.send_notification(TASK_ID, _event())
+            await _send(sender, _event())
 
         assert "<empty body>" in caplog.text
 
@@ -462,12 +472,12 @@ class TestFailureHandling:
         sender = _sender(_config(scheme="Bearer", credentials=CREDENTIALS), client)
 
         with caplog.at_level(logging.DEBUG):
-            await sender.send_notification(TASK_ID, _event())
+            await _send(sender, _event())
 
-        record = next(r for r in caplog.records if r.name.endswith("push_sender"))
-        assert record.levelno == logging.WARNING
-        assert record.exc_info is None
-        assert "PUSH_NOTIFICATION_TIMEOUT_SECONDS" in record.getMessage()
+        records = [r for r in caplog.records if r.name.endswith("push_sender")]
+        assert [r.levelno for r in records] == [logging.INFO] * 5 + [logging.WARNING]
+        assert all(r.exc_info is None for r in records)
+        assert "PUSH_NOTIFICATION_TIMEOUT_SECONDS" in records[-1].getMessage()
 
     @pytest.mark.anyio
     async def test_unexpected_failure_keeps_its_traceback(self, caplog):
@@ -477,7 +487,7 @@ class TestFailureHandling:
         sender = _sender(_config(scheme="Bearer", credentials=CREDENTIALS), client)
 
         with caplog.at_level(logging.DEBUG):
-            await sender.send_notification(TASK_ID, _event())
+            await _send(sender, _event())
 
         record = next(r for r in caplog.records if r.name.endswith("push_sender"))
         assert record.levelno == logging.ERROR
@@ -500,7 +510,7 @@ class TestLogsIdentifyTheEvent:
         sender = _sender(_config(), client)
 
         with caplog.at_level(logging.DEBUG):
-            await sender.send_notification(TASK_ID, _event())
+            await _send(sender, _event())
 
         message = _our_records(caplog)[0].getMessage()
         assert "Task state=TASK_STATE_COMPLETED" in message
@@ -513,7 +523,7 @@ class TestLogsIdentifyTheEvent:
         sender = _sender(_config(), client)
 
         with caplog.at_level(logging.DEBUG):
-            await sender.send_notification(TASK_ID, _event_status())
+            await _send(sender, _event_status())
 
         message = _our_records(caplog)[0].getMessage()
         assert "TaskStatusUpdateEvent state=TASK_STATE_WORKING" in message
@@ -525,7 +535,7 @@ class TestLogsIdentifyTheEvent:
         sender = _sender(_config(), client)
 
         with caplog.at_level(logging.DEBUG):
-            await sender.send_notification(TASK_ID, _event_artifact())
+            await _send(sender, _event_artifact())
 
         message = _our_records(caplog)[0].getMessage()
         assert "artifact=report-diff" in message
@@ -538,7 +548,7 @@ class TestLogsIdentifyTheEvent:
         sender = _sender(_config(), client)
 
         with caplog.at_level(logging.DEBUG):
-            await sender.send_notification(TASK_ID, _event())
+            await _send(sender, _event())
 
         message = _our_records(caplog)[0].getMessage()
         assert "Task state=TASK_STATE_COMPLETED" in message
@@ -552,7 +562,7 @@ class TestLogsIdentifyTheEvent:
         sender = _sender(_config(), client)
 
         with caplog.at_level(logging.DEBUG):
-            await sender.send_notification(TASK_ID, _event_status())
+            await _send(sender, _event_status())
 
         assert "TaskStatusUpdateEvent state=TASK_STATE_WORKING" in caplog.text
 
@@ -563,7 +573,7 @@ class TestLogsIdentifyTheEvent:
         sender = _sender(_config(), client)
 
         with caplog.at_level(logging.DEBUG):
-            await sender.send_notification(TASK_ID, _event())
+            await _send(sender, _event())
 
         assert TASK_ID not in _our_records(caplog)[0].getMessage()
 
@@ -574,7 +584,7 @@ class TestLogsIdentifyTheEvent:
         sender = _sender(_config(), client)
 
         with caplog.at_level(logging.DEBUG):
-            await sender.send_notification(TASK_ID, _event())
+            await _send(sender, _event())
 
         assert "143 ms" in _our_records(caplog)[0].getMessage()
 
@@ -585,7 +595,7 @@ class TestLogsIdentifyTheEvent:
         sender = _sender(_config(), client)
 
         with caplog.at_level(logging.DEBUG):
-            await sender.send_notification(TASK_ID, _event())
+            await _send(sender, _event())
 
         message = _our_records(caplog)[0].getMessage()
         assert "ms" not in message
@@ -604,7 +614,7 @@ class TestLogsIdentifyTheEvent:
         event.status.state = 9999
 
         with caplog.at_level(logging.DEBUG):
-            await sender.send_notification(TASK_ID, event)
+            await _send(sender, event)
 
         assert "state=9999" in _our_records(caplog)[0].getMessage()
 
@@ -634,7 +644,7 @@ class TestDeliveredContent:
         event.status.message.CopyFrom(_message("Affirmative!"))
 
         with caplog.at_level(logging.DEBUG):
-            await sender.send_notification(TASK_ID, event)
+            await _send(sender, event)
 
         record = next(r for r in _our_records(caplog) if "content:" in r.getMessage())
         assert record.levelno == logging.DEBUG
@@ -648,7 +658,7 @@ class TestDeliveredContent:
         event.status.message.CopyFrom(_message("the secret is hunter2"))
 
         with caplog.at_level(logging.DEBUG):
-            await sender.send_notification(TASK_ID, event)
+            await _send(sender, event)
 
         delivered = next(r for r in _our_records(caplog) if "sent to URL" in r.getMessage())
         assert "hunter2" not in delivered.getMessage()
@@ -661,7 +671,7 @@ class TestDeliveredContent:
         event.status.message.CopyFrom(_message("all done"))
 
         with caplog.at_level(logging.DEBUG):
-            await sender.send_notification(TASK_ID, event)
+            await _send(sender, event)
 
         assert self._contents(caplog) == []
 
@@ -671,7 +681,7 @@ class TestDeliveredContent:
         sender = _sender(_config(), _client())
 
         with caplog.at_level(logging.DEBUG):
-            await sender.send_notification(TASK_ID, _event_status())
+            await _send(sender, _event_status())
 
         assert self._contents(caplog) == []
 
@@ -683,7 +693,7 @@ class TestDeliveredContent:
         event.status.message.CopyFrom(_message("Affirmative!"))
 
         with caplog.at_level(logging.DEBUG):
-            await sender.send_notification(TASK_ID, event)
+            await _send(sender, event)
 
         assert len(self._contents(caplog)) == 1
 
@@ -695,57 +705,44 @@ class TestDeliveredContent:
         event.artifact.parts.append(Part(text="Command"))
 
         with caplog.at_level(logging.DEBUG):
-            await sender.send_notification(TASK_ID, event)
+            await _send(sender, event)
 
         assert self._contents(caplog) == ["Push-notification content: 'Command'"]
 
 
-class TestFanOutSummary:
-    """The fan-out reports only what the per-webhook lines do not already say.
-
-    The SDK base class answers any failure with a bare "some notifications
-    failed" line carrying nothing but the task id, which on the common
-    single-webhook task is a second, less informative copy of the rejection
-    logged one line above. These tests pin the summary to the case where it
-    adds something: a real fan-out, reported with counts.
-    """
+class TestEachWebhookOnItsOwn:
+    """Every webhook of a task is delivered to, and reported, on its own."""
 
     @pytest.mark.anyio
-    async def test_single_failing_webhook_is_reported_once(self, caplog):
-        """One webhook, one failure, one line — the one naming the URL and the status."""
+    async def test_a_webhook_that_keeps_failing_is_reported_once_as_a_warning(self, caplog):
+        """Each failed attempt is an INFO line; the delivery that gives up is one WARNING."""
         sender = _fan_out_sender({WEBHOOK_URL: 503})
 
         with caplog.at_level(logging.DEBUG):
-            await sender.send_notification(TASK_ID, _event())
+            await _send(sender, _event())
 
-        records = _our_records(caplog)
-        assert len(records) == 1
-        assert "503" in records[0].getMessage()
-        assert "fan-out" not in caplog.text
+        warnings = [r for r in _our_records(caplog) if r.levelno >= logging.WARNING]
+        assert len(warnings) == 1
+        assert "503" in warnings[0].getMessage()
+        assert "gave up after 6 attempts" in warnings[0].getMessage()
 
     @pytest.mark.anyio
-    async def test_partial_fan_out_failure_is_summarised_with_counts(self, caplog):
-        """With several receivers the summary states how much of the fan-out got through."""
+    async def test_each_failing_webhook_gets_its_own_line(self, caplog):
+        """With several receivers, each one that failed says so, and the others are reported sent."""
         sender = _fan_out_sender(
             {WEBHOOK_URL: 503, f"{WEBHOOK_URL}-b": 200, f"{WEBHOOK_URL}-c": 401}
         )
 
         with caplog.at_level(logging.DEBUG):
-            await sender.send_notification(TASK_ID, _event())
+            await _send(sender, _event())
 
-        summary = next(r for r in _our_records(caplog) if "fan-out" in r.getMessage())
-        assert summary.levelno == logging.WARNING
-        assert "2 of 3 deliveries failed" in summary.getMessage()
-
-    @pytest.mark.anyio
-    async def test_fully_delivered_fan_out_is_not_summarised(self, caplog):
-        """Nothing failed, so there is no failure to summarise."""
-        sender = _fan_out_sender({WEBHOOK_URL: 200, f"{WEBHOOK_URL}-b": 200})
-
-        with caplog.at_level(logging.DEBUG):
-            await sender.send_notification(TASK_ID, _event())
-
-        assert "fan-out" not in caplog.text
+        warnings = [r.getMessage() for r in _our_records(caplog) if r.levelno >= logging.WARNING]
+        assert len(warnings) == 2
+        assert any("HTTP 503" in line for line in warnings)
+        assert any("HTTP 401" in line for line in warnings)
+        assert any(
+            f"sent to URL: {WEBHOOK_URL}-b" in r.getMessage() for r in _our_records(caplog)
+        )
 
     @pytest.mark.anyio
     async def test_task_without_webhooks_dispatches_nothing(self):
@@ -754,7 +751,7 @@ class TestFanOutSummary:
         client.post = AsyncMock()
         sender = _fan_out_sender({}, client)
 
-        await sender.send_notification(TASK_ID, _event())
+        await _send(sender, _event())
 
         client.post.assert_not_awaited()
 
@@ -765,7 +762,7 @@ class TestFanOutSummary:
             {WEBHOOK_URL: 401, f"{WEBHOOK_URL}-b": 200, f"{WEBHOOK_URL}-c": 200}
         )
 
-        await sender.send_notification(TASK_ID, _event())
+        await _send(sender, _event())
 
         assert sender._client.post.await_count == 3
 
@@ -784,7 +781,7 @@ class TestWorkingFileLinks:
             httpx_client=client, config_store=_store(_config()), file_links=links
         )
 
-        await sender.send_notification(TASK_ID, stored)
+        await _send(sender, stored)
 
         links.refresh.assert_awaited_once_with(stored, context=None)
         assert client.post.await_args.kwargs["json"]["task"]["contextId"] == "refreshed"
@@ -800,7 +797,7 @@ class TestWorkingFileLinks:
         )
         scope = UploadContext(usage_attribution="carrier-1")
 
-        await sender.send_notification(TASK_ID, _event(), link_scope=scope)
+        await _send(sender, _event(), link_scope=scope)
 
         assert links.refresh.await_args.kwargs["context"] is scope
 
@@ -828,6 +825,6 @@ class TestWorkingFileLinks:
         store.get_info_for_dispatch = AsyncMock(return_value=[])
         sender = AionPushNotificationSender(httpx_client=_client(), config_store=store, file_links=links)
 
-        await sender.send_notification(TASK_ID, _event())
+        await _send(sender, _event())
 
         links.refresh.assert_not_awaited()

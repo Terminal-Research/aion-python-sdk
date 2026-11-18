@@ -39,7 +39,22 @@ reaches the model service.
 
 
 def _aion_lite_llm_client(base_client_type: type[Any]) -> Any:
-    """Create a LiteLLM client that resolves Aion JWTs per request."""
+    """Create a LiteLLM client that resolves Aion JWTs per request and streams every request.
+
+    Aion's model service answers every request with a stream, a request
+    without one included, and LiteLLM cannot read that as the answer to a
+    request without one. A request without a stream - ADK's own, such as
+    the run of an agent behind an ``AgentTool``, or a run without
+    ``StreamingMode.SSE`` - is streamed, read to its end, and answered with
+    the response its chunks make (``_assembled``).
+
+    Every request also skips LiteLLM's MCP gateway (``_skip_mcp_handler``).
+    LiteLLM imports the gateway for any request with tools, and since
+    LiteLLM 1.103 that import needs an mcp release ``langchain-mcp-adapters``
+    does not allow, so with both frameworks installed every such request
+    failed before it was sent. The gateway serves only MCP tools that name
+    LiteLLM's proxy, and ADK sends a model its tools as functions.
+    """
 
     class AionLiteLlmClient(base_client_type):
         def completion(
@@ -62,11 +77,16 @@ def _aion_lite_llm_client(base_client_type: type[Any]) -> Any:
             )
             request_kwargs.setdefault("num_retries", 0)
             messages = place_held_documents(messages)
+            streamed = bool(request_kwargs.get("stream"))
+            request_kwargs["stream"] = True
+            request_kwargs["_skip_mcp_handler"] = True
             try:
                 result = litellm.completion(
                     model=_routed(model), messages=messages, tools=tools, **request_kwargs,
                 )
-                return _callback_stream(result) if request_kwargs.get("stream") else result
+                if streamed:
+                    return _callback_stream(result)
+                return _assembled(list(_callback_stream(result)))
             except Exception as error:
                 reraise_callback_error(error)
                 raise
@@ -91,11 +111,16 @@ def _aion_lite_llm_client(base_client_type: type[Any]) -> Any:
             )
             request_kwargs.setdefault("num_retries", 0)
             messages = place_held_documents(messages)
+            streamed = bool(request_kwargs.get("stream"))
+            request_kwargs["stream"] = True
+            request_kwargs["_skip_mcp_handler"] = True
             try:
                 result = await litellm.acompletion(
                     model=_routed(model), messages=messages, tools=tools, **request_kwargs,
                 )
-                return _async_callback_stream(result) if request_kwargs.get("stream") else result
+                if streamed:
+                    return _async_callback_stream(result)
+                return _assembled([chunk async for chunk in _async_callback_stream(result)])
             except Exception as error:
                 reraise_callback_error(error)
                 raise
@@ -112,6 +137,17 @@ def _routed(model: str) -> str:
     given the ``openai/`` provider segment for LiteLLM to take off again.
     """
     return f"openai/{model}"
+
+
+def _assembled(chunks: list[Any]) -> Any:
+    """The response the chunks of a streamed request make, as LiteLLM answers a request without a stream.
+
+    A stream without chunks makes an empty response, as a request without a
+    stream gets when the model answers nothing.
+    """
+    import litellm
+
+    return litellm.stream_chunk_builder(chunks) or litellm.ModelResponse()
 
 
 def _callback_stream(stream: Any) -> Iterator[Any]:
@@ -239,7 +275,8 @@ def _file_inlining_lite_llm(lite_llm: type) -> type:
         file, a note in its place, and later requests leave the file out from
         the start; ADK sees one call (``RefusedFileSearch``). Only the try
         that goes through gives responses: the others fail before their
-        first one.
+        first one. A request that checks one file alone is streamed whatever
+        the call is.
         """
 
         _choose_model: Optional[ModelChoice]
@@ -284,11 +321,16 @@ def _file_inlining_lite_llm(lite_llm: type) -> type:
                     search.checked(suspect, await self._check_alone(model, part))
 
         async def _check_alone(self, model, file):
-            """How a request with ``file`` alone failed, or None when the model took it."""
+            """How a request with ``file`` alone failed, or None when the model took it.
+
+            The request is streamed, read to its end: Aion's model service
+            answers every request with a stream, which LiteLLM cannot read
+            as the answer to a request without one.
+            """
             request, held = check_request(model, file)
             with holding_documents(held):
                 try:
-                    async for _ in super().generate_content_async(request, stream=False):
+                    async for _ in super().generate_content_async(request, stream=True):
                         pass
                 except Exception as error:
                     return error

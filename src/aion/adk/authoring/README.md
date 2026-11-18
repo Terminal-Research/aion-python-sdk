@@ -31,7 +31,25 @@ token and the principal headers of the turn are resolved on every request.
 Its model is a catalog ID, or a function that picks the ID for each request
 from the turn's Aion runtime context. A function suits a model the deployment
 selects in the environment's configuration, which is known only once a turn
-arrives:
+arrives.
+
+Aion's model service answers every request with a stream, a request that asks
+for none included, which LiteLLM cannot read as the answer to such a request.
+The model `aion_lite_llm` builds streams every request: a run with
+`StreamingMode.SSE`, as the server runs one, gets the chunks as they come, and
+a request without a stream - a run without SSE, the agent behind an
+`AgentTool`, which ADK always runs without one - gets the response the chunks
+make. Any other client of the service, LiteLLM called directly included, has
+to ask for a stream.
+
+Every request also skips LiteLLM's MCP gateway. LiteLLM imports the gateway
+for any request with tools, and since LiteLLM 1.103 that import needs an `mcp`
+release `langchain-mcp-adapters` does not allow, so with both frameworks
+installed such a request would fail before it is sent. The gateway serves only
+MCP tools that name LiteLLM's proxy, and ADK sends a model its tools as
+functions.
+
+A model picked per turn:
 
 ```python
 from google.adk.agents import LlmAgent

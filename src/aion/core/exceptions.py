@@ -60,6 +60,7 @@ __all__ = [
     "ConversationFileError",
     "ConversationFileTooLargeError",
     "ConversationFileForbiddenError",
+    "ConversationFileRemovedError",
 ]
 
 
@@ -289,9 +290,10 @@ class ConversationFileError(AionError):
     Raised by ``ConversationFile.read`` and ``ArtifactVersion.read``: the
     address answered with an error, the address is not one the SDK fetches,
     the file is larger than the caller allowed
-    (:class:`ConversationFileTooLargeError`), or the storage service does not
+    (:class:`ConversationFileTooLargeError`), the storage service does not
     make a stored file available to the turn's sender
-    (:class:`ConversationFileForbiddenError`).
+    (:class:`ConversationFileForbiddenError`), or a stored file is no longer
+    stored (:class:`ConversationFileRemovedError`).
 
     Args:
         message: What could not be read and why.
@@ -340,4 +342,28 @@ class ConversationFileForbiddenError(ConversationFileError):
     def __init__(self, label: str, media_type: Optional[str] = None) -> None:
         described = f"File {label!r} ({media_type})" if media_type else f"File {label!r}"
         super().__init__(f"{described} is not available to this sender.")
+        self.media_type = media_type
+
+
+class ConversationFileRemovedError(ConversationFileError):
+    """A stored file of the conversation is no longer stored.
+
+    The storage service keeps a file until its retention deadline, which the
+    file's part records (``StoredFile.retention_expires_at``); the SDK stores
+    the files of a conversation for 30 days from their upload. A file is
+    known to be removed when that deadline has passed - known without asking
+    the storage service - or when the storage service answers that the file
+    or its version no longer exists. Raised by ``ConversationFile.read`` and
+    ``ConversationFile.link`` and by the conversation's ``read_file``,
+    ``read_file_at`` and ``file_link``; the file's address is not fetched.
+    The message names the file only, never its address or a link to it.
+
+    Args:
+        label: How the message names the file.
+        media_type: The file's media type, when the part names one.
+    """
+
+    def __init__(self, label: str, media_type: Optional[str] = None) -> None:
+        described = f"File {label!r} ({media_type})" if media_type else f"File {label!r}"
+        super().__init__(f"{described} is no longer available.")
         self.media_type = media_type

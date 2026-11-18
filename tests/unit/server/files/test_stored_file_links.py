@@ -609,3 +609,50 @@ class TestRefusedToTheReader:
         assert await links.link_for(protected_part(), context=self._as("carrier-owner")) == (
             "https://files.test/content?grant=upload"
         )
+
+
+class TestRemoved:
+    """A file that is no longer stored: past the retention deadline its part records, or gone by the storage's word.
+
+    It is gone for every reader, so ``link_for`` raises
+    ``ConversationFileRemovedError`` whoever asks; an answer keeps the part's
+    address, and the client tells a removed file by its retention deadline.
+    """
+
+    async def test_a_file_past_its_retention_is_removed_without_asking(self, links, backend, clock) -> None:
+        from aion.core.exceptions import ConversationFileRemovedError
+
+        part = protected_part()
+        part.media_type = "application/pdf"
+        clock.advance(days=30)
+
+        with pytest.raises(ConversationFileRemovedError) as removed:
+            await links.link_for(part)
+
+        assert str(removed.value) == "File 'report.pdf' (application/pdf) is no longer available."
+        assert backend.asked == []
+
+    @pytest.mark.parametrize("carrier", [None, "carrier-1"], ids=["daemon", "attribution"])
+    async def test_a_file_the_storage_says_is_gone_is_removed_for_any_reader(self, links, backend, carrier) -> None:
+        from aion.core.exceptions import ConversationFileRemovedError
+        from aion.server.files.storage import UploadContext
+
+        backend.answer = UploadFailure(FileUploadErrorCode.STORAGE_FILE_REMOVED)
+        context = UploadContext(usage_attribution=carrier) if carrier else None
+
+        with pytest.raises(ConversationFileRemovedError):
+            await links.link_for(protected_part(), context=context)
+        # Remembered: the next read is answered without asking again.
+        with pytest.raises(ConversationFileRemovedError):
+            await links.link_for(protected_part(), context=context)
+        assert backend.asked == [("file-1", "version-1")]
+
+    async def test_an_answer_keeps_the_address_of_a_removed_file(self, links, backend, clock) -> None:
+        backend.answer = UploadFailure(FileUploadErrorCode.STORAGE_FILE_REMOVED)
+        gone = task_with(protected_part())
+        assert await links.refresh(gone) is gone
+
+        clock.advance(days=30)
+        expired = task_with(protected_part("file-2"))
+        assert await links.refresh(expired) is expired
+        assert backend.asked == [("file-1", "version-1")]

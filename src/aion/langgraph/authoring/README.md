@@ -37,6 +37,16 @@ configured `AION_CLIENT_ID` and `AION_CLIENT_SECRET`. Any other keyword
 arguments are passed through to LangChain. Look up available model IDs in the
 Aion control plane model catalog.
 
+Aion's model service answers every request with a stream, a request that asks
+for none included, which `ChatOpenAI` cannot read as the answer to such a
+request. The model the helper builds streams every request it makes:
+`astream`, and a run that streams the graph's messages as `aion serve` does,
+get the chunks as they come, and a call without a stream - `invoke` outside
+such a run, a model with `disable_streaming` - gets the one answer the chunks
+make. A model with `configurable_fields` or `config_prefix` is LangChain's own
+`ChatOpenAI`, built per call, and like any other client of the service it has
+to be called with a stream.
+
 ---
 
 ## MCP tools

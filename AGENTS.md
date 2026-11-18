@@ -24,6 +24,14 @@ contracts; reconcile this file with them when behavior changes.
   that merely repeat a name or signature. In sections that define injected or
   projected fields, align names and descriptions in a hanging-indent
   definition list separated by an em dash.
+- A feature or behavior change is finished only when its documentation
+  describes it. In the same piece of work, update the docstrings and comments
+  of the code you touched; the subpackage README or `docs/development/` guide
+  that owns the behavior; the descriptions in `settings.py`; `CHANGELOG.md`
+  under `## Unreleased` for anything a client or an agent author can see; and
+  the user-facing pages on <https://docs.aion.to> that describe it. Find what
+  to update by searching the code and the docs for every name you changed:
+  settings, classes, methods, wire fields, log lines users read.
 - Add or update tests for changed behavior at the appropriate boundary. Do not
   add tests that only restate the implementation or add a test requirement to
   a documentation-only change.
@@ -287,9 +295,10 @@ relevant package README or maintainer guide.
 
 ## Documentation ownership
 
-User-facing docs live in the `aion-docs-mintlify` repository at
-<https://docs.aion.to>. Link to the page that owns a topic rather than
-duplicating it here; do not create Markdown files that only forward to a URL.
+User-facing docs are published at <https://docs.aion.to>; update the pages
+there that describe behavior you change. Link to the page that owns a topic
+rather than duplicating it here; do not create Markdown files that only
+forward to a URL.
 `docs/development/` holds repository-specific maintainer guides, and
 `RELEASE.md` holds the release procedure and `CHANGELOG.md` the
 client-visible changes per release. The root `README.md` is the PyPI
