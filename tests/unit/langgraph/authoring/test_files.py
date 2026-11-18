@@ -10,7 +10,7 @@ leaves the state as it is.
 from __future__ import annotations
 
 import base64
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
@@ -120,12 +120,19 @@ def test_a_synchronous_call_takes_the_file_from_memory() -> None:
 async def test_the_aion_model_sends_content_on_every_call() -> None:
     """``ainvoke`` and ``astream`` both hand the provider's request the files' content."""
     model = _model()
+    requests: list = []
+
+    async def astream(self, messages, stop=None, run_manager=None, **kwargs):
+        requests.append(messages)
+        raise RuntimeError("stop")
+        yield
+
     with use_conversation(_conversation()):
-        with patch.object(ChatOpenAI, "_agenerate", new=AsyncMock(side_effect=RuntimeError("stop"))) as generate:
+        with patch.object(ChatOpenAI, "_astream", new=astream):
             with pytest.raises(RuntimeError, match="stop"):
                 await model.ainvoke([_question()])
 
-    [sent] = generate.call_args.args[0]
+    [[sent]] = requests
     assert base64.b64decode(sent.content[1]["base64"]) == PDF
     assert base64.b64decode(sent.content[2]["base64"]) == PNG
 
@@ -139,9 +146,10 @@ async def test_a_synchronous_node_reads_files_as_an_asynchronous_one_does() -> N
     model = _model()
     sent: list = []
 
-    def generate(self, messages, stop=None, run_manager=None, **kwargs):
+    def stream(self, messages, stop=None, run_manager=None, **kwargs):
         sent.extend(messages)
         raise RuntimeError("stop")
+        yield
 
     def answer(state):
         return {"messages": [model.invoke(state["messages"])]}
@@ -151,7 +159,7 @@ async def test_a_synchronous_node_reads_files_as_an_asynchronous_one_does() -> N
     builder.add_edge(START, "answer")
     graph = builder.compile()
 
-    with use_conversation(_conversation()), patch.object(ChatOpenAI, "_generate", new=generate):
+    with use_conversation(_conversation()), patch.object(ChatOpenAI, "_stream", new=stream):
         with pytest.raises(RuntimeError, match="stop"):
             await graph.ainvoke({"messages": [_question()]})
 

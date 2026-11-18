@@ -39,7 +39,15 @@ reaches the model service.
 
 
 def _aion_lite_llm_client(base_client_type: type[Any]) -> Any:
-    """Create a LiteLLM client that resolves Aion JWTs per request."""
+    """Create a LiteLLM client that resolves Aion JWTs per request and streams every request.
+
+    Aion's model service answers every request with a stream, a request
+    without one included, and LiteLLM cannot read that as the answer to a
+    request without one. A request without a stream - ADK's own, such as
+    the run of an agent behind an ``AgentTool``, or a run without
+    ``StreamingMode.SSE`` - is streamed, read to its end, and answered with
+    the response its chunks make (``_assembled``).
+    """
 
     class AionLiteLlmClient(base_client_type):
         def completion(
@@ -62,11 +70,15 @@ def _aion_lite_llm_client(base_client_type: type[Any]) -> Any:
             )
             request_kwargs.setdefault("num_retries", 0)
             messages = place_held_documents(messages)
+            streamed = bool(request_kwargs.get("stream"))
+            request_kwargs["stream"] = True
             try:
                 result = litellm.completion(
                     model=_routed(model), messages=messages, tools=tools, **request_kwargs,
                 )
-                return _callback_stream(result) if request_kwargs.get("stream") else result
+                if streamed:
+                    return _callback_stream(result)
+                return _assembled(list(_callback_stream(result)))
             except Exception as error:
                 reraise_callback_error(error)
                 raise
@@ -91,11 +103,15 @@ def _aion_lite_llm_client(base_client_type: type[Any]) -> Any:
             )
             request_kwargs.setdefault("num_retries", 0)
             messages = place_held_documents(messages)
+            streamed = bool(request_kwargs.get("stream"))
+            request_kwargs["stream"] = True
             try:
                 result = await litellm.acompletion(
                     model=_routed(model), messages=messages, tools=tools, **request_kwargs,
                 )
-                return _async_callback_stream(result) if request_kwargs.get("stream") else result
+                if streamed:
+                    return _async_callback_stream(result)
+                return _assembled([chunk async for chunk in _async_callback_stream(result)])
             except Exception as error:
                 reraise_callback_error(error)
                 raise
@@ -112,6 +128,17 @@ def _routed(model: str) -> str:
     given the ``openai/`` provider segment for LiteLLM to take off again.
     """
     return f"openai/{model}"
+
+
+def _assembled(chunks: list[Any]) -> Any:
+    """The response the chunks of a streamed request make, as LiteLLM answers a request without a stream.
+
+    A stream without chunks makes an empty response, as a request without a
+    stream gets when the model answers nothing.
+    """
+    import litellm
+
+    return litellm.stream_chunk_builder(chunks) or litellm.ModelResponse()
 
 
 def _callback_stream(stream: Any) -> Iterator[Any]:
