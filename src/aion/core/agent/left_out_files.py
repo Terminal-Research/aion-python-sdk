@@ -29,9 +29,14 @@ What a model's requests showed is kept for the life of the process
 (``MEMORY_ENTRIES``, the least recently used dropped first): a refused file is
 left out of the next request to the same model right away, without being
 read, and a file the model took is not suspected again. Another process, or
-this one after a restart, learns it again from its own calls. Which files are
-too large is known from the size a stored file's reference records, or else
-for the turn (``aion.core.agent.model_files``).
+this one after a restart, learns it again from its own calls. A stored file
+is known by its version, whether the request names it, names an address the
+turn stored or read it at - the files of ADK's run request - or carries bytes
+the turn has from it - a tool's media, a block ``inline_files`` gave a graph
+(``model_files.stored_file_at``, ``stored_file_holding``) - so what one turn
+learned holds in the next. Which
+files are too large is known from the size a stored file's reference records,
+or else for the turn (``aion.core.agent.model_files``).
 
 Nothing of this reaches the conversation: the task, the framework's state and
 the client see the messages as they were sent, and the note is in the model

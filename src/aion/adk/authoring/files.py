@@ -77,6 +77,8 @@ from aion.core.agent.model_files import (
     ModelFileRemovedError,
     ModelFileTooLargeError,
     read_file_for_model,
+    stored_file_at,
+    stored_file_holding,
 )
 from google.genai import types
 
@@ -233,9 +235,9 @@ async def prepare_request(
 
 def _addresses(
         contents: Sequence[types.Content], stored: dict[str, StoredFile], unread: Optional[Unread]
-) -> dict[str, Optional[str]]:
-    """The addresses of the files to read, a function response's media included, each with the file's name."""
-    addresses: dict[str, Optional[str]] = {}
+) -> dict[str, tuple[Optional[str], Optional[str]]]:
+    """The addresses of the files to read, a function response's media included, each with the file's name and media type."""
+    addresses: dict[str, tuple[Optional[str], Optional[str]]] = {}
     for content in contents:
         for part in content.parts or []:
             items = list(part.function_response.parts or []) if part.function_response is not None else [part]
@@ -246,13 +248,18 @@ def _addresses(
                 reference = stored.get(url)
                 if reference is not None and unread is not None and unread(reference):
                     continue
-                addresses.setdefault(url, item.file_data.display_name)
+                addresses.setdefault(url, (item.file_data.display_name, item.file_data.mime_type))
     return addresses
 
 
-async def _read_all(addresses: dict[str, Optional[str]], stored: dict[str, StoredFile]) -> dict[str, _Read]:
+async def _read_all(
+        addresses: dict[str, tuple[Optional[str], Optional[str]]], stored: dict[str, StoredFile]
+) -> dict[str, _Read]:
     """The files at ``addresses``, read at once rather than one after another."""
-    reads = [asyncio.ensure_future(_read(url, name, stored.get(url))) for url, name in addresses.items()]
+    reads = [
+        asyncio.ensure_future(_read(url, name, stored.get(url), media_type))
+        for url, (name, media_type) in addresses.items()
+    ]
     try:
         return dict(zip(addresses, await asyncio.gather(*reads)))
     except BaseException:
@@ -261,9 +268,9 @@ async def _read_all(addresses: dict[str, Optional[str]], stored: dict[str, Store
         raise
 
 
-async def _read(url: str, name: Optional[str], stored: Optional[StoredFile]) -> _Read:
+async def _read(url: str, name: Optional[str], stored: Optional[StoredFile], media_type: Optional[str]) -> _Read:
     try:
-        return await read_file_for_model(url, name=name, stored=stored)
+        return await read_file_for_model(url, name=name, stored=stored, media_type=media_type)
     except _LeftOut as error:
         return error
 
@@ -282,7 +289,9 @@ def _inline(
     if url is not None:
         name = part.file_data.display_name
         mime_type = part.file_data.mime_type or FALLBACK_MIME_TYPE
-        reference = stored.get(url)
+        # The session names a stored file it stored itself; a file of the
+        # message, which the turn stored, the turn knows by its address.
+        reference = stored.get(url) or stored_file_at(url)
         if url not in read:
             files.append(FilePart(content, index, None, name, mime_type, uri=url, stored=reference))
             return part
@@ -293,9 +302,13 @@ def _inline(
         name = part.inline_data.display_name
         mime_type = part.inline_data.mime_type or FALLBACK_MIME_TYPE
         data = part.inline_data.data
-        reference = None
+        # The bytes of a stored file the turn stored or read - an event of
+        # this invocation keeps its content while the session links it -
+        # are known by that stored file, as a later turn knows it by its
+        # address.
+        reference = stored_file_holding(data, part.inline_data.mime_type)
         if documents is None or not _is_document(mime_type):
-            files.append(FilePart(content, index, None, name, mime_type, data=data))
+            files.append(FilePart(content, index, None, name, mime_type, data=data, stored=reference))
             return part
     elif part.file_data is not None and part.file_data.file_uri:
         file_data = part.file_data
@@ -340,12 +353,14 @@ def _with_media_content(
             if url is not None:
                 files.append(FilePart(
                     content, index, len(kept), item.file_data.display_name,
-                    item.file_data.mime_type or FALLBACK_MIME_TYPE, uri=url, stored=stored.get(url),
+                    item.file_data.mime_type or FALLBACK_MIME_TYPE, uri=url,
+                    stored=stored.get(url) or stored_file_at(url),
                 ))
             elif item.inline_data is not None and item.inline_data.data:
                 blob = item.inline_data
                 files.append(FilePart(
                     content, index, len(kept), blob.display_name, blob.mime_type or FALLBACK_MIME_TYPE, data=blob.data,
+                    stored=stored_file_holding(blob.data, blob.mime_type),
                 ))
             kept.append(item)
             continue
@@ -356,7 +371,8 @@ def _with_media_content(
         if isinstance(data, _LeftOut):
             notes.append(_note(data, name, mime_type))
             continue
-        files.append(FilePart(content, index, len(kept), name, mime_type, data=data, stored=stored.get(url)))
+        reference = stored.get(url) or stored_file_at(url)
+        files.append(FilePart(content, index, len(kept), name, mime_type, data=data, stored=reference))
         kept.append(types.FunctionResponsePart(
             inline_data=types.FunctionResponseBlob(data=data, mime_type=mime_type, display_name=name)
         ))

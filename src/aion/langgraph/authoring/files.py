@@ -73,6 +73,7 @@ from aion.core.agent.model_files import (
     ModelFileTooLargeError,
     read_file_for_model,
     read_file_for_model_sync,
+    stored_file_holding,
 )
 from langchain_core.messages import BaseMessage, HumanMessage
 
@@ -114,6 +115,23 @@ def _stored(block: dict) -> Optional[StoredFile]:
     """The stored file a block links to, when it names one."""
     extras = block.get("extras")
     return StoredFile.from_metadata(extras.get(STORED_FILE_KEY)) if isinstance(extras, dict) else None
+
+
+def _stored_by_content(block: dict) -> Optional[StoredFile]:
+    """The stored file whose bytes a block carries: one ``inline_files`` gave the graph, sent to a model again.
+
+    Its content is known by the stored file, as a later turn knows the
+    block by its address (``stored_file_holding``).
+    """
+    encoded = block.get("base64")
+    if not isinstance(encoded, str):
+        return None
+    try:
+        content = base64.b64decode(encoded, validate=True)
+    except ValueError:
+        return None
+    mime_type = block.get("mime_type")
+    return stored_file_holding(content, mime_type if isinstance(mime_type, str) else None)
 
 
 def _with_content(block: dict, content: bytes) -> dict:
@@ -181,22 +199,23 @@ Unread = Callable[[StoredFile], bool]
 
 def _addresses(
         messages: Sequence[BaseMessage], unread: Optional[Unread]
-) -> dict[str, tuple[Optional[str], Optional[StoredFile]]]:
-    """The addresses of the files to read, each with the file's name and stored file."""
-    addresses: dict[str, tuple[Optional[str], Optional[StoredFile]]] = {}
+) -> dict[str, tuple[Optional[str], Optional[StoredFile], Optional[str]]]:
+    """The addresses of the files to read, each with the file's name, stored file and media type."""
+    addresses: dict[str, tuple[Optional[str], Optional[StoredFile], Optional[str]]] = {}
     for message in messages:
         if isinstance(message.content, list):
             for block in message.content:
                 url = _address(block)
                 stored = _stored(block) if url is not None else None
                 if url is not None and not (stored is not None and unread is not None and unread(stored)):
-                    addresses.setdefault(url, (_name(block), stored))
+                    mime_type = block.get("mime_type")
+                    addresses.setdefault(url, (_name(block), stored, mime_type if isinstance(mime_type, str) else None))
     return addresses
 
 
-async def _read(url: str, name: Optional[str], stored: Optional[StoredFile]) -> _Read:
+async def _read(url: str, name: Optional[str], stored: Optional[StoredFile], media_type: Optional[str]) -> _Read:
     try:
-        return await read_file_for_model(url, name=name, stored=stored)
+        return await read_file_for_model(url, name=name, stored=stored, media_type=media_type)
     except _LeftOut as error:
         return error
 
@@ -204,7 +223,10 @@ async def _read(url: str, name: Optional[str], stored: Optional[StoredFile]) -> 
 async def _read_all(messages: Sequence[BaseMessage], unread: Optional[Unread] = None) -> dict[str, _Read]:
     """The files of the messages, read at once rather than one after another."""
     addresses = _addresses(messages, unread)
-    reads = [asyncio.ensure_future(_read(url, name, stored)) for url, (name, stored) in addresses.items()]
+    reads = [
+        asyncio.ensure_future(_read(url, name, stored, media_type))
+        for url, (name, stored, media_type) in addresses.items()
+    ]
     try:
         return dict(zip(addresses, await asyncio.gather(*reads)))
     except BaseException:
@@ -215,9 +237,9 @@ async def _read_all(messages: Sequence[BaseMessage], unread: Optional[Unread] = 
 
 def _read_all_sync(messages: Sequence[BaseMessage], unread: Optional[Unread] = None) -> dict[str, _Read]:
     read: dict[str, _Read] = {}
-    for url, (name, stored) in _addresses(messages, unread).items():
+    for url, (name, stored, media_type) in _addresses(messages, unread).items():
         try:
-            read[url] = read_file_for_model_sync(url, name=name, stored=stored)
+            read[url] = read_file_for_model_sync(url, name=name, stored=stored, media_type=media_type)
         except _LeftOut as error:
             read[url] = error
     return read
@@ -240,6 +262,8 @@ def _assembled(messages: Sequence[BaseMessage], read: dict[str, _Read]) -> tuple
                 continue
             stored = _stored(block)
             url = _address(block)
+            if stored is None and url is None:
+                stored = _stored_by_content(block)
             if url is not None and url in read:
                 changed = True
                 file = read[url]

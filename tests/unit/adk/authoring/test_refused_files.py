@@ -267,3 +267,129 @@ async def test_a_stored_file_the_model_refused_is_not_read_in_a_later_turn() -> 
     assert conversation.reads == 1
     look, note = model.requests[-1].contents[0].parts
     assert note.text == _note("clip.bin", REFUSED_INLINE)
+
+
+class TestAFileKnownByItsStoredFile:
+    """A file the request names by an address, or carries the bytes of, is known by the stored file the turn knows."""
+
+    URL = "https://files.test/files/f-1/versions/v-1/content"
+
+    def _turn_memory(self, media_type: str):
+        from aion.core.a2a.file_contents import FileContents
+        from aion.core.a2a.files import StoredFile
+
+        contents = FileContents()
+        contents.put("file:f-1:v-1", DAT, url=self.URL, stored=StoredFile.create("f-1", "v-1"), media_type=media_type)
+        return contents
+
+    async def test_a_file_of_the_message_by_its_address(self, caplog) -> None:
+        """ADK's run request names a file of the message by an address the session does not name.
+
+        The turn stored the file and knows it at that address; a later turn
+        knows it there once the conversation read it. Both know the stored
+        file, so what the first turn learned holds in the second.
+        """
+        import logging
+
+        from aion.core.a2a.file_contents import keeping_file_contents
+
+        model = _file_inlining_lite_llm(_Refusing)()
+
+        def request() -> LlmRequest:
+            return LlmRequest(model="stand-in", contents=[types.Content(role="user", parts=[
+                types.Part(text="Look."),
+                types.Part(file_data=types.FileData(file_uri=self.URL, mime_type=REFUSED_INLINE, display_name="clip.bin")),
+            ])])
+
+        with caplog.at_level(logging.WARNING, logger="aion.core.agent.left_out_files"):
+            for _ in range(2):
+                with keeping_file_contents(self._turn_memory(REFUSED_INLINE)):
+                    [_ async for _ in model.generate_content_async(request())]
+                if len(model.requests) == 2:
+                    model.requests.clear()
+
+        [warning] = [record.getMessage() for record in caplog.records]
+        assert "(video/x-refused, file f-1 version v-1)" in warning
+        [later] = model.requests
+        look, note = later.contents[0].parts
+        assert note.text == _note("clip.bin", REFUSED_INLINE)
+
+    async def test_bytes_refused_in_this_turn_are_left_out_unread_in_the_next(self, caplog) -> None:
+        """Bytes of a stored file the turn stored or read; a later turn has the file by its address in the session."""
+        import logging
+        from types import SimpleNamespace
+
+        from google.adk.events import Event
+
+        from aion.adk.authoring.files import STORED_FILES_KEY
+        from aion.adk.authoring.invocation import reset_adk_ctx, set_adk_ctx
+        from aion.core.a2a.file_contents import FileContents, keeping_file_contents
+        from aion.core.agent.testing import InMemoryConversation, use_conversation
+
+        url = self.URL
+
+        class Recording(InMemoryConversation):
+            def __init__(self) -> None:
+                super().__init__(files={url: DAT})
+                self.reads = 0
+
+            async def read_file(self, part, *, max_bytes=None):
+                self.reads += 1
+                return await super().read_file(part, max_bytes=max_bytes)
+
+        conversation = Recording()
+        model = _file_inlining_lite_llm(_Refusing)()
+        first = LlmRequest(
+            model="stand-in",
+            contents=[types.Content(role="user", parts=[types.Part(text="Look."), _inline(DAT, REFUSED_INLINE, "clip.bin")])],
+        )
+        later = LlmRequest(model="stand-in", contents=[types.Content(role="user", parts=[
+            types.Part(text="Again."),
+            types.Part(file_data=types.FileData(file_uri=url, mime_type=REFUSED_INLINE, display_name="clip.bin")),
+        ])])
+        named = Event(author="user", custom_metadata={STORED_FILES_KEY: {url: {"fileId": "f-1", "fileVersionId": "v-1"}}})
+
+        with use_conversation(conversation):
+            with keeping_file_contents(self._turn_memory(REFUSED_INLINE)):
+                with caplog.at_level(logging.WARNING, logger="aion.core.agent.left_out_files"):
+                    [_ async for _ in model.generate_content_async(first)]
+            token = set_adk_ctx(SimpleNamespace(session=SimpleNamespace(events=[named])))
+            try:
+                with keeping_file_contents(FileContents()):
+                    [_ async for _ in model.generate_content_async(later)]
+            finally:
+                reset_adk_ctx(token)
+
+        [warning] = [record.getMessage() for record in caplog.records]
+        assert "(video/x-refused, file f-1 version v-1)" in warning
+        assert conversation.reads == 0
+        again, note = model.requests[-1].contents[0].parts
+        assert note.text == _note("clip.bin", REFUSED_INLINE)
+
+    @pytest.mark.parametrize(
+        ("kept_as", "named"),
+        [(REFUSED_INLINE, "file f-1 version v-1"), ("application/octet-stream", "not stored")],
+        ids=["the stored file's media type", "another media type"],
+    )
+    async def test_a_tools_media(self, caplog, kept_as: str, named: str) -> None:
+        """A tool returns the bytes of a file the turn read; with another media type they are another file."""
+        import logging
+
+        from aion.core.a2a.file_contents import keeping_file_contents
+
+        media = types.FunctionResponsePart(
+            inline_data=types.FunctionResponseBlob(data=DAT, mime_type=REFUSED_INLINE, display_name="clip.bin")
+        )
+        answer = types.FunctionResponse(id="call-1", name="read", response={"result": "done"}, parts=[media])
+        model = _file_inlining_lite_llm(_Refusing)()
+        request = LlmRequest(model="stand-in", contents=[
+            types.Content(role="user", parts=[types.Part(text="Read it.")]),
+            types.Content(role="user", parts=[types.Part(function_response=answer)]),
+        ])
+
+        with keeping_file_contents(self._turn_memory(kept_as)):
+            with caplog.at_level(logging.WARNING, logger="aion.core.agent.left_out_files"):
+                [_ async for _ in model.generate_content_async(request)]
+
+        [warning] = [record.getMessage() for record in caplog.records]
+        assert f"(video/x-refused, {named})" in warning

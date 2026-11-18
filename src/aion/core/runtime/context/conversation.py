@@ -571,7 +571,9 @@ class Conversation(ABC):
         async def download() -> bytes:
             return await fetch_file(await self.file_link(part), label=label, max_bytes=max_bytes)
 
-        content = await file_contents().load(content_key(part), download, url=part.url, stored=StoredFile.of(part))
+        content = await file_contents().load(
+            content_key(part), download, url=part.url, stored=StoredFile.of(part), media_type=part.media_type or None
+        )
         if max_bytes is not None and len(content) > max_bytes:
             raise ConversationFileTooLargeError(label, max_bytes)
         return content

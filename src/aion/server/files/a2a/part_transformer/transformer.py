@@ -470,7 +470,7 @@ def _keep_content(part: Part, content: bytes) -> None:
     """Keep the bytes of a file just stored for the turn it was stored in, under the identity its part now carries, and its address."""
     key = content_key(part)
     if key is not None:
-        file_contents().put(key, content, url=part.url, stored=StoredFile.of(part))
+        file_contents().put(key, content, url=part.url, stored=StoredFile.of(part), media_type=part.media_type or None)
 
 
 def _origin(event: Event) -> str:

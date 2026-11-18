@@ -190,6 +190,22 @@ class TestStoredFileByContent:
 
         assert contents.stored_file_with(b"content") == (self.ADDRESS, self.REPORT)
 
+    def test_a_media_type_asked_for_must_be_the_one_kept(self) -> None:
+        """A stored version is its bytes and its type: the same bytes with another type are another file."""
+        contents = FileContents()
+        contents.put("file:f-1:v-1", b"content", url=self.ADDRESS, stored=self.REPORT, media_type="application/pdf")
+
+        assert contents.stored_file_with(b"content", media_type="application/pdf") == (self.ADDRESS, self.REPORT)
+        assert contents.stored_file_with(b"content", media_type="Application/PDF; q=1") == (self.ADDRESS, self.REPORT)
+        assert contents.stored_file_with(b"content", media_type="text/plain") is None
+        assert contents.stored_file_with(b"content") == (self.ADDRESS, self.REPORT)
+
+    def test_a_media_type_asked_for_is_not_matched_by_one_unknown(self) -> None:
+        contents = FileContents()
+        contents.put("file:f-1:v-1", b"content", url=self.ADDRESS, stored=self.REPORT)
+
+        assert contents.stored_file_with(b"content", media_type="application/pdf") is None
+
     def test_outside_a_turn_nothing_is_found(self) -> None:
         outside = FileContents(keeps=False)
         outside.put("file:f-1:v-1", b"content", url=self.ADDRESS, stored=self.REPORT)

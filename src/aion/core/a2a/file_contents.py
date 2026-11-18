@@ -80,7 +80,7 @@ class FileContents:
         self._keys_by_url: dict[str, str] = {}
         self._too_large: set[str] = set()
         self._removed: set[str] = set()
-        self._stored: dict[str, tuple[str, StoredFile]] = {}
+        self._stored: dict[str, tuple[str, StoredFile, Optional[str]]] = {}
         self._keys_by_digest: dict[str, set[str]] = {}
         self._loading: dict[str, asyncio.Future[bytes]] = {}
         self._lock = threading.Lock()
@@ -97,7 +97,13 @@ class FileContents:
             return self._entries.get(key) if key is not None else None
 
     def put(
-            self, key: str, content: bytes, *, url: Optional[str] = None, stored: Optional[StoredFile] = None
+            self,
+            key: str,
+            content: bytes,
+            *,
+            url: Optional[str] = None,
+            stored: Optional[StoredFile] = None,
+            media_type: Optional[str] = None,
     ) -> bool:
         """Keep ``content`` under ``key``, findable by ``url`` too; whether it was kept.
 
@@ -109,6 +115,7 @@ class FileContents:
             url: The address a part holds for the file.
             stored: The stored file the part names, kept with ``url`` so the
                 content leads back to it (``stored_file_with``).
+            media_type: The stored file's media type, kept with ``stored``.
         """
         if not self._keeps or len(content) > file_settings.model_file_max_bytes:
             return False
@@ -116,15 +123,20 @@ class FileContents:
             self._entries[key] = content
             if url is not None:
                 self._keys_by_url[url] = key
-        self._remember_stored(key, content, url, stored)
+        self._remember_stored(key, content, url, stored, media_type)
         return True
 
-    def stored_file_with(self, content: bytes) -> Optional[tuple[str, StoredFile]]:
+    def stored_file_with(
+            self, content: bytes, *, media_type: Optional[str] = None
+    ) -> Optional[tuple[str, StoredFile]]:
         """The address and reference of the one stored file the turn holds with exactly ``content``.
 
         None when the turn holds no stored file with these bytes, and when it
         holds several: which of them a copy of the bytes came from cannot be
         told, and in a shared conversation they may have different owners.
+        Given ``media_type``, also None unless the stored file was kept with
+        that media type: a stored version is its bytes and its type, and the
+        same bytes with another type are another file.
         """
         if not self._keeps:
             return None
@@ -133,10 +145,30 @@ class FileContents:
             keys = self._keys_by_digest.get(digest)
             if keys is None or len(keys) != 1:
                 return None
-            return self._stored.get(next(iter(keys)))
+            found = self._stored.get(next(iter(keys)))
+        if found is None:
+            return None
+        url, stored, kept_media_type = found
+        if media_type is not None and _bare(kept_media_type) != _bare(media_type):
+            return None
+        return url, stored
+
+    def stored_file_at(self, url: str) -> Optional[StoredFile]:
+        """The stored file the turn holds at ``url``: one it stored, or read through the conversation."""
+        if not self._keeps:
+            return None
+        with self._lock:
+            key = self._keys_by_url.get(url)
+            found = self._stored.get(key) if key is not None else None
+        return found[1] if found is not None else None
 
     def _remember_stored(
-            self, key: str, content: bytes, url: Optional[str], stored: Optional[StoredFile]
+            self,
+            key: str,
+            content: bytes,
+            url: Optional[str],
+            stored: Optional[StoredFile],
+            media_type: Optional[str] = None,
     ) -> None:
         """Keep where the stored file ``key`` names is stored, findable by its bytes."""
         if not self._keeps or url is None or stored is None:
@@ -145,7 +177,7 @@ class FileContents:
         with self._lock:
             if key in self._stored:
                 return
-            self._stored[key] = (url, stored)
+            self._stored[key] = (url, stored, media_type or None)
             self._keys_by_digest.setdefault(digest, set()).add(key)
 
     async def load(
@@ -155,6 +187,7 @@ class FileContents:
             *,
             url: Optional[str] = None,
             stored: Optional[StoredFile] = None,
+            media_type: Optional[str] = None,
     ) -> bytes:
         """The content under ``key``, loading it once when it is not kept.
 
@@ -162,15 +195,15 @@ class FileContents:
         download. A failed load is not kept: the next reader tries again.
         Content kept under another key is found by ``url`` as well: a file the
         server stored is kept under its version, and a reader that knows only
-        its address asks under the address. ``stored`` is kept with the
-        content, as by ``put``.
+        its address asks under the address. ``stored`` and ``media_type`` are
+        kept with the content, as by ``put``.
         """
         content = self.get(key)
         if content is not None:
             if url is not None and self._keeps:
                 with self._lock:
                     self._keys_by_url[url] = key
-            self._remember_stored(key, content, url, stored)
+            self._remember_stored(key, content, url, stored, media_type)
             return content
         if url is not None:
             content = self.get_by_url(url)
@@ -184,7 +217,7 @@ class FileContents:
             self._loading[key] = loading
             loading.add_done_callback(lambda _: self._loading.pop(key, None))
         content = await asyncio.shield(loading)
-        self.put(key, content, url=url, stored=stored)
+        self.put(key, content, url=url, stored=stored, media_type=media_type)
         return content
 
     def is_too_large(self, key: str) -> bool:
@@ -224,6 +257,13 @@ CALL_CONTEXT_KEY = "aion:file-contents"
 _KEEPS_NOTHING = FileContents(keeps=False)
 
 _current: ContextVar[Optional[FileContents]] = ContextVar("aion_file_contents", default=None)
+
+
+def _bare(media_type: Optional[str]) -> Optional[str]:
+    """A media type without its parameters, in lower case; None for none."""
+    if not media_type:
+        return None
+    return media_type.split(";", 1)[0].strip().lower() or None
 
 
 @contextmanager

@@ -468,3 +468,59 @@ class TestReading:
         assert conversation.reads == [self.URL]
         [request] = service.requests
         assert _files_of(request) == [_note("data.bin", REFUSED)["text"]]
+
+
+class TestBytesOfAStoredFile:
+    """A block that carries the bytes of a stored file the turn read is known by that stored file.
+
+    A graph that hands a model again the blocks ``inline_files`` gave it sends
+    the file by its content, without the reference; a later turn has the
+    block from the state by its address (``aion.server.files.turn``).
+    """
+
+    URL = "https://files.test/files/f-1/versions/v-1/content"
+
+    def _turn_memory(self, media_type: str) -> FileContents:
+        from aion.core.a2a.files import StoredFile
+
+        contents = FileContents()
+        contents.put("file:f-1:v-1", DAT, url=self.URL, stored=StoredFile.create("f-1", "v-1"), media_type=media_type)
+        return contents
+
+    async def test_refused_in_this_turn_it_is_left_out_unread_in_the_next(self, service: _ModelService, caplog) -> None:
+        import logging
+
+        reads: list[str] = []
+
+        class Recording(InMemoryConversation):
+            async def read_file(self, part, *, max_bytes=None):
+                reads.append(part.url)
+                return await super().read_file(part, max_bytes=max_bytes)
+
+        stored = create_file_block(url=self.URL, mime_type=REFUSED, filename="data.bin")
+        stored["extras"] = {**stored.get("extras", {}), "aion:file": {"fileId": "f-1", "fileVersionId": "v-1"}}
+        model = _model()
+
+        with use_conversation(Recording(files={self.URL: DAT})):
+            with keeping_file_contents(self._turn_memory(REFUSED)):
+                with caplog.at_level(logging.WARNING, logger="aion.core.agent.left_out_files"):
+                    await model.ainvoke([_question(_block(DAT, REFUSED, "data.bin"))])
+            service.requests.clear()
+            with keeping_file_contents(FileContents()):
+                await model.ainvoke([_question(stored)])
+
+        [warning] = [record.getMessage() for record in caplog.records]
+        assert f"({REFUSED}, file f-1 version v-1)" in warning
+        assert reads == []
+        [request] = service.requests
+        assert _files_of(request) == [_note("data.bin", REFUSED)["text"]]
+
+    async def test_with_another_media_type_it_is_another_file(self, service: _ModelService, caplog) -> None:
+        import logging
+
+        with keeping_file_contents(self._turn_memory("application/octet-stream")):
+            with caplog.at_level(logging.WARNING, logger="aion.core.agent.left_out_files"):
+                await _model().ainvoke([_question(_block(DAT, REFUSED, "data.bin"))])
+
+        [warning] = [record.getMessage() for record in caplog.records]
+        assert f"({REFUSED}, not stored)" in warning
