@@ -27,11 +27,18 @@ An entry is kept under the file's own identity (``content_key``) - the id of
 the stored version, or the address for a file the server did not store - and
 found by the address a part holds as well: a model request names a file by
 its address alone.
+
+The turn also keeps, for a stored file, where it is stored: its address and
+its reference (``StoredFile``). Content that is a stored file's - a graph
+that puts a file it read back into its state, by its content - is found by
+the bytes alone (``stored_file_with``), so the framework's state links the
+stored file again instead of storing a copy.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import threading
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
@@ -73,6 +80,8 @@ class FileContents:
         self._keys_by_url: dict[str, str] = {}
         self._too_large: set[str] = set()
         self._removed: set[str] = set()
+        self._stored: dict[str, tuple[str, StoredFile]] = {}
+        self._keys_by_digest: dict[str, set[str]] = {}
         self._loading: dict[str, asyncio.Future[bytes]] = {}
         self._lock = threading.Lock()
 
@@ -87,10 +96,19 @@ class FileContents:
             key = self._keys_by_url.get(url)
             return self._entries.get(key) if key is not None else None
 
-    def put(self, key: str, content: bytes, *, url: Optional[str] = None) -> bool:
+    def put(
+            self, key: str, content: bytes, *, url: Optional[str] = None, stored: Optional[StoredFile] = None
+    ) -> bool:
         """Keep ``content`` under ``key``, findable by ``url`` too; whether it was kept.
 
         A file larger than a model request may carry is not kept.
+
+        Args:
+            key: The file's identity (``content_key``).
+            content: The file's bytes.
+            url: The address a part holds for the file.
+            stored: The stored file the part names, kept with ``url`` so the
+                content leads back to it (``stored_file_with``).
         """
         if not self._keeps or len(content) > file_settings.model_file_max_bytes:
             return False
@@ -98,7 +116,37 @@ class FileContents:
             self._entries[key] = content
             if url is not None:
                 self._keys_by_url[url] = key
+        self._remember_stored(key, content, url, stored)
         return True
+
+    def stored_file_with(self, content: bytes) -> Optional[tuple[str, StoredFile]]:
+        """The address and reference of the one stored file the turn holds with exactly ``content``.
+
+        None when the turn holds no stored file with these bytes, and when it
+        holds several: which of them a copy of the bytes came from cannot be
+        told, and in a shared conversation they may have different owners.
+        """
+        if not self._keeps:
+            return None
+        digest = hashlib.sha256(content).hexdigest()
+        with self._lock:
+            keys = self._keys_by_digest.get(digest)
+            if keys is None or len(keys) != 1:
+                return None
+            return self._stored.get(next(iter(keys)))
+
+    def _remember_stored(
+            self, key: str, content: bytes, url: Optional[str], stored: Optional[StoredFile]
+    ) -> None:
+        """Keep where the stored file ``key`` names is stored, findable by its bytes."""
+        if not self._keeps or url is None or stored is None:
+            return
+        digest = hashlib.sha256(content).hexdigest()
+        with self._lock:
+            if key in self._stored:
+                return
+            self._stored[key] = (url, stored)
+            self._keys_by_digest.setdefault(digest, set()).add(key)
 
     async def load(
             self,
@@ -106,6 +154,7 @@ class FileContents:
             loader: Callable[[], Awaitable[bytes]],
             *,
             url: Optional[str] = None,
+            stored: Optional[StoredFile] = None,
     ) -> bytes:
         """The content under ``key``, loading it once when it is not kept.
 
@@ -113,13 +162,15 @@ class FileContents:
         download. A failed load is not kept: the next reader tries again.
         Content kept under another key is found by ``url`` as well: a file the
         server stored is kept under its version, and a reader that knows only
-        its address asks under the address.
+        its address asks under the address. ``stored`` is kept with the
+        content, as by ``put``.
         """
         content = self.get(key)
         if content is not None:
             if url is not None and self._keeps:
                 with self._lock:
                     self._keys_by_url[url] = key
+            self._remember_stored(key, content, url, stored)
             return content
         if url is not None:
             content = self.get_by_url(url)
@@ -133,7 +184,7 @@ class FileContents:
             self._loading[key] = loading
             loading.add_done_callback(lambda _: self._loading.pop(key, None))
         content = await asyncio.shield(loading)
-        self.put(key, content, url=url)
+        self.put(key, content, url=url, stored=stored)
         return content
 
     def is_too_large(self, key: str) -> bool:

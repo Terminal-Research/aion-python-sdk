@@ -30,7 +30,7 @@ from aion.core.a2a.artifacts import ARTIFACT_VERSION_KEY
 from aion.core.a2a.content import conversation_messages, data_of, text_of
 from aion.core.a2a.enums import ArtifactId
 from aion.core.a2a.file_contents import content_key, file_contents
-from aion.core.a2a.files import DEFAULT_MAX_FILE_BYTES, ConversationFile, files_of
+from aion.core.a2a.files import DEFAULT_MAX_FILE_BYTES, ConversationFile, StoredFile, files_of
 from aion.core.exceptions import ConversationFileError, ConversationFileTooLargeError, ConversationUnavailableError
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 
@@ -571,7 +571,7 @@ class Conversation(ABC):
         async def download() -> bytes:
             return await fetch_file(await self.file_link(part), label=label, max_bytes=max_bytes)
 
-        content = await file_contents().load(content_key(part), download, url=part.url)
+        content = await file_contents().load(content_key(part), download, url=part.url, stored=StoredFile.of(part))
         if max_bytes is not None and len(content) > max_bytes:
             raise ConversationFileTooLargeError(label, max_bytes)
         return content

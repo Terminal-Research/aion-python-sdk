@@ -10,6 +10,18 @@ file, and the other gets the same stored file (``TurnUploads``), whatever
 order the framework produces them in. The task and the framework's state then point at one
 stored file.
 
+The framework's state may also come to hold the content of a file that is
+stored already: a graph that returns into its state the messages
+``inline_files`` gave it for a model request, a tool that returns the bytes
+of a file it read. Such content is not stored again. When the turn read or
+stored exactly one stored file with these bytes (``FileContents.stored_file_with``),
+the state links that file - its address and its reference, its retention
+deadline included - so a conversation does not gain a copy of the file on
+every turn. Bytes the turn holds for several stored files are stored as any
+other content: which of them the bytes came from cannot be told. What the
+server sends to the client is stored as before: in a shared conversation, a
+file of one participant is not available to another.
+
 The server opens one for every turn (``turn_files``); a framework adapter
 reaches it with ``current_turn_files``. With no storage backend configured
 there is none: the framework's state keeps the bytes, as the task does.
@@ -17,6 +29,7 @@ there is none: the framework's state keeps the bytes, as the task does.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
@@ -26,11 +39,16 @@ from typing import Optional, TypeVar
 from a2a.server.events import Event
 from a2a.types import Message, Part, Role
 
+from aion.core.a2a.file_contents import file_contents
+from aion.core.a2a.files import StoredFile
 from aion.core.a2a.models import A2AOutbox
 from aion.core.exceptions import AionError
 from aion.core.runtime.context import get_aion_runtime_context
 from aion.server.files.a2a import A2AFileTransformer, TurnUploads
+from aion.server.files.a2a.part_transformer import part_fields
 from aion.server.files.storage import UploadFailure, resolve_upload_context
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "StateFileNotStoredError",
@@ -86,12 +104,14 @@ class TurnFiles:
         """The event as a framework keeps it in its state: its inline files stored, its parts linking to them.
 
         The files are the agent's, so each keeps the retention its part asks
-        for, as when the agent sends it out. An event with no inline file is
-        returned as it is.
+        for, as when the agent sends it out. A file the turn read or stored
+        already links that stored file instead, with its own retention. An
+        event with no inline file is returned as it is.
 
         Raises:
             StateFileNotStoredError: A file could not be stored.
         """
+        event = _linking_stored_files(event)
         transform = await self._transformer.transform(
             event,
             upload_context=resolve_upload_context(
@@ -129,6 +149,34 @@ class TurnFiles:
         if task is outbox.task and message is outbox.message:
             return outbox
         return A2AOutbox(task=task, message=message)
+
+
+def _linking_stored_files(event: E) -> E:
+    """A copy of the event whose inline files the turn knows as stored files link them; the event itself without any."""
+    contents = file_contents()
+    found: list[tuple[int, int, str, StoredFile]] = []
+    for list_index, (parts, _) in enumerate(part_fields(event)):
+        for index, part in enumerate(parts):
+            if part.WhichOneof("content") != "raw":
+                continue
+            known = contents.stored_file_with(bytes(part.raw))
+            if known is not None:
+                found.append((list_index, index, *known))
+    if not found:
+        return event
+    linked = type(event)()
+    linked.CopyFrom(event)
+    lists = part_fields(linked)
+    for list_index, index, url, stored in found:
+        part = lists[list_index][0][index]
+        part.url = url
+        stored.write_to(part)
+        logger.debug(
+            "A file of the framework's state is stored file %s version %s already; it is linked, not stored again",
+            stored.file_id,
+            stored.version_id,
+        )
+    return linked
 
 
 _current: ContextVar[Optional[TurnFiles]] = ContextVar("aion_turn_files", default=None)

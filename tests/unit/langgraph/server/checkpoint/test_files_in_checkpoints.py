@@ -18,12 +18,15 @@ from langchain_core.messages.content import create_file_block
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 
+import aion.core.runtime.context.conversation as conversation_module
+from aion.core.a2a.file_contents import FileContents, keeping_file_contents
 from aion.core.a2a.files import STORED_FILE_KEY, StoredFile
 from aion.core.a2a.models import A2AOutbox
 from aion.core.agent.testing import InMemoryConversation, use_conversation
 from aion.langgraph.authoring import inline_files
 from aion.langgraph.server.checkpoint.backends.memory import AionInMemorySaver, MemoryBackend
 from aion.langgraph.server.converters.a2a_to_lc import A2AToLcConverter
+from aion.core.runtime.context.conversation import Conversation
 from aion.langgraph.server.converters.lc_to_a2a import LcToA2AConverter
 from aion.server.agent.execution.request_executor import public_reason_of
 from aion.server.files.storage import FileUploadErrorCode, UploadFailure
@@ -221,3 +224,54 @@ class TestReadingALinkedFile:
 
         assert StoredFile.from_metadata(block["extras"][STORED_FILE_KEY]) == StoredFile.create("file-1", "ver-1")
         assert StoredFile.of(LcToA2AConverter.from_block(block)) == StoredFile.create("file-1", "ver-1")
+
+
+class TestAGraphThatReturnsTheInlinedMessages:
+    """A graph that returns into its state the messages ``inline_files`` gave it does not store their files again.
+
+    The copies carry the file's content in place of its address; the
+    checkpoint links the stored file the turn read them from, with its own
+    reference and retention, on every turn.
+    """
+
+    ADDRESS = "https://files.test/files/inbound/versions/v-1/content"
+    INBOUND = StoredFile.create("inbound", "v-1", retention_expires_at="2026-12-18T00:00:00Z", byte_size=len(PDF))
+
+    class _Reading(InMemoryConversation):
+        """Reads as the server's conversation does: through the turn's memory and the part's address."""
+
+        read_file = Conversation.read_file
+
+    @pytest.fixture(autouse=True)
+    def downloads(self, monkeypatch) -> list[str]:
+        fetched: list[str] = []
+
+        async def fetch(url: str, *, label: str, max_bytes=None) -> bytes:
+            fetched.append(url)
+            return PDF
+
+        monkeypatch.setattr(conversation_module, "fetch_file", fetch)
+        return fetched
+
+    def _question(self) -> HumanMessage:
+        part = Part(url=self.ADDRESS, media_type="application/pdf", filename="report.pdf")
+        self.INBOUND.write_to(part)
+        return HumanMessage(content=A2AToLcConverter.from_parts([Part(text="Summarize the report"), part]))
+
+    async def test_the_checkpoint_keeps_the_stored_file_turn_after_turn(self, downloads) -> None:
+        async def answer(state):
+            inlined = await inline_files(state["messages"])
+            return {"messages": [*inlined, AIMessage("Summary.")]}
+
+        graph = _graph(answer)
+        backend = NumberingBackend()
+        for message in (self._question(), HumanMessage("And the totals?")):
+            with storing_turn(backend), keeping_file_contents(FileContents()), use_conversation(self._Reading()):
+                await graph.ainvoke({"messages": [message]}, CONFIG)
+
+        report = (await graph.aget_state(CONFIG)).values["messages"][0].content[1]
+        assert backend.stored == []
+        assert report["url"] == self.ADDRESS and "base64" not in report
+        assert StoredFile.from_metadata(report["extras"][STORED_FILE_KEY]) == self.INBOUND
+        assert PDF_B64 not in _saved(graph.checkpointer)
+        assert downloads == [self.ADDRESS, self.ADDRESS]

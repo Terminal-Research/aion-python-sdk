@@ -321,7 +321,7 @@ def _read_from_address(url: str, *, name: Optional[str], stored: Optional[Stored
         if size <= limit:
             content = b"".join(chunks)
             logger.debug("Downloaded file %r (%d bytes) from %s", label, size, urlsplit(url).hostname)
-            contents.put(key, content, url=url)
+            contents.put(key, content, url=url, stored=stored)
     if content is None or len(content) > limit:
         raise _too_large(key, label, limit, stored)
     return content

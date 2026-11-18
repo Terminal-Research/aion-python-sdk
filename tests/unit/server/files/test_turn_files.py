@@ -188,3 +188,60 @@ class TestTurnFiles:
         outbox = A2AOutbox(message=Message(message_id="m-1", role=Role.ROLE_AGENT, parts=[Part(text="done")]))
         with storing_turn(NumberingBackend()) as files:
             assert await files.keep_outbox(outbox) is outbox
+
+
+class TestAFileStoredAlready:
+    """Content the turn read or stored as a stored file is linked to it in the framework's state, not stored again.
+
+    A graph that returns into its state the messages ``inline_files`` gave it,
+    or a tool that returns the bytes of a file it read, hands the state the
+    content of a stored file. What the client is sent is stored as before.
+    """
+
+    ADDRESS = "https://files.test/files/inbound/versions/v-1/content"
+    INBOUND = StoredFile.create("inbound", "v-1", retention_expires_at="2026-12-18T00:00:00Z", byte_size=len(PDF))
+
+    def _read(self, address: str = ADDRESS, stored: StoredFile = INBOUND) -> None:
+        """What the turn's conversation keeps when it reads a stored file."""
+        file_contents().put(f"file:{stored.file_id}:{stored.version_id}", PDF, url=address, stored=stored)
+
+    async def test_it_is_linked_with_its_own_reference(self) -> None:
+        backend = NumberingBackend()
+        with storing_turn(backend) as files:
+            self._read()
+            [kept] = await files.keep_parts([_report()])
+
+        assert backend.stored == []
+        assert kept.url == self.ADDRESS and not kept.raw
+        assert StoredFile.of(kept) == self.INBOUND
+        assert (kept.filename, kept.media_type) == ("report.pdf", "application/pdf")
+
+    async def test_an_outbox_links_it_too(self) -> None:
+        backend = NumberingBackend()
+        outbox = A2AOutbox(message=Message(message_id="m-1", role=Role.ROLE_AGENT, parts=[Part(text="done"), _report()]))
+        with storing_turn(backend) as files:
+            self._read()
+            kept = await files.keep_outbox(outbox)
+
+        assert backend.stored == []
+        assert StoredFile.of(kept.message.parts[1]) == self.INBOUND
+        assert outbox.message.parts[1].raw == PDF
+
+    async def test_bytes_of_two_stored_files_are_stored_as_any_content(self) -> None:
+        backend = NumberingBackend()
+        with storing_turn(backend) as files:
+            self._read()
+            self._read("https://files.test/files/other/versions/v-1/content", StoredFile.create("other", "v-1"))
+            [kept] = await files.keep_parts([_report()])
+
+        assert len(backend.stored) == 1
+        assert kept.url == "https://files.test/1?grant=g"
+
+    async def test_what_the_client_is_sent_is_stored_as_before(self) -> None:
+        backend = NumberingBackend()
+        with storing_turn(backend) as files:
+            self._read()
+            sent = await files._transformer.transform(_artifact_event(_report()), turn=files.uploads)
+
+        assert len(backend.stored) == 1
+        assert sent.event.artifact.parts[0].url == "https://files.test/1?grant=g"

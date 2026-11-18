@@ -21,6 +21,13 @@ messages it sends:
     async def answer(state):
         return {"messages": [await model.ainvoke(await inline_files(state["messages"]))]}
 
+Only the model's answer goes back into the state. The messages ``inline_files``
+returns keep the ids of the ones they copy, so returning them replaces the
+messages of the state with copies that carry the files' content. The
+server's checkpointer then links each such file to the stored file the turn
+read it from, and stores it only when it cannot tell which one that is; a
+checkpointer of the graph's own keeps the bytes in every checkpoint.
+
 Every file of the messages is sent, on every call: a model keeps nothing
 between requests, so a graph that should stop sending an old file leaves its
 message out, as it trims any history. A file larger than
@@ -250,10 +257,12 @@ async def inline_files(messages: Sequence[BaseMessage]) -> list[BaseMessage]:
     """The messages with every file given by its address replaced by its content.
 
     A message without such a file is returned as it is; one with a file is
-    copied, so the messages passed in - the graph's state - keep the address.
-    A file larger than a model request may carry, and a stored file that is
-    not available to the turn's sender, is replaced by a text note that says
-    so.
+    copied, under the same id, so the messages passed in - the graph's state -
+    keep the address. Send the copies to the model and return only its answer
+    into the state: returned, the copies replace the state's messages and
+    bring the files' content into it. A file larger than a model request may
+    carry, a stored file that is not available to the turn's sender, and one
+    that is no longer stored, is replaced by a text note that says so.
 
     Args:
         messages: The messages about to be sent to a model.
