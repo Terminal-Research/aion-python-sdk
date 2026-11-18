@@ -256,6 +256,11 @@ read grant for the same version:
 | The push delivery of an abandoned task's settlement | The same. | The deployment's daemon |
 | An agent's read (`ConversationFile.read`, `ConversationFile.link`) | The part's own link while it works, otherwise one supplied for it; a file the storage refuses to the turn's attribution raises `ConversationFileForbiddenError`, a file past its retention deadline or gone by the storage's word raises `ConversationFileRemovedError`, and the model helpers leave either out with a note. | The turn's attribution |
 
+A turn's push asks with the carrier of the message whose turn it is, as
+every other callback of the turn does. Aion issues a carrier for 24 hours
+and refuses it after that, so the push of a turn that runs longer gets no
+link and keeps the address; the SDK does not read the carrier's expiry.
+
 A read carries no message, so the request handler activates the usage
 attribution extension alone for it (`_declare_link_scope`), by the rules a
 message follows: its URI in `A2A-Extensions` and its carrier in
