@@ -190,9 +190,35 @@ class TestEmitMessageStream:
             emit_message(writer, answer())
         writer.assert_not_called()
 
-    def test_text_is_not_an_iterator_of_chunks(self, writer):
+    def test_text_is_a_whole_message(self, writer):
+        result = emit_message(writer, "It is sunny.")
+
+        [sent] = self._sent(writer)
+        assert type(sent) is AIMessage
+        assert (sent.text, bool(sent.id)) == ("It is sunny.", True)
+        assert result is sent
+
+    def test_the_whole_message_takes_the_id_the_chunks_share(self, writer):
+        # the chunks of one model call: the server knows the whole message as that call's own
+        result = emit_message(writer, iter([AIMessageChunk(content="It ", id="run-1"), AIMessageChunk(content="is", id="run-1")]))
+        assert result.id == "run-1"
+
+    def test_the_whole_message_gets_an_id_of_its_own_when_the_chunks_share_none(self, writer):
+        mixed = emit_message(writer, iter([AIMessageChunk(content="a", id="run-1"), AIMessageChunk(content="b", id="run-2")]))
+        text = emit_message(writer, iter(["a", "b"]))
+        assert mixed.id not in ("run-1", "run-2")
+        assert text.id
+
+    def test_a_message_of_another_role_is_not_an_iterator_of_chunks(self, writer):
+        from langchain_core.messages import HumanMessage
+
         with pytest.raises(TypeError):
-            emit_message(writer, "It is sunny.")
+            emit_message(writer, HumanMessage(content="hi"))
+        writer.assert_not_called()
+
+    def test_bytes_are_not_an_iterator_of_chunks(self, writer):
+        with pytest.raises(TypeError):
+            emit_message(writer, b"It is sunny.")
         writer.assert_not_called()
 
     async def test_aemit_message_streams_an_async_iterator(self, writer):

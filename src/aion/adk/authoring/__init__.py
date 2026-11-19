@@ -13,7 +13,7 @@ try:
     )
     from .files import inline_files, inline_files_before_model
     from .models import ModelChoice, aion_lite_llm
-    from .invocation.emitters import emit_artifact, emit_card, emit_reaction, emit_message, emit_thinking
+    from .invocation.emitters import aemit_message, emit_artifact, emit_card, emit_reaction, emit_message, emit_thinking
 except ModuleNotFoundError as exc:
     if is_own_module(exc.name):
         raise
@@ -27,6 +27,7 @@ __all__ = [
     "ModelChoice",
     "inline_files",
     "inline_files_before_model",
+    "aemit_message",
     "emit_artifact",
     "emit_card",
     "emit_reaction",

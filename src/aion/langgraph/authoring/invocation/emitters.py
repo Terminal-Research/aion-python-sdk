@@ -8,7 +8,7 @@ Architecture (see thread_message_concept.md):
 """
 
 import logging
-from collections.abc import AsyncIterable, Iterable, Iterator
+from collections.abc import AsyncIterable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 
 from a2a.types import Artifact
@@ -18,6 +18,7 @@ from langchain_core.messages import AIMessage, AIMessageChunk
 from langchain_core.runnables.config import var_child_runnable_config
 from langgraph.constants import TAG_NOSTREAM
 from langgraph.types import StreamWriter
+from pydantic import BaseModel
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -110,7 +111,10 @@ class _StreamedSection:
 
     Every item goes out as a chunk of ``aion:stream-delta`` with the routing
     target and the metadata; ``close`` sends the whole message that ends the
-    section, and its text is not sent again.
+    section, and its text is not sent again. When every chunk carried one id,
+    the chunks of one model call, the whole message takes that id: should
+    LangGraph stream the call as well, the server knows the message as that
+    call's own and does not send its text a second time.
     """
 
     def __init__(self, writer: StreamWriter, routing: MessageActionPayload | None, metadata: dict | None):
@@ -118,6 +122,7 @@ class _StreamedSection:
         self._routing = routing
         self._metadata = metadata
         self._text = ""
+        self._ids: set[str | None] = set()
 
     def send(self, item: Any) -> None:
         if isinstance(item, str):
@@ -129,12 +134,14 @@ class _StreamedSection:
             )
             return
         _emit_one(self._writer, item, self._routing, self._metadata)
+        self._ids.add(item.id)
         self._text += item.text
 
     def close(self) -> AIMessage | None:
         if not self._text:
             return None
-        message = AIMessage(content=self._text, id=str(uuid4()))
+        shared_id = next(iter(self._ids)) if len(self._ids) == 1 else None
+        message = AIMessage(content=self._text, id=shared_id or str(uuid4()))
         _emit_one(self._writer, message, self._routing, self._metadata)
         return message
 
@@ -172,12 +179,13 @@ def _emit_one(
 
 def emit_message(
         writer: StreamWriter,
-        message: AIMessage | AIMessageChunk | Iterable[str | AIMessageChunk],
+        message: str | AIMessage | AIMessageChunk | Iterable[str | AIMessageChunk],
         routing: MessageActionPayload | None = None,
         metadata: dict | None = None,
 ) -> AIMessage | AIMessageChunk | None:
     """Emit a message, a chunk of the streamed answer, or a whole streamed answer.
 
+    - str > the text as an AIMessage, a message as below
     - AIMessage > TaskStatusUpdateEvent(working, message=...), kept in the task's history
     - AIMessageChunk > TaskArtifactUpdateEvent(STREAM_DELTA), a chunk of the streamed answer;
       a full AIMessage that follows the chunks ends their section instead of becoming a
@@ -197,11 +205,13 @@ def emit_message(
     does not yield does not reach the client. A call that started before the
     iterator is read - the iterator was read before it was passed here, or
     code running elsewhere feeds it, another thread or a task started
-    earlier - and one given ``tags`` in a config of its own
-    stay on the graph's stream; the server sends the call's chunks from there
-    and leaves out the chunks of the same call emitted here, ``routing`` and
-    ``metadata`` with them. An iterator that raises ends the section with
-    what it yielded, and the error is logged.
+    earlier - and one given ``tags`` in a config of its own stay on the
+    graph's stream. For an iterator of that call's chunks the server sends
+    the call from the graph's stream and leaves out what is emitted here,
+    ``routing`` and ``metadata`` with it; text taken from such a call carries
+    no id to know it by, and the answer reaches the client twice. An
+    iterator that raises ends the section with what it yielded, and the
+    error is logged.
 
     Reading an iterator blocks the thread that runs the node; in an async
     node, ``await aemit_message(writer, llm.astream(...))`` streams without
@@ -209,15 +219,16 @@ def emit_message(
 
     Args:
         writer: LangGraph StreamWriter from node signature
-        message: LangChain message to emit (AIMessage or AIMessageChunk), or an
-                 iterator of str or AIMessageChunk to stream
+        message: Text, a LangChain message to emit (AIMessage or AIMessageChunk),
+                 or an iterator of str or AIMessageChunk to stream
         routing: Optional delivery routing target (MessageActionPayload)
         metadata: Optional user-defined metadata forwarded to A2A Message.metadata.
                   Keys must not start with "aion:" (reserved for service use).
 
     Returns:
-        The message or chunk emitted; for an iterator, the whole message that
-        ended its section, or None when it yielded no text.
+        The message or chunk emitted, the AIMessage built for text; for an
+        iterator, the whole message that ended its section, or None when it
+        yielded no text.
 
     Raises:
         TypeError: ``message`` is an async iterator, which ``aemit_message``
@@ -225,20 +236,23 @@ def emit_message(
 
     Example:
         def my_node(state: dict, writer: StreamWriter):
-            emit_message(writer, AIMessage(content="Done"))
+            emit_message(writer, "Done")
 
         def answer_node(state: dict, writer: StreamWriter):
             return {"messages": [emit_message(writer, llm.stream(state["messages"]))]}
     """
+    if isinstance(message, str):
+        message = AIMessage(content=message)
     if isinstance(message, AIMessage):
         _emit_one(writer, message, routing, metadata)
         return message
     if hasattr(message, "__aiter__"):
         raise TypeError("emit_message() cannot read an async iterator; stream it with `await aemit_message(...)`.")
-    if isinstance(message, (str, bytes)) or not isinstance(message, Iterable):
+    # A pydantic model - a message of another role, say - iterates over its fields, not chunks.
+    if isinstance(message, (bytes, Mapping, BaseModel)) or not isinstance(message, Iterable):
         raise TypeError(
-            f"emit_message() takes an AIMessage, an AIMessageChunk or an iterator of them, "
-            f"not {type(message).__name__}."
+            f"emit_message() takes text, an AIMessage, an AIMessageChunk or an iterator of str or "
+            f"AIMessageChunk, not {type(message).__name__}."
         )
     section = _StreamedSection(writer, routing, metadata)
     try:
@@ -252,7 +266,7 @@ def emit_message(
 
 async def aemit_message(
         writer: StreamWriter,
-        message: AIMessage | AIMessageChunk | Iterable[str | AIMessageChunk] | AsyncIterable[str | AIMessageChunk],
+        message: str | AIMessage | AIMessageChunk | Iterable[str | AIMessageChunk] | AsyncIterable[str | AIMessageChunk],
         routing: MessageActionPayload | None = None,
         metadata: dict | None = None,
 ) -> AIMessage | AIMessageChunk | None:
@@ -265,7 +279,7 @@ async def aemit_message(
 
     Args:
         writer: LangGraph StreamWriter from node signature
-        message: LangChain message, or a sync or async iterator of str or AIMessageChunk
+        message: Text, a LangChain message, or a sync or async iterator of str or AIMessageChunk
         routing: Optional delivery routing target (MessageActionPayload)
         metadata: Optional user-defined metadata, as for ``emit_message``
 

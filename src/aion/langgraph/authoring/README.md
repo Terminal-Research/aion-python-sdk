@@ -262,7 +262,7 @@ def streaming_node(state: dict, writer: StreamWriter):
     return state
 ```
 
-`emit_message` also takes an iterator of `str` or `AIMessageChunk`, `llm.stream(...)` say, and `aemit_message` an async iterator as well, `llm.astream(...)`. The iterator streams as one section, ended by the whole message, which they return for the node to keep in its state:
+`emit_message` also takes text, sent as an `AIMessage`, and an iterator of `str` or `AIMessageChunk`, `llm.stream(...)` say, and `aemit_message` an async iterator as well, `llm.astream(...)`. The iterator streams as one section, ended by the whole message, which they return for the node to keep in its state:
 
 ```python
 def answer_node(state: dict, writer: StreamWriter):

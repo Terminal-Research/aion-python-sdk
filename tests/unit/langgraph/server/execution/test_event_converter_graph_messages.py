@@ -826,3 +826,26 @@ def test_a_nodes_copy_of_a_streamed_call_produces_no_event() -> None:
 
     assert _deltas(events) == [("It is ", False, False), ("sunny.", True, False), ("", True, True)]
     assert _messages(events) == []
+
+
+async def test_a_models_stream_read_before_the_thread_gets_it_still_goes_out_once() -> None:
+    """The call started before the thread reads it, so LangGraph streams it: the
+    client gets that section, and neither the thread's chunks nor its whole message."""
+    model = _sunny_model()
+
+    async def respond(state):
+        stream = model.astream(state["messages"])
+        first = await anext(stream)
+
+        async def answer():
+            yield first
+            async for chunk in stream:
+                yield chunk
+
+        await _thread().reply(answer())
+        return {}
+
+    events = await _run_graph(("respond", respond))
+
+    assert _sections(events) == ["It is sunny."]
+    assert _messages(events) == []

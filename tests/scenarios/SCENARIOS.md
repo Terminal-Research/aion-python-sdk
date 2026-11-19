@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-270 scenarios in 50 files, 611 runs across 2 frameworks: 567 run, 43 skipped, 1 independent of the framework.
+270 scenarios in 50 files, 611 runs across 2 frameworks: 566 run, 44 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -22,7 +22,7 @@ A status cell reads `✓` when it runs, `skip` when `frameworks.UNSUPPORTED`, `f
 | Framework | Agent package | Entry | SDK extras | Commands implemented |
 |---|---|---|---|---|
 | langgraph | `tests.scenarios.agents.langgraph_core` | `graph.py:create_graph` | `langgraph-server` | 30 of 30 |
-| adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 30 of 30 |
+| adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 29 of 30 |
 
 The `native` suite runs a second agent per framework instead: an ordinary agent on the framework's own path - a model, a tool, the framework's loop and memory - with no Aion authoring API and no part of the command contract. Its cells name the agent.
 
@@ -30,6 +30,12 @@ The `native` suite runs a second agent per framework instead: an ordinary agent 
 |---|---|---|---|
 | langgraph | `tests.scenarios.agents.langgraph_native` | `graph.py:create_graph` | `langgraph-server` |
 | adk | `tests.scenarios.agents.adk_native` | `agent.py:create_agent` | `adk-server` |
+
+Pairs a framework genuinely cannot do, which is what a `skip` cell means:
+
+| Framework | Command | Reason |
+|---|---|---|
+| adk | `stream-marked` | ADK's Thread.reply streams text only, and text cannot say it is the last chunk: the section ends with the end mark |
 
 Features a framework's native agent does not have; a native scenario driving one `skip`s there:
 
@@ -409,7 +415,7 @@ A streamed answer: chunks of a section, then the mark that ends it.
 | [Chunks arrive as stream-delta updates, then the empty end mark.](core/test_streaming.py#L41 "test_a_streamed_answer_arrives_as_chunks_then_its_whole_text") | `streaming` | `stream` | `default` | ✓ | ✓ |
 | [Every chunk arrives once, in order, and they add up to the section's whole text.](core/test_streaming.py#L58 "test_the_chunks_are_the_answer_broken_up") | `streaming` | `stream` | `default` | ✓ | ✓ |
 | [One artifact: the first chunk opens it, the rest append, the end mark appends nothing and ends it.](core/test_streaming.py#L67 "test_the_first_chunk_opens_the_section_and_the_rest_append") | `streaming` | `stream` | `default` | ✓ | ✓ |
-| [The agent's own generation marks its last chunk: that chunk ends the section, and no empty mark follows.](core/test_streaming.py#L84 "test_a_section_whose_last_chunk_says_so_needs_no_end_mark") | `streaming` | `stream-marked` | `default` | ✓ | ✓ |
+| [The agent's own generation marks its last chunk: that chunk ends the section, and no empty mark follows.](core/test_streaming.py#L84 "test_a_section_whose_last_chunk_says_so_needs_no_end_mark") | `streaming` | `stream-marked` | `default` | ✓ | [skip](#frameworks) |
 | [`stream 1` keeps the same shape: one chunk, then the end mark.](core/test_streaming.py#L98 "test_one_chunk_is_still_a_section") | `streaming` | `stream` | `default` | ✓ | ✓ |
 | [No status carries the streamed text, and the task's history holds only the caller's message.](core/test_streaming.py#L117 "test_the_streamed_answer_is_not_a_message") | `streaming` | `stream` | `default` | ✓ | ✓ |
 | [The stored stream-delta artifact is the section's whole text joined into one part, and it is the task's result.](core/test_streaming.py#L129 "test_the_task_keeps_the_whole_text_of_the_section") | `streaming` | `stream` | `default` | ✓ | ✓ |
@@ -714,7 +720,7 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | `help` | Show this menu | `smoke` | 1 | ✓ | ✓ |
 | `echo <text>` | Reply with the argument, unchanged | `smoke`, `events` | 25 | ✓ | ✓ |
 | `stream <n>` | Stream an answer in n chunks | `streaming` | 14 | ✓ | ✓ |
-| `stream-marked <n>` | Stream an answer in n chunks, marking the last one | `streaming` | 1 | ✓ | ✓ |
+| `stream-marked <n>` | Stream an answer in n chunks, marking the last one | `streaming` | 1 | ✓ | [skip](#frameworks) |
 | `think <n>` | Think n thoughts, then reply | `streaming` | 6 | ✓ | ✓ |
 | `react` | React to the inbound message, then reply | `events` | 4 | ✓ | ✓ |
 | `steps <n>` | Emit n working statuses, then complete | `events` | 6 | ✓ | ✓ |
