@@ -190,6 +190,9 @@ async def handle_message(thread: Thread):
     await thread.post(token_stream())
 ```
 
+A model's stream, as `token_stream` above, reaches the client once: the model calls that start while the thread reads
+the iterator stay off LangGraph's own stream of the graph's messages (see the [server README](../server/README.md)).
+
 `reply` sends back to where the inbound event came from: a text, a card, a streamed
 answer or an artifact carries that routing target, and the task keeps it with what it
 routes. `post` routes only with an explicit `target`. Output that carries no target goes

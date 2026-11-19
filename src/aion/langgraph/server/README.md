@@ -86,6 +86,8 @@ The graph is streamed together with its subgraphs, so *whichever node* includes 
 
 `thread.reply()` with an async iterator returns the whole message that ended its section. A node may keep it in the conversation by returning it into `messages`, as it would any reply; LangGraph then sends that message on the `messages` stream once more, and the server does not send it again.
 
+The iterator may be a model's stream - `model.astream(...)`, or text taken from it. The model calls that start while the thread reads the iterator stay off the `messages` stream, so the answer goes out once, as the thread's section with the reply's routing target, and a call whose result the iterator does not yield does not reach the client. A call the thread cannot keep off the stream goes out on it as well, and the answer reaches the client twice: one that started before the thread reads the iterator - the node read the iterator before passing it, or a task started earlier feeds it - and one given `tags` in a config of its own.
+
 ---
 
 ## Outbound — `a2a_outbox`
