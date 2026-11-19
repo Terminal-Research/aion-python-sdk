@@ -592,12 +592,14 @@ class LangGraphA2AConverter:
     def convert_interrupt(self, interrupts: Sequence[Interrupt]) -> TaskStatusUpdateEvent:
         """Produce an input_required status event from the graph's pending interrupts.
 
-        Uses the first interrupt to build the prompt message and attaches its id
-        as message metadata so the client can resume the correct thread.
+        Asks the first interrupt: its value is the question, and its id goes
+        with it as ``interruptId`` in the message's metadata. Several
+        interrupts waiting at once are asked one per turn; an answer that
+        names an ``interruptId`` resumes that one (``LangGraphExecutor.resume``).
 
         Args:
-            interrupts: What the graph stopped on, as LangGraph reports it in
-                ``StateSnapshot.interrupts``.
+            interrupts: The interrupts that wait for an answer, in LangGraph's
+                order (``pending_interrupts``).
         """
         message: Optional[Message] = None
         interrupt_id: Optional[str] = None

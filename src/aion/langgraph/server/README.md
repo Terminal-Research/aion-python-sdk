@@ -184,6 +184,8 @@ def review_node(state: State) -> State:
 
 The interrupt value becomes the question the client sees in the `INPUT_REQUIRED` status, and the task keeps its id: the client resumes by sending the answer with the same `task_id` and `context_id`.
 
+The question's message carries the interrupt's id as `interruptId` in its metadata. Several nodes of one step may interrupt at once; the questions are then asked one per turn, in the order LangGraph reports them, and each answer resumes one interrupt while the others keep waiting. An answer resumes the interrupt its message names under `interruptId` in the message's metadata, and the one asked without it. An answer that names an interrupt which no longer waits does not resume the graph: the question that waits is asked again.
+
 ---
 
 ## Plugin Discovery

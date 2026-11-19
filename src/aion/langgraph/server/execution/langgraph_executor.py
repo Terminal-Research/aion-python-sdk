@@ -6,7 +6,7 @@ import time
 from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from aion.core.config.models import AgentConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.types import Command, StateSnapshot
+from langgraph.types import Command, Interrupt, StateSnapshot
 from collections.abc import AsyncIterator
 from typing import Any, Optional, TYPE_CHECKING
 
@@ -117,8 +117,9 @@ class LangGraphExecutor(AgentFrameworkExecutor):
         try:
             logger.info(f"Resuming execution for context: {config.context_id}")
             snapshot = await self._graph_state(config)
+            pending = pending_interrupts(snapshot)
 
-            if not snapshot.interrupts:
+            if not pending:
                 # The task waits without an interrupt - an outbox Task left it
                 # waiting for input - so the message is the next turn of it.
                 logger.info(
@@ -138,8 +139,22 @@ class LangGraphExecutor(AgentFrameworkExecutor):
                 task_id=context.task_id,
                 context_id=context.context_id,
             )
+            answered = _answered_interrupt(context, pending)
+            if answered is None:
+                # The message answers an interrupt that no longer waits:
+                # LangGraph would drop the answer and stop on the same
+                # question, so the graph is not resumed and the question that
+                # waits is asked again.
+                logger.warning(
+                    f"The message answers interrupt {_named_interrupt_id(context)!r}, which is not waiting; "
+                    f"asking interrupt {pending[0].id!r} again"
+                )
+                yield converter.convert_interrupt(pending)
+                return
             lg_inputs = LangGraphTransformer.generate_langgraph_inputs(context)
-            resume_command = Command(resume=lg_inputs)
+            # Several interrupts waiting at once take their answers by id;
+            # each turn answers one of them.
+            resume_command = Command(resume=lg_inputs if len(pending) == 1 else {answered.id: lg_inputs})
             lg_config = LangGraphTransformer.generate_langgraph_config(config)
 
             logger.debug(f"Resuming task")
@@ -249,8 +264,49 @@ class LangGraphExecutor(AgentFrameworkExecutor):
         ):
             yield a2a_event
 
-        if snapshot.interrupts:
-            yield converter.convert_interrupt(snapshot.interrupts)
+        pending = pending_interrupts(snapshot)
+        if pending:
+            yield converter.convert_interrupt(pending)
         else:
             yield converter.convert_complete()
 
+
+INTERRUPT_ID_KEY = "interruptId"
+"""Where a message names the interrupt it answers, in its metadata: the key the question carries its id under."""
+
+
+def pending_interrupts(snapshot: StateSnapshot) -> list[Interrupt]:
+    """The interrupts of the graph that still wait for an answer, in LangGraph's order.
+
+    Several nodes of one step may interrupt at once. An answer to one of them
+    lets its node finish, and the others keep waiting. LangGraph 1.0 still
+    lists the answered interrupt in ``StateSnapshot.interrupts`` then, so an
+    interrupt waits while its task has no result; a snapshot whose tasks
+    name none falls back to ``interrupts``.
+    """
+    waiting = [
+        interrupt
+        for task in snapshot.tasks
+        if getattr(task, "result", None) is None
+        for interrupt in task.interrupts
+    ]
+    return waiting or list(snapshot.interrupts)
+
+
+def _named_interrupt_id(context: "RequestContext") -> Optional[str]:
+    """The interrupt the message names under ``interruptId`` in its metadata, if any."""
+    message = context.message
+    if message is None or not message.HasField("metadata"):
+        return None
+    named = message.metadata.fields.get(INTERRUPT_ID_KEY)
+    if named is None or named.WhichOneof("kind") != "string_value" or not named.string_value:
+        return None
+    return named.string_value
+
+
+def _answered_interrupt(context: "RequestContext", pending: list[Interrupt]) -> Optional[Interrupt]:
+    """The waiting interrupt the message answers: the one it names, else the first; None when it names one that does not wait."""
+    named = _named_interrupt_id(context)
+    if named is None:
+        return pending[0]
+    return next((interrupt for interrupt in pending if interrupt.id == named), None)
