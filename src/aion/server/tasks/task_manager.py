@@ -73,12 +73,13 @@ class AionTaskManager(TaskManager):
             )
         self._on_interrupted = on_interrupted
         # The state the store last held, kept as a scalar rather than read off
-        # ``_current_task``: that object is mutable and the base class applies
-        # the new status to it before it asks for the write, so by the time
-        # ``_save_task`` runs there is nothing left to compare against.
-        # ``None`` means nothing has been read or written yet, so the first
-        # write of a non-active state counts as a transition.
-        self._persisted_state: TaskState | None = None
+        # ``_current_task``: a Task event and ``update_with_message`` write the
+        # cached object itself, so by the time ``_save_task`` runs it may carry
+        # the new state already. It is this manager's own, apart from the
+        # state a2a-sdk's task manager keeps for its plugins, which may change
+        # with a2a-sdk. ``None`` means nothing has been read or written yet,
+        # so the first write of a non-active state counts as a transition.
+        self._stored_state: TaskState | None = None
         # The non-active state this manager's own last write moved the task
         # into; see ``written_outcome``.
         self._written_outcome: TaskState | None = None
@@ -132,7 +133,7 @@ class AionTaskManager(TaskManager):
         baseline: what the store holds now, not what this manager last saw.
         """
         super().invalidate()
-        self._persisted_state = None
+        self._stored_state = None
 
     @override
     async def get_task(self) -> Task | None:
@@ -161,8 +162,8 @@ class AionTaskManager(TaskManager):
         """
         if task is not None:
             self._stored.set()
-        if task is not None and self._persisted_state is None:
-            self._persisted_state = task.status.state
+        if task is not None and self._stored_state is None:
+            self._stored_state = task.status.state
 
     @override
     async def _save_task(self, task: Task) -> None:
@@ -206,7 +207,7 @@ class AionTaskManager(TaskManager):
                 another terminal state, or the write is stale.
         """
         async with self._write_lock:
-            previous_state = self._persisted_state
+            previous_state = self._stored_state
             if previous_state in TERMINAL_TASK_STATES:
                 if task.status.state != previous_state:
                     raise ConcurrentTaskModificationError(task.id)
@@ -225,7 +226,7 @@ class AionTaskManager(TaskManager):
             self._stored.set()
 
             state = task.status.state
-            self._persisted_state = state
+            self._stored_state = state
             if state not in NON_ACTIVE_TASK_STATES:
                 self._written_outcome = None
             elif state != previous_state:
@@ -437,5 +438,5 @@ class AionTaskManager(TaskManager):
         # cached: the next read goes through the store and brings the
         # version back with the task, which the next write compares against.
         self.invalidate()
-        self._persisted_state = last_task.status.state
+        self._stored_state = last_task.status.state
         return last_task

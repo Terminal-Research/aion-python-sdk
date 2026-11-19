@@ -292,6 +292,7 @@ async def test_a_first_task_that_decides_the_turn_moves_the_task_itself(submitte
     pipeline = _pipeline(queue)
 
     await pipeline.process(_task(state=outcome))
+    await _consume(submitted, queue)
 
     assert TaskState.TASK_STATE_WORKING not in [e.status.state for e in _status_events(queue)]
     stored = await store.get(TASK_ID, call_context)
@@ -380,6 +381,7 @@ async def test_what_a_turn_yields_after_an_outbox_outcome_is_dropped(
 
     assert [e.status.state for e in _status_events(queue)] == ([outcome] if closes_the_task else [])
     assert pipeline.terminal_seen is closes_the_task
+    await _consume(manager, queue)
     stored = await store.get(TASK_ID, call_context)
     assert stored.status.state == outcome
     assert "too late" not in [m.parts[0].text for m in stored.history]
@@ -389,10 +391,12 @@ async def test_what_a_turn_yields_after_an_outbox_outcome_is_dropped(
 async def test_a_task_that_closes_the_task_is_followed_by_its_state_through_the_queue(
     manager, queue, store, call_context, outcome
 ) -> None:
-    """The event consumer ends the execution and pushes the outcome only on an event it applies.
+    """The event consumer ends the execution and pushes the outcome only on an update it applies.
 
-    The update it applies writes nothing: the stored task, which the push and
-    the client's stream carry, stays the one the agent handed over.
+    It drops an update for a task that is terminal already, so the Task's
+    content is saved in the status the task holds, and its outcome goes
+    through the queue. Once applied, the stored task - which the push and the
+    client's stream carry - is the one the agent handed over.
     """
     pipeline = _pipeline(queue, task_started=True)
     await manager.save_task_event(_task())
@@ -401,13 +405,20 @@ async def test_a_task_that_closes_the_task_is_followed_by_its_state_through_the_
 
     await pipeline.process(handed_over)
     saved = await store.get(TASK_ID, call_context)
+
+    assert saved.status.state == TaskState.TASK_STATE_WORKING
+    assert [m.parts[0].text for m in saved.history] == ["all set"]
+    [outcome_update] = queue.events
+    assert isinstance(outcome_update, TaskStatusUpdateEvent)
+    assert (outcome_update.task_id, outcome_update.context_id) == (TASK_ID, CONTEXT_ID)
+    assert outcome_update.status == handed_over.status
+
     await _consume(manager, queue)
 
-    [announced] = queue.events
-    assert isinstance(announced, TaskStatusUpdateEvent)
-    assert (announced.task_id, announced.context_id) == (TASK_ID, CONTEXT_ID)
-    assert announced.status.state == outcome
-    assert await store.get(TASK_ID, call_context) == saved
+    stored = await store.get(TASK_ID, call_context)
+    assert stored.status.state == outcome
+    assert stored.status.message.parts[0].text == "the reason"
+    assert [m.parts[0].text for m in stored.history] == ["all set", "the reason"]
 
 
 async def test_what_a_turn_yields_after_its_outcome_status_is_dropped(manager, queue) -> None:
@@ -1097,6 +1108,8 @@ async def test_an_outbox_task_ending_on_a_reply_already_sent_keeps_the_file_stor
         outbox_task(_completed(_reply_with_a_file()), current=in_hand, task_id=TASK_ID, context_id=CONTEXT_ID)
     )
 
+    await _consume(manager, queue)
+
     assert _uploads(backend) == 1
     stored = await store.get(TASK_ID, call_context)
     assert stored.status.message.message_id == "R"
@@ -1175,10 +1188,11 @@ def _completed(final: Message, *history: Message) -> Task:
     return Task(status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED, message=final), history=list(history))
 
 
-async def _hand_over(queue: RecordingQueue, in_hand: Task, patch: Task) -> None:
-    """Apply the patch to the task in hand, as both framework adapters do, and deliver it."""
+async def _hand_over(queue: RecordingQueue, in_hand: Task, patch: Task, manager: AionTaskManager) -> None:
+    """Apply the patch to the task in hand, as both framework adapters do, deliver it, and let the consumer apply its outcome."""
     pipeline = _pipeline(queue, task_started=True)
     await pipeline.process(outbox_task(patch, current=in_hand, task_id=TASK_ID, context_id=CONTEXT_ID))
+    await _consume(manager, queue)
 
 
 async def test_an_outbox_task_ends_its_history_with_its_final_message(
@@ -1191,7 +1205,7 @@ async def test_an_outbox_task_ends_its_history_with_its_final_message(
     """
     await manager.process(_status(message=_message("searching", message_id="A1")))
 
-    await _hand_over(queue, in_hand, _completed(_message("the report", message_id="R"), _message("a note", message_id="H1")))
+    await _hand_over(queue, in_hand, _completed(_message("the report", message_id="R"), _message("a note", message_id="H1")), manager)
 
     stored = await store.get(TASK_ID, call_context)
     assert [m.message_id for m in stored.history] == ["U1", "A1", "H1", "R"]
@@ -1204,7 +1218,7 @@ async def test_a_final_message_the_outbox_task_also_lists_in_its_history_is_stor
     await manager.process(_status(message=_message("searching", message_id="A1")))
     final = _message("the report", message_id="R")
 
-    await _hand_over(queue, in_hand, _completed(final, _message("a note", message_id="H1"), final))
+    await _hand_over(queue, in_hand, _completed(final, _message("a note", message_id="H1"), final), manager)
 
     stored = await store.get(TASK_ID, call_context)
     assert [m.message_id for m in stored.history] == ["U1", "A1", "H1", "R"]
@@ -1222,7 +1236,7 @@ async def test_an_outbox_task_completing_with_the_reply_already_sent_keeps_it_as
     final = _message("the report", message_id="R")
     await manager.process(_status(message=final))
 
-    await _hand_over(queue, in_hand, _completed(final, _message("a note", message_id="H1")))
+    await _hand_over(queue, in_hand, _completed(final, _message("a note", message_id="H1")), manager)
 
     stored = await store.get(TASK_ID, call_context)
     assert [m.message_id for m in stored.history] == ["U1", "H1", "R"]
@@ -1256,8 +1270,10 @@ async def test_annotates_new_agent_messages_before_storage_or_delivery(kind):
     )
     with patch('aion.server.agent.execution.event_pipeline.exec_scope_get_task_manager', return_value=manager):
         await pipeline.process(event)
+    # A Task that ends the task is stored without its outcome, which goes through the queue.
     output = (queue.enqueue_event if kind == 'status' else manager.process).call_args.args[0]
-    actual = output if kind == 'message' else output.status.message
+    outcome = queue.enqueue_event.call_args.args[0] if kind != 'message' else output
+    actual = output if kind == 'message' else outcome.status.message
     assert list(actual.extensions) == ['urn:existing', 'urn:cron', 'urn:verified']
     if kind == 'task':
         assert list(output.history[0].extensions) == ['urn:old']

@@ -250,6 +250,7 @@ class AionActiveTaskRegistry(ActiveTaskRegistry):
             task_store=self._task_store,
             initial_message=initial_message,
             context=call_context,
+            plugins=self._plugins,
             on_interrupted=self._on_task_interrupted,
         )
         set_task_manager(task_manager)

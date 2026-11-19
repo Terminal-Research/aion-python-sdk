@@ -598,7 +598,7 @@ class AionPushNotificationSender(BasePushNotificationSender):
             response = await self._client.post(
                 url,
                 json=MessageToDict(to_stream_response(event)),
-                headers=self._build_headers(push_info) or None,
+                headers=self._webhook_headers(push_info) or None,
             )
         except httpx.TimeoutException as error:
             # The request went out but the receiver did not answer in time.
@@ -648,7 +648,7 @@ class AionPushNotificationSender(BasePushNotificationSender):
         )
 
     @staticmethod
-    def _build_headers(push_info: TaskPushNotificationConfig) -> dict[str, str]:
+    def _webhook_headers(push_info: TaskPushNotificationConfig) -> dict[str, str]:
         """Derives the outbound headers from a stored push configuration.
 
         Args:
@@ -666,7 +666,9 @@ class AionPushNotificationSender(BasePushNotificationSender):
                                         credentials without naming a scheme.
 
         Credential values are never logged: an exception raised while sending
-        carries only the task id and the URL.
+        carries only the task id and the URL. a2a-sdk's own
+        ``_build_headers`` sends ``Authorization`` only when the scheme is
+        named; this one defaults it, so it keeps a name of its own.
         """
         headers: dict[str, str] = {}
 

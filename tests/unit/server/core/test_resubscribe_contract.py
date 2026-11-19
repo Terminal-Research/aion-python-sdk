@@ -103,10 +103,10 @@ class _Journal(TaskEventStream):
         self._final = final
         self.subscribed_after: list[TaskVersion] = []
 
-    async def publish(self, task_id, event):  # pragma: no cover - unused
+    async def publish(self, task_id, event, context=None):  # pragma: no cover - unused
         pass
 
-    async def subscribe(self, task_id, *, after) -> AsyncGenerator[VersionedEvent, None]:
+    async def subscribe(self, task_id, *, after, context=None) -> AsyncGenerator[VersionedEvent, None]:
         self.subscribed_after.append(after)
         for event in self._events:
             yield event
