@@ -521,7 +521,9 @@ class Conversation(ABC):
         A conversation read from a server knows a file that is no longer
         stored: one past the retention deadline its part records, without
         asking the storage service, and one the storage service says no
-        longer exists.
+        longer exists. It also knows when the storage service did not answer
+        the request for a link, and does not give an address that would
+        refuse the reader.
 
         Args:
             part: A part that carries a file by its address (``url``).
@@ -531,6 +533,8 @@ class Conversation(ABC):
             ConversationFileForbiddenError: The storage service refused a link
                 to the turn's sender: the file is not available to it.
             ConversationFileRemovedError: The file is no longer stored.
+            ConversationFileUnavailableError: No link to the stored file could
+                be issued now.
         """
         if part.WhichOneof("content") != "url":
             raise ConversationFileError("The part carries no address of a stored file.")
@@ -542,9 +546,10 @@ class Conversation(ABC):
         An inline file is returned as it is. A stored file is downloaded
         through :meth:`file_link`: a link issued for the turn's sender to the
         file version the part names. A file whose link cannot be issued
-        cannot be read; one that is no longer stored, or one the storage
-        service does not make available to the turn's sender, is not
-        downloaded at all. What was downloaded, and what this server stored
+        cannot be read; one that is no longer stored, one the storage
+        service does not make available to the turn's sender, and one whose
+        link the storage service did not issue now, is not downloaded at
+        all. What was downloaded, and what this server stored
         itself, is kept
         for the turn (``aion.core.a2a.file_contents``), so a turn downloads
         the file once.
@@ -560,6 +565,8 @@ class Conversation(ABC):
             ConversationFileForbiddenError: The storage service refused a link
                 to the turn's sender: the file is not available to it.
             ConversationFileRemovedError: The file is no longer stored.
+            ConversationFileUnavailableError: No link to the stored file could
+                be issued now; a later read asks again.
         """
         kind = part.WhichOneof("content")
         if kind == "raw":
@@ -600,6 +607,7 @@ class Conversation(ABC):
             ConversationFileError: As :meth:`read_file`.
             ConversationFileForbiddenError: As :meth:`read_file`.
             ConversationFileRemovedError: As :meth:`read_file`.
+            ConversationFileUnavailableError: As :meth:`read_file`.
         """
         content = file_contents().get_by_url(url)
         if content is None:

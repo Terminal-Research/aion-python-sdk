@@ -254,7 +254,7 @@ read grant for the same version:
 | The push delivery of a remote cancel (`_write_cancel`) | The same. | The cancel's caller, as for its answer |
 | The push delivery of a cancel for a context's deletion | The same. | Of a task running on this server, as for a turn's push - the owner's latest request; of one running elsewhere, the deployment's daemon |
 | The push delivery of an abandoned task's settlement | The same. | The deployment's daemon |
-| An agent's read (`ConversationFile.read`, `ConversationFile.link`) | The part's own link while it works, otherwise one supplied for it; a file the storage refuses to the turn's attribution raises `ConversationFileForbiddenError`, a file past its retention deadline or gone by the storage's word raises `ConversationFileRemovedError`, and the model helpers leave either out with a note. | The turn's attribution |
+| An agent's read (`ConversationFile.read`, `ConversationFile.link`) | The part's own link while it works, otherwise one supplied for it; a file the storage refuses to the turn's attribution raises `ConversationFileForbiddenError`, a file past its retention deadline or gone by the storage's word raises `ConversationFileRemovedError`, and the model helpers leave either out with a note; a link the storage service did not issue now raises `ConversationFileUnavailableError`, and the model helpers fail the turn with it. | The turn's attribution |
 
 A turn's push asks with the carrier of the message whose turn it is, as
 every other callback of the turn does. Aion issues a carrier for 24 hours
@@ -291,8 +291,12 @@ every link issued later, for the one that asked. Another attribution asks
 for its own. Issuing is best effort. A backend that issues no links, a
 refusal, no answer within five seconds or a file past its retention leaves
 the part with the address it has, and a file version whose link was not
-issued is not asked about again for a minute on behalf of the same
-attribution; anyone else may ask. The Files API grants a link to the file's
+issued is not asked about again on behalf of the same attribution - for a
+minute after a refusal, for five seconds after a failure that may pass: the
+storage service unavailable or not answering in time; anyone else may ask.
+A reader whose part's address does not work by itself is told of such a
+failure (`ConversationFileUnavailableError`) instead of fetching an address
+that would refuse it. The Files API grants a link to the file's
 owner - the identity of the usage attribution it was stored under - and
 refuses the deployment's daemon, so an answer on the daemon's behalf, or on
 that of a caller the file does not belong to, carries the part's address,

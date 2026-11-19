@@ -61,6 +61,7 @@ __all__ = [
     "ConversationFileTooLargeError",
     "ConversationFileForbiddenError",
     "ConversationFileRemovedError",
+    "ConversationFileUnavailableError",
 ]
 
 
@@ -292,8 +293,9 @@ class ConversationFileError(AionError):
     the file is larger than the caller allowed
     (:class:`ConversationFileTooLargeError`), the storage service does not
     make a stored file available to the turn's sender
-    (:class:`ConversationFileForbiddenError`), or a stored file is no longer
-    stored (:class:`ConversationFileRemovedError`).
+    (:class:`ConversationFileForbiddenError`), a stored file is no longer
+    stored (:class:`ConversationFileRemovedError`), or no link to a stored
+    file could be issued now (:class:`ConversationFileUnavailableError`).
 
     Args:
         message: What could not be read and why.
@@ -366,4 +368,29 @@ class ConversationFileRemovedError(ConversationFileError):
     def __init__(self, label: str, media_type: Optional[str] = None) -> None:
         described = f"File {label!r} ({media_type})" if media_type else f"File {label!r}"
         super().__init__(f"{described} is no longer available.")
+        self.media_type = media_type
+
+
+class ConversationFileUnavailableError(ConversationFileError):
+    """A stored file of the conversation cannot be read now: no link to it could be issued.
+
+    A stored file is read through a link the storage service issues for the
+    turn's sender, and the file's own address works only with authorization.
+    The storage service did not answer the request for that link - it was
+    unavailable, answered with an error worth retrying, or not within a few
+    seconds - so the file cannot be read now; a later read asks again. The
+    SDK leaves the file alone for a few seconds after such a failure, and a
+    read in that time raises this too. Raised by ``ConversationFile.read``
+    and ``ConversationFile.link`` and by the conversation's ``read_file``,
+    ``read_file_at`` and ``file_link``; the file's address is not fetched.
+    The message names the file only, never its address or a link to it.
+
+    Args:
+        label: How the message names the file.
+        media_type: The file's media type, when the part names one.
+    """
+
+    def __init__(self, label: str, media_type: Optional[str] = None) -> None:
+        described = f"File {label!r} ({media_type})" if media_type else f"File {label!r}"
+        super().__init__(f"{described} cannot be read now: no download link could be issued for it. Try again later.")
         self.media_type = media_type

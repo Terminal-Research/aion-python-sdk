@@ -10,7 +10,10 @@ storage, through the conversation of the turn, which reads a stored file
 through a link issued for the turn's sender.
 
 A file that cannot be read fails the turn's task with a reason its caller
-can read. Three kinds of file are left out instead: the SDK's helpers put a
+can read - a stored file no link could be issued for now
+(``ConversationFileUnavailableError``) among them: the model does not
+answer without a file the sender sent while it may come back on the next
+try. Three kinds of file are left out instead: the SDK's helpers put a
 note in the file's place in the request (``aion.core.agent.left_out_files``),
 so the conversation goes on without the file.
 
