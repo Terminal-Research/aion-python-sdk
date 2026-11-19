@@ -47,6 +47,16 @@ make. A model with `configurable_fields` or `config_prefix` is LangChain's own
 `ChatOpenAI`, built per call, and like any other client of the service it has
 to be called with a stream.
 
+A call without `await` - `invoke` or `stream` - belongs in a synchronous
+node, which LangGraph runs in a worker thread: the files of its request are
+read through the turn's event loop, as for `ainvoke`. Inside an `async def`
+node such a call runs on the turn's event loop and holds every turn of the
+server until the model answers. The first one in the process logs a
+warning, and a message with a file to read fails the task at once, with a
+reason that says to call `ainvoke` or `astream` instead: the loop cannot
+read the file while it waits for the call. `inline_files_sync` behaves the
+same way.
+
 ---
 
 ## MCP tools

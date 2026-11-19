@@ -8,6 +8,7 @@
 * **adk:** `emit_artifact` is a plain function and takes no invocation context, `emit_artifact(emitter, artifact, ...)`, as in LangGraph: it never awaited anything nor used the context, and `await emit_artifact(emitter, ctx, artifact)` no longer works.
 * **adk:** the first argument of `emit_message` is `message`, not `text`, as it takes an iterator of text as well; a call that names it `text=` fails.
 * **adk:** an async iterator given to `Thread.reply()` or `Thread.post()` streams text only: an ADK `Event` it yields is left out with a warning instead of becoming a chunk, which sent the model's thoughts and the text of ADK's final event as the answer.
+* **langgraph:** a model of the SDK called without `await` - `invoke()` or `stream()` - inside an `async def` node, or `inline_files_sync()` there, fails the task at once on a message with a file to read, with a reason that says to call `ainvoke()` or `astream()`, or to call the model from a synchronous node. It runs on the turn's event loop, which cannot read the file while it waits: such a call fetched the file's address, which refuses a request without authorization, and failed every turn after the one that brought the file, while holding the server for up to 30 s. A call without a file still goes to the model, and the first one in the process logs a warning: it holds every turn of the server until the model answers.
 
 ### Features
 

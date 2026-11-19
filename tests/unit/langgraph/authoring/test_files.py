@@ -166,3 +166,92 @@ async def test_a_synchronous_node_reads_files_as_an_asynchronous_one_does() -> N
     question = next(message for message in sent if isinstance(message, HumanMessage))
     assert base64.b64decode(question.content[1]["base64"]) == PDF
     assert base64.b64decode(question.content[2]["base64"]) == PNG
+
+
+class TestACallWithoutAwaitOnTheTurnsEventLoop:
+    """``model.invoke`` inside an ``async def`` node runs on the turn's event loop.
+
+    It cannot wait there for a read the loop would make, so a message with a
+    file to read fails the task at once, with a reason that says what to call
+    instead; nothing is sent. A call without such a file goes to the model,
+    and the first one in the process logs a warning: it holds every turn of
+    the server until the model answers.
+    """
+
+    @staticmethod
+    def _graph(model):
+        from langgraph.graph import START, MessagesState, StateGraph
+
+        async def answer(state):
+            return {"messages": [model.invoke(state["messages"])]}
+
+        builder = StateGraph(MessagesState)
+        builder.add_node("answer", answer)
+        builder.add_edge(START, "answer")
+        return builder.compile()
+
+    async def test_a_message_with_a_file_fails_the_task_at_once(self) -> None:
+        sent: list = []
+
+        def stream(self, messages, stop=None, run_manager=None, **kwargs):
+            sent.extend(messages)
+            raise RuntimeError("stop")
+            yield
+
+        # The turn holds the file, as it holds an attachment of its own message: the call fails all the same.
+        file_contents().put(f"url:{PDF_URL}", PDF, url=PDF_URL)
+        with use_conversation(_conversation()), patch.object(ChatOpenAI, "_stream", new=stream):
+            with pytest.raises(TaskFailedError, match=r"Call ainvoke\(\) or astream\(\) in an async node"):
+                await self._graph(_model()).ainvoke({"messages": [_question()]})
+
+        assert sent == []
+
+    async def test_inline_files_sync_fails_the_same_way(self) -> None:
+        with use_conversation(_conversation()), pytest.raises(TaskFailedError, match="report.pdf"):
+            inline_files_sync([_question()])
+
+    async def test_a_message_without_a_file_goes_to_the_model_with_one_warning(self, caplog, monkeypatch) -> None:
+        from aion.langgraph.authoring import models
+
+        monkeypatch.setattr(models, "_warned_on_the_turns_event_loop", False)
+        sent: list = []
+
+        def stream(self, messages, stop=None, run_manager=None, **kwargs):
+            sent.extend(messages)
+            raise RuntimeError("stop")
+            yield
+
+        with use_conversation(_conversation()), patch.object(ChatOpenAI, "_stream", new=stream):
+            with caplog.at_level("WARNING", logger=models.__name__):
+                for _ in range(2):
+                    with pytest.raises(RuntimeError, match="stop"):
+                        await self._graph(_model()).ainvoke({"messages": [HumanMessage(content="Hello")]})
+
+        assert [message.content for message in sent] == ["Hello", "Hello"]
+        warnings = [record.getMessage() for record in caplog.records if record.name == models.__name__]
+        assert len(warnings) == 1 and "every turn of this server waits" in warnings[0]
+
+    async def test_a_synchronous_node_logs_no_warning(self, caplog, monkeypatch) -> None:
+        from langgraph.graph import START, MessagesState, StateGraph
+
+        from aion.langgraph.authoring import models
+
+        monkeypatch.setattr(models, "_warned_on_the_turns_event_loop", False)
+        model = _model()
+
+        def stream(self, messages, stop=None, run_manager=None, **kwargs):
+            raise RuntimeError("stop")
+            yield
+
+        def answer(state):
+            return {"messages": [model.invoke(state["messages"])]}
+
+        builder = StateGraph(MessagesState)
+        builder.add_node("answer", answer)
+        builder.add_edge(START, "answer")
+
+        with use_conversation(_conversation()), patch.object(ChatOpenAI, "_stream", new=stream):
+            with caplog.at_level("WARNING", logger=models.__name__), pytest.raises(RuntimeError, match="stop"):
+                await builder.compile().ainvoke({"messages": [HumanMessage(content="Hello")]})
+
+        assert not [record for record in caplog.records if record.name == models.__name__]

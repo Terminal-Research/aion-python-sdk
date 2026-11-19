@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, Literal, Optional, Union, overload
 
 from aion.api import aion_openai_config
 from aion.api.callback_errors import reraise_callback_error
+from aion.core.agent.model_files import on_turn_event_loop
 
 if TYPE_CHECKING:
     from langchain.chat_models.base import _ConfigurableModel
     from langchain_openai import ChatOpenAI
+
+logger = logging.getLogger(__name__)
 
 _RESERVED_AION_MODEL_KWARGS = frozenset(
     {
@@ -158,11 +162,19 @@ def _file_inlining_chat_openai(chat_openai: Optional[type] = None) -> type:
         stream to its end and returns the one answer it makes
         (``_generate_from_stream``); its callbacks see the answer, not its
         chunks.
+
+        A call without ``await`` belongs in synchronous code, which LangGraph
+        runs in a worker thread. Made on the turn's event loop - ``invoke``
+        inside an ``async def`` node - it holds every turn of the server
+        until the model answers, and the first such call logs a warning; a
+        message with a file to read fails the task at once
+        (``inline_files_sync``).
         """
 
         def _generate(self, messages, stop=None, run_manager=None, **kwargs):
             if _inner_call.get():
                 return self._generate_from_stream(messages, stop, **kwargs)
+            _warn_on_the_turns_event_loop()
             messages, files = prepare_request_sync(messages, unread=self._refused_before)
             search = RefusedFileSearch(self.model_name, [file.file for file in files])
             while True:
@@ -183,6 +195,7 @@ def _file_inlining_chat_openai(chat_openai: Optional[type] = None) -> type:
             if _inner_call.get():
                 yield from super()._stream(messages, stop=stop, run_manager=run_manager, **kwargs)
                 return
+            _warn_on_the_turns_event_loop()
             messages, files = prepare_request_sync(messages, unread=self._refused_before)
             search = RefusedFileSearch(self.model_name, [file.file for file in files])
             while True:
@@ -289,6 +302,21 @@ def _file_inlining_chat_openai(chat_openai: Optional[type] = None) -> type:
 
     _file_inlining_classes[chat_openai] = AionChatOpenAI
     return AionChatOpenAI
+
+
+_warned_on_the_turns_event_loop = False
+
+
+def _warn_on_the_turns_event_loop() -> None:
+    """Log once per process that a model was called without ``await`` on the turn's event loop."""
+    global _warned_on_the_turns_event_loop
+    if _warned_on_the_turns_event_loop or not on_turn_event_loop():
+        return
+    _warned_on_the_turns_event_loop = True
+    logger.warning(
+        "A model was called with invoke() or stream() on the turn's event loop: every turn of this server waits "
+        "until it answers. Call ainvoke() or astream() in an async node, or call the model from a synchronous node."
+    )
 
 
 def _block_of(files, suspect):
