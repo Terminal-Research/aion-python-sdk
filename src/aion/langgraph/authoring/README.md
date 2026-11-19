@@ -257,10 +257,12 @@ def my_node(state: dict, writer: StreamWriter):
 
 ```python
 def streaming_node(state: dict, writer: StreamWriter):
-    for chunk in llm.stream(prompt):
-        emit_message(writer, chunk)
+    for piece in ["The deployment", " has reached", " 80%."]:
+        emit_message(writer, AIMessageChunk(content=piece))
     return state
 ```
+
+A model a node calls needs no `emit_message`: LangGraph streams the call on its own `messages` stream, and the server sends it as a section of its own, so sending its chunks with `emit_message` as well sends the answer twice. `emit_message` is for chunks that stream does not carry: text the node makes itself, or the output of a model tagged `nostream`.
 
 ---
 
