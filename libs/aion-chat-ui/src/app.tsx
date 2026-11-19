@@ -1187,11 +1187,10 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			return false;
 		}
 		const body = formatMessageParts(message.parts);
-		if (!body) return false;
-		lastCopyableResponseRef.current = { kind: "message", content: body };
+		lastCopyableResponseRef.current = body.trim() ? { kind: "message", content: body } : undefined;
 		const responseEntries = responseEntriesRef.current.get(answer) ?? new Set<string>();
 		setEntries((current) => reconcileResponseTranscript(current, answer, body, responseEntries));
-		return true;
+		return Boolean(body.trim());
 	};
 
 	const renderAgentResponseBubble = (

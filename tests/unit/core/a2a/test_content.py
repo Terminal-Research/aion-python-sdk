@@ -139,14 +139,14 @@ def test_latest_answer_replaces_an_earlier_answer_even_without_source_metadata()
     assert answer_text(task(artifacts=(first, last))) == "Last"
 
 
-def test_empty_or_file_only_answer_does_not_block_message_or_stream_fallback() -> None:
-    empty = Artifact(artifact_id=ArtifactId.ASSISTANT_ANSWER.value, parts=[Part(url="https://files.test/a.pdf")])
+def test_present_answer_without_text_stops_all_fallbacks() -> None:
     streamed = text_artifact("Fallback", artifact_id=ArtifactId.STREAM_DELTA.value)
     old = text_artifact("Old", artifact_id=ArtifactId.ASSISTANT_ANSWER.value)
-
-    assert answer_text(task(message("Message", Role.ROLE_AGENT), artifacts=(old, empty, streamed))) == "Message"
-    assert answer_text(task(artifacts=(old, empty, streamed))) == "Fallback"
-    assert answer_text(task(artifacts=(empty,))) is None
+    for parts in ([], [Part(text=" \n\t")], [Part(url="https://files.test/a.pdf")]):
+        empty = Artifact(artifact_id=ArtifactId.ASSISTANT_ANSWER.value, parts=parts)
+        assert answer_text(task(message("Message", Role.ROLE_AGENT), artifacts=(old, empty, streamed))) is None
+        assert answer_text(task(artifacts=(old, empty, streamed))) is None
+        assert answer_text(task(artifacts=(empty,))) is None
 
 
 def test_generic_results_thoughts_and_reactions_are_not_answer_text() -> None:

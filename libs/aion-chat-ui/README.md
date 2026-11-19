@@ -85,6 +85,12 @@ The Python package forwards `aion chat run ...` to the same implementation. Head
 
 ### Interactive Markdown and Scrollback
 
+The final answer uses the latest `aion:assistant-answer` artifact if present,
+including an empty or file-only answer. Its own parts replace the current draft.
+Only an absent Assistant Answer permits current-turn message text, then
+`aion:stream-delta` text as a fallback. Independent prompts and failure messages
+remain visible. `--response-mode a2a` preserves the original protocol events.
+
 Interactive agent responses render Markdown with terminal-native styles for
 headings, emphasis, block quotes, lists, fenced code, links, and tables. While
 a response is streaming, its unfinished line remains literal until a newline
