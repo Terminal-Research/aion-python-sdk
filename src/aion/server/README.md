@@ -646,7 +646,11 @@ and push subscribers all get them:
   the agent sent in the completing turn, without the message's routing
   target, and that message's id in `aion:sourceMessageId`. A completed task
   without such a message gets none, and the server logs a warning. A failed
-  or cancelled task never gets one.
+  or cancelled task never gets an automatic answer. If the agent emits an
+  explicit Assistant Answer, the server preserves it and does not create
+  another from message text. Its parts supply the answer. The optional
+  `aion:sourceMessageId` associates it with a message so clients can avoid
+  duplicate content.
 
 Any other artifact is a result of the task, and so is `aion:stream-delta`;
 the thoughts, the reaction and the copied answer are not. An artifact the

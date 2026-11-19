@@ -93,6 +93,7 @@ import {
 import { type ChatOperation, ChatOperationGate } from "./lib/chatOperationGate.js";
 import { eligibleLegacyRegistryAgent } from "./lib/workspaces.js";
 import { fetchRegistryAccount, type RegistryAccount } from "./lib/graphql/registry.js";
+import { ResponseAnswer, responseMessages } from "./lib/responseAnswer.js";
 import { restoredTranscriptEntries } from "./lib/restoredTranscript.js";
 import { createChatSessionLogger } from "./lib/sessionLogger.js";
 import {
@@ -118,22 +119,18 @@ import {
 } from "./lib/messageDisplay.js";
 import {
 	applyPreparedStreamTranscriptDelta,
-	clearActiveStreamTranscriptSection,
 	clearStreamTranscriptState,
 	closeStreamTranscriptSections,
 	createStreamTranscriptState,
 	finalizeTranscriptEntries,
-	getActiveStreamTranscriptSection,
 	getLastStreamTranscriptSection,
 	prepareStreamTranscriptDelta,
-	replaceTranscriptEntryBody,
+	reconcileResponseTranscript,
 	type StreamTranscriptArtifactKind,
 	upsertTranscriptEntry
 } from "./lib/transcript.js";
 import {
-	getMessageTaskId,
 	getShownMessageKey,
-	getUnshownTaskAgentMessages,
 	markShownMessage,
 	shouldShowNoAgentMessageNotice,
 	shouldRenderLiveStatusMessage,
@@ -479,6 +476,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 	const shownMessageKeysRef = useRef<Set<string>>(new Set());
 	const streamedTaskIdsRef = useRef<Set<string>>(new Set());
 	const streamTranscriptStateRef = useRef(createStreamTranscriptState());
+	const responseEntriesRef = useRef(new WeakMap<ResponseAnswer, Set<string>>());
 	const lastCopyableResponseRef = useRef<CopyableResponse | undefined>(undefined);
 	const lastConnectionNoticeRef = useRef<string | undefined>(undefined);
 	const notificationTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
@@ -1175,70 +1173,31 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		selectedEnvironment
 	]);
 
-	const replaceLastResponseStreamSection = (
-		message: Message,
-		fallbackTaskId?: string
-	): boolean => {
-		if (!shouldRenderLiveResponseMessage(message)) {
+	const rememberResponseEntry = (answer: ResponseAnswer, entryId: string): void => {
+		const entryIds = responseEntriesRef.current.get(answer) ?? new Set<string>();
+		entryIds.add(entryId);
+		responseEntriesRef.current.set(answer, entryIds);
+	};
+
+	const renderCanonicalResponse = (answer: ResponseAnswer): boolean => {
+		const message = answer.message();
+		if (!message) {
+			lastCopyableResponseRef.current = undefined;
+			setEntries((current) => current.filter((entry) => entry.id !== answer.entryId));
 			return false;
 		}
-
-		const streamTaskId = getMessageTaskId(message, fallbackTaskId);
-		if (!streamTaskId) {
-			return false;
-		}
-
-		const activeSection = getActiveStreamTranscriptSection(
-			streamTranscriptStateRef.current,
-			streamTaskId,
-			STREAM_DELTA_ARTIFACT_ID
-		);
-		if (activeSection?.kind !== "response") {
-			return false;
-		}
-
-		if (shownMessageKeysRef.current.has(getShownMessageKey(message, fallbackTaskId))) {
-			return false;
-		}
-
 		const body = formatMessageParts(message.parts);
-		if (!body) {
-			return false;
-		}
-
-		const shownMessageKey = markShownMessage(
-			shownMessageKeysRef.current,
-			message,
-			fallbackTaskId
-		);
+		if (!body) return false;
 		lastCopyableResponseRef.current = { kind: "message", content: body };
-		chatSessionLogger.debug("chat.agent_message.stream_replaced", {
-			fallbackTaskId,
-			streamTaskId,
-			streamEntryId: activeSection.entryId,
-			body,
-			message: summarizeMessageForLog(message)
-		});
-		setEntries((current) => {
-			lastCopyableResponseRef.current = { kind: "message", content: body };
-			return replaceTranscriptEntryBody(
-				current,
-				activeSection.entryId,
-				"agent",
-				body
-			).entries;
-		});
-		clearActiveStreamTranscriptSection(
-			streamTranscriptStateRef.current,
-			streamTaskId,
-			STREAM_DELTA_ARTIFACT_ID
-		);
+		const responseEntries = responseEntriesRef.current.get(answer) ?? new Set<string>();
+		setEntries((current) => reconcileResponseTranscript(current, answer, body, responseEntries));
 		return true;
 	};
 
 	const renderAgentResponseBubble = (
 		message: Message,
-		fallbackTaskId?: string
+		fallbackTaskId?: string,
+		answer?: ResponseAnswer
 	): boolean => {
 		if (!shouldRenderLiveResponseMessage(message)) {
 			return false;
@@ -1257,6 +1216,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			message,
 			fallbackTaskId
 		);
+		if (answer) rememberResponseEntry(answer, `message:${shownMessageKey}`);
 		lastCopyableResponseRef.current = { kind: "message", content: body };
 		chatSessionLogger.debug("chat.agent_message.rendered", {
 			fallbackTaskId,
@@ -1269,7 +1229,11 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 		return true;
 	};
 
-	const handleMessage = (message: Message, protocolPayload: unknown = message): boolean => {
+	const handleMessage = (
+		message: Message, protocolPayload: unknown = message,
+		answer = new ResponseAnswer()
+	): boolean => {
+		answer.observe(message);
 		if (message.contextId) {
 			setCurrentContextId(message.contextId);
 		}
@@ -1280,10 +1244,14 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			return true;
 		}
 
-		return replaceLastResponseStreamSection(message) || renderAgentResponseBubble(message);
+		return renderCanonicalResponse(answer);
 	};
 
-	const handleTaskSnapshot = (task: Task, protocolPayload: unknown = task): boolean => {
+	const handleTaskSnapshot = (
+		task: Task, protocolPayload: unknown = task,
+		answer = new ResponseAnswer()
+	): boolean => {
+		answer.observe(task);
 		setCurrentContextId(task.contextId);
 		const isTerminalTask = isTerminalTaskState(task.status?.state);
 		setTaskId(isTaskContinuationState(task.status?.state) ? task.id : undefined);
@@ -1293,26 +1261,19 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			return true;
 		}
 
-		if (!isTerminalTask) {
+		if (!isTerminalTask && !isTaskContinuationState(task.status?.state)) {
 			return false;
 		}
 
-		const messages = getUnshownTaskAgentMessages(task, shownMessageKeysRef.current);
-		let renderedAgentOutput = false;
-		for (const message of messages) {
-			renderedAgentOutput =
-				replaceLastResponseStreamSection(message, task.id) ||
-				renderAgentResponseBubble(message, task.id) ||
-				renderedAgentOutput;
-		}
-		finalizeOpenStreamEntries(task.id);
-		return renderedAgentOutput;
+		return renderCanonicalResponse(answer);
 	};
 
 	const handleStatusUpdate = (
 		event: TaskStatusUpdateEvent,
-		protocolPayload: unknown = event
+		protocolPayload: unknown = event,
+		answer = new ResponseAnswer()
 	): boolean => {
+		answer.observe(event);
 		setCurrentContextId(event.contextId);
 		setTaskId(isTaskContinuationState(event.status?.state) ? event.taskId : undefined);
 		setStreamLabel(taskStateLabel(event.status?.state));
@@ -1322,14 +1283,10 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			return true;
 		}
 
-		let renderedAgentOutput = false;
-		if (
-			event.status?.message &&
-			(isTerminalTaskState(event.status.state) || isFinalStatusEvent(event)) &&
-			replaceLastResponseStreamSection(event.status.message, event.taskId)
-		) {
-			renderedAgentOutput = true;
+		if (isTerminalTaskState(event.status?.state) || isTaskContinuationState(event.status?.state)) {
+			return renderCanonicalResponse(answer);
 		}
+		let renderedAgentOutput = false;
 
 		const activeStreamSection = getLastStreamTranscriptSection(
 			streamTranscriptStateRef.current,
@@ -1345,19 +1302,18 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			})
 		) {
 			renderedAgentOutput = event.status?.message
-				? renderAgentResponseBubble(event.status.message, event.taskId)
+				? renderAgentResponseBubble(event.status.message, event.taskId, answer)
 				: false;
-		}
-		if (isTerminalTaskState(event.status?.state) || isFinalStatusEvent(event)) {
-			finalizeOpenStreamEntries(event.taskId);
 		}
 		return renderedAgentOutput;
 	};
 
 	const handleArtifactUpdate = (
 		event: TaskArtifactUpdateEvent,
-		protocolPayload: unknown = event
+		protocolPayload: unknown = event,
+		answer = new ResponseAnswer()
 	): boolean => {
+		answer.observe(event);
 		setCurrentContextId(event.contextId);
 		setTaskId(undefined);
 
@@ -1404,6 +1360,9 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			append: event.append === true,
 			replaceCurrentSection
 		});
+		if (streamArtifactKind === "response") {
+			rememberResponseEntry(answer, preparedDelta.section.entryId);
+		}
 		chatSessionLogger.debug("chat.stream_delta.prepared", {
 			taskId: event.taskId,
 			contextId: event.contextId,
@@ -1763,9 +1722,7 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				onCreated: activateNewContext,
 				onWelcome: (request, response) => {
 					const originalContext = request.message!.contextId;
-					const messages = isMessage(response)
-						? [request.message!, response]
-						: [request.message!, ...getTaskMessages(response)];
+					const messages = [request.message!, ...responseMessages(response, request.message!.messageId)];
 					const warning = saveCompletedExchange({
 						environment: selectedEnvironment,
 						agentKey: selectedContextAgentKey,
@@ -1963,16 +1920,6 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				? `${trimmed}\n\n*Attached: ${attachedFiles.join(", ")}*`
 				: trimmed;
 
-		setEntries((current) => [
-			...current,
-			{
-				id: randomUUID(),
-				role: "user",
-				body: displayBody,
-				isFinalized: true
-			}
-		]);
-
 		const requestContextId = contextIdRef.current ?? randomUUID();
 		if (!contextIdRef.current) activateNewContext(requestContextId);
 		const params = buildMessageParams(parts, requestContextId, taskId, pushConfig);
@@ -1981,12 +1928,23 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			appendStatus("Unable to build outbound A2A message.");
 			return;
 		}
+		// Keep this turn editable until the final canonical answer is selected.
+		setEntries((current) => [
+			...current,
+			{
+				id: randomUUID(),
+				role: "user",
+				body: displayBody,
+				isFinalized: false
+			}
+		]);
 		chatSessionLogger.debug("chat.user_message.submitted", {
 			body: displayBody,
 			attachedFiles,
 			selectedAgent: summarizeAgentForLog(selectedAgent),
 			message: summarizeMessageForLog(outboundMessage)
 		});
+		const answer = new ResponseAnswer(outboundMessage.messageId);
 		const canStream = Boolean(clientState.agentCard.capabilities?.streaming);
 		const useStreaming = requestMode === "streaming-message" && canStream;
 		let requestStartedAt: number | undefined;
@@ -2014,7 +1972,6 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			if (useStreaming) {
 				setStreamLabel("Streaming");
 				let completedTask: Task | undefined;
-				const completedMessages: Message[] = [];
 				let finalStatusUpdate: TaskStatusUpdateEvent | undefined;
 				let reachedTerminal = false;
 				let renderedAgentOutput = false;
@@ -2028,16 +1985,15 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 						event: summarizeProtocolEventForLog(event)
 					});
 					if (isMessage(event)) {
-						if (event.role === Role.ROLE_AGENT && shouldRenderLiveResponseMessage(event)) completedMessages.push(event);
 						renderedAgentOutput =
-							handleMessage(event, streamResponse) || renderedAgentOutput;
+							handleMessage(event, streamResponse, answer) || renderedAgentOutput;
 					} else if (isTask(event)) {
 						if (isTerminalTaskState(event.status?.state)) {
 							completedTask = event;
 							reachedTerminal = true;
 						}
 						renderedAgentOutput =
-							handleTaskSnapshot(event, streamResponse) || renderedAgentOutput;
+							handleTaskSnapshot(event, streamResponse, answer) || renderedAgentOutput;
 					} else if (isTaskStatusUpdateEvent(event)) {
 						if (isTerminalTaskState(event.status?.state)) {
 							reachedTerminal = true;
@@ -2046,13 +2002,16 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 							finalStatusUpdate = event;
 						}
 						renderedAgentOutput =
-							handleStatusUpdate(event, streamResponse) || renderedAgentOutput;
+							handleStatusUpdate(event, streamResponse, answer) || renderedAgentOutput;
 					} else {
 						renderedAgentOutput =
-							handleArtifactUpdate(event, streamResponse) || renderedAgentOutput;
+							handleArtifactUpdate(event, streamResponse, answer) || renderedAgentOutput;
 					}
 				}
 				if (requestSignal.aborted) return;
+				if (responseMode !== "a2a-protocol") {
+					renderedAgentOutput = renderCanonicalResponse(answer) || renderedAgentOutput;
+				}
 				if (
 					shouldShowNoAgentMessageNotice({
 						responseMode,
@@ -2066,21 +2025,12 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 					});
 					appendSystem(NO_AGENT_MESSAGE_NOTICE);
 				}
-				if (completedTask) {
-					persistCompletedExchange(
-						completedTask.contextId,
-						[outboundMessage, ...getTaskMessages(completedTask)],
-						completedTask.id
-					);
-				} else if (finalStatusUpdate?.status?.message) {
-					persistCompletedExchange(
-						finalStatusUpdate.contextId,
-						[outboundMessage, finalStatusUpdate.status.message],
-						finalStatusUpdate.taskId
-					);
-				} else if (completedMessages.length) {
-					persistCompletedExchange(completedMessages.at(-1)?.contextId || requestContextId, [outboundMessage, ...completedMessages]);
-				}
+				const canonicalMessage = answer.message();
+				persistCompletedExchange(
+					completedTask?.contextId || finalStatusUpdate?.contextId || canonicalMessage?.contextId || requestContextId,
+					[outboundMessage, ...(canonicalMessage ? [canonicalMessage] : [])],
+					completedTask?.id || finalStatusUpdate?.taskId || canonicalMessage?.taskId
+				);
 				chatSessionLogger.debug("a2a.request.completed", {
 					transport: "stream",
 					durationMs: Date.now() - requestStartedAt,
@@ -2101,19 +2051,19 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 				let reachedTerminal = isMessage(response);
 				let renderedAgentOutput = false;
 				if (isMessage(response)) {
-					renderedAgentOutput = handleMessage(response);
+					renderedAgentOutput = handleMessage(response, response, answer);
 					persistCompletedExchange(
 						response.contextId || outboundMessage.contextId,
-						[outboundMessage, response],
+						[outboundMessage, ...responseMessages(response, outboundMessage.messageId)],
 						response.taskId
 					);
 				} else {
 					reachedTerminal = isTerminalTaskState(response.status?.state);
-					renderedAgentOutput = handleTaskSnapshot(response);
-					if (reachedTerminal) {
+					renderedAgentOutput = handleTaskSnapshot(response, response, answer);
+					if (reachedTerminal || isTaskContinuationState(response.status?.state)) {
 						persistCompletedExchange(
 							response.contextId,
-							[outboundMessage, ...getTaskMessages(response)],
+							[outboundMessage, ...responseMessages(response, outboundMessage.messageId)],
 							response.id
 						);
 					}
@@ -2153,7 +2103,10 @@ export function ChatApp({ options }: { options: ChatCliOptions }): React.JSX.Ele
 			if (useStreaming && !requestSignal.aborted) {
 				finalizeOpenStreamEntries();
 			}
-			if (!requestSignal.aborted) setWorkingStartedAt(undefined);
+			if (!requestSignal.aborted) {
+				setEntries((current) => finalizeTranscriptEntries(current));
+				setWorkingStartedAt(undefined);
+			}
 		}
 	};
 

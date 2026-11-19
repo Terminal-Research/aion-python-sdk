@@ -111,12 +111,50 @@ def test_a_streamed_answer_is_the_tasks_answer() -> None:
     assert answer_text(task(message("ask"), artifacts=(streamed, report))) == "Streamed"
 
 
-def test_without_a_streamed_answer_the_last_artifact_with_text_answers() -> None:
-    thoughts = Artifact(artifact_id=ArtifactId.THINKING_DELTA.value, parts=[Part(text="hm")])
-    first, last = text_artifact("First", artifact_id="a"), text_artifact("Last", artifact_id="b")
-    numbers = data_artifact({"n": 1}, artifact_id="c")
+def test_assistant_answer_wins_without_its_source_message_in_history() -> None:
+    answer = Artifact(artifact_id=ArtifactId.ASSISTANT_ANSWER.value, parts=[Part(text="Final"), Part(text="answer")])
+    answer.metadata[A2AMetadataKey.SOURCE_MESSAGE_ID.value] = "not-in-history"
+    streamed = Artifact(artifact_id=ArtifactId.STREAM_DELTA.value, parts=[Part(text="Draft")])
+    history = (message("ask"), message("Message fallback", Role.ROLE_AGENT))
 
-    assert answer_text(task(artifacts=(thoughts, first, last, numbers))) == "Last"
+    assert answer_text(task(*history, artifacts=(answer, streamed, text_artifact("Report")))) == "Final\nanswer"
+
+
+def test_current_turn_messages_precede_stream_fallback() -> None:
+    history = (message("Old", Role.ROLE_AGENT), message("ask"),
+               message("One", Role.ROLE_AGENT), message("Two", Role.ROLE_AGENT))
+    streamed = Artifact(artifact_id=ArtifactId.STREAM_DELTA.value, parts=[Part(text="Draft")])
+
+    assert answer_text(task(*history, artifacts=(streamed,))) == "One\n\nTwo"
+
+
+def test_an_earlier_turn_is_not_the_current_answer() -> None:
+    assert answer_text(task(message("Which file?", Role.ROLE_AGENT), message("that one"))) is None
+
+
+def test_latest_answer_replaces_an_earlier_answer_even_without_source_metadata() -> None:
+    first = text_artifact("First", artifact_id=ArtifactId.ASSISTANT_ANSWER.value)
+    last = text_artifact("Last", artifact_id=ArtifactId.ASSISTANT_ANSWER.value)
+
+    assert answer_text(task(artifacts=(first, last))) == "Last"
+
+
+def test_empty_or_file_only_answer_does_not_block_message_or_stream_fallback() -> None:
+    empty = Artifact(artifact_id=ArtifactId.ASSISTANT_ANSWER.value, parts=[Part(url="https://files.test/a.pdf")])
+    streamed = text_artifact("Fallback", artifact_id=ArtifactId.STREAM_DELTA.value)
+    old = text_artifact("Old", artifact_id=ArtifactId.ASSISTANT_ANSWER.value)
+
+    assert answer_text(task(message("Message", Role.ROLE_AGENT), artifacts=(old, empty, streamed))) == "Message"
+    assert answer_text(task(artifacts=(old, empty, streamed))) == "Fallback"
+    assert answer_text(task(artifacts=(empty,))) is None
+
+
+def test_generic_results_thoughts_and_reactions_are_not_answer_text() -> None:
+    artifacts = tuple(text_artifact("Not an answer", artifact_id=kind) for kind in
+                      ("report", ArtifactId.THINKING_DELTA.value, ArtifactId.REACTION.value))
+
+    assert answer_text(task(artifacts=artifacts)) is None
+    assert text_of(artifacts[0]) == "Not an answer"
 
 
 def test_a_task_that_only_talked_answers_with_the_copy_of_its_last_message() -> None:
@@ -126,11 +164,11 @@ def test_a_task_that_only_talked_answers_with_the_copy_of_its_last_message() -> 
     assert answer_text(task(*history, artifacts=(copied,))) == "Done."
 
 
-def test_an_unfinished_task_answers_with_what_the_agent_said_last() -> None:
-    history = (message("ask"), message("Which file?", Role.ROLE_AGENT), message("that one"))
-
-    assert answer_text(task(*history)) == "Which file?"
-
-
 def test_a_task_that_said_nothing_has_no_answer() -> None:
     assert answer_text(task(message("ask"))) is None
+
+
+def test_a_status_message_already_in_an_earlier_turn_is_not_replayed() -> None:
+    old = message("Which file?", Role.ROLE_AGENT)
+
+    assert answer_text(task(old, message("that one"), status=old)) is None

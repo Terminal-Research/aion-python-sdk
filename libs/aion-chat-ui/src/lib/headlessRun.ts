@@ -9,9 +9,10 @@ import type {
 } from "@a2a-js/sdk";
 
 import type { HeadlessRunOptions } from "../args.js";
-import { STREAM_DELTA_ARTIFACT_ID } from "./a2aMetadata.js";
+import { ASSISTANT_ANSWER_ARTIFACT_ID, STREAM_DELTA_ARTIFACT_ID } from "./a2aMetadata.js";
 import {
 	isMessage,
+	isTaskContinuationState,
 	isTask,
 	isTaskArtifactUpdateEvent,
 	isTaskStatusUpdateEvent,
@@ -19,12 +20,12 @@ import {
 	type StreamEvent
 } from "./a2aProtocol.js";
 import {
-	getUnshownTaskAgentMessages,
 	markShownMessage,
 	shouldRenderLiveResponseMessage,
 	shouldRenderLiveStatusMessage,
 	shouldShowNoAgentMessageNotice
 } from "./chatSession.js";
+import { ResponseAnswer } from "./responseAnswer.js";
 import { loadChatSettings } from "./chatSettings.js";
 import {
 	buildMessageParams,
@@ -84,12 +85,12 @@ interface OutputEntry {
 }
 
 interface MessageOutputState {
+	answer: ResponseAnswer;
 	entries: OutputEntry[];
 	shownMessageKeys: Set<string>;
 	shownArtifactKeys: Set<string>;
 	streamedTaskIds: Set<string>;
 	reachedTerminal: boolean;
-	renderedAgentOutput: boolean;
 }
 
 function writeLine(stream: WritableStreamLike, line: string): void {
@@ -295,7 +296,6 @@ function appendOutput(
 	} else {
 		state.entries.push({ key, body });
 	}
-	state.renderedAgentOutput = true;
 	return true;
 }
 
@@ -340,6 +340,7 @@ function renderArtifact(
 function renderTaskArtifacts(state: MessageOutputState, task: Task): boolean {
 	let rendered = false;
 	for (const artifact of task.artifacts ?? []) {
+		if (isAnswerArtifact(artifact)) continue;
 		const artifactKey = `${task.id}:${artifact.artifactId}`;
 		if (state.shownArtifactKeys.has(artifactKey)) {
 			continue;
@@ -349,55 +350,45 @@ function renderTaskArtifacts(state: MessageOutputState, task: Task): boolean {
 	return rendered;
 }
 
+function renderCanonicalOutput(state: MessageOutputState): boolean {
+	const replaced = state.answer.replacedEntryIds();
+	state.entries = state.entries.filter((entry) => !replaced.has(entry.key));
+	const message = state.answer.message();
+	if (!message) return false;
+	return appendOutput(state, state.answer.entryId, formatMessageParts(message.parts));
+}
+
 function handleMessageOutputMessage(
 	state: MessageOutputState,
 	message: Message,
 	reachedTerminal = false
 ): boolean {
-	if (reachedTerminal) {
-		state.reachedTerminal = true;
-	}
-	return renderAgentMessage(state, message);
+	state.reachedTerminal ||= reachedTerminal;
+	state.answer.observe(message);
+	return renderCanonicalOutput(state);
 }
 
-function handleMessageOutputTask(
-	state: MessageOutputState,
-	task: Task
-): boolean {
-	const isTerminalTask = isTerminalTaskState(task.status?.state);
-	if (isTerminalTask) {
-		state.reachedTerminal = true;
-	}
-	if (!isTerminalTask || state.streamedTaskIds.has(task.id)) {
-		return false;
-	}
-
-	let rendered = false;
-	for (const message of getUnshownTaskAgentMessages(task, state.shownMessageKeys)) {
-		rendered = renderAgentMessage(state, message, task.id) || rendered;
-	}
-	rendered = renderTaskArtifacts(state, task) || rendered;
-	return rendered;
+function handleMessageOutputTask(state: MessageOutputState, task: Task): boolean {
+	state.answer.observe(task);
+	const terminal = isTerminalTaskState(task.status?.state);
+	if (!terminal && !isTaskContinuationState(task.status?.state)) return false;
+	state.reachedTerminal ||= terminal;
+	const artifactsRendered = renderTaskArtifacts(state, task);
+	return renderCanonicalOutput(state) || artifactsRendered;
 }
 
 function handleMessageOutputStatusUpdate(
 	state: MessageOutputState,
 	event: TaskStatusUpdateEvent
 ): boolean {
+	state.answer.observe(event);
 	if (isTerminalTaskState(event.status?.state)) {
 		state.reachedTerminal = true;
+		return renderCanonicalOutput(state);
 	}
-
-	if (
-		shouldRenderLiveStatusMessage({
-			message: event.status?.message,
-			taskId: event.taskId,
-			streamedTaskIds: state.streamedTaskIds
-		})
-	) {
-		return event.status?.message
-			? renderAgentMessage(state, event.status.message, event.taskId)
-			: false;
+	if (shouldRenderLiveStatusMessage({ message: event.status?.message,
+		taskId: event.taskId, streamedTaskIds: state.streamedTaskIds })) {
+		return event.status?.message ? renderAgentMessage(state, event.status.message, event.taskId) : false;
 	}
 	return false;
 }
@@ -406,24 +397,28 @@ function handleMessageOutputArtifactUpdate(
 	state: MessageOutputState,
 	event: TaskArtifactUpdateEvent
 ): boolean {
-	if (!event.artifact) {
-		return false;
-	}
-	const rendered = renderArtifact(state, event.artifact, event.taskId, event.append);
-	if (rendered && event.artifact.artifactId === STREAM_DELTA_ARTIFACT_ID) {
+	state.answer.observe(event);
+	if (!event.artifact) return false;
+	if (event.artifact.artifactId === STREAM_DELTA_ARTIFACT_ID) {
 		state.streamedTaskIds.add(event.taskId);
 	}
-	return rendered;
+	if (isAnswerArtifact(event.artifact)) return renderCanonicalOutput(state);
+	return renderArtifact(state, event.artifact, event.taskId, event.append);
 }
 
-function createMessageOutputState(): MessageOutputState {
+function isAnswerArtifact(artifact: Artifact): boolean {
+	return artifact.artifactId === ASSISTANT_ANSWER_ARTIFACT_ID
+		|| artifact.artifactId === STREAM_DELTA_ARTIFACT_ID;
+}
+
+function createMessageOutputState(requestMessageId?: string): MessageOutputState {
 	return {
+		answer: new ResponseAnswer(requestMessageId),
 		entries: [],
 		shownMessageKeys: new Set<string>(),
 		shownArtifactKeys: new Set<string>(),
 		streamedTaskIds: new Set<string>(),
-		reachedTerminal: false,
-		renderedAgentOutput: false
+		reachedTerminal: false
 	};
 }
 
@@ -433,6 +428,7 @@ function writeMessageOutput(
 	stdout: WritableStreamLike,
 	stderr: WritableStreamLike
 ): void {
+	renderCanonicalOutput(state);
 	const output = state.entries
 		.map((entry) => entry.body)
 		.filter(Boolean)
@@ -445,7 +441,7 @@ function writeMessageOutput(
 		shouldShowNoAgentMessageNotice({
 			responseMode,
 			reachedTerminal: state.reachedTerminal,
-			renderedAgentOutput: state.renderedAgentOutput
+			renderedAgentOutput: Boolean(output)
 		})
 	) {
 		writeLine(stderr, NO_AGENT_MESSAGE_NOTICE);
@@ -475,7 +471,7 @@ async function sendSingleMessage({
 		return;
 	}
 
-	const state = createMessageOutputState();
+	const state = createMessageOutputState(params.message?.messageId);
 	if (isMessage(response)) {
 		handleMessageOutputMessage(state, response, true);
 	} else {
@@ -497,7 +493,7 @@ async function sendStreamingMessage({
 	stdout: WritableStreamLike;
 	stderr: WritableStreamLike;
 }): Promise<void> {
-	const state = createMessageOutputState();
+	const state = createMessageOutputState(params.message?.messageId);
 
 	for await (const streamResponse of clientState.client.sendMessageStream(params)) {
 		if (responseMode === "a2a-protocol") {

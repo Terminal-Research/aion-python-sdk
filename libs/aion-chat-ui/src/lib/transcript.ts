@@ -1,3 +1,5 @@
+import type { ResponseAnswer } from "./responseAnswer.js";
+
 export type TranscriptRole =
 	| "agent"
 	| "user"
@@ -472,4 +474,31 @@ export function replaceActiveStreamTranscriptSection({
 		replaced: true,
 		section: activeSection
 	};
+}
+
+/** Replace this turn's response sections and source duplicates, keeping other output. */
+export function reconcileResponseTranscript(
+	entries: TranscriptEntry[],
+	answer: ResponseAnswer,
+	body: string,
+	responseEntryIds: ReadonlySet<string>
+): TranscriptEntry[] {
+	const replaced = new Set([...answer.replacedEntryIds()]
+		.filter((id) => id === answer.entryId || responseEntryIds.has(id)));
+	const streamEntryIds = new Set([...responseEntryIds]
+		.filter((id) => id.startsWith("artifact:") && id.includes(":aion:stream-delta:")));
+	const removedDividers = new Set([...streamEntryIds].map((id) => {
+		const taskId = id.slice("artifact:".length, id.lastIndexOf(":aion:stream-delta:"));
+		return `artifact-divider:${taskId}:${id.split(":").at(-1)}`;
+	}));
+	const canonical: TranscriptEntry = { id: answer.entryId, role: "agent", body, isFinalized: false };
+	let inserted = false;
+	const result = entries.flatMap((entry): TranscriptEntry[] => {
+		if (removedDividers.has(entry.id)) return [];
+		if (!replaced.has(entry.id) && !streamEntryIds.has(entry.id)) return [entry];
+		if (inserted) return [];
+		inserted = true;
+		return [canonical];
+	});
+	return inserted ? result : [...result, canonical];
 }

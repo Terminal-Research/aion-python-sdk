@@ -4,6 +4,7 @@ export const DISTRIBUTION_EXTENSION_URI_V1 =
 	"https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0";
 export const TRACEABILITY_EXTENSION_URI_V1 =
 	"https://docs.aion.to/a2a/extensions/aion/traceability/1.0.0";
+export const ASSISTANT_ANSWER_ARTIFACT_ID = "aion:assistant-answer";
 export const STREAM_DELTA_ARTIFACT_ID = "aion:stream-delta";
 export const THINKING_DELTA_ARTIFACT_ID = "aion:thinking-delta";
 
