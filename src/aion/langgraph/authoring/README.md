@@ -227,7 +227,7 @@ Use these inside any graph node that receives a `StreamWriter`. They emit events
 from langgraph.types import StreamWriter
 from langchain_core.messages import AIMessage, AIMessageChunk
 from aion.core.a2a import data_artifact, file_artifact, text_artifact, url_artifact
-from aion.langgraph.authoring import emit_artifact, emit_message, emit_thinking
+from aion.langgraph.authoring import aemit_message, emit_artifact, emit_message, emit_thinking
 
 def my_node(state: dict, writer: StreamWriter):
     # One thought — added to the task's aion:thinking-delta artifact
@@ -262,7 +262,20 @@ def streaming_node(state: dict, writer: StreamWriter):
     return state
 ```
 
-A model a node calls needs no `emit_message`: LangGraph streams the call on its own `messages` stream, and the server sends it as a section of its own, so sending its chunks with `emit_message` as well sends the answer twice. `emit_message` is for chunks that stream does not carry: text the node makes itself, or the output of a model tagged `nostream`.
+`emit_message` also takes an iterator of `str` or `AIMessageChunk`, `llm.stream(...)` say, and `aemit_message` an async iterator as well, `llm.astream(...)`. The iterator streams as one section, ended by the whole message, which they return for the node to keep in its state:
+
+```python
+def answer_node(state: dict, writer: StreamWriter):
+    return {"messages": [emit_message(writer, llm.stream(state["messages"]))]}
+
+
+async def answer_node_async(state: dict, writer: StreamWriter):
+    return {"messages": [await aemit_message(writer, llm.astream(state["messages"]))]}
+```
+
+LangGraph streams every model call a node makes on its own `messages` stream. The model calls that start while `emit_message` or `aemit_message` reads an iterator stay off that stream, so the answer goes out once, with the `routing` and `metadata` given, and a call whose result the iterator does not yield does not reach the client. Reading an iterator with `emit_message` blocks the thread that runs the node; in an async node, use `aemit_message`.
+
+A node that reads a model's stream itself and emits each chunk - `for chunk in llm.stream(prompt): emit_message(writer, chunk)` - sends a copy of a call LangGraph streams already. The server sends the call from the `messages` stream and leaves the copy out, with the `routing` and `metadata` the node gave its chunks; the same holds for the message such a call returned. Pass the stream itself to keep them.
 
 ---
 
@@ -308,6 +321,7 @@ a test an `InMemoryConversation` to read. See "Conversation history" in the
 | End of a streamed section whose last chunk was not marked | `TaskArtifactUpdateEvent(aion:stream-delta, append=true, last_chunk=true)` with one empty text part |
 | `emit_message(AIMessage)` | `TaskStatusUpdateEvent(working, message=...)` |
 | `emit_message(AIMessageChunk)` | `TaskArtifactUpdateEvent(aion:stream-delta)` |
+| `emit_message(iterator)` / `await aemit_message(async_iterator)` | `TaskArtifactUpdateEvent(aion:stream-delta)`, one section, ended by the whole message |
 | `emit_thinking(text)` / `thread.thinking(text)` | `TaskArtifactUpdateEvent(aion:thinking-delta)`, one part per thought |
 | `emit_message(AIMessage, metadata=...)` | `TaskStatusUpdateEvent(working, message=..., metadata=...)` |
 | `emit_artifact(url_artifact(...))` / `emit_artifact(data_artifact(...))` / `emit_artifact(text_artifact(...))` | `TaskArtifactUpdateEvent` |

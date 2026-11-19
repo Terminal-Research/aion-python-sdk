@@ -6,6 +6,10 @@
 
 * **files:** a stored file's part keeps the version's address, which works only with authorization, instead of a download link: a task, a checkpoint and a session hold no credential. The server puts a download link in its answers and push notifications on behalf of the caller's usage attribution, and an agent reads a file with `read()` or `link()` of `ConversationFile`, or through `inline_files`; code that fetches `part.url` itself, or hands it to a model, gets no file.
 
+### Features
+
+* **langgraph:** `emit_message` streams an iterator of `str` or `AIMessageChunk`, `llm.stream(...)` say, and the new `aemit_message` an async iterator as well, `llm.astream(...)`: the iterator goes out as one section of the streamed answer, and the whole message that ends it is returned for the node to keep in its state. The model calls that start while the iterator is read stay off LangGraph's `messages` stream, so the answer goes out once.
+
 ### Bug Fixes
 
 * **server:** a turn that ends the task with a `Task` in the outbox (`COMPLETED`, `FAILED`, `CANCELED`, `REJECTED`) sends its push notification with that Task and ends its execution; the callback received only `SUBMITTED`, and the task stayed held by the server.
@@ -25,6 +29,7 @@
 * **models:** a file of a model request is known by its stored file wherever the turn knows it - a file of the message in ADK's run request, which names it by an address the session does not name, and the bytes a request carries: a tool's media, a LangGraph block `inline_files` gave the graph - so a file the model refused in one turn is left out in the next, and the warning names the stored file instead of `not stored`. The same bytes with another media type are another file.
 * **models:** a request with tools through `aion_lite_llm` no longer fails before it is sent in a project with both frameworks installed: LiteLLM 1.103 and later load their MCP gateway for every request with tools, and the gateway needs an `mcp` release `langchain-mcp-adapters` does not allow. `aion_lite_llm` skips the gateway, which serves only MCP tools that name LiteLLM's proxy.
 * **langgraph:** an answer `thread.reply()` or `thread.post()` streams from a model - its `astream()`, or text taken from it - reaches the client once: LangGraph streamed the model call on its own as well, and a second section started the answer over. The model calls that start while the thread reads the iterator stay off the graph's `messages` stream, so what the iterator yields is the answer, with the reply's routing target, and a model call the iterator makes for itself does not reach the client. A call that started before the thread reads the iterator, or one given `tags` in a config of its own, still streams on the graph.
+* **langgraph:** a node that emits the chunks of a model call itself - `for chunk in llm.stream(prompt): emit_message(writer, chunk)` - or the message the call returned no longer sends the answer twice: LangGraph streams the call on its own as well, and the server now leaves out the node's copy, with the routing target and metadata it gave the chunks.
 * **server:** a push notification the webhook does not acknowledge is tried again: a timeout, a failed connection, HTTP 408, 429 and 5xx get up to five more attempts, after 1, 2, 4, 8 and 16 s, or after the receiver's `Retry-After` up to 16 s; a delivery that gives up is logged as a warning, and the task's outcome counts as pushed only once it is queued, so an outcome that never reached the sender is still pushed when the execution ends. Each webhook receives a task's events in order from a queue of its own, so the stream, `message/send` and a cancel no longer wait for the webhook.
 
 ## 0.1.0 (2026-11-16)

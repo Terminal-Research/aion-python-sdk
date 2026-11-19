@@ -7,10 +7,16 @@ Architecture (see thread_message_concept.md):
   Builders (aion.core)  →  emit_* (here, explicit params)  →  Thread (magic wrapper)
 """
 
+import logging
+from collections.abc import AsyncIterable, Iterable, Iterator
+from contextlib import contextmanager
+
 from a2a.types import Artifact
 from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 from aion.core.agent.invocation.card import Card
 from langchain_core.messages import AIMessage, AIMessageChunk
+from langchain_core.runnables.config import var_child_runnable_config
+from langgraph.constants import TAG_NOSTREAM
 from langgraph.types import StreamWriter
 from typing import Any, Optional
 from uuid import uuid4
@@ -22,6 +28,8 @@ from ..events.custom_events import (
     ReactionCustomEvent,
     ThinkingCustomEvent,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def emit_artifact(
@@ -97,39 +105,188 @@ def emit_card(
     writer(CardCustomEvent(card=card, routing=routing, metadata=metadata))
 
 
-def emit_message(
+class _StreamedSection:
+    """One section of the streamed answer, sent from the items of an iterator.
+
+    Every item goes out as a chunk of ``aion:stream-delta`` with the routing
+    target and the metadata; ``close`` sends the whole message that ends the
+    section, and its text is not sent again.
+    """
+
+    def __init__(self, writer: StreamWriter, routing: MessageActionPayload | None, metadata: dict | None):
+        self._writer = writer
+        self._routing = routing
+        self._metadata = metadata
+        self._text = ""
+
+    def send(self, item: Any) -> None:
+        if isinstance(item, str):
+            item = AIMessageChunk(content=item)
+        if not isinstance(item, AIMessageChunk):
+            logger.warning(
+                "A streamed iterator yielded unsupported type: %s. Expected str or AIMessageChunk.",
+                type(item).__name__,
+            )
+            return
+        _emit_one(self._writer, item, self._routing, self._metadata)
+        self._text += item.text
+
+    def close(self) -> AIMessage | None:
+        if not self._text:
+            return None
+        message = AIMessage(content=self._text, id=str(uuid4()))
+        _emit_one(self._writer, message, self._routing, self._metadata)
+        return message
+
+
+@contextmanager
+def _model_calls_off_the_graph_stream() -> Iterator[None]:
+    """Keep the model calls started inside this block off LangGraph's ``messages`` stream.
+
+    A model called without a config of its own takes the node's config from
+    ``var_child_runnable_config`` when its call starts, and with it the
+    callback that LangGraph builds the ``messages`` stream from. That callback
+    leaves out a call tagged ``nostream``. The block adds the tag to the
+    config in the context, so the model calls that start inside the block
+    reach the client only as what the code around them sends.
+    """
+    config = var_child_runnable_config.get() or {}
+    tags = [*(config.get("tags") or []), TAG_NOSTREAM]
+    token = var_child_runnable_config.set({**config, "tags": tags})
+    try:
+        yield
+    finally:
+        var_child_runnable_config.reset(token)
+
+
+def _emit_one(
         writer: StreamWriter,
         message: AIMessage | AIMessageChunk,
+        routing: MessageActionPayload | None,
+        metadata: dict | None,
+) -> None:
+    if not isinstance(message, AIMessageChunk) and message.id is None:
+        message.id = str(uuid4())
+    writer(MessageCustomEvent(message=message, routing=routing, metadata=metadata))
+
+
+def emit_message(
+        writer: StreamWriter,
+        message: AIMessage | AIMessageChunk | Iterable[str | AIMessageChunk],
         routing: MessageActionPayload | None = None,
         metadata: dict | None = None,
-) -> None:
-    """Emit a message event during graph execution.
+) -> AIMessage | AIMessageChunk | None:
+    """Emit a message, a chunk of the streamed answer, or a whole streamed answer.
 
-    Supports both full messages and streaming chunks:
     - AIMessage > TaskStatusUpdateEvent(working, message=...), kept in the task's history
     - AIMessageChunk > TaskArtifactUpdateEvent(STREAM_DELTA), a chunk of the streamed answer;
       a full AIMessage that follows the chunks ends their section instead of becoming a
       message, and its text is not sent again
+    - an iterator of str or AIMessageChunk, ``llm.stream(...)`` say > one section of the
+      streamed answer, ended by the whole message, which is returned
 
     A full message without an id gets one here, on the message itself. A node
     that also returns the message into the graph's state makes LangGraph send
     it once more; under the same id that copy is recognized as the message
     already sent, and neither it nor its files reach the client twice.
 
+    LangGraph streams every model call a node makes on its own ``messages``
+    stream. The model calls that start while an iterator is read here are
+    kept off that stream, so what the iterator yields is the answer, sent
+    once with ``routing`` and ``metadata``; a call whose result the iterator
+    does not yield does not reach the client. A call that started before the
+    iterator is read - the iterator was read before it was passed here, or
+    code running elsewhere feeds it, another thread or a task started
+    earlier - and one given ``tags`` in a config of its own
+    stay on the graph's stream; the server sends the call's chunks from there
+    and leaves out the chunks of the same call emitted here, ``routing`` and
+    ``metadata`` with them. An iterator that raises ends the section with
+    what it yielded, and the error is logged.
+
+    Reading an iterator blocks the thread that runs the node; in an async
+    node, ``await aemit_message(writer, llm.astream(...))`` streams without
+    blocking the event loop.
+
     Args:
         writer: LangGraph StreamWriter from node signature
-        message: LangChain message to emit (AIMessage or AIMessageChunk)
+        message: LangChain message to emit (AIMessage or AIMessageChunk), or an
+                 iterator of str or AIMessageChunk to stream
         routing: Optional delivery routing target (MessageActionPayload)
         metadata: Optional user-defined metadata forwarded to A2A Message.metadata.
                   Keys must not start with "aion:" (reserved for service use).
 
+    Returns:
+        The message or chunk emitted; for an iterator, the whole message that
+        ended its section, or None when it yielded no text.
+
+    Raises:
+        TypeError: ``message`` is an async iterator, which ``aemit_message``
+            streams, or of a type that cannot be emitted.
+
     Example:
         def my_node(state: dict, writer: StreamWriter):
             emit_message(writer, AIMessage(content="Done"))
+
+        def answer_node(state: dict, writer: StreamWriter):
+            return {"messages": [emit_message(writer, llm.stream(state["messages"]))]}
     """
-    if not isinstance(message, AIMessageChunk) and message.id is None:
-        message.id = str(uuid4())
-    writer(MessageCustomEvent(message=message, routing=routing, metadata=metadata))
+    if isinstance(message, AIMessage):
+        _emit_one(writer, message, routing, metadata)
+        return message
+    if hasattr(message, "__aiter__"):
+        raise TypeError("emit_message() cannot read an async iterator; stream it with `await aemit_message(...)`.")
+    if isinstance(message, (str, bytes)) or not isinstance(message, Iterable):
+        raise TypeError(
+            f"emit_message() takes an AIMessage, an AIMessageChunk or an iterator of them, "
+            f"not {type(message).__name__}."
+        )
+    section = _StreamedSection(writer, routing, metadata)
+    try:
+        with _model_calls_off_the_graph_stream():
+            for item in message:
+                section.send(item)
+    except Exception as e:
+        logger.error("Error reading the iterator emit_message() streams: %s", e, exc_info=True)
+    return section.close()
+
+
+async def aemit_message(
+        writer: StreamWriter,
+        message: AIMessage | AIMessageChunk | Iterable[str | AIMessageChunk] | AsyncIterable[str | AIMessageChunk],
+        routing: MessageActionPayload | None = None,
+        metadata: dict | None = None,
+) -> AIMessage | AIMessageChunk | None:
+    """Emit what ``emit_message`` does, and stream an async iterator as well.
+
+    An async iterator, ``llm.astream(...)`` say, streams as one section of the
+    answer, ended by the whole message, which is returned; the model calls
+    that start while it is read stay off LangGraph's ``messages`` stream, as
+    ``emit_message`` describes. Anything else is ``emit_message``.
+
+    Args:
+        writer: LangGraph StreamWriter from node signature
+        message: LangChain message, or a sync or async iterator of str or AIMessageChunk
+        routing: Optional delivery routing target (MessageActionPayload)
+        metadata: Optional user-defined metadata, as for ``emit_message``
+
+    Returns:
+        The message or chunk emitted; for an iterator, the whole message that
+        ended its section, or None when it yielded no text.
+
+    Example:
+        async def answer_node(state: dict, writer: StreamWriter):
+            return {"messages": [await aemit_message(writer, llm.astream(state["messages"]))]}
+    """
+    if not hasattr(message, "__aiter__"):
+        return emit_message(writer, message, routing=routing, metadata=metadata)
+    section = _StreamedSection(writer, routing, metadata)
+    try:
+        with _model_calls_off_the_graph_stream():
+            async for item in message:
+                section.send(item)
+    except Exception as e:
+        logger.error("Error reading the async iterator aemit_message() streams: %s", e, exc_info=True)
+    return section.close()
 
 
 def emit_thinking(

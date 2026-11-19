@@ -6,20 +6,18 @@ and the agent's thoughts via LangGraph's streaming mechanism.
 
 from __future__ import annotations
 import logging
-from contextlib import contextmanager
 
 from a2a.types import Artifact as A2AArtifact
 from aion.core.a2a.extensions.messaging import MessageActionPayload
 from aion.core.agent import BaseThread
 from aion.core.agent.invocation.card import Card
 from langchain_core.messages import AIMessage, AIMessageChunk
-from langchain_core.runnables.config import var_child_runnable_config
 from langgraph.config import get_stream_writer
-from langgraph.constants import TAG_NOSTREAM
-from typing import Any, Iterator, Optional
+from typing import Any, Optional
 from uuid import uuid4
 
 from .emitters import (
+    aemit_message,
     emit_artifact,
     emit_card,
     emit_message,
@@ -32,25 +30,6 @@ logger = logging.getLogger(__name__)
 ReplyResult = Optional[AIMessage]
 """Return type of Thread.post(): the emitted message or message chunk, or None if nothing was sent."""
 
-
-@contextmanager
-def _model_calls_off_the_graph_stream() -> Iterator[None]:
-    """Keep the model calls started inside this block off LangGraph's ``messages`` stream.
-
-    A model called without a config of its own takes the node's config from
-    ``var_child_runnable_config`` when its call starts, and with it the
-    callback that LangGraph builds the ``messages`` stream from. That callback
-    leaves out a call tagged ``nostream``. The block adds the tag to the
-    config in the context, so the model calls that start inside the block
-    reach the client only as what the code around them sends.
-    """
-    config = var_child_runnable_config.get() or {}
-    tags = [*(config.get("tags") or []), TAG_NOSTREAM]
-    token = var_child_runnable_config.set({**config, "tags": tags})
-    try:
-        yield
-    finally:
-        var_child_runnable_config.reset(token)
 
 
 class Thread(BaseThread):
@@ -94,7 +73,7 @@ class Thread(BaseThread):
 
         Supports str, AIMessage, AIMessageChunk, or async iterator of those types.
         An async iterator over a model's stream, or over text taken from it, sends
-        the answer once (see ``_stream_from_async_iterator``).
+        the answer once (see ``aemit_message``).
         metadata is applied only when the SDK constructs the message (str or async iterator);
         it is ignored for AIMessage and AIMessageChunk which are sent as-is, except that an
         AIMessage without an id gets one (see ``emit_message``).
@@ -120,7 +99,7 @@ class Thread(BaseThread):
             emit_message(writer, content, routing=target)
             return content
         elif hasattr(content, "__aiter__"):
-            return await self._stream_from_async_iterator(writer, content, metadata, routing=target)
+            return await aemit_message(writer, content, routing=target, metadata=metadata)
         else:
             logger.warning(
                 "Thread.post() received unsupported content type: %s. "
@@ -128,64 +107,6 @@ class Thread(BaseThread):
                 type(content).__name__,
             )
             return None
-
-    @staticmethod
-    async def _stream_from_async_iterator(
-            writer,
-            iterator: Any,
-            metadata: dict | None = None,
-            routing: Optional[MessageActionPayload] = None,
-    ) -> Optional[AIMessage]:
-        """Stream chunks of the answer, then the full message that ends them.
-
-        The chunks are a section of ``aion:stream-delta``, and the full
-        message after them ends the section, as a model's streaming does;
-        its text is not sent again. The streamed text is the task's answer,
-        not a message. Every chunk carries ``routing``; the section takes it
-        on its first chunk.
-
-        The iterator is often a model's stream, ``model.astream(...)``, or
-        text taken from one. LangGraph streams every model call a node makes
-        on its own ``messages`` stream, so the same answer would reach the
-        client twice. The model calls that start while the thread reads the
-        iterator are kept off that stream, and what the iterator yields is
-        the answer; a call whose result the iterator does not yield does not
-        reach the client. A call the thread cannot keep off the stream
-        reaches the client a second time: one that started before the
-        thread reads the iterator - the iterator was read before it was
-        passed here, or a task started earlier feeds it - and one given
-        ``tags`` in a config of its own.
-        """
-        accumulated = ""
-        try:
-            with _model_calls_off_the_graph_stream():
-                async for chunk in iterator:
-                    if isinstance(chunk, str):
-                        emit_message(writer, AIMessageChunk(content=chunk), routing=routing, metadata=metadata)
-                        accumulated += chunk
-                    elif isinstance(chunk, AIMessageChunk):
-                        emit_message(writer, chunk, routing=routing, metadata=metadata)
-                        if chunk.content:
-                            accumulated += chunk.content
-                    else:
-                        logger.warning(
-                            "Async iterator yielded unsupported type: %s. "
-                            "Expected str or AIMessageChunk.",
-                            type(chunk).__name__,
-                        )
-        except Exception as e:
-            logger.error(
-                "Error processing async iterator in Thread.reply(): %s",
-                e,
-                exc_info=True,
-            )
-
-        if accumulated:
-            msg = AIMessage(content=accumulated, id=str(uuid4()))
-            emit_message(writer, msg, routing=routing, metadata=metadata)
-            return msg
-
-        return None
 
     async def thinking(self, content: str, *, metadata: dict | None = None) -> None:
         """Add one thought to the task's ``aion:thinking-delta`` artifact.

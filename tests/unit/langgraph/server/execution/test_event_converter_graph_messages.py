@@ -752,3 +752,77 @@ async def test_a_models_stream_posted_with_a_target_keeps_the_target() -> None:
         True,
         *[False] * (len(deltas) - 1),
     ]
+
+
+async def test_a_sync_node_emitting_a_models_stream_sends_the_answer_once() -> None:
+    from aion.langgraph.authoring import emit_message
+
+    model = _sunny_model()
+
+    def respond(state, writer):
+        return {"messages": [emit_message(writer, model.stream(state["messages"]))]}
+
+    events = await _run_graph(("respond", respond))
+
+    assert _sections(events) == ["It is sunny."]
+    assert _messages(events) == []
+
+
+async def test_a_node_awaiting_aemit_message_on_a_models_stream_sends_the_answer_once() -> None:
+    from aion.langgraph.authoring import aemit_message
+
+    model = _sunny_model()
+
+    async def respond(state, writer):
+        return {"messages": [await aemit_message(writer, model.astream(state["messages"]))]}
+
+    events = await _run_graph(("respond", respond))
+
+    assert _sections(events) == ["It is sunny."]
+    assert _messages(events) == []
+
+
+async def test_a_node_emitting_each_chunk_of_a_models_stream_sends_the_answer_once() -> None:
+    """The node reads the stream itself, so LangGraph streams the call as well;
+    the server sends the call from the graph's stream and leaves out the node's copy."""
+    from aion.langgraph.authoring import emit_message
+
+    model = _sunny_model()
+
+    def respond(state, writer):
+        for chunk in model.stream(state["messages"]):
+            emit_message(writer, chunk)
+        return {}
+
+    events = await _run_graph(("respond", respond))
+
+    assert _sections(events) == ["It is sunny."]
+    assert _messages(events) == []
+
+
+async def test_a_node_emitting_the_result_of_a_streamed_call_does_not_send_it_again() -> None:
+    from aion.langgraph.authoring import emit_message
+
+    model = _sunny_model()
+
+    async def respond(state, writer):
+        emit_message(writer, await model.ainvoke(state["messages"]))
+        return {}
+
+    events = await _run_graph(("respond", respond))
+
+    assert _sections(events) == ["It is sunny."]
+    assert _messages(events) == []
+
+
+def test_a_nodes_copy_of_a_streamed_call_produces_no_event() -> None:
+    converter = _converter()
+    events = converter.convert("messages", _chunk("It is ", "run-1"))
+    events += converter.convert("custom", MessageCustomEvent(message=_chunk("It is ", "run-1")))
+    events += converter.convert("messages", _chunk("sunny.", "run-1"))
+    events += converter.convert("custom", MessageCustomEvent(message=_chunk("sunny.", "run-1")))
+    events += converter.convert("custom", MessageCustomEvent(message=AIMessage(content="It is sunny.", id="run-1")))
+    events += converter.close_stream()
+
+    assert _deltas(events) == [("It is ", False, False), ("sunny.", True, False), ("", True, True)]
+    assert _messages(events) == []

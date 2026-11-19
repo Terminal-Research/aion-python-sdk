@@ -4,6 +4,7 @@ from a2a.types import Artifact
 from langchain_core.messages import AIMessage, AIMessageChunk
 
 from aion.langgraph.authoring.invocation.emitters import (
+    aemit_message,
     emit_artifact,
     emit_card,
     emit_message,
@@ -138,6 +139,81 @@ class TestEmitMessage:
         # routing is None when not specified (uses distribution default)
         emit_message(writer, AIMessage(content="Hi"))
         assert writer.call_args[0][0].routing is None
+
+
+class TestEmitMessageStream:
+    """An iterator streams as one section, ended by the whole message, which is returned."""
+
+    @staticmethod
+    def _sent(writer) -> list:
+        return [call.args[0].message for call in writer.call_args_list]
+
+    def test_a_message_is_returned(self, writer):
+        msg = AIMessage(content="Hello")
+        assert emit_message(writer, msg) is msg
+
+    def test_an_iterator_streams_its_items_then_the_whole_message(self, writer):
+        result = emit_message(writer, iter(["It ", AIMessageChunk(content="is sunny.")]))
+
+        sent = self._sent(writer)
+        assert [type(m) for m in sent] == [AIMessageChunk, AIMessageChunk, AIMessage]
+        assert [m.text for m in sent] == ["It ", "is sunny.", "It is sunny."]
+        assert result is sent[-1]
+        assert result.id
+
+    def test_every_item_of_an_iterator_carries_routing_and_metadata(self, writer):
+        routing = MessageActionPayload(trajectory="conversation", context_id="C1")
+        emit_message(writer, iter(["a", "b"]), routing=routing, metadata={"k": "v"})
+
+        events = [call.args[0] for call in writer.call_args_list]
+        assert all(event.routing == routing and event.metadata == {"k": "v"} for event in events)
+
+    def test_an_iterator_without_text_sends_no_whole_message(self, writer):
+        assert emit_message(writer, iter([])) is None
+        writer.assert_not_called()
+
+    def test_an_iterator_that_raises_ends_with_what_it_yielded(self, writer):
+        def answer():
+            yield "partial"
+            raise RuntimeError("stream broke")
+
+        result = emit_message(writer, answer())
+
+        assert result.text == "partial"
+        assert isinstance(self._sent(writer)[-1], AIMessage)
+
+    def test_an_async_iterator_is_for_aemit_message(self, writer):
+        async def answer():
+            yield "It is sunny."
+
+        with pytest.raises(TypeError, match="aemit_message"):
+            emit_message(writer, answer())
+        writer.assert_not_called()
+
+    def test_text_is_not_an_iterator_of_chunks(self, writer):
+        with pytest.raises(TypeError):
+            emit_message(writer, "It is sunny.")
+        writer.assert_not_called()
+
+    async def test_aemit_message_streams_an_async_iterator(self, writer):
+        async def answer():
+            yield "It "
+            yield "is sunny."
+
+        result = await aemit_message(writer, answer())
+
+        assert [m.text for m in self._sent(writer)] == ["It ", "is sunny.", "It is sunny."]
+        assert result is self._sent(writer)[-1]
+
+    async def test_aemit_message_emits_anything_else_as_emit_message_does(self, writer):
+        msg = AIMessage(content="Done")
+        assert await aemit_message(writer, msg) is msg
+        assert await aemit_message(writer, iter(["a"])) == self._sent(writer)[-1]
+
+    def test_aemit_message_is_exported_from_the_authoring_package(self):
+        from aion.langgraph.authoring import aemit_message as exported
+
+        assert exported is aemit_message
 
 
 class TestEmitThinking:
