@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-270 scenarios in 50 files, 611 runs across 2 frameworks: 566 run, 44 skipped, 1 independent of the framework.
+273 scenarios in 51 files, 617 runs across 2 frameworks: 569 run, 47 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -46,6 +46,7 @@ Features a framework's native agent does not have; a native scenario driving one
 | langgraph | `artifact-service` | LangGraph has no artifact service; a graph emits artifacts through the Aion API |
 | langgraph | `tool-media` | LangGraph has no function response media; a tool's image is a block of its ToolMessage |
 | adk | `prebuilt-agent` | ADK's LlmAgent is already its one standard way to build an agent; the rest of the native group runs it |
+| adk | `structured-response` | an LlmAgent's output_schema answer reaches the client as the model's JSON text; the server sends no object for it |
 | adk | `subgraph` | ADK has no graphs inside graphs; it composes agents as sub_agents, which is a feature of its own |
 | langgraph | `agent-sequence` | LangGraph has no workflow agent; a graph's edges are its sequence, and an interrupt between its nodes is `core/test_interrupts` |
 | langgraph | `agent-transfer` | LangGraph has no transfer between agents of its own; a graph routes with its edges and keeps who is active in its state |
@@ -87,7 +88,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `evolution` | the evolution extension through the SDK's wrapper and a stand-in toolkit: the standard path, refusals as REJECTED tasks, a cancel | 15 | `make tests-scenarios TAGS=evolution` |
 | `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 21 | `make tests-scenarios-persistence` |
 | `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 19 | `make tests-scenarios-distributed` |
-| `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 62 | `make tests-scenarios TAGS=native` |
+| `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 65 | `make tests-scenarios TAGS=native` |
 
 ## Scenarios by file
 
@@ -631,6 +632,16 @@ A stored file reaches the model by its content, and the framework's state by its
 | [Content goes into the model request only: what is stored is the address.](native/test_stored_files.py#L87 "test_the_task_still_holds_the_address_and_no_bytes") | `native`, `files` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
 | [One upload: the state holds the address the task holds, and no bytes.](native/test_stored_files.py#L100 "test_a_file_the_model_answers_with_is_kept_in_the_state_as_the_address_the_client_got") | `native`, `files` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
 | [A tools image is kept as a link and reaches the model as its content](native/test_stored_files.py#L125 "test_a_tools_image_is_kept_as_a_link_and_reaches_the_model_as_its_content") | `native`, `files` | — | `default` | [skip](#frameworks) | ✓ `adk_native`, [skip](#frameworks) before google-adk 2.7.0 |
+
+### `tests/scenarios/native/test_structured_response.py`
+
+The answer ``create_agent`` gives through ``response_format`` reaches the client.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [Tool strategy answers with the object](native/test_structured_response.py#L66 "test_tool_strategy_answers_with_the_object") | `native` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
+| [Provider strategy streams the json and sends the object](native/test_structured_response.py#L77 "test_provider_strategy_streams_the_json_and_sends_the_object") | `native` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
+| [The next turn sends its own object](native/test_structured_response.py#L88 "test_the_next_turn_sends_its_own_object") | `native` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
 
 ### `tests/scenarios/native/test_subgraph.py`
 

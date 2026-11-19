@@ -25,6 +25,7 @@ from typing import Annotated, Any, Optional
 from aion.langgraph.authoring import inline_files
 from aion.langgraph.authoring.models import _file_inlining_chat_openai
 from langchain.agents import create_agent
+from langchain.agents.structured_output import ProviderStrategy, ToolStrategy
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
     AIMessage,
@@ -39,6 +40,7 @@ from langchain_core.tools import tool
 from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.prebuilt import InjectedState, ToolNode, tools_condition
 from langgraph.types import interrupt
+from pydantic import BaseModel
 
 from tests.scenarios.agents.native_script import (
     FAILURE_TEXT,
@@ -55,11 +57,14 @@ from tests.scenarios.agents.native_script import (
 )
 
 __all__ = [
+    "Forecast",
     "ScriptedChatModel",
     "create_async_graph",
     "create_graph",
     "create_prebuilt_agent",
+    "create_provider_strategy_agent",
     "create_refused_files_graph",
+    "create_tool_strategy_agent",
 ]
 
 
@@ -225,6 +230,76 @@ def create_prebuilt_agent():
     first. The server has to supply the checkpointer for it to run at all.
     """
     return create_agent(ScriptedChatModel(), tools=_tools())
+
+
+class Forecast(BaseModel):
+    """The answer the structured agents give: the forecast for the city the user names."""
+
+    city: str
+    degrees: int
+
+
+FORECAST_DEGREES = 5
+"""The temperature every forecast reports."""
+
+
+class ForecastChatModel(BaseChatModel):
+    """A chat model that answers with the forecast, in the form the agent asks for.
+
+    Bound with ``response_format`` - what ``ProviderStrategy`` passes - it
+    writes the forecast as JSON text, as a provider's own structured output
+    does; bound to the schema's tool - ``ToolStrategy`` - it calls that tool.
+    """
+
+    model_name: str = "forecast"
+    as_text: bool = False
+
+    @property
+    def _llm_type(self) -> str:
+        return "forecast"
+
+    def bind_tools(self, tools: Sequence[Any], **kwargs: Any) -> "ForecastChatModel":
+        return self.model_copy(update={"as_text": "response_format" in kwargs})
+
+    @staticmethod
+    def _forecast(messages: Sequence[BaseMessage]) -> dict[str, Any]:
+        user = next(message for message in reversed(messages) if isinstance(message, HumanMessage))
+        return Forecast(city=user.text.removeprefix("forecast ").strip(), degrees=FORECAST_DEGREES).model_dump()
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        forecast = self._forecast(messages)
+        if self.as_text:
+            message = AIMessage(content=json.dumps(forecast))
+        else:
+            message = AIMessage(content="", tool_calls=[{"name": "Forecast", "args": forecast, "id": "call-forecast"}])
+        return ChatResult(generations=[ChatGeneration(message=message)])
+
+    async def _astream(
+        self, messages, stop=None, run_manager=None, **kwargs
+    ) -> AsyncIterator[ChatGenerationChunk]:
+        forecast = self._forecast(messages)
+        if self.as_text:
+            for piece in tokens(json.dumps(forecast)):
+                yield ChatGenerationChunk(message=AIMessageChunk(content=piece))
+            return
+        yield ChatGenerationChunk(
+            message=AIMessageChunk(
+                content="",
+                tool_call_chunks=[
+                    {"name": "Forecast", "args": json.dumps(forecast), "id": "call-forecast", "index": 0}
+                ],
+            )
+        )
+
+
+def create_tool_strategy_agent():
+    """A ``create_agent`` agent whose answer is a ``Forecast``, through the schema's tool."""
+    return create_agent(ForecastChatModel(), tools=[], response_format=ToolStrategy(Forecast))
+
+
+def create_provider_strategy_agent():
+    """A ``create_agent`` agent whose answer is a ``Forecast``, through the provider's structured output."""
+    return create_agent(ForecastChatModel(), tools=[], response_format=ProviderStrategy(Forecast))
 
 
 def create_graph() -> StateGraph:

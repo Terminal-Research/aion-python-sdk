@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, TYPE_CHECKING
 
 from a2a.types import (
@@ -10,16 +11,21 @@ from a2a.types import (
     TaskArtifactUpdateEvent,
     TaskStatusUpdateEvent,
 )
+from google.protobuf import json_format
+from pydantic_core import to_jsonable_python
 
-from aion.core.a2a import A2AOutbox
+from aion.core.a2a import A2AOutbox, data_artifact
+from aion.core.exceptions import TaskFailedError
 from aion.server.a2a.outbox import outbox_message, outbox_task
-from .stream_executor import StreamResult
+from .stream_executor import STRUCTURED_RESPONSE_KEY, StreamResult
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
     from langgraph.types import StateSnapshot
 
 AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent | Task | Message
+
+logger = logging.getLogger(__name__)
 
 
 class ExecutionResultHandler:
@@ -31,6 +37,14 @@ class ExecutionResultHandler:
     comes from the run's own updates, not from the graph's final state: the
     checkpoint keeps the last value written in the context, and the next
     turn would otherwise answer with it again.
+
+    A run that wrote no outbox but a `structured_response` - the object an
+    agent built by `create_agent` with a `response_format` answers with -
+    sends that object as an artifact of the task named `structured_response`,
+    one data part holding it as JSON. The model's own text, which
+    `ProviderStrategy` streams, stays the streamed answer beside it. An
+    outbox is the run's answer when there is one, and the structured
+    response is then not sent.
 
     Subclass and override `handle` to extend or replace the default logic.
     """
@@ -58,13 +72,48 @@ class ExecutionResultHandler:
 
         Returns:
             A2A events to emit before Complete/Interrupt.
+
+        Raises:
+            TaskFailedError: The structured response cannot be expressed as JSON.
         """
         outbox = stream_result.outbox
+        structured_response = stream_result.structured_response
         if outbox is not None:
             result = self._handle_outbox(outbox, context, task_id, context_id)
             if result is not None:
+                if structured_response is not None:
+                    logger.info("The run wrote an outbox, which answers it; its structured response is not sent")
                 return result
+        if structured_response is not None:
+            return [self._structured_response_event(structured_response, task_id, context_id)]
         return []
+
+    @staticmethod
+    def _structured_response_event(
+            value: Any,
+            task_id: str,
+            context_id: str,
+    ) -> TaskArtifactUpdateEvent:
+        """The structured response as an artifact with one data part.
+
+        The value is turned into JSON as Pydantic dumps it: a model, a
+        dataclass, a dict and what they hold, an enum, a date. NaN and
+        infinity become null, as in Pydantic's own JSON.
+        """
+        try:
+            data = to_jsonable_python(value, inf_nan_mode="null")
+            artifact = data_artifact(data, name=STRUCTURED_RESPONSE_KEY)
+        except (ValueError, TypeError, json_format.Error) as e:
+            raise TaskFailedError(
+                f"The agent's structured response ({type(value).__name__}) cannot be sent as JSON."
+            ) from e
+        return TaskArtifactUpdateEvent(
+            task_id=task_id,
+            context_id=context_id,
+            artifact=artifact,
+            append=False,
+            last_chunk=True,
+        )
 
     def _handle_outbox(
             self,

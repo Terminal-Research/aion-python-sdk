@@ -129,6 +129,29 @@ For full outbound precedence rules, see [Message Mapping](https://docs.aion.to/s
 
 ---
 
+## Outbound — `structured_response`
+
+An agent built by `langchain.agents.create_agent` with a `response_format` answers with an object of that schema, which LangChain puts in the graph's `structured_response`. The server sends it as an artifact of the task named `structured_response`: one data part holding the object as JSON, as Pydantic dumps it - a model, a dataclass, a dict, an enum, a date - with NaN and infinity as `null`. A value that has no JSON form fails the task, with a reason that says so.
+
+```python
+from pydantic import BaseModel
+from langchain.agents import create_agent
+
+class Forecast(BaseModel):
+    city: str
+    degrees: int
+
+agent = create_agent(model, tools=[get_weather], response_format=Forecast)
+# The client receives an artifact named "structured_response":
+# one data part, {"city": "Kyiv", "degrees": 5}
+```
+
+How the model answers in the schema decides what else the client sees. With `ToolStrategy` the model calls the schema's tool; that call and the `ToolMessage` closing it are not sent, so the artifact is the whole answer. With `ProviderStrategy` the model's text is the JSON itself, and it streams as `aion:stream-delta` as any answer does: the task holds both, the text for a reader and the object for code. A schema passed as it is lets LangChain choose by the model: `ProviderStrategy` for a model with structured output of its own, `ToolStrategy` otherwise. The artifact is a result of the task, so a task with one gets no `aion:assistant-answer`.
+
+The server reads the value the way it reads `a2a_outbox`: from what a node of the parent graph wrote during the run, never from the checkpoint, which keeps it across turns. Each turn that produces an object sends its own. A graph of your own that writes `structured_response` sends it the same way, so keep a value meant for the graph alone under another key. An agent that runs as a node of a larger graph hands its object over only if the parent's state has the key. A run that writes an `a2a_outbox` answers with the outbox, and the structured response is not sent.
+
+---
+
 ## Failing a task
 
 A node that raises ends the turn with the task `FAILED`, and the status message says why, the same on the stream, in the unary answer and in a later `tasks/get`. To give the caller a reason of your own, raise `TaskFailedError`; its text is the message, as written:
@@ -210,7 +233,7 @@ aion.server
         ├── LangGraphExecutor      — orchestrates stream / resume lifecycle
         │   ├── StreamExecutor     — calls graph.astream(), yields A2A events
         │   ├── EventConverter     — maps LangGraph events → A2A protocol events
-        │   └── ResultHandler      — produces terminal events from a2a_outbox or delta text
+        │   └── ResultHandler      — produces result events from a2a_outbox or structured_response
         ├── CheckpointerFactory    — creates PostgreSQL or memory checkpointer
         └── Converters             — bidirectional A2A ↔ LangChain content block conversion
 ```

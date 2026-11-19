@@ -17,6 +17,7 @@
 
 ### Bug Fixes
 
+* **langgraph:** an agent built by `create_agent` with a `response_format` answers the client: the object of its schema goes out as an artifact of the task named `structured_response`, one data part holding it as JSON. With `ToolStrategy` the turn completed without a single event, and with `ProviderStrategy` the client got only the model's JSON text, which still streams beside the artifact.
 * **server:** a turn that ends the task with a `Task` in the outbox (`COMPLETED`, `FAILED`, `CANCELED`, `REJECTED`) sends its push notification with that Task and ends its execution; the callback received only `SUBMITTED`, and the task stayed held by the server.
 * **langgraph:** a state field declared as `Optional[A2AOutbox]` or `A2AOutbox` is kept out of the checkpoint, as `A2AOutboxField` is: the server gives it LangGraph's untracked channel in the graph it serves, so LangGraph no longer warns that it will refuse to load `aion.core.a2a.models.A2AOutbox`. A compiled graph the server copies keeps the msgpack allowlist LangGraph built from its state schema.
 * **files:** download links of stored files are issued on behalf of the caller's usage attribution: the answer to a message and its stream with the message's, a read (`GetTask`, `ListTasks`, `GetContext`, `SubscribeToTask`, `CancelTask`) with the one it declares in `A2A-Extensions` and `Aion-Usage-Attribution`, and a turn's push notifications with that of the message whose turn it is, so they carry working links, which the Files API refuses to issue for the deployment's daemon.
