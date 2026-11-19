@@ -90,6 +90,10 @@ class LangGraphA2AConverter:
         # message in the graph's state makes LangGraph send it again on the
         # "messages" stream; that copy is the same answer, not a new reply.
         self._section_closer_ids: set[str] = set()
+        # Ids of the model calls the graph's "messages" stream carried chunks
+        # of. A node that emits the chunks or the result of such a call itself
+        # sends a copy of what goes out from that stream already.
+        self._graph_call_ids: set[str] = set()
 
     def convert(self, event_type: str, event_data: Any) -> list[A2AAgentEvent]:
         """Convert a LangGraph event to zero or more A2A events.
@@ -188,6 +192,8 @@ class LangGraphA2AConverter:
         if not isinstance(message, AIMessage):
             return []
         is_chunk = isinstance(message, AIMessageChunk)
+        if is_chunk and message.id:
+            self._graph_call_ids.add(message.id)
         if not is_chunk and message.id in self._section_closer_ids:
             return []
 
@@ -398,6 +404,10 @@ class LangGraphA2AConverter:
         once and leaves the section alone, and a ``Thread.reply()`` stream
         waits its turn, with everything the thread emits after it, so that
         the thread's own order holds.
+
+        A node that emits the chunks of a model call LangGraph streams, or the
+        message the call returned, sends a copy of that call; see
+        ``_convert_copy_of_graph_call``.
         """
         if isinstance(event_data, ThinkingCustomEvent):
             return self._convert_thinking(event_data)
@@ -405,10 +415,40 @@ class LangGraphA2AConverter:
         if isinstance(event_data, ReactionCustomEvent):
             return self._convert_reaction(event_data)
 
+        if isinstance(event_data, MessageCustomEvent) and event_data.message.id in self._graph_call_ids:
+            return self._convert_copy_of_graph_call(event_data)
+
         if THREAD_STREAM in self._waiting:
             self._waiting[THREAD_STREAM].append(event_data)
             return []
         return self._convert_node_event_in_turn(event_data)
+
+    def _convert_copy_of_graph_call(self, event: MessageCustomEvent) -> list[A2AAgentEvent]:
+        """A message a node emitted under the id of a model call the graph's stream carries.
+
+        LangGraph sends the call's chunks before the node gets them, so the
+        node's copy comes second and the call is already going out: a chunk
+        produces no event, and the whole message ends the call's section, as
+        the call's own closing message does. Its text is not sent again; what
+        else it carries, a file say, goes out as a message with the routing
+        target the node gave. The node's metadata, and its routing target for
+        the chunks, stay with the copy.
+        """
+        message = event.message
+        if isinstance(message, AIMessageChunk):
+            return []
+        if message.id in self._waiting:
+            self._waiting[message.id].append(message)
+            return []
+        if self._live == message.id:
+            return self._close_section_with(message, routing=event.routing)
+        if message.id in self._section_closer_ids:
+            return []
+        self._section_closer_ids.add(message.id)
+        rest = [part for part in LcToA2AConverter.from_message(message) if part.WhichOneof("content") != "text"]
+        if not rest:
+            return []
+        return self._message_event(rest, message_id=message.id, role=self._detect_role(message), routing=event.routing)
 
     def _convert_node_event_in_turn(self, event_data: SupportedCustomEvents) -> list[A2AAgentEvent]:
         """Convert a node's event, given which stream is live."""
@@ -552,12 +592,14 @@ class LangGraphA2AConverter:
     def convert_interrupt(self, interrupts: Sequence[Interrupt]) -> TaskStatusUpdateEvent:
         """Produce an input_required status event from the graph's pending interrupts.
 
-        Uses the first interrupt to build the prompt message and attaches its id
-        as message metadata so the client can resume the correct thread.
+        Asks the first interrupt: its value is the question, and its id goes
+        with it as ``interruptId`` in the message's metadata. Several
+        interrupts waiting at once are asked one per turn; an answer that
+        names an ``interruptId`` resumes that one (``LangGraphExecutor.resume``).
 
         Args:
-            interrupts: What the graph stopped on, as LangGraph reports it in
-                ``StateSnapshot.interrupts``.
+            interrupts: The interrupts that wait for an answer, in LangGraph's
+                order (``pending_interrupts``).
         """
         message: Optional[Message] = None
         interrupt_id: Optional[str] = None

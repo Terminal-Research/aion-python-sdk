@@ -289,7 +289,10 @@ class ConversationFile:
     file another participant sent is not available to the turn's sender, and
     ``read`` and ``link`` raise ``ConversationFileForbiddenError`` for it. A
     file past its retention deadline, or one the storage service says no
-    longer exists, raises ``ConversationFileRemovedError``.
+    longer exists, raises ``ConversationFileRemovedError``. When the storage
+    service does not answer the request for a link - it is unavailable for a
+    moment - they raise ``ConversationFileUnavailableError``, and a later
+    call asks again.
 
     Args:
         part: The file part: ``raw`` bytes or a ``url``.
@@ -347,6 +350,8 @@ class ConversationFile:
             ConversationFileForbiddenError: The storage service refused a link
                 to the turn's sender: the file is not available to it.
             ConversationFileRemovedError: The file is no longer stored.
+            ConversationFileUnavailableError: No link to the stored file could
+                be issued now.
             ConversationUnavailableError: No turn is running here.
         """
         from aion.core.runtime.context.conversation import current_conversation
@@ -367,6 +372,8 @@ class ConversationFile:
                 not downloaded.
             ConversationFileRemovedError: The file is no longer stored, and is
                 not downloaded.
+            ConversationFileUnavailableError: No link to the stored file could
+                be issued now, and it is not downloaded.
             ConversationUnavailableError: The file is stored and no turn is
                 running here.
         """

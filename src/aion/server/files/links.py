@@ -30,10 +30,14 @@ is its owner's.
 
 Issuing is best effort: a storage backend that issues no links, a refusal,
 a timeout or a file past its retention leaves the part with the address it
-has, and the refusal is remembered for a while for the attribution it was
-given to, so a file that cannot be vouched for is not asked about on every
-read. What is remembered is the kind of refusal too, and two kinds stop a
-reader, so that it does not fetch an address that would refuse it as well:
+has. A link that was not issued is remembered for the attribution that asked,
+so a file that cannot be vouched for is not asked about on every read: a
+failure that may pass - the storage service unavailable, or no answer in
+time - for ``RETRY_UNAVAILABLE_AFTER_SECONDS``, so that a read after the
+service is back gets a link at once, and any other for
+``RETRY_REFUSED_AFTER_SECONDS``. What is remembered is the kind of failure
+too, and three kinds stop a reader, so that it does not fetch an address
+that would refuse it as well:
 
 * the storage service refusing the grant to a usage attribution
   (``STORAGE_FORBIDDEN``, its answer to an attribution that is not the
@@ -43,11 +47,16 @@ reader, so that it does not fetch an address that would refuse it as well:
   exists (``STORAGE_FILE_REMOVED``: removed before the retention deadline
   its part records) means the file is gone for everyone, and ``link_for``
   raises ``ConversationFileRemovedError``. A file past the retention deadline
-  its part records raises it too, without asking.
+  its part records raises it too, without asking;
+* a failure that may pass, for a part whose address does not work by itself
+  (the protected address, or a link that has expired), means the file
+  cannot be read now, and ``link_for`` raises
+  ``ConversationFileUnavailableError``. A part whose own link still works
+  keeps it.
 
 Any other refusal, and a refusal to the deployment's daemon to grant a link,
 leaves the reader with the part's address. What the server hands out
-(``refresh``) keeps the part's address on every refusal.
+(``refresh``) keeps the part's address on every failure.
 """
 
 from __future__ import annotations
@@ -68,6 +77,7 @@ from aion.core.exceptions import (
     AionAuthenticationError,
     ConversationFileForbiddenError,
     ConversationFileRemovedError,
+    ConversationFileUnavailableError,
 )
 from aion.core.runtime.context import get_aion_runtime_context
 from aion.server.files.a2a.part_transformer import part_fields
@@ -93,7 +103,10 @@ RENEWAL_TIMEOUT_SECONDS = 5.0
 """How long one answer or one read waits for the links it is missing."""
 
 RETRY_REFUSED_AFTER_SECONDS = 60.0
-"""How long a file version whose link was not issued is left alone, for the attribution it was refused to."""
+"""How long a file version whose link was refused is left alone, for the attribution it was refused to."""
+
+RETRY_UNAVAILABLE_AFTER_SECONDS = 5.0
+"""How long a file version whose link a failure that may pass kept back is left alone, for the attribution that asked."""
 
 MAX_REMEMBERED = 2048
 """Links and refusals kept; past it the expired ones go, then the oldest."""
@@ -128,18 +141,32 @@ class _Link:
 
 @dataclass(frozen=True)
 class _Refusal:
-    """A link that was not issued: when, by the monotonic clock, and whether the storage service forbade it or the file is gone.
+    """A link that was not issued: when, by the monotonic clock, and of what kind the failure was.
 
     ``forbidden`` is the storage service refusing the grant to the
     attribution that asked (``STORAGE_FORBIDDEN``); ``removed`` is its answer
     that the file or its version no longer exists (``STORAGE_FILE_REMOVED``).
-    A timeout, an unavailable service, a missing daemon identity, a link too
-    short-lived to use and every other failure are neither.
+    ``passing`` is a failure that may pass: an answer the backend reports as
+    worth retrying (the storage service unavailable - a failed connection,
+    HTTP 408, 425, 429 or 5xx), no answer within ``RENEWAL_TIMEOUT_SECONDS``,
+    or an error of the backend itself. A missing daemon identity, refused
+    credentials, a backend that issues no links, a link too short-lived to
+    use and every other failure are none of them.
     """
 
     at: float
     forbidden: bool = False
     removed: bool = False
+    passing: bool = False
+
+    @property
+    def remembered_for(self) -> float:
+        """How many seconds the failure answers for the attribution it met, without asking again."""
+        return RETRY_UNAVAILABLE_AFTER_SECONDS if self.passing else RETRY_REFUSED_AFTER_SECONDS
+
+    def is_recent(self, now: float) -> bool:
+        """Whether it still answers at ``now``, by the monotonic clock."""
+        return now - self.at < self.remembered_for
 
 
 class StoredFileLinks:
@@ -182,7 +209,8 @@ class StoredFileLinks:
         Returns:
             The link to use instead of the part's address, or None when the
             address is the one to use: it is a link that still works, the
-            part names no file, or no link could be issued.
+            part names no file, or no link could be issued for a reason
+            other than those raised.
 
         Raises:
             ConversationFileForbiddenError: The storage service refused the
@@ -193,6 +221,10 @@ class StoredFileLinks:
                 deadline its part records - known without asking - or the
                 storage service answered, now or within
                 ``RETRY_REFUSED_AFTER_SECONDS``, that it no longer exists.
+            ConversationFileUnavailableError: A failure that may pass kept
+                the link back, now or within
+                ``RETRY_UNAVAILABLE_AFTER_SECONDS``, and the part's address
+                does not work by itself: the file cannot be read now.
         """
         file = StoredFile.of(part)
         if file is None:
@@ -211,6 +243,10 @@ class StoredFileLinks:
             raise ConversationFileRemovedError(part.filename or "file", part.media_type or None)
         if asker is not None and refusal is not None and refusal.forbidden:
             raise ConversationFileForbiddenError(part.filename or "file", part.media_type or None)
+        # The protected address, or a link past its expiry, would refuse the
+        # reader as well: it is told the file cannot be read now instead.
+        if refusal is not None and refusal.passing and file.access_expired(self._now()):
+            raise ConversationFileUnavailableError(part.filename or "file", part.media_type or None)
         return None
 
     async def refresh(self, content: T, *, context: Optional[UploadContext] = None) -> T:
@@ -266,9 +302,10 @@ class StoredFileLinks:
         """For ``asker``: a working link for each wanted file version that has or gets one, and the refusals.
 
         A version refused recently is not asked about again: its remembered
-        refusal answers. A version the backend gave no link for, or no
-        answer in time, is refused too. Without a backend nothing is asked,
-        and nothing is refused.
+        refusal answers. A version the backend gave no link for is refused
+        too, and one it gave no answer for in time is refused as a failure
+        that may pass. Without a backend nothing is asked, and nothing is
+        refused.
         """
         found: dict[_Key, _Link] = {}
         refused: dict[_Key, _Refusal] = {}
@@ -305,12 +342,13 @@ class StoredFileLinks:
         except TimeoutError:
             unanswered = [key for key in missing if key not in answered]
             for key in unanswered:
-                refused[key] = _Refusal(time.monotonic())
+                refused[key] = _Refusal(time.monotonic(), passing=True)
                 self._remember_refusal(key, asker, refused[key])
+            # Identifiers only: a link is a credential and is never logged.
             logger.warning(
-                "No new download link for %d stored file(s) within %.0f s; their parts keep their addresses",
-                len(unanswered),
+                "No new download link within %.0f s for stored file(s) %s; their parts keep their addresses",
                 RENEWAL_TIMEOUT_SECONDS,
+                ", ".join(file_id for file_id, _ in unanswered),
             )
         return found, refused
 
@@ -321,7 +359,7 @@ class StoredFileLinks:
         except Exception:
             # Identifiers only: a link is a credential and is never logged.
             logger.exception("Could not issue a new download link for stored file %s", file.file_id)
-            return _Refusal(time.monotonic())
+            return _Refusal(time.monotonic(), passing=True)
         if outcome is None:
             return _Refusal(time.monotonic())
         if isinstance(outcome, UploadFailure):
@@ -335,6 +373,7 @@ class StoredFileLinks:
                 time.monotonic(),
                 forbidden=outcome.error_code == FileUploadErrorCode.STORAGE_FORBIDDEN,
                 removed=outcome.error_code == FileUploadErrorCode.STORAGE_FILE_REMOVED,
+                passing=outcome.retryable,
             )
         return self._link(file, outcome) or _Refusal(time.monotonic())
 
@@ -355,12 +394,12 @@ class StoredFileLinks:
     # -- remembering ------------------------------------------------------------
 
     def _recent_refusal(self, key: _Key, asker: _Asker) -> Optional[_Refusal]:
-        """The refusal of a link to ``key`` for ``asker`` within ``RETRY_REFUSED_AFTER_SECONDS``; None without one."""
+        """The refusal of a link to ``key`` for ``asker`` that still answers (``_Refusal.remembered_for``); None without one."""
         refusals = self._refused.get(key, {})
         refusal = refusals.get(asker)
         if refusal is None:
             return None
-        if time.monotonic() - refusal.at < RETRY_REFUSED_AFTER_SECONDS:
+        if refusal.is_recent(time.monotonic()):
             return refusal
         del refusals[asker]
         if not refusals:
@@ -370,9 +409,9 @@ class StoredFileLinks:
     def _remember_refusal(self, key: _Key, asker: _Asker, refusal: _Refusal) -> None:
         self._refused.setdefault(key, {})[asker] = refusal
         if sum(len(refusals) for refusals in self._refused.values()) > MAX_REMEMBERED:
-            horizon = time.monotonic() - RETRY_REFUSED_AFTER_SECONDS
+            now = time.monotonic()
             recent = {
-                k: {a: kept for a, kept in refusals.items() if kept.at >= horizon}
+                k: {a: kept for a, kept in refusals.items() if kept.is_recent(now)}
                 for k, refusals in self._refused.items()
             }
             self._refused = {k: refusals for k, refusals in recent.items() if refusals}

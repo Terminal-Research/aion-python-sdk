@@ -1,22 +1,29 @@
 """Tests for ADK emit_* streaming helpers and the Thread methods built on them."""
 
 import asyncio
+import pytest
 from aion.adk.authoring.constants import AION_OUTPUT_KEY, AION_ROUTING_KEY
-from aion.adk.authoring.invocation.emitters import emit_artifact, emit_card, emit_reaction, emit_message, emit_thinking
+from aion.adk.authoring.invocation.emitters import (
+    aemit_message,
+    emit_artifact,
+    emit_card,
+    emit_message,
+    emit_reaction,
+    emit_thinking,
+)
 from aion.adk.authoring.invocation.event_metadata import (
     get_aion_output,
     get_aion_user_metadata,
     is_thinking_event,
     stays_out_of_session,
 )
-from aion.adk.authoring.invocation.invocation_context import AionInvocationContext
 from aion.core.a2a import FileActionPayload, data_artifact, file_artifact, url_artifact
 from aion.core.a2a.extensions.messaging import MessageActionPayload, ReactionActionPayload
 from aion.core.agent.invocation.card import Card
 from a2a.types import Artifact, Part
 from google.adk.events import Event
 from google.protobuf.json_format import ParseDict
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 THREAD_EMITTER_PATH = "aion.adk.authoring.invocation.thread.get_adk_emitter"
 
@@ -63,6 +70,101 @@ class TestEmitText:
         event: Event = emitter.call_args[0][0]
         assert event.custom_metadata == {"trace_id": "abc"}
         assert get_aion_output(event) is None
+
+
+class TestEmitMessageStream:
+    """Text is a message; an iterator of text streams as one section, ended by the complete Event, which is returned."""
+
+    @staticmethod
+    def _sent(emitter) -> list[Event]:
+        return [call.args[0] for call in emitter.call_args_list]
+
+    @staticmethod
+    def _text(event: Event) -> str:
+        return "".join(part.text or "" for part in (event.content.parts if event.content else []))
+
+    def test_text_returns_the_event_it_sent(self):
+        emitter = MagicMock()
+        event = emit_message(emitter, "Hello")
+        assert self._sent(emitter) == [event]
+        assert (event.partial, self._text(event)) == (False, "Hello")
+
+    def test_an_iterator_streams_partial_events_then_the_complete_one(self):
+        emitter = MagicMock()
+        result = emit_message(emitter, iter(["It ", "is ", "sunny."]))
+
+        sent = self._sent(emitter)
+        assert [(e.partial, self._text(e)) for e in sent] == [
+            (True, "It "), (True, "is "), (True, "sunny."), (False, "It is sunny."),
+        ]
+        assert result is sent[-1]
+
+    def test_every_event_of_a_section_carries_routing_and_metadata(self):
+        emitter = MagicMock()
+        emit_message(emitter, iter(["a", "b"]), routing=make_routing(), metadata={"k": "v"})
+
+        for event in self._sent(emitter):
+            assert event.custom_metadata[AION_ROUTING_KEY]["contextId"] == "D06DM456"
+            assert get_aion_user_metadata(event) == {"k": "v"}
+
+    def test_an_item_that_is_not_text_is_left_out(self):
+        emitter = MagicMock()
+        result = emit_message(emitter, iter(["a", Event(author="x", partial=True), "b"]))
+        assert self._text(result) == "ab"
+        assert len(self._sent(emitter)) == 3
+
+    def test_an_iterator_without_text_sends_nothing(self):
+        emitter = MagicMock()
+        assert emit_message(emitter, iter([])) is None
+        emitter.assert_not_called()
+
+    def test_an_iterator_that_raises_ends_with_what_it_yielded(self):
+        def answer():
+            yield "partial"
+            raise RuntimeError("stream broke")
+
+        emitter = MagicMock()
+        assert self._text(emit_message(emitter, answer())) == "partial"
+
+    def test_an_async_iterator_is_for_aemit_message(self):
+        async def answer():
+            yield "It is sunny."
+
+        emitter = MagicMock()
+        stream = answer()
+        try:
+            with pytest.raises(TypeError, match="aemit_message"):
+                emit_message(emitter, stream)
+        finally:
+            asyncio.run(stream.aclose())
+        emitter.assert_not_called()
+
+    def test_an_event_is_not_a_message(self):
+        with pytest.raises(TypeError):
+            emit_message(MagicMock(), Event(author="agent"))
+
+    def test_aemit_message_streams_an_async_iterator(self):
+        async def answer():
+            yield "It "
+            yield "is sunny."
+
+        emitter = MagicMock()
+        result = asyncio.run(aemit_message(emitter, answer()))
+
+        assert [(e.partial, self._text(e)) for e in self._sent(emitter)] == [
+            (True, "It "), (True, "is sunny."), (False, "It is sunny."),
+        ]
+        assert result is self._sent(emitter)[-1]
+
+    def test_aemit_message_sends_text_as_emit_message_does(self):
+        emitter = MagicMock()
+        event = asyncio.run(aemit_message(emitter, "Hello"))
+        assert (event.partial, self._text(event)) == (False, "Hello")
+
+    def test_aemit_message_is_exported_from_the_authoring_package(self):
+        from aion.adk.authoring import aemit_message as exported
+
+        assert exported is aemit_message
 
 
 class TestEmitThinking:
@@ -152,6 +254,50 @@ class TestThreadThinking:
             assert asyncio.run(thread.thinking("Looking up the account...")) is None
 
 
+class TestThreadPost:
+    """Thread.post sends text and streams an async iterator of text through emit_message and aemit_message."""
+
+    @staticmethod
+    def _post(content, **kwargs):
+        thread = TestThreadThinking.make_thread()
+        emitter = MagicMock()
+        with patch(THREAD_EMITTER_PATH, return_value=emitter):
+            result = asyncio.run(thread.post(content, **kwargs))
+        return result, [call.args[0] for call in emitter.call_args_list]
+
+    def test_text_returns_the_event_it_sent(self):
+        result, sent = self._post("Hello")
+        assert sent == [result]
+
+    def test_an_async_iterator_returns_the_event_that_ended_its_section(self):
+        async def answer():
+            yield "It "
+            yield "is sunny."
+
+        result, sent = self._post(answer(), target=make_routing())
+
+        assert [e.partial for e in sent] == [True, True, False]
+        assert result is sent[-1]
+        assert result.custom_metadata[AION_ROUTING_KEY]["contextId"] == "D06DM456"
+
+    def test_an_event_an_async_iterator_yields_is_left_out(self):
+        from google.genai import types
+
+        async def answer():
+            yield "It is sunny."
+            yield Event(author="x", partial=True, content=types.Content(role="model", parts=[types.Part(text="again")]))
+
+        result, sent = self._post(answer())
+
+        assert [e.partial for e in sent] == [True, False]
+        assert "".join(p.text for p in result.content.parts) == "It is sunny."
+
+    def test_an_artifact_is_published_without_the_invocation_context(self):
+        result, [event] = self._post(data_artifact({"a": 1}, name="result"))
+        assert result is None
+        assert get_aion_output(event).published is not None
+
+
 class TestEmitCard:
     def test_jsx_card_has_aion_output_card(self):
         emitter = MagicMock()
@@ -198,38 +344,25 @@ class TestEmitCard:
         assert event.custom_metadata[AION_ROUTING_KEY]["contextId"] == "D06DM456"
 
 
-def make_mock_ctx() -> MagicMock:
-    """Build a mock that passes isinstance(ctx, AionInvocationContext) with a working artifact_service."""
-    ctx = MagicMock()
-    ctx.__class__ = AionInvocationContext
-    ctx.app_name = "test_app"
-    ctx.user_id = "user_1"
-    ctx.session.id = "session_1"
-    ctx.artifact_service.save_artifact = AsyncMock(return_value=0)
-    return ctx
-
-
 class TestEmitArtifact:
     """The artifact is published as it is, as emit_artifact does in LangGraph; ADK's artifact service is not used."""
 
     def _published(self, artifact, **kwargs):
         emitter = MagicMock()
-        ctx = make_mock_ctx()
-        asyncio.run(emit_artifact(emitter, ctx, artifact, **kwargs))
+        assert emit_artifact(emitter, artifact, **kwargs) is None
         event: Event = emitter.call_args[0][0]
-        return event, ctx
+        return event, None
 
     def test_the_whole_artifact_travels_in_the_event(self):
         artifact = data_artifact({"a": 1}, name="result")
         artifact.parts.append(Part(text="second part"))
         artifact.metadata.update({"owner": "agent-x"})
 
-        event, ctx = self._published(artifact)
+        event, _ = self._published(artifact)
 
         published = get_aion_output(event).published
         assert ParseDict(published.artifact, Artifact()) == artifact
         assert (published.append, published.last_chunk) == (False, True)
-        ctx.artifact_service.save_artifact.assert_not_called()
 
     def test_chunks_say_whether_they_extend_and_end_the_artifact(self):
         event, _ = self._published(url_artifact("https://example.com/r.pdf", mime_type="application/pdf", name="r"), append=True, is_last_chunk=False)

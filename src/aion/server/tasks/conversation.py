@@ -211,7 +211,8 @@ class _StoredConversation(Conversation):
 
         The part's address is given as it is when it is itself a link that
         still works, when the part names no stored file, without a storage
-        backend, and when no link could be issued.
+        backend, and when no link could be issued for a reason other than
+        those raised.
 
         Raises:
             ConversationFileError: The part carries no address.
@@ -220,6 +221,9 @@ class _StoredConversation(Conversation):
                 this sender.
             ConversationFileRemovedError: The file is past its retention
                 deadline, or the storage service says it no longer exists.
+            ConversationFileUnavailableError: The storage service did not
+                answer the request for a link - it was unavailable, or not in
+                time - and the part's address does not work by itself.
         """
         stored = await super().file_link(part)
         if self._file_links is None:

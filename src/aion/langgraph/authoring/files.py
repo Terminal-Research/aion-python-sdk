@@ -302,10 +302,14 @@ def inline_files_sync(messages: Sequence[BaseMessage]) -> list[BaseMessage]:
 
     LangGraph runs a synchronous node in a worker thread; the files are read
     on the turn's event loop and waited for, so the result is the one
-    ``inline_files`` gives. Called from a coroutine instead - ``invoke``
-    inside an ``async def`` node - a file comes from memory or from the
-    address its block holds as it is, and one whose address is no link that
-    works fails the task: use ``ainvoke`` there.
+    ``inline_files`` gives. Called on the turn's event loop instead - inside
+    an ``async def`` node - it cannot wait for that loop, and a message with
+    a file to read fails the task at once, with a reason that says so: use
+    ``inline_files`` and ``ainvoke`` there.
+
+    Raises:
+        TaskFailedError: A file could not be read, or one is to be read on
+            the turn's event loop.
     """
     return prepare_request_sync(messages)[0]
 

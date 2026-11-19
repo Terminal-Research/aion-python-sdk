@@ -334,6 +334,10 @@ def native_since(framework: str, capability: str) -> Since | None:
 
 UNSUPPORTED: dict[tuple[str, str], str] = {
     # (framework name, command key) -> why this pair is skipped.
+    ("adk", "stream-marked"): (
+        "ADK's Thread.reply streams text only, and text cannot say it is the last chunk: "
+        "the section ends with the end mark"
+    ),
 }
 
 

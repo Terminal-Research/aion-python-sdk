@@ -80,9 +80,11 @@ the turn's sender - one another participant of a shared conversation stored,
 say - raises `ConversationFileForbiddenError`; a file that is no longer
 stored - past the retention deadline its reference records, 30 days from
 its upload for a conversation's files, or gone by the storage's word -
-raises `ConversationFileRemovedError`; a file whose link cannot be issued
-for another reason raises `ConversationFileError`, which the other two are
-kinds of. `await file.link()` gives the working link to code
+raises `ConversationFileRemovedError`; a file whose link the storage
+service did not issue now - it was unavailable, or did not answer in time -
+raises `ConversationFileUnavailableError`, and a later read asks again; a
+file whose link cannot be issued for another reason raises
+`ConversationFileError`, which the other three are kinds of. `await file.link()` gives the working link to code
 that passes an address on - to a model that takes a file by URL - and
 `file.stored` says where the server keeps the file: `file_id`,
 `version_id`, `access_expires_at`, `retention_expires_at`; it is None for

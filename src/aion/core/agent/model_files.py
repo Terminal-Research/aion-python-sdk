@@ -10,7 +10,10 @@ storage, through the conversation of the turn, which reads a stored file
 through a link issued for the turn's sender.
 
 A file that cannot be read fails the turn's task with a reason its caller
-can read. Three kinds of file are left out instead: the SDK's helpers put a
+can read - a stored file no link could be issued for now
+(``ConversationFileUnavailableError``) among them: the model does not
+answer without a file the sender sent while it may come back on the next
+try. Three kinds of file are left out instead: the SDK's helpers put a
 note in the file's place in the request (``aion.core.agent.left_out_files``),
 so the conversation goes on without the file.
 
@@ -66,6 +69,7 @@ __all__ = [
     "ModelFileRemovedError",
     "ModelFileTooLargeError",
     "holding_documents",
+    "on_turn_event_loop",
     "place_held_documents",
     "read_file_for_model",
     "read_file_for_model_sync",
@@ -242,33 +246,40 @@ def read_file_for_model_sync(
     A framework runs such code in a worker thread while the turn's event loop
     goes on. The read is handed to that loop and waited for here, so it is the
     same read ``read_file_for_model`` makes: from memory, or through the
-    turn's conversation, whatever became of the link.
+    turn's conversation, whatever became of the link. Code on another event
+    loop hands the read to the turn's loop the same way.
 
-    Called on the event loop itself - ``invoke`` inside a coroutine, which
-    blocks the loop it would have to wait for - or outside a turn, the file
-    comes from memory or is fetched from its address as it is, and a file
-    whose address is no link that works cannot be read.
+    Called on the turn's event loop itself - ``invoke`` inside a coroutine -
+    the read cannot be handed anywhere: the loop would wait for itself. A
+    stored file's address works only with authorization, and a download on
+    the loop would hold every turn of the process, so nothing is read, not
+    even from memory: the task fails at once with a reason that says to
+    ``await`` the model instead. The same call fails on the first turn with a
+    file, not only once a file of an earlier turn is no longer in memory.
+    Outside a turn the file comes from memory or is fetched from its address
+    as it is.
 
     Raises:
         ModelFileTooLargeError: As ``read_file_for_model``.
         ModelFileForbiddenError: As ``read_file_for_model``, when the file is
             read through the turn's conversation.
         ModelFileRemovedError: As ``read_file_for_model``.
-        TaskFailedError: As ``read_file_for_model``.
+        TaskFailedError: As ``read_file_for_model``, and on the turn's event
+            loop.
     """
     from aion.core.runtime.context.conversation import current_conversation
 
-    try:
-        asyncio.get_running_loop()
-        in_worker_thread = False
-    except RuntimeError:
-        in_worker_thread = True
+    if on_turn_event_loop():
+        raise TaskFailedError(
+            f"File {name or 'file'!r} could not be read: a model called without await, with invoke() or stream(), "
+            "runs on the turn's event loop and cannot read it there. Call ainvoke() or astream() in an async "
+            "node, or call the model from a synchronous node. It could not be sent to the model."
+        )
     try:
         loop = current_conversation().loop
     except ConversationUnavailableError:
         loop = None
-
-    if in_worker_thread and loop is not None and loop.is_running():
+    if loop is not None and loop.is_running():
         reading = asyncio.run_coroutine_threadsafe(
             read_file_for_model(url, name=name, stored=stored, media_type=media_type), loop
         )
@@ -280,6 +291,26 @@ def read_file_for_model_sync(
                 f"File {name or 'file'!r} could not be read in time. It could not be sent to the model."
             ) from error
     return _read_from_address(url, name=name, stored=stored, media_type=media_type)
+
+
+def on_turn_event_loop() -> bool:
+    """Whether the code runs on the event loop of the turn in progress.
+
+    Code there cannot wait for anything the turn's loop would do, the read of
+    a stored file included, and what it does without ``await`` holds every
+    turn the loop serves. False outside a turn, in a worker thread, and on
+    another event loop.
+    """
+    from aion.core.runtime.context.conversation import current_conversation
+
+    try:
+        running = asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    try:
+        return current_conversation().loop is running
+    except ConversationUnavailableError:
+        return False
 
 
 def stored_file_at(url: str) -> Optional[StoredFile]:

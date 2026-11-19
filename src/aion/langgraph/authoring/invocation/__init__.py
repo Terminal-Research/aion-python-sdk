@@ -3,12 +3,13 @@
 Provides the core abstractions for managing LangGraph agent execution:
 - Thread: conversation thread bound to the current invocation
 - Message: inbound message with reaction support
-- emit_*: helpers for streaming responses (messages, thoughts, cards, artifacts, reactions)
+- emit_* and aemit_message: helpers for streaming responses (messages, thoughts, cards, artifacts, reactions)
 """
 
 from .message import Message, User
 from .thread import Thread
 from .emitters import (
+    aemit_message,
     emit_message,
     emit_card,
     emit_reaction,
@@ -20,6 +21,7 @@ __all__ = [
     "Message",
     "Thread",
     "User",
+    "aemit_message",
     "emit_message",
     "emit_card",
     "emit_reaction",

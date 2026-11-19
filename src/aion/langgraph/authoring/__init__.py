@@ -25,6 +25,7 @@ try:
     from .models import aion_chat_model, aion_chat_openai
     from .invocation import Message, Thread
     from .invocation.emitters import (
+        aemit_message,
         emit_artifact,
         emit_card,
         emit_message,
@@ -48,6 +49,7 @@ __all__ = [
     "aion_chat_openai",
     "Message",
     "Thread",
+    "aemit_message",
     "emit_artifact",
     "emit_card",
     "emit_message",

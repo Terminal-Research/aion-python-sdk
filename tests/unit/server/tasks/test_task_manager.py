@@ -600,7 +600,7 @@ class TestInterruptTeardownFollowsTransitions:
         with pytest.raises(RuntimeError):
             await manager.save_task_event(_task(TaskState.TASK_STATE_INPUT_REQUIRED))
 
-        assert manager._persisted_state == TaskState.TASK_STATE_WORKING
+        assert manager._stored_state == TaskState.TASK_STATE_WORKING
         callback.assert_not_called()
 
     @pytest.mark.anyio
@@ -636,7 +636,7 @@ class TestPersistedStateBaseline:
 
         await manager.get_task()
 
-        assert manager._persisted_state == TaskState.TASK_STATE_INPUT_REQUIRED
+        assert manager._stored_state == TaskState.TASK_STATE_INPUT_REQUIRED
 
     @pytest.mark.anyio
     async def test_ensure_task_id_reads_the_baseline(self):
@@ -645,7 +645,7 @@ class TestPersistedStateBaseline:
 
         await manager.ensure_task_id(TASK_ID, CONTEXT_ID)
 
-        assert manager._persisted_state == TaskState.TASK_STATE_INPUT_REQUIRED
+        assert manager._stored_state == TaskState.TASK_STATE_INPUT_REQUIRED
 
     @pytest.mark.anyio
     async def test_auto_discovery_reads_the_baseline(self):
@@ -662,7 +662,7 @@ class TestPersistedStateBaseline:
 
         await manager.auto_discover_and_assign_task()
 
-        assert manager._persisted_state == TaskState.TASK_STATE_INPUT_REQUIRED
+        assert manager._stored_state == TaskState.TASK_STATE_INPUT_REQUIRED
 
     @pytest.mark.anyio
     async def test_a_new_task_starts_without_a_baseline(self):

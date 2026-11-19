@@ -232,9 +232,10 @@ class AionEventPipeline:
             await self._catch_up(event)
             if isinstance(event, Task):
                 await self._flush_pending_status_message(event)
-            await self._save_silently(event)
             if isinstance(event, Task) and event.status.state in TERMINAL_TASK_STATES:
-                await self._announce_terminal_state(event.status.state)
+                await self._save_before_outcome(event)
+            else:
+                await self._save_silently(event)
         else:
             # All other events are streamed to client
             await self._emit_to_client(event)
@@ -335,21 +336,36 @@ class AionEventPipeline:
         else:
             logger.warning("Cannot process event silently: task_manager is not initialized.")
 
-    async def _announce_terminal_state(self, state: int) -> None:
-        """Queue a status update in the terminal state a Task saved silently has put the task in.
+    async def _save_before_outcome(self, task: Task) -> None:
+        """Save a Task the agent ends the task with, its outcome through the queue.
 
         The event consumer ends an execution - sends its push notification and
-        releases the task - when an event it applies leaves the task terminal,
-        and the silent write does not pass through it. Applying the update
-        writes nothing: the task already holds this state (``AionTaskManager``).
-        The client's stream withholds it and closes with the stored Task, and
-        the push channel sends the stored Task in its place, so both carry
-        the Task the agent handed over.
+        releases the task - when a status update it applies leaves the task
+        terminal, and it drops an update for a task that is terminal already.
+        So the Task's content - history, artifacts, metadata - is saved here
+        in the status the task holds, and the Task's own status, its outcome,
+        is queued as a status update for the consumer to apply. The client's
+        stream withholds that update and closes with the stored Task, and the
+        push channel sends the stored Task in its place, so both carry the
+        Task the agent handed over.
+
+        A task already terminal - cancelled meanwhile, say - keeps its
+        outcome: neither write changes it (``AionTaskManager``).
         """
+        stored = await self._stored_task()
+        content = Task()
+        content.CopyFrom(task)
+        # The status message is not carried over: the pending one is in the
+        # Task's history already (``_flush_pending_status_message``), and the
+        # update below moves the one it replaces into the history.
+        content.status.CopyFrom(TaskStatus(
+            state=stored.status.state if stored is not None else TaskState.TASK_STATE_WORKING,
+        ))
+        await self._save_silently(content)
         await self._emit_to_client(TaskStatusUpdateEvent(
             task_id=self._task_updater.task_id,
             context_id=self._task_updater.context_id,
-            status=TaskStatus(state=state),
+            status=task.status,
         ))
 
     async def _catch_up(self, event: Task | Message) -> None:

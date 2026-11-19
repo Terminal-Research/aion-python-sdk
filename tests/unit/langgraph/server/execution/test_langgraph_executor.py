@@ -257,3 +257,115 @@ class TestGraphStateAndFinalize:
         assert len(events) == 1
         assert events[0].status.state == TaskState.TASK_STATE_COMPLETED
         assert not events[0].status.HasField("message")
+
+
+class TestSeveralInterruptsAtOnce:
+    """Two nodes of one step interrupt at once: the questions are asked one per turn.
+
+    A real graph with a checkpointer, so the snapshot is LangGraph's own. On
+    LangGraph 1.0 an answered interrupt stays in ``StateSnapshot.interrupts``,
+    so the floors run checks that the question asked next is the one that
+    still waits.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _execution_scope(self):
+        from aion.server.agent.execution.scope import clear_execution_scope, init_execution_scope
+
+        init_execution_scope()
+        yield
+        clear_execution_scope()
+
+    @staticmethod
+    def _executor():
+        import operator
+        from typing import Annotated, TypedDict
+
+        from langgraph.checkpoint.memory import InMemorySaver
+        from langgraph.graph import END, START, StateGraph
+        from langgraph.types import interrupt
+
+        class State(TypedDict, total=False):
+            messages: list
+            answers: Annotated[list, operator.add]
+
+        def first(state):
+            return {"answers": [("first", interrupt("First question?")["messages"][0].text)]}
+
+        def second(state):
+            return {"answers": [("second", interrupt("Second question?")["messages"][0].text)]}
+
+        builder = StateGraph(State)
+        builder.add_node("first", first)
+        builder.add_node("second", second)
+        builder.add_edge(START, "first")
+        builder.add_edge(START, "second")
+        builder.add_edge("first", END)
+        builder.add_edge("second", END)
+        graph = builder.compile(checkpointer=InMemorySaver())
+        return LangGraphExecutor(compiled_graph=graph, config=Mock()), graph
+
+    @staticmethod
+    def _config():
+        config = make_config()
+        config.require_state_scope.return_value.key_for.return_value = "thread-1"
+        return config
+
+    @staticmethod
+    def _answer(text, interrupt_id=None):
+        message = Message(message_id=f"m-{text}", role=Role.ROLE_USER, parts=[Part(text=text)])
+        if interrupt_id is not None:
+            message.metadata.update({"interruptId": interrupt_id})
+        return make_context(message)
+
+    async def _run(self, executor, method, context, config):
+        with patch.object(executor._result_handler, "handle", return_value=[]):
+            return [event async for event in getattr(executor, method)(context, config)]
+
+    @staticmethod
+    def _question(events):
+        status = events[-1].status
+        assert status.state == TaskState.TASK_STATE_INPUT_REQUIRED
+        return status.message.parts[0].text, status.message.metadata["interruptId"]
+
+    async def test_each_answer_resumes_one_interrupt_and_the_next_one_is_asked(self):
+        executor, graph = self._executor()
+        config = self._config()
+
+        asked, asked_id = self._question(await self._run(executor, "stream", self._answer("start"), config))
+        assert asked == "First question?"
+
+        asked_next, next_id = self._question(await self._run(executor, "resume", self._answer("yes"), config))
+        assert asked_next == "Second question?" and next_id != asked_id
+
+        events = await self._run(executor, "resume", self._answer("no"), config)
+        assert events[-1].status.state == TaskState.TASK_STATE_COMPLETED
+        state = await graph.aget_state({"configurable": {"thread_id": "thread-1"}})
+        assert sorted(tuple(answer) for answer in state.values["answers"]) == [("first", "yes"), ("second", "no")]
+
+    async def test_an_answer_naming_an_interrupt_resumes_that_one(self):
+        executor, graph = self._executor()
+        config = self._config()
+        await self._run(executor, "stream", self._answer("start"), config)
+        snapshot = await graph.aget_state({"configurable": {"thread_id": "thread-1"}})
+        second_id = next(i.id for i in snapshot.interrupts if i.value == "Second question?")
+
+        asked, _ = self._question(await self._run(executor, "resume", self._answer("no", second_id), config))
+
+        assert asked == "First question?"
+        state = await graph.aget_state({"configurable": {"thread_id": "thread-1"}})
+        assert [tuple(answer) for answer in state.values["answers"]] == [("second", "no")]
+
+    async def test_an_answer_naming_an_interrupt_that_does_not_wait_asks_again(self, caplog):
+        executor, graph = self._executor()
+        config = self._config()
+        _, first_id = self._question(await self._run(executor, "stream", self._answer("start"), config))
+        await self._run(executor, "resume", self._answer("yes"), config)
+
+        with caplog.at_level("WARNING", logger="aion.langgraph.server.execution.langgraph_executor"):
+            asked, _ = self._question(await self._run(executor, "resume", self._answer("again", first_id), config))
+
+        assert asked == "Second question?"
+        state = await graph.aget_state({"configurable": {"thread_id": "thread-1"}})
+        assert [tuple(answer) for answer in state.values["answers"]] == [("first", "yes")]
+        assert "not waiting" in caplog.text

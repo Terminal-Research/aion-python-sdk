@@ -26,6 +26,7 @@ from aion.core.exceptions import (
     ConversationFileError,
     ConversationFileForbiddenError,
     ConversationFileRemovedError,
+    ConversationFileUnavailableError,
     TaskFailedError,
 )
 from aion.core.runtime.context import ForwardedAttribution, get_aion_runtime_context
@@ -209,14 +210,10 @@ class TestAnotherParticipantsFile:
 
 
 class TestAFailureThatIsNoRefusal:
-    """A link that is not issued for any other reason leaves the read as it is: through the part's address."""
+    """A link not issued for a lasting reason other than a refusal leaves the read as it is: through the part's address."""
 
-    @pytest.mark.parametrize("failure", [
-        UploadFailure(FileUploadErrorCode.STORAGE_UNAVAILABLE, retryable=True),
-        UploadFailure(FileUploadErrorCode.NO_DAEMON_IDENTITY),
-    ], ids=["unavailable", "no daemon identity"])
-    async def test_the_read_goes_to_the_address_and_fails(self, conversation, backend, fetched, failure) -> None:
-        backend.failure = failure
+    async def test_the_read_goes_to_the_address_and_fails(self, conversation, backend, fetched) -> None:
+        backend.failure = UploadFailure(FileUploadErrorCode.NO_DAEMON_IDENTITY)
 
         with turn_of(OTHER, conversation):
             with pytest.raises(ConversationFileError) as failed:
@@ -229,15 +226,70 @@ class TestAFailureThatIsNoRefusal:
         assert not isinstance(model_failed.value, ModelFileForbiddenError)
         assert fetched == [ADDRESS, ADDRESS]
 
+
+class TestAFailureThatMayPass:
+    """The storage service down for a moment: the owner's read fails with that reason, and works once it is back.
+
+    The read does not go to the protected address, which would refuse it, and
+    the SDK's models fail the turn with the reason instead of leaving out a
+    file the sender sent.
+    """
+
+    UNAVAILABLE = (
+        "File 'a.pdf' (application/pdf) cannot be read now: no download link could be issued for it. Try again later."
+    )
+
+    @staticmethod
+    def _reads(conversation: _StoredConversation) -> list:
+        part = _stored_part()
+        file = files_of(Message(message_id="m-1", role=Role.ROLE_USER, parts=[part]))[0]
+        return [
+            file.read(),
+            file.link(),
+            conversation.read_file(part),
+            conversation.read_file_at(ADDRESS),
+            conversation.file_link(part),
+        ]
+
+    async def test_the_owners_read_fails_with_the_reason(self, conversation, backend, fetched) -> None:
+        backend.failure = UploadFailure(FileUploadErrorCode.STORAGE_UNAVAILABLE, retryable=True)
+
+        with turn_of(OWNER, conversation):
+            for read in self._reads(conversation):
+                with pytest.raises(ConversationFileUnavailableError) as unavailable:
+                    await read
+                assert str(unavailable.value) == self.UNAVAILABLE
+            with pytest.raises(TaskFailedError) as model_failed:
+                await read_file_for_model(ADDRESS, name="a.pdf", stored=StoredFile.of(_stored_part()))
+
+        assert str(model_failed.value) == (
+            "File 'a.pdf' cannot be read now: no download link could be issued for it. Try again later. "
+            "It could not be sent to the model."
+        )
+        assert fetched == []
+        # Asked once: the failure answers the reads that follow it for a few seconds.
+        assert backend.asked_by == [OWNER]
+
     async def test_a_link_that_does_not_come_in_time(self, conversation, backend, fetched, monkeypatch) -> None:
         monkeypatch.setattr(links_module, "RENEWAL_TIMEOUT_SECONDS", 0.05)
         backend.delay = 5
 
-        with turn_of(OTHER, conversation), pytest.raises(ConversationFileError) as failed:
+        with turn_of(OWNER, conversation), pytest.raises(ConversationFileUnavailableError):
             await asyncio.wait_for(conversation.read_file(_stored_part()), timeout=1)
 
-        assert not isinstance(failed.value, ConversationFileForbiddenError)
-        assert fetched == [ADDRESS]
+        assert fetched == []
+
+    async def test_the_owner_reads_it_once_the_storage_is_back(self, conversation, backend, fetched, monkeypatch) -> None:
+        backend.failure = UploadFailure(FileUploadErrorCode.STORAGE_UNAVAILABLE, retryable=True)
+        with turn_of(OWNER, conversation), pytest.raises(ConversationFileUnavailableError):
+            await conversation.read_file(_stored_part())
+
+        monkeypatch.setattr(links_module, "RETRY_UNAVAILABLE_AFTER_SECONDS", 0.0)
+        backend.failure = None
+        with turn_of(OWNER, conversation):
+            assert await conversation.read_file(_stored_part()) == CONTENT
+
+        assert fetched == [f"https://files.test/content?grant=for-{OWNER}"]
 
 
 class TestARemovedFile:

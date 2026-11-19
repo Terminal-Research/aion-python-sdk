@@ -635,3 +635,217 @@ async def test_a_streaming_model_in_a_node_ends_on_its_marked_last_chunk() -> No
     assert deltas[-1][0] != ""
     assert "".join(text for text, _, _ in deltas) == "It is sunny."
     assert _messages(events) == []
+
+
+def _thread() -> Thread:
+    return Thread(
+        context=Mock(inbox=None, event=None),
+        context_id="C123",
+        parent_context_id=None,
+        network="Slack",
+        default_reply_target="C123",
+    )
+
+
+def _sections(events) -> list[str]:
+    """The text of each section of ``aion:stream-delta``, in order."""
+    sections: list[str] = []
+    for text, append, _ in _deltas(events):
+        if append:
+            sections[-1] += text
+        else:
+            sections.append(text)
+    return sections
+
+
+def _sunny_model():
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+
+    return GenericFakeChatModel(messages=iter([AIMessage(content="It is sunny.")]))
+
+
+async def test_a_thread_streaming_a_models_stream_sends_the_answer_once() -> None:
+    """LangGraph streams the model call on its own, and the thread forwards the
+    same chunks; the client gets the answer once, as the thread's section."""
+    model = _sunny_model()
+
+    async def respond(state):
+        return {"messages": [await _thread().reply(model.astream(state["messages"]))]}
+
+    events = await _run_graph(("respond", respond))
+
+    assert _sections(events) == ["It is sunny."]
+    assert _deltas(events)[-1][2] is True
+    assert _messages(events) == []
+
+
+async def test_a_thread_streaming_text_taken_from_a_models_stream_sends_it_once() -> None:
+    model = _sunny_model()
+
+    async def respond(state):
+        async def answer():
+            async for chunk in model.astream(state["messages"]):
+                yield chunk.text
+
+        return {"messages": [await _thread().reply(answer())]}
+
+    events = await _run_graph(("respond", respond))
+
+    assert _sections(events) == ["It is sunny."]
+    assert _messages(events) == []
+
+
+async def test_a_model_call_the_threads_iterator_does_not_yield_stays_internal() -> None:
+    """What the iterator yields is the answer; a model call it makes for itself is not sent."""
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
+
+    helper = FakeListChatModel(responses=["internal plan"])
+
+    async def respond(state):
+        async def answer():
+            await helper.ainvoke(state["messages"])
+            yield "It is sunny."
+
+        await _thread().reply(answer())
+        return {}
+
+    events = await _run_graph(("respond", respond))
+
+    assert _sections(events) == ["It is sunny."]
+    assert _messages(events) == []
+
+
+async def test_a_model_call_after_the_threads_stream_streams_on_the_graph_as_usual() -> None:
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
+
+    model = _sunny_model()
+    follow_up = FakeListChatModel(responses=["Anything else?"])
+
+    async def respond(state):
+        await _thread().reply(model.astream(state["messages"]))
+        return {"messages": [await follow_up.ainvoke(state["messages"])]}
+
+    events = await _run_graph(("respond", respond))
+
+    assert _sections(events) == ["It is sunny.", "Anything else?"]
+    assert _messages(events) == []
+
+
+async def test_a_models_stream_posted_with_a_target_keeps_the_target() -> None:
+    """The section the client gets is the thread's, so it carries the target."""
+    model = _sunny_model()
+    routing = MessageActionPayload(trajectory="reply", context_id="C1", reply_to_message_id="m-1")
+
+    async def respond(state):
+        await _thread().post(model.astream(state["messages"]), target=routing)
+        return {}
+
+    events = await _run_graph(("respond", respond))
+    deltas = [
+        event
+        for event in events
+        if isinstance(event, TaskArtifactUpdateEvent) and event.artifact.artifact_id == ArtifactId.STREAM_DELTA.value
+    ]
+
+    assert _sections(events) == ["It is sunny."]
+    assert [any(MessageActionPayload.is_part(part) for part in event.artifact.parts) for event in deltas] == [
+        True,
+        *[False] * (len(deltas) - 1),
+    ]
+
+
+async def test_a_sync_node_emitting_a_models_stream_sends_the_answer_once() -> None:
+    from aion.langgraph.authoring import emit_message
+
+    model = _sunny_model()
+
+    def respond(state, writer):
+        return {"messages": [emit_message(writer, model.stream(state["messages"]))]}
+
+    events = await _run_graph(("respond", respond))
+
+    assert _sections(events) == ["It is sunny."]
+    assert _messages(events) == []
+
+
+async def test_a_node_awaiting_aemit_message_on_a_models_stream_sends_the_answer_once() -> None:
+    from aion.langgraph.authoring import aemit_message
+
+    model = _sunny_model()
+
+    async def respond(state, writer):
+        return {"messages": [await aemit_message(writer, model.astream(state["messages"]))]}
+
+    events = await _run_graph(("respond", respond))
+
+    assert _sections(events) == ["It is sunny."]
+    assert _messages(events) == []
+
+
+async def test_a_node_emitting_each_chunk_of_a_models_stream_sends_the_answer_once() -> None:
+    """The node reads the stream itself, so LangGraph streams the call as well;
+    the server sends the call from the graph's stream and leaves out the node's copy."""
+    from aion.langgraph.authoring import emit_message
+
+    model = _sunny_model()
+
+    def respond(state, writer):
+        for chunk in model.stream(state["messages"]):
+            emit_message(writer, chunk)
+        return {}
+
+    events = await _run_graph(("respond", respond))
+
+    assert _sections(events) == ["It is sunny."]
+    assert _messages(events) == []
+
+
+async def test_a_node_emitting_the_result_of_a_streamed_call_does_not_send_it_again() -> None:
+    from aion.langgraph.authoring import emit_message
+
+    model = _sunny_model()
+
+    async def respond(state, writer):
+        emit_message(writer, await model.ainvoke(state["messages"]))
+        return {}
+
+    events = await _run_graph(("respond", respond))
+
+    assert _sections(events) == ["It is sunny."]
+    assert _messages(events) == []
+
+
+def test_a_nodes_copy_of_a_streamed_call_produces_no_event() -> None:
+    converter = _converter()
+    events = converter.convert("messages", _chunk("It is ", "run-1"))
+    events += converter.convert("custom", MessageCustomEvent(message=_chunk("It is ", "run-1")))
+    events += converter.convert("messages", _chunk("sunny.", "run-1"))
+    events += converter.convert("custom", MessageCustomEvent(message=_chunk("sunny.", "run-1")))
+    events += converter.convert("custom", MessageCustomEvent(message=AIMessage(content="It is sunny.", id="run-1")))
+    events += converter.close_stream()
+
+    assert _deltas(events) == [("It is ", False, False), ("sunny.", True, False), ("", True, True)]
+    assert _messages(events) == []
+
+
+async def test_a_models_stream_read_before_the_thread_gets_it_still_goes_out_once() -> None:
+    """The call started before the thread reads it, so LangGraph streams it: the
+    client gets that section, and neither the thread's chunks nor its whole message."""
+    model = _sunny_model()
+
+    async def respond(state):
+        stream = model.astream(state["messages"])
+        first = await anext(stream)
+
+        async def answer():
+            yield first
+            async for chunk in stream:
+                yield chunk
+
+        await _thread().reply(answer())
+        return {}
+
+    events = await _run_graph(("respond", respond))
+
+    assert _sections(events) == ["It is sunny."]
+    assert _messages(events) == []

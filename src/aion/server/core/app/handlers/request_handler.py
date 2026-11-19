@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import logging
+from a2a import plugins as a2a_plugins
 from a2a.server.agent_execution import RequestContext
 from a2a.server.agent_execution.active_task import ActiveTask
 from a2a.server.cluster.task_store import LegacyTaskStoreAdapter
@@ -175,8 +176,14 @@ class AionRequestHandler(DefaultRequestHandlerV2):
         expired one (``aion.server.files.links``), asked for on behalf of
         the usage attribution the request activated. Omitted, an answer
         carries the links its task was stored with.
+
+        a2a-sdk's plugins (``a2a.plugins``) are not run: the handler gets an
+        empty plugin manager rather than the global one. Aion's registry,
+        task manager and push sender stand where a2a-sdk runs the execution,
+        task and push hooks, so a manager set with ``a2a.plugins.set_global``
+        would otherwise run only the hooks around each request.
         """
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, plugins=a2a_plugins.sequential(), **kwargs)
         self._file_links = file_links
         self._warned_undeclared_attribution = False
         self._active_task_registry = AionActiveTaskRegistry(

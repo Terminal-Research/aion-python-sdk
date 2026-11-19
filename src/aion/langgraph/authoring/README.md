@@ -47,6 +47,16 @@ make. A model with `configurable_fields` or `config_prefix` is LangChain's own
 `ChatOpenAI`, built per call, and like any other client of the service it has
 to be called with a stream.
 
+A call without `await` - `invoke` or `stream` - belongs in a synchronous
+node, which LangGraph runs in a worker thread: the files of its request are
+read through the turn's event loop, as for `ainvoke`. Inside an `async def`
+node such a call runs on the turn's event loop and holds every turn of the
+server until the model answers. The first one in the process logs a
+warning, and a message with a file to read fails the task at once, with a
+reason that says to call `ainvoke` or `astream` instead: the loop cannot
+read the file while it waits for the call. `inline_files_sync` behaves the
+same way.
+
 ---
 
 ## MCP tools
@@ -190,6 +200,9 @@ async def handle_message(thread: Thread):
     await thread.post(token_stream())
 ```
 
+A model's stream, as `token_stream` above, reaches the client once: the model calls that start while the thread reads
+the iterator stay off LangGraph's own stream of the graph's messages (see the [server README](../server/README.md)).
+
 `reply` sends back to where the inbound event came from: a text, a card, a streamed
 answer or an artifact carries that routing target, and the task keeps it with what it
 routes. `post` routes only with an explicit `target`. Output that carries no target goes
@@ -224,7 +237,7 @@ Use these inside any graph node that receives a `StreamWriter`. They emit events
 from langgraph.types import StreamWriter
 from langchain_core.messages import AIMessage, AIMessageChunk
 from aion.core.a2a import data_artifact, file_artifact, text_artifact, url_artifact
-from aion.langgraph.authoring import emit_artifact, emit_message, emit_thinking
+from aion.langgraph.authoring import aemit_message, emit_artifact, emit_message, emit_thinking
 
 def my_node(state: dict, writer: StreamWriter):
     # One thought — added to the task's aion:thinking-delta artifact
@@ -254,10 +267,25 @@ def my_node(state: dict, writer: StreamWriter):
 
 ```python
 def streaming_node(state: dict, writer: StreamWriter):
-    for chunk in llm.stream(prompt):
-        emit_message(writer, chunk)
+    for piece in ["The deployment", " has reached", " 80%."]:
+        emit_message(writer, AIMessageChunk(content=piece))
     return state
 ```
+
+`emit_message` also takes text, sent as an `AIMessage`, and an iterator of `str` or `AIMessageChunk`, `llm.stream(...)` say, and `aemit_message` an async iterator as well, `llm.astream(...)`. The iterator streams as one section, ended by the whole message, which they return for the node to keep in its state:
+
+```python
+def answer_node(state: dict, writer: StreamWriter):
+    return {"messages": [emit_message(writer, llm.stream(state["messages"]))]}
+
+
+async def answer_node_async(state: dict, writer: StreamWriter):
+    return {"messages": [await aemit_message(writer, llm.astream(state["messages"]))]}
+```
+
+LangGraph streams every model call a node makes on its own `messages` stream. The model calls that start while `emit_message` or `aemit_message` reads an iterator stay off that stream, so the answer goes out once, with the `routing` and `metadata` given, and a call whose result the iterator does not yield does not reach the client. Reading an iterator with `emit_message` blocks the thread that runs the node; in an async node, use `aemit_message`.
+
+A node that reads a model's stream itself and emits each chunk - `for chunk in llm.stream(prompt): emit_message(writer, chunk)` - sends a copy of a call LangGraph streams already. The server sends the call from the `messages` stream and leaves the copy out, with the `routing` and `metadata` the node gave its chunks; the same holds for the message such a call returned. Pass the stream itself to keep them.
 
 ---
 
@@ -303,6 +331,7 @@ a test an `InMemoryConversation` to read. See "Conversation history" in the
 | End of a streamed section whose last chunk was not marked | `TaskArtifactUpdateEvent(aion:stream-delta, append=true, last_chunk=true)` with one empty text part |
 | `emit_message(AIMessage)` | `TaskStatusUpdateEvent(working, message=...)` |
 | `emit_message(AIMessageChunk)` | `TaskArtifactUpdateEvent(aion:stream-delta)` |
+| `emit_message(iterator)` / `await aemit_message(async_iterator)` | `TaskArtifactUpdateEvent(aion:stream-delta)`, one section, ended by the whole message |
 | `emit_thinking(text)` / `thread.thinking(text)` | `TaskArtifactUpdateEvent(aion:thinking-delta)`, one part per thought |
 | `emit_message(AIMessage, metadata=...)` | `TaskStatusUpdateEvent(working, message=..., metadata=...)` |
 | `emit_artifact(url_artifact(...))` / `emit_artifact(data_artifact(...))` / `emit_artifact(text_artifact(...))` | `TaskArtifactUpdateEvent` |

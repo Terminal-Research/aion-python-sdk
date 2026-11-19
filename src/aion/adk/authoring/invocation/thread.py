@@ -9,20 +9,15 @@ from __future__ import annotations
 import logging
 
 from a2a.types import Artifact as A2AArtifact
-from aion.adk.authoring.constants import AION_ROUTING_KEY
-from aion.adk.authoring.invocation import emit_artifact, emit_card, emit_message, emit_thinking
+from aion.adk.authoring.invocation.emitters import aemit_message, emit_artifact, emit_card, emit_message, emit_thinking
 from aion.core.a2a.extensions.messaging import MessageActionPayload
 from aion.core.agent import BaseThread
 from aion.core.agent.invocation.card import Card
 from google.adk.events import Event
-from google.genai import types
-from typing import AsyncIterator, Optional, Union, TYPE_CHECKING
+from typing import AsyncIterator, Optional, Union
 
-from .context_vars import EventEmitter, get_adk_ctx, get_adk_emitter
+from .context_vars import get_adk_emitter
 from .message import Message
-
-if TYPE_CHECKING:
-    from aion.adk.authoring.invocation import AionInvocationContext
 
 logger = logging.getLogger(__name__)
 
@@ -47,11 +42,6 @@ class Thread(BaseThread):
             )
         return emitter
 
-    @staticmethod
-    def _get_ctx() -> AionInvocationContext:
-        """Return the ADK invocation context from the current ContextVar."""
-        return get_adk_ctx()
-
     async def post(
             self,
             content: Union[str, Card, A2AArtifact, Event, AsyncIterator[str]],
@@ -61,9 +51,12 @@ class Thread(BaseThread):
     ) -> Event | None:
         """Post a message via the ADK event emitter.
 
-        Supports str, Card, a2a.types.Artifact, google.adk.events.Event,
-        or an async iterator yielding str or google.adk.events.Event chunks. Returns the emitted Event,
-        or None when the emitter is not available or the content type is unsupported.
+        Supports str, Card, a2a.types.Artifact, google.adk.events.Event, or an
+        async iterator of str, which streams as one section of the answer (see
+        ``aemit_message``). Returns the emitted Event - for an iterator, the
+        complete Event that ended its section - or None for a card or an
+        artifact, when nothing was sent, or when the emitter is not available
+        or the content type is unsupported. An Event is passed on as it is.
 
         When target is provided, the MessageActionPayload is embedded in
         Event.custom_metadata under the aion:routing key so the server-side
@@ -78,103 +71,25 @@ class Thread(BaseThread):
             return None
 
         if isinstance(content, A2AArtifact):
-            await emit_artifact(emitter, self._get_ctx(), content, routing=target, metadata=metadata)
+            emit_artifact(emitter, content, routing=target, metadata=metadata)
             return None
 
         if isinstance(content, str):
-            emit_message(emitter, content, routing=target, metadata=metadata)
-            return None
+            return emit_message(emitter, content, routing=target, metadata=metadata)
 
         if isinstance(content, Event):
             emitter(content)
             return content
 
         if hasattr(content, "__aiter__"):
-            return await self._stream_from_async_iterator(emitter, content, routing=target, metadata=metadata)
+            return await aemit_message(emitter, content, routing=target, metadata=metadata)
 
         logger.warning(
             "Thread.post() received unsupported content type: %s. "
             "Supported types: str, Card, a2a.types.Artifact, "
-            "google.adk.events.Event, async iterator of str or google.adk.events.Event.",
+            "google.adk.events.Event, async iterator of str.",
             type(content).__name__,
         )
-        return None
-
-    @staticmethod
-    def _build_partial_text_event(
-            text: str,
-            metadata: dict | None = None,
-            routing: Optional[MessageActionPayload] = None,
-            *,
-            last: bool = False,
-    ) -> Event:
-        """Build a partial (streaming) ADK Event for a text chunk, with its routing target under aion:routing.
-
-        ``last`` marks the section's last chunk with ``turn_complete``.
-        """
-        meta = dict(metadata) if metadata else {}
-        if routing is not None:
-            meta[AION_ROUTING_KEY] = routing.model_dump(by_alias=True, exclude_none=True)
-        return Event(
-            author="agent",
-            content=types.Content(parts=[types.Part(text=text)], role="model") if text else None,
-            partial=True,
-            turn_complete=True if last else None,
-            custom_metadata=meta or None,
-        )
-
-    async def _stream_from_async_iterator(
-            self,
-            emitter: EventEmitter,
-            iterator: AsyncIterator[str],
-            routing: Optional[MessageActionPayload] = None,
-            metadata: dict | None = None,
-    ) -> Event | None:
-        """Stream chunks as partial ADK Events, then the whole text as a complete one.
-
-        The partial events are the chunks of a section of
-        ``aion:stream-delta``, and the complete event ends the section, as
-        ADK's own streaming does; its text is not sent again. The streamed
-        text is the task's answer, not a message. The ADK session keeps it as
-        what the agent said. Every event carries ``routing``; the section
-        takes it on its first chunk.
-
-        A chunk is a ``str``, or an ADK ``Event`` whose text is the chunk: one
-        that sets ``turn_complete`` is the section's last, which then needs
-        no end mark - as a LangGraph ``AIMessageChunk`` with
-        ``chunk_position="last"``.
-        """
-        accumulated = ""
-        try:
-            async for chunk in iterator:
-                if isinstance(chunk, str):
-                    emitter(self._build_partial_text_event(chunk, metadata=metadata, routing=routing))
-                    accumulated += chunk
-                elif isinstance(chunk, Event):
-                    text = "".join(
-                        part.text or "" for part in (chunk.content.parts if chunk.content else []) or []
-                    )
-                    emitter(self._build_partial_text_event(
-                        text, metadata=metadata, routing=routing, last=bool(chunk.turn_complete)
-                    ))
-                    accumulated += text
-                else:
-                    logger.warning(
-                        "Thread async iterator yielded unsupported type: %s. "
-                        "Expected str or google.adk.events.Event.",
-                        type(chunk).__name__,
-                    )
-        except Exception as e:
-            logger.error(
-                "Error processing async iterator in Thread.post(): %s",
-                e,
-                exc_info=True,
-            )
-
-        if accumulated:
-            emit_message(emitter, accumulated, routing=routing, metadata=metadata)
-            return None
-
         return None
 
     async def thinking(self, content: str, *, metadata: dict | None = None) -> None:

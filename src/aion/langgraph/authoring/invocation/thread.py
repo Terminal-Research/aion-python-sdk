@@ -17,6 +17,7 @@ from typing import Any, Optional
 from uuid import uuid4
 
 from .emitters import (
+    aemit_message,
     emit_artifact,
     emit_card,
     emit_message,
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 ReplyResult = Optional[AIMessage]
 """Return type of Thread.post(): the emitted message or message chunk, or None if nothing was sent."""
+
 
 
 class Thread(BaseThread):
@@ -70,6 +72,8 @@ class Thread(BaseThread):
         When target is None, falls back to local A2A delivery.
 
         Supports str, AIMessage, AIMessageChunk, or async iterator of those types.
+        An async iterator over a model's stream, or over text taken from it, sends
+        the answer once (see ``aemit_message``).
         metadata is applied only when the SDK constructs the message (str or async iterator);
         it is ignored for AIMessage and AIMessageChunk which are sent as-is, except that an
         AIMessage without an id gets one (see ``emit_message``).
@@ -95,7 +99,7 @@ class Thread(BaseThread):
             emit_message(writer, content, routing=target)
             return content
         elif hasattr(content, "__aiter__"):
-            return await self._stream_from_async_iterator(writer, content, metadata, routing=target)
+            return await aemit_message(writer, content, routing=target, metadata=metadata)
         else:
             logger.warning(
                 "Thread.post() received unsupported content type: %s. "
@@ -103,51 +107,6 @@ class Thread(BaseThread):
                 type(content).__name__,
             )
             return None
-
-    @staticmethod
-    async def _stream_from_async_iterator(
-            writer,
-            iterator: Any,
-            metadata: dict | None = None,
-            routing: Optional[MessageActionPayload] = None,
-    ) -> Optional[AIMessage]:
-        """Stream chunks of the answer, then the full message that ends them.
-
-        The chunks are a section of ``aion:stream-delta``, and the full
-        message after them ends the section, as a model's streaming does;
-        its text is not sent again. The streamed text is the task's answer,
-        not a message. Every chunk carries ``routing``; the section takes it
-        on its first chunk.
-        """
-        accumulated = ""
-        try:
-            async for chunk in iterator:
-                if isinstance(chunk, str):
-                    emit_message(writer, AIMessageChunk(content=chunk), routing=routing, metadata=metadata)
-                    accumulated += chunk
-                elif isinstance(chunk, AIMessageChunk):
-                    emit_message(writer, chunk, routing=routing, metadata=metadata)
-                    if chunk.content:
-                        accumulated += chunk.content
-                else:
-                    logger.warning(
-                        "Async iterator yielded unsupported type: %s. "
-                        "Expected str or AIMessageChunk.",
-                        type(chunk).__name__,
-                    )
-        except Exception as e:
-            logger.error(
-                "Error processing async iterator in Thread.reply(): %s",
-                e,
-                exc_info=True,
-            )
-
-        if accumulated:
-            msg = AIMessage(content=accumulated, id=str(uuid4()))
-            emit_message(writer, msg, routing=routing, metadata=metadata)
-            return msg
-
-        return None
 
     async def thinking(self, content: str, *, metadata: dict | None = None) -> None:
         """Add one thought to the task's ``aion:thinking-delta`` artifact.

@@ -72,6 +72,7 @@ from aion.core.exceptions import (
     ConversationFileForbiddenError,
     ConversationFileRemovedError,
     ConversationFileTooLargeError,
+    ConversationFileUnavailableError,
     ConversationUnavailableError,
 )
 from aion.core.runtime.context.conversation import (
@@ -88,6 +89,7 @@ __all__ = [
     "ConversationFileForbiddenError",
     "ConversationFileRemovedError",
     "ConversationFileTooLargeError",
+    "ConversationFileUnavailableError",
     "Conversation",
     "ConversationUnavailableError",
     "StoredFile",

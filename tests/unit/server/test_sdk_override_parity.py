@@ -113,16 +113,16 @@ OVERRIDES = [
 # supported range whose copy has been compared with the override.
 COPIED_BODIES = {
     (ActiveTaskRegistry, "get"): {
-        "1.3.0": "038ae198bdf3d13402709dd84f42c88afcbcb0786d4ab1cc03dcb21114218744",
+        "1.3.1": "038ae198bdf3d13402709dd84f42c88afcbcb0786d4ab1cc03dcb21114218744",
     },
     (ActiveTaskRegistry, "get_or_create"): {
-        "1.3.0": "1c698ee7e427289257f7346643fe75134f436aabd670bf71ba685a2c11893fde",
+        "1.3.1": "61ba43514ba4e216d6747b01cf1de60bedea9a7dfb6f84736abe748d92d2c20f",
     },
     (BasePushNotificationSender, "send_notification"): {
-        "1.3.0": "607c9ca10b90f37a19927b4d78fcc52dcc52b6b412625e6f50c4af6219d9d9ea",
+        "1.3.1": "607c9ca10b90f37a19927b4d78fcc52dcc52b6b412625e6f50c4af6219d9d9ea",
     },
     (BasePushNotificationSender, "_dispatch_notification"): {
-        "1.3.0": "583dceed037db7c0d250d4a3427e083ab3bd4fcc697830904814f3fb876ea113",
+        "1.3.1": "e83eff6a28ee19d707b5bf9f9c2134026014fe68c6d7cd95a79e2610504d2cee",
     },
 }
 

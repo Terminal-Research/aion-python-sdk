@@ -86,6 +86,10 @@ The graph is streamed together with its subgraphs, so *whichever node* includes 
 
 `thread.reply()` with an async iterator returns the whole message that ended its section. A node may keep it in the conversation by returning it into `messages`, as it would any reply; LangGraph then sends that message on the `messages` stream once more, and the server does not send it again.
 
+The iterator may be a model's stream - `model.astream(...)`, or text taken from it. `thread.reply()` streams it with `aemit_message`, and `emit_message` streams a sync iterator the same way: the model calls that start while the iterator is read stay off the `messages` stream, so the answer goes out once, as the thread's section with the reply's routing target, and a call whose result the iterator does not yield does not reach the client. A call that started before the iterator is read - the node read the iterator before passing it, or a task started earlier feeds it - and one given `tags` in a config of its own stay on the `messages` stream. For an iterator of that call's chunks the server sends the call from there and leaves out the copy, the whole message that ends it included: that message takes the id the chunks share. Text taken from such a call carries no id to know it by, and the answer reaches the client twice; pass the iterator to `thread.reply()` unread.
+
+A node that emits the chunks of a model call LangGraph streams, or the message the call returned, sends such a copy as well. LangGraph sends a call's chunks on the `messages` stream before the node gets them, so the copy always comes second: the server sends no event for its chunks, and its whole message ends the call's section as the call's own closing message does - its text is not sent again, and what else it carries goes out as a message. The routing target and the metadata of the copy's chunks are not sent.
+
 ---
 
 ## Outbound — `a2a_outbox`
@@ -179,6 +183,8 @@ def review_node(state: State) -> State:
 ```
 
 The interrupt value becomes the question the client sees in the `INPUT_REQUIRED` status, and the task keeps its id: the client resumes by sending the answer with the same `task_id` and `context_id`.
+
+The question's message carries the interrupt's id as `interruptId` in its metadata. Several nodes of one step may interrupt at once; the questions are then asked one per turn, in the order LangGraph reports them, and each answer resumes one interrupt while the others keep waiting. An answer resumes the interrupt its message names under `interruptId` in the message's metadata, and the one asked without it. An answer that names an interrupt which no longer waits does not resume the graph: the question that waits is asked again.
 
 ---
 
