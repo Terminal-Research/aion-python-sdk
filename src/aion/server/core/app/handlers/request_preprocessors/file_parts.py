@@ -39,10 +39,16 @@ class FilePartPreprocessor:
     rejects the request instead of degrading: nothing was saved, and the client
     can simply send it again.
 
-    A caller's parts never keep a reference to a stored file (``aion:file``):
-    the server writes that key for the files it stores itself, and reads it
-    back to issue download links for the file it names. One taken from a
-    caller would name a file of the caller's choosing.
+    A caller's parts never keep a reference to a stored file (``aion:file``)
+    of their own: the server writes that key for the files it stores itself,
+    and reads it back to issue download links for the file it names. A part
+    whose address leads to a stored file - the storage's own address of it,
+    or a download link from an earlier answer, which is that address with
+    the grant added - becomes that stored file, with the reference read from
+    the address and the grant dropped (``A2AFileTransformer``). A link to it
+    is then issued only on behalf of whoever reads it, and the storage
+    service issues one only to the file's owner, so naming a file opens
+    nothing.
 
     Receipts produced during ``process`` are tracked per async context, so
     concurrent requests compensate only their own uploads.

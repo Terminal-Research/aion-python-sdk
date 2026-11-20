@@ -185,6 +185,10 @@ class FileUploadManager:
         """The file version ``url`` is the backend's own address of, or None; see :meth:`FileStorageBackend.stored_file_at`."""
         return self._backend.stored_file_at(url)
 
+    def stored_address(self, url: str) -> Optional[tuple[str, StoredFile]]:
+        """The backend's own address ``url`` leads to and the file version it names, or None; see :meth:`FileStorageBackend.stored_address`."""
+        return self._backend.stored_address(url)
+
     def held(self, uri: str) -> Optional[bytes]:
         """The content of a file the backend holds in this process at ``uri``; see :meth:`FileStorageBackend.held`."""
         return None if self._closed else self._backend.held(uri)

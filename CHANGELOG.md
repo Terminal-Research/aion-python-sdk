@@ -25,6 +25,7 @@
 
 ### Bug Fixes
 
+* **files:** a part whose URL is a download link to a stored file - its content address with the grant added, as a client sends back a file from an earlier answer, or as an agent hands out `ConversationFile.link()` - becomes that stored file: the address alone and its `aion:file` reference, read from the address, so every reader gets a link of its own. A client's part with the stored file's address becomes it as well. The grant was kept in the task, checkpoint or session for every reader of the conversation until it expired.
 * **adk:** with google-adk 2.15 the server's session service passes on `append_events` and `flush_session`, which that release added, so a session service that writes a session's queued events at once, or flushes one session, keeps doing so; every event still goes through the turn's rules and has its inline files stored.
 * **langgraph:** an answer the interrupt's `response_schema` refuses (LangGraph 1.2.15 and later) asks the question again and the task keeps waiting, as LangGraph keeps the interrupt; the task failed.
 * **a2a:** canonical answer selection prefers `aion:assistant-answer`, then current-turn agent messages, then Stream Delta text. Generic result artifacts remain available through the part readers. The server preserves explicit Assistant Answer updates instead of replacing them with an automatic message copy.

@@ -33,6 +33,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
+from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID, uuid4
 
 import httpx
@@ -174,6 +175,22 @@ class AionFileStorageBackend(FileStorageBackend):
         if self._client.content_url(file_id, version_id) != url:
             return None
         return StoredFile.create(file_id, version_id)
+
+    def stored_address(self, url: str) -> tuple[str, StoredFile] | None:
+        """The content address ``url`` leads to, with or without a query, and the file version it names.
+
+        A download link the Files API issues is the version's content address
+        with the grant in its query. The query is dropped - whatever it holds,
+        the address takes none - and what is left must be the address exactly
+        (``stored_file_at``). A URL with a fragment, another host or any other
+        path leads to no file of this backend's.
+        """
+        parts = urlsplit(url)
+        if parts.fragment:
+            return None
+        address = urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+        stored = self.stored_file_at(address)
+        return (address, stored) if stored is not None else None
 
     async def aclose(self) -> None:
         """Close the Files API client."""

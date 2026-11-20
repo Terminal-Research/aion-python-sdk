@@ -16,10 +16,14 @@ a model request later in the turn reads the file without downloading what was
 just uploaded. The part's reference records the file's size too, so a reader
 knows whether the file fits a model request without downloading it.
 
-A part the agent sends with the storage backend's own address of a stored
-file and no reference to it (``aion:file``) gets the reference back: a
-framework that keeps only the URL of a file it was given sends the file on
-that way, and without the reference the server issues no link for it.
+A part whose address leads to a stored file and that carries no reference to
+it (``aion:file``) becomes that stored file: the storage backend's own address
+of it, and the reference. The address may be the backend's own, as a
+framework that keeps only the URL of a file it was given sends the file on, or
+a download link to it, the address with a credential added, as a client sends
+back a file from an earlier answer; the credential is dropped. Without the
+reference the server issues no link for the file, and a credential kept in a
+part would reach every reader of the conversation.
 
 With no upload manager configured the transformer is a no-op and inline
 content passes through unchanged - the one place where "keep the bytes in the
@@ -123,8 +127,8 @@ class Transform:
 class A2AFileTransformer:
     """Rewrites a part with inline file content into ``Part(url=...)``.
 
-    It also gives an agent's part that carries a stored file's address back
-    the reference to that file.
+    It also turns a part whose address leads to a stored file into that
+    stored file: the backend's own address of it and the reference to it.
 
     If ``upload_manager`` is omitted, one is built from settings. With no
     backend configured every method is a pass-through, so the transformer can
@@ -195,15 +199,16 @@ class A2AFileTransformer:
         from that reference whenever it hands the part out
         (``aion.server.files.links``).
 
-        A part the agent sends with exactly the backend's own address of a
-        stored file version and no reference
-        (``FileUploadManager.stored_file_at``) gets the reference back, with
-        nothing but the file's and the version's ids, so the server issues a
-        link for it whenever it hands the part out. Only the agent's parts are
-        given one - those of an event transformed with
-        ``PartRetention.REQUESTED``, outside a message with the user role. A
-        caller's part is left as it is: a reference taken from a caller's
-        address would name a file of the caller's choosing.
+        A part without a reference whose address leads to a stored file
+        version - the backend's own address of it, or a download link that is
+        that address with a credential added
+        (``FileUploadManager.stored_address``) - gets the address alone and
+        a reference with nothing but the file's and the version's ids, so the
+        server issues a link for it whenever it hands the part out and no
+        credential is kept. That holds for the agent's parts and the
+        caller's alike: a link is issued only on behalf of whoever reads the
+        part, and the storage service issues one only to the file's owner, so
+        a caller who names a file opens nothing.
 
         Args:
             event: Message, task, status update or artifact update.
@@ -216,8 +221,8 @@ class A2AFileTransformer:
                 ``None`` stores every file it is given.
 
         Returns:
-            The event, transformed when it carried inline content or an
-            agent's part got its reference back, and a report of what
+            The event, transformed when it carried inline content or a part
+            became the stored file its address leads to, and a report of what
             happened. The event is the original object when nothing changed.
         """
         if self._upload_manager is None:
@@ -226,9 +231,7 @@ class A2AFileTransformer:
         lists = _part_lists(event)
         event_parts = [part for part_list in lists for part in part_list.parts]
         inline = any(carries_inline_content(part) for part in event_parts)
-        references = (
-            self._references(lists) if retention is PartRetention.REQUESTED else {}
-        )
+        references = self._references(lists)
         if not inline and not references:
             return Transform(event, TransformReport())
 
@@ -251,8 +254,8 @@ class A2AFileTransformer:
             )
         else:
             results, report = list(event_parts), TransformReport()
-        for index, reference in references.items():
-            results[index] = _with_reference(event_parts[index], reference)
+        for index, (address, reference) in references.items():
+            results[index] = _at_stored_address(event_parts[index], address, reference)
             report.changed = True
         if not report.changed:
             return Transform(event, report)
@@ -265,37 +268,44 @@ class A2AFileTransformer:
             parts.extend(kept)
         return Transform(_without_emptied(event, new_event), report)
 
-    def _references(self, lists: list[_PartList]) -> dict[int, StoredFile]:
-        """The references the agent's parts get back, by position among all the event's parts.
+    def _references(self, lists: list[_PartList]) -> dict[int, tuple[str, StoredFile]]:
+        """The stored files parts lead to by their address, by position among all the event's parts.
 
-        A part qualifies when it is in one of the agent's part lists, carries
-        an address rather than inline content, has no reference of its own,
-        and its address is exactly one the storage backend gives a stored
-        file version.
+        A part qualifies when it carries an address rather than inline
+        content, has no reference of its own, and its address leads to a
+        stored file version of the storage backend: the backend's own address
+        of it, or a link that is that address with a credential added
+        (``FileUploadManager.stored_address``). Such a part becomes the stored
+        file it leads to - the address alone, and the reference - whoever
+        sent it, the agent or the caller. A caller's part never keeps a
+        reference of its own (``FilePartPreprocessor``), and one built from
+        the address opens nothing: a link to the file is issued only on
+        behalf of whoever reads it, and the storage service issues one only
+        to the file's owner.
         """
-        references: dict[int, StoredFile] = {}
+        references: dict[int, tuple[str, StoredFile]] = {}
         position = 0
         for part_list in lists:
             for part in part_list.parts:
-                if part_list.agents and (reference := self._addressed_file(part)) is not None:
+                if (stored := self._stored_address(part)) is not None:
                     logger.debug(
-                        "Agent part addresses stored file %s version %s without its reference; restoring it",
-                        reference.file_id,
-                        reference.version_id,
+                        "A part leads to stored file %s version %s by its address; it becomes that stored file",
+                        stored[1].file_id,
+                        stored[1].version_id,
                     )
-                    references[position] = reference
+                    references[position] = stored
                 position += 1
         return references
 
-    def _addressed_file(self, part: Part) -> StoredFile | None:
-        """The stored file version a part without a reference addresses, or None."""
+    def _stored_address(self, part: Part) -> tuple[str, StoredFile] | None:
+        """The stored file version a part without a reference leads to by its address, and that address; or None."""
         if (
             part.WhichOneof("content") != "url"
             or carries_inline_content(part)
             or StoredFile.of(part) is not None
         ):
             return None
-        return self._upload_manager.stored_file_at(part.url)
+        return self._upload_manager.stored_address(part.url)
 
     @staticmethod
     def _current_context(
@@ -500,10 +510,11 @@ def _stored_part(
     return part
 
 
-def _with_reference(part: Part, reference: StoredFile) -> Part:
-    """A copy of ``part`` that carries ``reference``; the part itself is left as it is."""
+def _at_stored_address(part: Part, address: str, reference: StoredFile) -> Part:
+    """A copy of ``part`` at the stored file's own ``address``, carrying ``reference``; the part itself is left as it is."""
     referenced = Part()
     referenced.CopyFrom(part)
+    referenced.url = address
     reference.write_to(referenced)
     return referenced
 
@@ -552,15 +563,10 @@ def part_fields(event: Event) -> list[tuple[Any, str | None]]:
 
 
 class _PartList(NamedTuple):
-    """One part list of an event, the name its unnamed files are stored under, and whose parts it holds.
-
-    ``agents`` is False for the parts of a message with the user role - the
-    caller's - and True for every other message and every artifact.
-    """
+    """One part list of an event, and the name its unnamed files are stored under."""
 
     parts: Any
     default_filename: str | None
-    agents: bool
 
 
 def _part_lists(event: Event) -> list[_PartList]:
@@ -586,11 +592,11 @@ def _status_part_lists(status: TaskStatus) -> list[_PartList]:
 
 
 def _message_part_list(message: Message) -> _PartList:
-    return _PartList(message.parts, None, agents=message.role != Role.ROLE_USER)
+    return _PartList(message.parts, None)
 
 
 def _artifact_part_list(artifact: Artifact) -> _PartList:
-    return _PartList(artifact.parts, artifact.name or None, agents=True)
+    return _PartList(artifact.parts, artifact.name or None)
 
 
 def _event_ids(event: Event) -> tuple[str, str]:

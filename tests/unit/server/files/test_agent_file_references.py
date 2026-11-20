@@ -1,11 +1,15 @@
-"""An agent's part that carries a stored file's address alone gets the reference to the file back.
+"""A part whose address leads to a stored file becomes that stored file.
 
 A framework that keeps only the URL of a file it was given - ADK's
 ``file_data``, a LangGraph ``source_type: url`` block, or the agent's own URL
 part - sends the file on with the storage backend's content address and no
-``aion:file``. The outbound file transformer recognises that address and
-writes the reference again, so the server issues a working link for the part
-when it hands it out. A caller's part never gets one.
+``aion:file``. A client sends back a file from an earlier answer with the
+download link it was given: the content address with the grant added. The
+file transformer recognises either address, keeps the content address alone
+and writes the reference to the file, so the server issues every reader a
+link of their own and no grant is kept. That holds for a caller's part as
+for the agent's: a reference read from an address opens nothing, as a link
+is issued only on behalf of whoever reads the part.
 
 Every request goes to a mocked transport - nothing here reaches the platform.
 """
@@ -44,7 +48,6 @@ from aion.server.files.a2a import A2AFileTransformer
 from aion.server.files.links import StoredFileLinks
 from aion.server.files.storage import (
     AionFileStorageBackend,
-    FileRetentionDefault,
     FileUploadManager,
     StubFileStorageBackend,
 )
@@ -210,8 +213,16 @@ class TestAgentPartsGetTheirReferenceBack:
 
         assert result.event is event and not result.report.changed
 
+    @pytest.mark.parametrize("query", ["grant=secret", "grant=secret&expires=1"], ids=["grant", "any-query"])
+    async def test_a_download_link_becomes_the_stored_file_it_leads_to(self, query):
+        """An agent that hands out ``ConversationFile.link()`` in a file part keeps no grant in the task."""
+        result = await transformer().transform(artifact_event(adk_part(f"{ADDRESS}?{query}")))
+
+        part = result.event.artifact.parts[0]
+        assert (part.url, StoredFile.of(part)) == (ADDRESS, REFERENCE)
+
     @pytest.mark.parametrize("url", [
-        pytest.param(f"{ADDRESS}?grant=secret", id="grant-link"),
+        pytest.param(f"{ADDRESS}#fragment", id="fragment"),
         pytest.param(f"https://files.elsewhere.test/files/{FILE_ID}/versions/{VERSION_ID}/content", id="other-host"),
         pytest.param(f"{BASE_URL}/files/{FILE_ID}/content", id="malformed-path"),
         pytest.param(f"{BASE_URL}/files/../versions/{VERSION_ID}/content", id="dot-segment"),
@@ -249,42 +260,53 @@ class TestAgentPartsGetTheirReferenceBack:
         assert result.event is event and not result.report.changed
 
 
-class TestCallersPartsGetNoReference:
-    @pytest.mark.parametrize("role", [Role.ROLE_USER, Role.ROLE_UNSPECIFIED], ids=["user", "unspecified"])
-    @pytest.mark.parametrize("forged", [False, True], ids=["bare", "forged-reference"])
-    async def test_an_inbound_part_with_the_address_gets_no_reference(self, role, forged):
-        part = Part(url=ADDRESS, filename="report.pdf")
-        if forged:
-            StoredFile.create(FILE_ID, VERSION_ID).write_to(part)
+class TestCallersParts:
+    """A caller's part has no reference of its own, but one whose address leads to a stored file becomes it."""
+
+    @staticmethod
+    async def _inbound(part: Part, role: Role = Role.ROLE_USER) -> Part:
         request = SendMessageRequest(message=Message(message_id="m-1", context_id="context-1", role=role, parts=[part]))
         context = PreprocessingContext(
             extensions=AionRuntimeExtensions({}),
             call_context=SimpleNamespace(requested_extensions=set(), state={}),
         )
-
         await FilePartPreprocessor(transformer()).process(request, context)
+        return request.message.parts[0]
 
-        inbound = request.message.parts[0]
-        assert inbound.url == ADDRESS
+    @pytest.mark.parametrize("role", [Role.ROLE_USER, Role.ROLE_UNSPECIFIED], ids=["user", "unspecified"])
+    @pytest.mark.parametrize("url", [ADDRESS, f"{ADDRESS}?grant=secret"], ids=["address", "download-link"])
+    async def test_a_part_leading_to_a_stored_file_becomes_it_without_the_grant(self, role, url):
+        """A client sends back a file from an earlier answer with the link it was given."""
+        inbound = await self._inbound(Part(url=url, filename="report.pdf"), role)
+
+        assert (inbound.url, StoredFile.of(inbound)) == (ADDRESS, REFERENCE)
+
+    async def test_a_reference_of_the_callers_own_is_replaced_by_the_one_its_address_names(self):
+        part = Part(url=ADDRESS, filename="report.pdf")
+        StoredFile.create("other-file", "other-version").write_to(part)
+
+        inbound = await self._inbound(part)
+
+        assert StoredFile.of(inbound) == REFERENCE
+
+    async def test_a_part_leading_elsewhere_keeps_its_url_and_gets_no_reference(self):
+        url = "https://files.elsewhere.test/report.pdf?token=secret"
+
+        inbound = await self._inbound(Part(url=url, filename="report.pdf"))
+
+        assert inbound.url == url
         assert STORED_FILE_KEY not in inbound.metadata
 
-    async def test_a_retention_set_for_all_restores_nothing(self):
-        """The transform of a caller's files sets their retention for all of them, whatever the message's role."""
-        event = agent_message(Part(url=ADDRESS))
-
-        result = await transformer().transform(event, retention=FileRetentionDefault.PROVIDER)
-
-        assert result.event is event and not result.report.changed
-
-    async def test_a_callers_message_in_an_agents_task_gets_no_reference(self):
+    async def test_a_callers_message_in_an_agents_task_becomes_the_stored_file_too(self):
         event = task(
-            history=[agent_message(Part(url=ADDRESS), role=Role.ROLE_USER)],
+            history=[agent_message(Part(url=f"{ADDRESS}?grant=secret"), role=Role.ROLE_USER)],
             artifact=[Part(url=ADDRESS)],
         )
 
         result = await transformer().transform(event)
 
-        assert STORED_FILE_KEY not in result.event.history[0].parts[0].metadata
+        caller = result.event.history[0].parts[0]
+        assert (caller.url, StoredFile.of(caller)) == (ADDRESS, REFERENCE)
         assert StoredFile.of(result.event.artifacts[0].parts[0]) == REFERENCE
 
 

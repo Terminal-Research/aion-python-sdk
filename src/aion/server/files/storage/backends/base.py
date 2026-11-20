@@ -116,6 +116,28 @@ class FileStorageBackend(ABC):
         """
         return None
 
+    def stored_address(self, url: str) -> Optional[tuple[str, StoredFile]]:
+        """The backend's own address a part's ``url`` leads to, and the file version it names, or None.
+
+        A part may carry a stored file's address as a link that works on its
+        own - the address with a credential added. Such a part becomes the
+        stored file it leads to: the address alone, and the reference to the
+        file, so that every reader is issued a link of their own and no
+        credential is kept or passed on. A backend whose links are its
+        addresses with a credential added overrides this to recognise them;
+        the default recognises only the address itself
+        (:meth:`stored_file_at`).
+
+        Args:
+            url: The address a part carries.
+
+        Returns:
+            The backend's own address of the file version, and a reference to
+            it, or None when ``url`` leads to no file of this backend's.
+        """
+        stored = self.stored_file_at(url)
+        return (url, stored) if stored is not None else None
+
     def held(self, uri: str) -> Optional[bytes]:
         """The content of a file this backend stored at ``uri``, when it holds it in this process.
 
