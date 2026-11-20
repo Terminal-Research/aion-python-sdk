@@ -47,6 +47,8 @@ __all__ = [
     "ask_twice_answer_text",
     "ask_value_question",
     "ask_value_text",
+    "ASK_SCHEMA",
+    "ASK_SCHEMA_QUESTION",
     "NOT_IMPLEMENTED_PREFIX",
     "not_implemented_text",
     "IdsResponse",
@@ -249,6 +251,8 @@ COMMANDS: tuple[Command, ...] = (
     Command("ask-twice", "Ask two questions in a row", tags=("interrupts",)),
     Command("ask-fail", "Ask a question, then fail on the answer", tags=("interrupts", "errors")),
     Command("ask-value", "Ask a question with options, then report what the answer gave as JSON", tags=("interrupts",)),
+    Command("ask-schema", "Ask a question whose answer must match a JSON Schema, then report it as JSON",
+            tags=("interrupts",)),
     Command("fail", "Fail on purpose: exception | after-reply | reason", "<mode>",
             ("errors", "terminal_states")),
     Command("ext", "Report active and unknown extensions", tags=("extensions",),
@@ -516,6 +520,17 @@ ASK_VALUE_OPTIONS = ("Python", "Go")
 def ask_value_question() -> dict[str, Any]:
     """What ``ask-value`` asks: a question with options, the shape a client shows as a choice."""
     return {"prompt": ASK_VALUE_QUESTION, "options": list(ASK_VALUE_OPTIONS)}
+
+
+ASK_SCHEMA_QUESTION = "Which language? Answer with an object."
+"""What ``ask-schema`` asks."""
+
+ASK_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"language": {"type": "string", "enum": list(ASK_VALUE_OPTIONS)}},
+    "required": ["language"],
+}
+"""The JSON Schema ``ask-schema`` states for its answer; it answers with ``ask_value_text``."""
 
 
 def ask_value_text(value: Any, files: Sequence[str] = ()) -> str:

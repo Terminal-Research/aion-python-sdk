@@ -8,7 +8,7 @@ import pytest
 from a2a.types import Message, Part, Role
 from google.protobuf import json_format, struct_pb2
 
-from aion.core.a2a import Reply, ReplyError, reply_of
+from aion.core.a2a import Reply, ReplyError, question_metadata, reply_of
 from aion.core.constants.a2a import (
     CARD_ACTION_EVENT_PAYLOAD_SCHEMA_V1,
     EVENT_EXTENSION_URI_V1,
@@ -104,3 +104,20 @@ class TestSeveralDataParts:
         message.parts.append(_data({"choice": "now"}))
 
         assert reply_of(message).value == {"choice": "now"}
+
+
+class TestQuestionMetadata:
+    def test_a_question_carries_its_id(self):
+        assert question_metadata("i-1") == {"interruptId": "i-1"}
+
+    def test_and_the_schema_of_its_answer_when_there_is_one(self):
+        schema = {"type": "object", "properties": {"language": {"type": "string"}}}
+
+        assert question_metadata("i-1", schema) == {"interruptId": "i-1", "responseSchema": schema}
+
+    def test_a_schema_with_no_json_form_is_left_out(self, caplog):
+        metadata = question_metadata("i-1", {"type": object()})
+
+        assert metadata == {"interruptId": "i-1"}
+        assert "has no JSON form" in caplog.text
+

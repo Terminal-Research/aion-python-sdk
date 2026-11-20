@@ -20,13 +20,20 @@ JSON written in it is not parsed.
 
 A confirmation (``adk_request_confirmation``) is ADK's ``ToolConfirmation``,
 and the server judges no answer on the agent's behalf: a data part that is
-that object is the response as it is, and anything else - a text, a pressed
-button, other data - reaches the agent unconfirmed, as the confirmation's
-``payload`` (``{"text": ...}``, ``{"data": ...}``). A tool that asked with
+that object is the response as it is, and a string - a text, a pressed
+button's ``actionId``, a data part that holds a string - reaches the agent
+unconfirmed, as the confirmation's ``payload`` (``{"text": ...}``,
+``{"data": ...}``). A tool that asked with
 ``tool_context.request_confirmation`` reads it there and decides; a tool ADK
 confirms for itself (``require_confirmation=True``) is confirmed by the
 object, or by the agent's ``before_tool_callback``, which runs before ADK
 checks the confirmation and may set it from the payload.
+
+The question states what its answer may be as a JSON Schema
+(``PendingCall.response_schema``), which a client reads under
+``responseSchema`` and the server checks the reply against before the run
+resumes: ``request_input``'s own ``response_schema``, and for a confirmation
+either ``ToolConfirmation`` or a string. Any other call states none.
 
 The files the reply carries follow the function response in the same
 content, so the agent's model reads them with the answer.
@@ -97,6 +104,22 @@ class PendingCall:
             if isinstance(hint, str) and hint:
                 return hint
         return DEFAULT_QUESTION
+
+    @property
+    def response_schema(self) -> Optional[dict[str, Any]]:
+        """The JSON Schema of the answer, or None when the call states none.
+
+        ``request_input`` states its own, ``response_schema``. A
+        confirmation takes ADK's ``ToolConfirmation``, which confirms, or a
+        string, which reaches the agent unconfirmed as the confirmation's
+        payload. Any other long-running call states none.
+        """
+        if self.name == INPUT_CALL:
+            schema = self.args.get("response_schema")
+            return schema if isinstance(schema, (dict, bool)) else None
+        if self.name == CONFIRMATION_CALL:
+            return {"anyOf": [ToolConfirmation.model_json_schema(), {"type": "string"}]}
+        return None
 
 
 def _long_running_calls(event: Event) -> list[PendingCall]:

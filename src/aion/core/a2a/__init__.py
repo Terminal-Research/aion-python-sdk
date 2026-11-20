@@ -11,7 +11,7 @@ from .content import answer_text, conversation_messages, data_of, file_parts, te
 
 from .files import STORED_FILE_KEY, ConversationFile, StoredFile, files_of
 
-from .reply import Reply, ReplyError, reply_of
+from .reply import INTERRUPT_ID_KEY, RESPONSE_SCHEMA_KEY, Reply, ReplyError, question_metadata, reply_of
 
 from .states import (
     ACTIVE_TASK_STATES,

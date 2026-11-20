@@ -18,6 +18,8 @@ from google.genai import types
 
 from tests.scenarios.agents.adk_core.invocation import Invocation
 from tests.scenarios.commands import (
+    ASK_SCHEMA,
+    ASK_SCHEMA_QUESTION,
     FAIL_MESSAGE,
     ask_answer_text,
     ask_question,
@@ -27,20 +29,27 @@ from tests.scenarios.commands import (
     ask_value_text,
 )
 
-__all__ = ["ask", "ask_fail", "ask_twice", "ask_value", "resume"]
+__all__ = ["ask", "ask_fail", "ask_schema", "ask_twice", "ask_value", "resume"]
 
 AGENT_NAME = "scenario_agent"
 REQUEST_INPUT = "adk_request_input"
 
 
 def _request_input(
-    question: str, *, command: str, heard: Optional[str] = None, options: Optional[list[str]] = None
+    question: str,
+    *,
+    command: str,
+    heard: Optional[str] = None,
+    options: Optional[list[str]] = None,
+    response_schema: Optional[dict[str, Any]] = None,
 ) -> Event:
     """The event that asks the user and pauses the run."""
     call_id = f"adk-{uuid.uuid4()}"
     args: dict[str, Any] = {"message": question, "command": command}
     if options is not None:
         args["options"] = options
+    if response_schema is not None:
+        args["response_schema"] = response_schema
     if heard is not None:
         args["heard"] = heard
     return Event(
@@ -70,6 +79,11 @@ async def ask_value(invocation: Invocation) -> Event:
     return _request_input(question["prompt"], command="ask-value", options=question["options"])
 
 
+async def ask_schema(invocation: Invocation) -> Event:
+    """Ask for an answer that matches ``ASK_SCHEMA``, as ``request_input`` does; ``resume`` reports it as JSON."""
+    return _request_input(ASK_SCHEMA_QUESTION, command="ask-schema", response_schema=ASK_SCHEMA)
+
+
 async def ask_fail(invocation: Invocation) -> Event:
     """Ask the ``ask`` question; ``resume`` crashes on the answer."""
     return _request_input(ask_question(), command="ask-fail")
@@ -79,6 +93,9 @@ async def resume(invocation: Invocation, call: types.FunctionCall, response: dic
     """Go on from the question ``call`` asked, now that the reply came back as ``response``."""
     args = dict(call.args or {})
     command = args.get("command")
+    if command == "ask-schema":
+        await invocation.thread.reply(ask_value_text(response))
+        return None
     if command == "ask-value":
         message = invocation.thread.message
         await invocation.thread.reply(ask_value_text(response, [file.name for file in message.files] if message else ()))

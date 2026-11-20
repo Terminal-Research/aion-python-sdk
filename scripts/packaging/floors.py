@@ -72,6 +72,7 @@ RAISED_BY_SIBLING: dict[str, str] = {
     "pyjwt": "mcp 1.23.0, under google-adk, requires pyjwt>=2.10.1",
     "uvicorn": "google-adk 1.27.1 requires uvicorn>=0.34.0",
     "fastapi": "google-adk 1.27.1 requires fastapi>=0.124.1",
+    "jsonschema": "google-adk 1.27.1 requires jsonschema>=4.23.0",
 }
 
 

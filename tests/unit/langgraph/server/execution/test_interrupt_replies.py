@@ -3,7 +3,11 @@
 A graph reads the answer as LangGraph documents it: ``interrupt()`` returns
 the reply's value - its data part, else its text - whatever files come with
 it; the files are the turn's message's. The question the client sees carries the
-interrupt's value as a data part beside its text. The graphs here are real,
+interrupt's value as a data part beside its text, and the JSON Schema of the
+answer under ``responseSchema`` in its metadata when there is one: the
+schema the graph gave ``interrupt()``, or the one of
+``HumanInTheLoopMiddleware``'s decisions. An answer LangGraph refuses by that
+schema asks the question again. The graphs here are real,
 run through the executor with a checkpointer, so a standard agent such as
 ``create_agent`` with ``HumanInTheLoopMiddleware`` is answered as its own
 documentation says.
@@ -15,6 +19,9 @@ from collections.abc import Sequence
 from typing import Any, Optional, TypedDict
 from unittest.mock import Mock, patch
 
+import inspect
+
+import langgraph.errors
 import pytest
 from a2a.types import Message, Part, Role, TaskState
 from google.protobuf import json_format, struct_pb2
@@ -27,12 +34,37 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
+from jsonschema import Draft202012Validator
+from pydantic import BaseModel, field_validator
 
+from aion.langgraph.server.execution import hitl
 from aion.langgraph.server.execution.langgraph_executor import LangGraphExecutor
 
 from ..helpers import make_execution_config, make_mock_request_context
 
 QUESTION = {"prompt": "Which language?", "options": ["Python", "Go"]}
+
+TAKES_A_SCHEMA = "response_schema" in inspect.signature(interrupt).parameters
+"""Whether ``interrupt()`` takes the schema of its answer: LangGraph 1.2.12 and later."""
+
+REFUSES_BY_SCHEMA = TAKES_A_SCHEMA and hasattr(langgraph.errors, "is_invalid_resume")
+"""Whether LangGraph marks an answer its schema refused: 1.2.15 and later."""
+
+HAS_PER_CALL = "interrupt_mode" in inspect.signature(HumanInTheLoopMiddleware.__init__).parameters
+"""Whether ``HumanInTheLoopMiddleware`` can ask once per tool call, with a schema of its own."""
+
+
+class Choice(BaseModel):
+    """The answer a graph asks for by its schema; only the two offered languages pass."""
+
+    language: str
+
+    @field_validator("language")
+    @classmethod
+    def offered(cls, language: str) -> str:
+        if language not in ("Python", "Go"):
+            raise ValueError("not an offered language")
+        return language
 
 
 @pytest.fixture(autouse=True)
@@ -75,14 +107,19 @@ def _question(events: list) -> Message:
     return status.message
 
 
+def _schema(question: Message) -> Any:
+    """The ``responseSchema`` of a question, or None when it carries none."""
+    return MessageToDict(question.metadata).get("responseSchema")
+
+
 class _State(TypedDict, total=False):
     messages: list
     answer: Any
 
 
-def _asking_graph():
+def _asking_graph(**schema: Any):
     def ask(state: _State) -> dict:
-        return {"answer": interrupt(QUESTION)}
+        return {"answer": interrupt(QUESTION, **schema)}
 
     builder = StateGraph(_State)
     builder.add_node("ask", ask)
@@ -133,6 +170,38 @@ class TestTheQuestion:
         assert question.parts[0].text == "Which language?"
         assert MessageToDict(question.parts[1].data) == QUESTION
 
+    async def test_a_question_without_a_schema_carries_none(self):
+        executor, _ = _asking_graph()
+
+        question = _question(await _run(executor, "stream", Part(text="start")))
+
+        assert MessageToDict(question.metadata) == {"interruptId": question.metadata["interruptId"]}
+
+    @pytest.mark.skipif(not TAKES_A_SCHEMA, reason="interrupt() takes response_schema from LangGraph 1.2.12")
+    async def test_the_schema_the_graph_gives_goes_with_the_question(self):
+        executor, _ = _asking_graph(response_schema=Choice)
+
+        schema = _schema(_question(await _run(executor, "stream", Part(text="start"))))
+
+        assert schema["properties"]["language"]["type"] == "string"
+        assert schema["required"] == ["language"]
+
+
+@pytest.mark.skipif(not REFUSES_BY_SCHEMA, reason="LangGraph marks an answer its schema refused from 1.2.15")
+class TestAnAnswerTheSchemaRefuses:
+    async def test_asks_the_question_again_and_the_graph_keeps_waiting(self):
+        executor, graph = _asking_graph(response_schema=Choice)
+        asked = _question(await _run(executor, "stream", Part(text="start")))
+
+        again = _question(await _run(executor, "resume", _data({"language": "Rust"})))
+
+        assert again.parts[0].text == asked.parts[0].text
+        assert again.metadata["interruptId"] == asked.metadata["interruptId"]
+        events = await _run(executor, "resume", _data({"language": "Go"}))
+        assert events[-1].status.state == TaskState.TASK_STATE_COMPLETED
+        answer = (await graph.aget_state({"configurable": {"thread_id": "thread-1"}})).values["answer"]
+        assert answer == Choice(language="Go")
+
 
 class ToolCallingModel(BaseChatModel):
     """Calls ``delete_file`` once, then answers with text after the tool's result."""
@@ -156,7 +225,7 @@ class TestHumanInTheLoopMiddleware:
     """A standard ``create_agent`` with LangChain's approval middleware, answered as its docs say."""
 
     @staticmethod
-    def _agent(deleted: list[str]):
+    def _agent(deleted: list[str], interrupt_on: Any = True, **options: Any):
         def delete_file(path: str) -> str:
             """Delete a file."""
             deleted.append(path)
@@ -165,7 +234,7 @@ class TestHumanInTheLoopMiddleware:
         graph = create_agent(
             ToolCallingModel(),
             tools=[delete_file],
-            middleware=[HumanInTheLoopMiddleware(interrupt_on={"delete_file": True})],
+            middleware=[HumanInTheLoopMiddleware(interrupt_on={"delete_file": interrupt_on}, **options)],
             checkpointer=InMemorySaver(),
         )
         return LangGraphExecutor(compiled_graph=graph, config=Mock())
@@ -190,3 +259,53 @@ class TestHumanInTheLoopMiddleware:
 
         assert events[-1].status.state == TaskState.TASK_STATE_COMPLETED
         assert done == deleted
+
+    async def test_the_question_carries_the_schema_of_one_decision_per_call(self):
+        executor = self._agent([], {"allowed_decisions": ["approve", "reject"]})
+
+        schema = _schema(_question(await _run(executor, "stream", Part(text="delete a.txt"))))
+
+        validator = Draft202012Validator(schema)
+        assert validator.is_valid({"decisions": [{"type": "approve"}]})
+        assert validator.is_valid({"decisions": [{"type": "reject", "message": "keep it"}]})
+        assert not validator.is_valid({"decisions": []})
+        assert not validator.is_valid({"decisions": [{"type": "approve"}, {"type": "approve"}]})
+        assert not validator.is_valid({"decisions": [{"type": "edit", "edited_action": {"name": "delete_file", "args": {}}}]})
+        assert not validator.is_valid("yes")
+
+    async def test_an_edit_fits_the_schema_where_the_tool_allows_it(self):
+        executor = self._agent([])
+
+        schema = _schema(_question(await _run(executor, "stream", Part(text="delete a.txt"))))
+
+        edit = {"type": "edit", "edited_action": {"name": "delete_file", "args": {"path": "b.txt"}}}
+        assert Draft202012Validator(schema).is_valid({"decisions": [edit]})
+
+    @pytest.mark.skipif(not HAS_PER_CALL, reason="HumanInTheLoopMiddleware asks per call from langchain 1.4")
+    async def test_per_call_the_question_carries_the_middlewares_own_schema(self):
+        deleted: list[str] = []
+        executor = self._agent(deleted, interrupt_mode="per_call")
+
+        question = _question(await _run(executor, "stream", Part(text="delete a.txt")))
+
+        assert Draft202012Validator(_schema(question)).is_valid({"type": "approve"})
+        events = await _run(executor, "resume", _data({"type": "approve"}))
+        assert events[-1].status.state == TaskState.TASK_STATE_COMPLETED
+        assert deleted == ["a.txt"]
+
+
+class TestTheSchemaOfHumanInTheLoopDecisions:
+    @pytest.mark.parametrize(
+        "value",
+        [
+            {"action_requests": [{"name": "t", "args": {}}]},
+            {"action_requests": [], "review_configs": []},
+            {"action_requests": [{"name": "t", "args": {}}], "review_configs": [], "prompt": "extra"},
+            "Approve?",
+            None,
+        ],
+        ids=["no-configs", "no-actions", "extra-key", "text", "none"],
+    )
+    def test_only_a_middleware_request_has_one(self, value: Any):
+        assert hitl.response_schema(value) is None
+

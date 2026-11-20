@@ -20,7 +20,7 @@ from aion.adk.authoring.invocation.event_metadata import (
     get_aion_user_metadata,
 )
 from aion.adk.server.transformers import A2ATransformer
-from aion.core.a2a import ArtifactId, ArtifactName
+from aion.core.a2a import ArtifactId, ArtifactName, question_metadata
 from aion.core.a2a.deltas import stream_delta_chunk, stream_delta_end, thinking_delta
 from aion.core.a2a.extensions.messaging import ReactionActionPayload
 from aion.core.agent.invocation.card import Card
@@ -483,8 +483,11 @@ class ADKToA2AEventConverter:
         Shaped as the LangGraph adapter shapes an ``interrupt()``: a text part
         asking the question, a data part with the call - its ``name`` and
         ``args``, such as ``request_input``'s ``response_schema`` or the
-        confirmation's ``toolConfirmation`` - and the call's id as
-        ``interruptId``, so a client answers either framework the same way.
+        confirmation's ``toolConfirmation`` - and, in the metadata, the call's
+        id as ``interruptId`` and the JSON Schema of the answer as
+        ``responseSchema`` when the call states one
+        (``PendingCall.response_schema``), so a client answers either
+        framework the same way.
         """
         logger.info("Paused for input on %s, call id=%s", call.name, call.call_id)
         call_data = struct_pb2.Value()
@@ -500,7 +503,7 @@ class ADKToA2AEventConverter:
                     message_id=str(uuid.uuid4()),
                     role=Role.ROLE_AGENT,
                     parts=[Part(text=call.question), Part(data=call_data)],
-                    metadata={"interruptId": call.call_id},
+                    metadata=question_metadata(call.call_id, call.response_schema),
                 ),
             ),
         )

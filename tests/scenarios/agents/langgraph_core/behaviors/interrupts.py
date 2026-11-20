@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import inspect
 from typing import Any
 
 from langgraph.types import interrupt
 
 from tests.scenarios.agents.langgraph_core.invocation import Invocation
 from tests.scenarios.commands import (
+    ASK_SCHEMA,
+    ASK_SCHEMA_QUESTION,
     FAIL_MESSAGE,
     ask_answer_text,
     ask_question,
@@ -17,7 +20,7 @@ from tests.scenarios.commands import (
     ask_value_text,
 )
 
-__all__ = ["ask", "ask_twice", "ask_fail", "ask_value"]
+__all__ = ["ask", "ask_twice", "ask_fail", "ask_schema", "ask_value"]
 
 
 def _resume_text(value: Any) -> str:
@@ -57,6 +60,18 @@ async def ask_value(invocation: Invocation) -> None:
     value = interrupt(ask_value_question())
     message = invocation.thread.message
     await invocation.thread.reply(ask_value_text(value, [file.name for file in message.files] if message else ()))
+
+
+async def ask_schema(invocation: Invocation) -> None:
+    """Ask for an answer that matches ``ASK_SCHEMA``, then report it as JSON.
+
+    LangGraph before 1.2.12 takes no schema, and the question goes out without one.
+    """
+    if "response_schema" in inspect.signature(interrupt).parameters:
+        value = interrupt(ASK_SCHEMA_QUESTION, response_schema=ASK_SCHEMA)
+    else:
+        value = interrupt(ASK_SCHEMA_QUESTION)
+    await invocation.thread.reply(ask_value_text(value))
 
 
 async def ask_fail(invocation: Invocation) -> None:

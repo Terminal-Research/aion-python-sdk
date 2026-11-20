@@ -19,7 +19,11 @@ the value: they are the files of the turn's message, which the agent reads
 from its thread as on any turn.
 
 The question carries what the agent asks about as a data part beside its
-text: the ``interrupt()`` value in LangGraph, the call in ADK.
+text: the ``interrupt()`` value in LangGraph, the call in ADK. When the agent
+states what the answer must be - ``interrupt(..., response_schema=...)``,
+``request_input``'s ``response_schema`` - the question carries that JSON
+Schema under ``responseSchema``, and a reply that does not match it is
+refused before the task runs (``ask-schema``).
 """
 
 from __future__ import annotations
@@ -29,8 +33,10 @@ from typing import Any
 import pytest
 from a2a.types import TaskState
 from a2a.utils.errors import InvalidParamsError
+from google.protobuf.json_format import MessageToDict
+from packaging.version import Version
 
-from tests.scenarios.commands import ask_value_question, ask_value_text
+from tests.scenarios.commands import ASK_SCHEMA, ask_value_question, ask_value_text
 from tests.scenarios.frameworks import Framework
 from tests.scenarios.harness import (
     EVENT_EXTENSION_URI,
@@ -41,6 +47,7 @@ from tests.scenarios.harness import (
     card_action_event,
     data_of_parts,
     final_task,
+    installed_version,
     message_event,
     reply_texts,
 )
@@ -155,3 +162,47 @@ async def test_a_reply_with_several_data_parts_is_refused_and_the_task_keeps_wai
     assert (await client.get_task(asked.task_id)).status.state == TaskState.TASK_STATE_INPUT_REQUIRED
     events = await client.send("Go", task_id=asked.task_id, context_id=asked.context_id)
     assert final_task(events).state == "COMPLETED"
+
+
+def _skip_without_a_schema(framework: Framework) -> None:
+    """Skip where the agent cannot state a schema: LangGraph before 1.2.12 has no ``response_schema``."""
+    if framework.name != "langgraph":
+        return
+    installed = installed_version("langgraph")
+    if installed is not None and Version(installed) < Version("1.2.12"):
+        pytest.skip(f"langgraph {installed} on the server: interrupt() takes response_schema from 1.2.12")
+
+
+async def _asked_for_schema(client: ScenarioClient):
+    closing = final_task(await client.send("ask-schema"))
+    assert closing.state == "INPUT_REQUIRED"
+    return closing
+
+
+@pytest.mark.command("ask-schema")
+async def test_the_question_carries_the_schema_of_its_answer(client: ScenarioClient, framework: Framework) -> None:
+    _skip_without_a_schema(framework)
+    asked = await _asked_for_schema(client)
+
+    stored = await client.get_task(asked.task_id)
+
+    assert MessageToDict(stored.status.message.metadata)["responseSchema"] == ASK_SCHEMA
+
+
+@pytest.mark.command("ask-schema")
+async def test_a_reply_that_does_not_match_the_schema_is_refused_and_the_task_keeps_waiting(
+    client: ScenarioClient, framework: Framework
+) -> None:
+    _skip_without_a_schema(framework)
+    asked = await _asked_for_schema(client)
+
+    with pytest.raises(InvalidParamsError) as refused:
+        await client.send("Go", task_id=asked.task_id, context_id=asked.context_id)
+
+    assert "does not match the question's responseSchema" in str(refused.value)
+    assert (await client.get_task(asked.task_id)).status.state == TaskState.TASK_STATE_INPUT_REQUIRED
+    answer = {"language": "Go"}
+    events = await client.send("", task_id=asked.task_id, context_id=asked.context_id, data=[DataAttachment(data=answer)])
+    assert final_task(events).state == "COMPLETED"
+    assert ask_value_text(_handed_over(framework, answer)) in reply_texts(events)
+

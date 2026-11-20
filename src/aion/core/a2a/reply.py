@@ -18,6 +18,14 @@ in the framework's own form:
   task runs.
 * The files it carries come with it (``Reply.files``).
 
+The message that asks the question carries, in its metadata, the question's
+id under ``interruptId`` and, when the framework says what the answer must
+be, the JSON Schema of the reply's value under ``responseSchema``
+(``question_metadata``). A client reads the schema to know how to answer:
+a string can be sent as text, anything else as a data part. The server
+refuses a reply to that question whose value does not match the schema
+before the task runs, and the task keeps waiting.
+
 Example:
     from aion.core.a2a import reply_of
 
@@ -28,20 +36,33 @@ Example:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Optional
 
 from a2a.types import Message, Part
 from google.protobuf import json_format
+from pydantic_core import PydanticSerializationError, to_jsonable_python
 
 from aion.core.a2a.content import data_of, file_parts, text_of
 from aion.core.constants.a2a import CARD_ACTION_EVENT_PAYLOAD_SCHEMA_V1, EVENT_EXTENSION_URI_V1
 
 __all__ = [
+    "INTERRUPT_ID_KEY",
+    "RESPONSE_SCHEMA_KEY",
     "Reply",
     "ReplyError",
+    "question_metadata",
     "reply_of",
 ]
+
+logger = logging.getLogger(__name__)
+
+INTERRUPT_ID_KEY = "interruptId"
+"""Where a question's id is, in the metadata of the message that asks it and of a reply that names the question it answers."""
+
+RESPONSE_SCHEMA_KEY = "responseSchema"
+"""Where the JSON Schema of the reply's value is, in the metadata of the message that asks the question."""
 
 
 class ReplyError(ValueError):
@@ -125,3 +146,28 @@ def _pressed_button(part: Part) -> Optional[str]:
     payload = json_format.MessageToDict(part.data)
     action_id = payload.get("actionId") if isinstance(payload, dict) else None
     return action_id if isinstance(action_id, str) and action_id else None
+
+
+def question_metadata(interrupt_id: str, response_schema: Any = None) -> dict[str, Any]:
+    """The metadata of a message that asks a question: its id, and the schema of the answer when there is one.
+
+    Args:
+        interrupt_id: The question's id, which a reply may name under
+            ``interruptId`` to say which question it answers.
+        response_schema: The JSON Schema of the reply's value
+            (``Reply.value``), as the framework states it; None when the
+            framework states none. A schema with no JSON form is left out,
+            with a warning.
+    """
+    metadata: dict[str, Any] = {INTERRUPT_ID_KEY: interrupt_id}
+    if response_schema is None:
+        return metadata
+    try:
+        metadata[RESPONSE_SCHEMA_KEY] = to_jsonable_python(response_schema, inf_nan_mode="null")
+    except PydanticSerializationError:
+        logger.warning(
+            "The response schema of question %s (%s) has no JSON form; the question goes out without it",
+            interrupt_id,
+            type(response_schema).__name__,
+        )
+    return metadata

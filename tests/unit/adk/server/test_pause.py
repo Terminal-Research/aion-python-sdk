@@ -431,3 +431,31 @@ class TestTheQuestion:
             "args": {"message": "Which city?", "response_schema": schema},
         }
         assert question.metadata["interruptId"] == "call-1"
+        assert MessageToDict(question.metadata)["responseSchema"] == schema
+
+    @staticmethod
+    def _schema(call: PendingCall):
+        from google.protobuf.json_format import MessageToDict
+
+        from aion.adk.server.execution.event_converter import ADKToA2AEventConverter
+
+        question = ADKToA2AEventConverter(task_id="t-1", context_id="c-1").generate_pause(call).status.message
+        return MessageToDict(question.metadata).get("responseSchema")
+
+    def test_a_request_without_a_schema_states_none(self):
+        assert self._schema(_call(INPUT_CALL, {"message": "Anything else?"})) is None
+
+    def test_another_long_running_call_states_none(self):
+        assert self._schema(_call("approve_expense", {"amount": 30})) is None
+
+    def test_a_confirmation_takes_adks_object_or_a_string(self):
+        from jsonschema import Draft202012Validator
+
+        schema = self._schema(_call(CONFIRMATION_CALL, {"toolConfirmation": {"hint": "Delete?", "confirmed": False}}))
+
+        validator = Draft202012Validator(schema)
+        assert validator.is_valid({"confirmed": True})
+        assert validator.is_valid({})
+        assert validator.is_valid("yes")
+        assert not validator.is_valid({"approved": True})
+        assert not validator.is_valid(True)

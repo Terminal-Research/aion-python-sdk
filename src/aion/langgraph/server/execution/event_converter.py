@@ -12,7 +12,7 @@ from a2a.types import (
     TaskStatus,
     TaskStatusUpdateEvent,
 )
-from aion.core.a2a import ArtifactId, ArtifactName
+from aion.core.a2a import ArtifactId, ArtifactName, question_metadata
 from aion.core.a2a.deltas import stream_delta_chunk, stream_delta_end, thinking_delta
 from aion.core.a2a.metadata import agent_metadata
 from aion.core.a2a.extensions.messaging import MessageActionPayload
@@ -37,6 +37,7 @@ from langgraph.types import Interrupt
 from pydantic_core import to_jsonable_python
 from typing import Any, Optional
 
+from . import hitl
 from ..converters.lc_to_a2a import LcToA2AConverter
 
 LangChainAgentMessage = AIMessage | AIMessageChunk
@@ -601,7 +602,9 @@ class LangGraphA2AConverter:
         The message's text part is the question as text
         (``_interrupt_prompt``). A value that is not a plain string - a dict,
         say, or ``HumanInTheLoopMiddleware``'s request - follows it whole as
-        a data part, so the client sees what the graph asks about.
+        a data part, so the client sees what the graph asks about. The JSON
+        Schema of the answer goes under ``responseSchema`` in the metadata
+        when there is one (``_response_schema``).
 
         Args:
             interrupts: The interrupts that wait for an answer, in LangGraph's
@@ -619,7 +622,7 @@ class LangGraphA2AConverter:
                 message_id=str(uuid.uuid4()),
                 role=Role.ROLE_AGENT,
                 parts=[Part(text=self._interrupt_prompt(interrupt.value)), *self._interrupt_data(interrupt.value)],
-                metadata={"interruptId": interrupt_id},
+                metadata=question_metadata(interrupt_id, self._response_schema(interrupt)),
             )
 
         logger.info(
@@ -633,6 +636,23 @@ class LangGraphA2AConverter:
             context_id=self._context_id,
             status=TaskStatus(state=TaskState.TASK_STATE_INPUT_REQUIRED, message=message),
         )
+
+    @staticmethod
+    def _response_schema(interrupt: Interrupt) -> Optional[dict[str, Any]]:
+        """The JSON Schema of the answer an interrupt waits for, or None when nothing states one.
+
+        The schema the graph gave ``interrupt(value, response_schema=...)``,
+        which LangGraph keeps as JSON Schema whatever form it was given in -
+        ``HumanInTheLoopMiddleware`` in its ``per_call`` mode gives one too.
+        LangGraph releases before ``response_schema`` have none. Without one,
+        a ``HumanInTheLoopMiddleware`` question in the default batched mode
+        has the schema of its ``{"decisions": [...]}`` answer
+        (``hitl.response_schema``).
+        """
+        schema = getattr(interrupt, "response_schema", None)
+        if schema is not None:
+            return schema
+        return hitl.response_schema(interrupt.value)
 
     @staticmethod
     def _interrupt_prompt(value: Any) -> str:

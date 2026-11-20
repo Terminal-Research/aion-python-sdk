@@ -209,13 +209,38 @@ The answer is read by the rule both adapters follow (`aion.core.a2a.reply_of`):
 - otherwise the answer is the message's text, a string; JSON written in it stays text;
 - the parts a distribution adds on its own - those whose metadata carries the event extension, such as `MessageEventPayload` and `SourceSystemEventPayload` on a message from Slack - are not the answer; the node reads them from the event of its runtime context;
 - files sent with the answer do not change it: they are the files of the turn's message, read as on any turn (see [Files of the Answer](#files-of-the-answer));
-- a message with more than one data part of its own is refused with `invalid_payload` before the graph runs, and the task keeps waiting.
+- a message with more than one data part of its own, or whose answer does not match the question's `responseSchema` (below), is refused with `invalid_payload` before the graph runs, and the task keeps waiting.
 
 The graph resumes by the interrupt's id, `Command(resume={interrupt_id: answer})`, even when one interrupt waits: LangGraph takes a dict whose keys all look like interrupt ids - an empty one among them - for a map of answers by id.
 
 The interrupt value becomes the question the client sees in the `INPUT_REQUIRED` status, and the task keeps its id: the client resumes by sending the answer with the same `task_id` and `context_id`. The question's text part is a string value itself, or a dict's `"prompt"`, or "Agent requires input". A value that is not a plain string follows the text whole as a data part, as JSON with NaN and infinity as `null`, so the client sees what the graph asks about - the options of a choice, or the actions `HumanInTheLoopMiddleware` asks to review. A value with no JSON form leaves the question as text alone, with a warning.
 
 The question's message carries the interrupt's id as `interruptId` in its metadata. Several nodes of one step may interrupt at once; the questions are then asked one per turn, in the order LangGraph reports them, and each answer resumes one interrupt while the others keep waiting. An answer resumes the interrupt its message names under `interruptId` in the message's metadata, and the one asked without it. An answer that names an interrupt which no longer waits does not resume the graph: the question that waits is asked again.
+
+### The Schema of the Answer
+
+When the graph states what the answer must be, the question's metadata carries that JSON Schema as `responseSchema`, so a client knows how to answer - a string as text, anything else as a data part - and the server refuses an answer that does not match it before the graph runs:
+
+- the schema given to `interrupt(value, response_schema=...)`, as LangGraph keeps it: a JSON Schema `dict` as it is, a Pydantic model, `TypedDict` or dataclass converted to JSON Schema. `interrupt()` takes it from LangGraph 1.2.12; on older releases the question carries none;
+- `HumanInTheLoopMiddleware` in its default batched mode: the schema of its `{"decisions": [...]}` answer, built from LangChain's own decision types and the question's `review_configs` - exactly one decision per tool call, each one its tool allows. In its `per_call` mode the middleware states a schema of its own, which goes as it is;
+- any other `interrupt()`: none, and the answer is whatever the client sends.
+
+A Pydantic model, `TypedDict` or dataclass also makes LangGraph check the answer itself, and `interrupt()` returns the validated object. An answer LangGraph refuses that way - a validator of the model the JSON Schema cannot express, say - is not saved, and the question is asked again; the task keeps waiting. LangGraph marks such a refusal from 1.2.15; before it the task fails.
+
+```python
+from pydantic import BaseModel
+from langgraph.types import interrupt
+
+
+class Deploy(BaseModel):
+    environment: str
+    confirmed: bool
+
+
+def deploy_node(state: State) -> dict:
+    answer = interrupt("Where should I deploy?", response_schema=Deploy)  # a Deploy instance
+    return {"environment": answer.environment, "approved": answer.confirmed}
+```
 
 ### Files of the Answer
 

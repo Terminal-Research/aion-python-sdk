@@ -63,6 +63,7 @@ from aion.server.agent.execution.context.attribution import callback_attribution
 from aion.server.agent.execution.request_executor import attribution_runtime_context
 from aion.server.agent.execution.pool import EXTENSION_ROUTE_STATE_KEY, refusal_data
 from aion.server.a2a.constants import ACTIVE_TASK_STATES, TERMINAL_TASK_STATES
+from aion.server.a2a.replies import question_schema, reply_mismatch
 from aion.server.a2a.utils import routed_extension_of
 from aion.server.auth import has_individual_access
 from aion.server.files.links import FILE_LINK_SCOPE_KEY, StoredFileLinks, link_scope_of
@@ -134,23 +135,29 @@ def _unversioned(versioned_store) -> BaseTaskStore:
 
 
 def _require_reply(message, task: Task) -> None:
-    """Refuse a message to a task waiting for input that is no reply: one with several data parts of its own.
+    """Refuse a message to a task waiting for input that is no reply to its question.
 
     A message to a framework executor's task in ``INPUT_REQUIRED`` is the
-    user's reply, read by ``aion.core.a2a.reply_of`` before the task runs. A
-    reply carries one value; a message with more than one data part of its
-    own carries several, and is refused with ``invalid_payload`` while the
-    task keeps waiting.
+    user's reply, read by ``aion.core.a2a.reply_of`` before the task runs. It
+    is refused with ``invalid_payload`` while the task keeps waiting when it
+    carries more than one data part of its own - a reply carries one value -
+    or when its value does not match the ``responseSchema`` of the question it
+    answers (``aion.server.a2a.replies``).
 
     Raises:
-        InvalidParamsError: The message carries more than one data part of its own.
+        InvalidParamsError: The message carries more than one data part of its
+            own, or its value does not match the question's schema.
     """
     if task.status.state != TaskState.TASK_STATE_INPUT_REQUIRED or routed_extension_of(task) is not None:
         return
     try:
-        reply_of(message)
+        reply = reply_of(message)
     except ReplyError as error:
         raise InvalidParamsError(message=str(error), data=refusal_data(codes.INVALID_PAYLOAD)) from error
+    schema = question_schema(task, message)
+    mismatch = reply_mismatch(reply.value, schema) if schema is not None else None
+    if mismatch is not None:
+        raise InvalidParamsError(message=mismatch, data=refusal_data(codes.INVALID_PAYLOAD))
 
 
 def _require_individual_access(context: ServerCallContext | None, task_id: str) -> None:
@@ -377,7 +384,8 @@ class AionRequestHandler(DefaultRequestHandlerV2):
           message with ``task_busy``; a message to the framework executor's
           task waiting for input is the user's reply, refused with
           ``invalid_payload`` when it carries more than one data part of its
-          own (``_require_reply``);
+          own or does not match the question's ``responseSchema``
+          (``_require_reply``);
         * any other message starts a task, and the extension it is routed
           to, if any, is kept on the call context for the request executor.
 

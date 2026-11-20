@@ -4,10 +4,17 @@ import logging
 import time
 
 from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
-from aion.core.a2a import reply_of
+from aion.core.a2a import INTERRUPT_ID_KEY, reply_of
 from aion.core.config.models import AgentConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.types import Command, Interrupt, StateSnapshot
+
+try:
+    from langgraph.errors import is_invalid_resume
+except ImportError:  # LangGraph before interrupt()'s response_schema validates no answer.
+    def is_invalid_resume(error: BaseException) -> bool:
+        """Whether LangGraph refused an answer to an interrupt; never, in releases that check none."""
+        return False
 from collections.abc import AsyncIterator
 from typing import Any, Optional, TYPE_CHECKING
 
@@ -167,8 +174,18 @@ class LangGraphExecutor(AgentFrameworkExecutor):
                 resume_command, lg_config,
                 runtime_context=runtime_context
             )
-            async for a2a_event in events_generator:
-                yield a2a_event
+            try:
+                async for a2a_event in events_generator:
+                    yield a2a_event
+            except Exception as error:
+                if not is_invalid_resume(error):
+                    raise
+                # The interrupt's response_schema refused the answer. LangGraph
+                # saved nothing and the interrupt still waits, so the same
+                # question is asked again.
+                logger.warning(f"The graph refused the answer to interrupt {answered.id!r}; asking it again: {error}")
+                yield converter.convert_interrupt([answered, *(i for i in pending if i.id != answered.id)])
+                return
 
             async for a2a_event in self._finalize(stream_exec.result, config, context, converter):
                 yield a2a_event
@@ -287,9 +304,6 @@ def resume_value(message: Optional[Message]) -> Any:
     """
     return reply_of(message).value
 
-
-INTERRUPT_ID_KEY = "interruptId"
-"""Where a message names the interrupt it answers, in its metadata: the key the question carries its id under."""
 
 
 def pending_interrupts(snapshot: StateSnapshot) -> list[Interrupt]:
