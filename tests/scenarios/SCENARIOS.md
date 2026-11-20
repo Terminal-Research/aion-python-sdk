@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-285 scenarios in 52 files, 643 runs across 2 frameworks: 594 run, 48 skipped, 1 independent of the framework.
+285 scenarios in 52 files, 643 runs across 2 frameworks: 597 run, 45 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -46,7 +46,6 @@ Features a framework's native agent does not have; a native scenario driving one
 | langgraph | `artifact-service` | LangGraph has no artifact service; a graph emits artifacts through the Aion API |
 | langgraph | `tool-media` | LangGraph has no function response media; a tool's image is a block of its ToolMessage |
 | adk | `prebuilt-agent` | ADK's LlmAgent is already its one standard way to build an agent; the rest of the native group runs it |
-| adk | `structured-response` | an LlmAgent's output_schema answer reaches the client as the model's JSON text; the server sends no object for it |
 | adk | `subgraph` | ADK has no graphs inside graphs; it composes agents as sub_agents, which is a feature of its own |
 | langgraph | `agent-sequence` | LangGraph has no workflow agent; a graph's edges are its sequence, and an interrupt between its nodes is `core/test_interrupts` |
 | langgraph | `agent-transfer` | LangGraph has no transfer between agents of its own; a graph routes with its edges and keeps who is active in its state |
@@ -654,13 +653,13 @@ A stored file reaches the model by its content, and the framework's state by its
 
 ### `tests/scenarios/native/test_structured_response.py`
 
-The answer ``create_agent`` gives through ``response_format`` reaches the client.
+The object an agent answers with by its schema reaches the client.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [Tool strategy answers with the object](native/test_structured_response.py#L66 "test_tool_strategy_answers_with_the_object") | `native` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
-| [Provider strategy streams the json and sends the object](native/test_structured_response.py#L77 "test_provider_strategy_streams_the_json_and_sends_the_object") | `native` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
-| [The next turn sends its own object](native/test_structured_response.py#L88 "test_the_next_turn_sends_its_own_object") | `native` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
+| [Tool strategy answers with the object](native/test_structured_response.py#L69 "test_tool_strategy_answers_with_the_object") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [Provider strategy streams the json and sends the object](native/test_structured_response.py#L80 "test_provider_strategy_streams_the_json_and_sends_the_object") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The next turn sends its own object](native/test_structured_response.py#L91 "test_the_next_turn_sends_its_own_object") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
 
 ### `tests/scenarios/native/test_subgraph.py`
 

@@ -11,13 +11,10 @@ from a2a.types import (
     TaskArtifactUpdateEvent,
     TaskStatusUpdateEvent,
 )
-from google.protobuf import json_format
-from pydantic_core import to_jsonable_python
-
-from aion.core.a2a import A2AOutbox, data_artifact
-from aion.core.exceptions import TaskFailedError
+from aion.core.a2a import A2AOutbox
 from aion.server.a2a.outbox import outbox_message, outbox_task
-from .stream_executor import STRUCTURED_RESPONSE_KEY, StreamResult
+from aion.server.a2a.structured_response import structured_response_event
+from .stream_executor import StreamResult
 
 if TYPE_CHECKING:
     from a2a.server.agent_execution import RequestContext
@@ -85,35 +82,8 @@ class ExecutionResultHandler:
                     logger.info("The run wrote an outbox, which answers it; its structured response is not sent")
                 return result
         if structured_response is not None:
-            return [self._structured_response_event(structured_response, task_id, context_id)]
+            return [structured_response_event(structured_response, task_id, context_id)]
         return []
-
-    @staticmethod
-    def _structured_response_event(
-            value: Any,
-            task_id: str,
-            context_id: str,
-    ) -> TaskArtifactUpdateEvent:
-        """The structured response as an artifact with one data part.
-
-        The value is turned into JSON as Pydantic dumps it: a model, a
-        dataclass, a dict and what they hold, an enum, a date. NaN and
-        infinity become null, as in Pydantic's own JSON.
-        """
-        try:
-            data = to_jsonable_python(value, inf_nan_mode="null")
-            artifact = data_artifact(data, name=STRUCTURED_RESPONSE_KEY)
-        except (ValueError, TypeError, json_format.Error) as e:
-            raise TaskFailedError(
-                f"The agent's structured response ({type(value).__name__}) cannot be sent as JSON."
-            ) from e
-        return TaskArtifactUpdateEvent(
-            task_id=task_id,
-            context_id=context_id,
-            artifact=artifact,
-            append=False,
-            last_chunk=True,
-        )
 
     def _handle_outbox(
             self,

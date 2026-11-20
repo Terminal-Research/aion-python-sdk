@@ -25,6 +25,7 @@ from .event_converter import ADKToA2AEventConverter
 from .event_queue import ADKEventConsumer, ADKEventQueue
 from .pause import PendingCall, paused_on
 from .runner import RUN_CONFIG, running_turn
+from .structured_response import NO_STRUCTURED_RESPONSE, structured_response
 
 logger = logging.getLogger(__name__)
 
@@ -68,11 +69,15 @@ class ADKStreamResult:
         when the run went to its end.
     error — the error the run's events reported, the last one when several
         did, or None.
+    structured_response — the object the last final response of an agent
+        with an ``output_schema`` answered with during this cycle, or None
+        when none did (``structured_response``).
     """
 
     outbox: Any = None
     paused_on: Optional[PendingCall] = None
     error: Optional[ErrorResponse] = None
+    structured_response: Any = None
 
 
 class ADKStreamExecutor:
@@ -113,6 +118,7 @@ class ADKStreamExecutor:
         self._thread_events: set[str] = set()
         self._last_agent_events: deque[Event] = deque(maxlen=2)
         self._error: Optional[ErrorResponse] = None
+        self._structured_response: Any = None
 
     @property
     def result(self) -> ADKStreamResult:
@@ -121,6 +127,7 @@ class ADKStreamExecutor:
             outbox=self._outbox,
             paused_on=paused_on(list(self._last_agent_events)),
             error=self._error,
+            structured_response=self._structured_response,
         )
 
     @property
@@ -253,6 +260,9 @@ class ADKStreamExecutor:
                 async for event in events:
                     if not event.partial:
                         self._last_agent_events.append(event)
+                        answered = structured_response(event, getattr(self._ctx, "agent", None))
+                        if answered is not NO_STRUCTURED_RESPONSE:
+                            self._structured_response = answered
                     if event.error_code or event.error_message:
                         self._error = ErrorResponse(code=event.error_code, message=event.error_message)
                     queue.enqueue_event(event)

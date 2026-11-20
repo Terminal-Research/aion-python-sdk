@@ -133,8 +133,8 @@ PREBUILT_AGENTS: dict[str, Framework] = {
 
 
 STRUCTURED_RESPONSE_AGENTS: dict[str, dict[str, Framework]] = {
-    # The prebuilt agent with a `response_format`, one per way it gets the
-    # model to answer in the schema: `native/test_structured_response.py`.
+    # An agent that answers with an object of a schema, one per way it gets
+    # the model to answer in the schema: `native/test_structured_response.py`.
     "langgraph": {
         "tool": Framework(
             name="langgraph",
@@ -147,6 +147,22 @@ STRUCTURED_RESPONSE_AGENTS: dict[str, dict[str, Framework]] = {
             agent_package="tests.scenarios.agents.langgraph_native",
             agent_entry="graph.py:create_provider_strategy_agent",
             sdk_extras=("langgraph-server",),
+        ),
+    },
+    # An LlmAgent with an `output_schema`: with a tool, answering through ADK's
+    # `set_model_response`; without one, writing JSON by the schema.
+    "adk": {
+        "tool": Framework(
+            name="adk",
+            agent_package="tests.scenarios.agents.adk_native",
+            agent_entry="agent.py:create_tool_strategy_agent",
+            sdk_extras=("adk-server",),
+        ),
+        "provider": Framework(
+            name="adk",
+            agent_package="tests.scenarios.agents.adk_native",
+            agent_entry="agent.py:create_provider_strategy_agent",
+            sdk_extras=("adk-server",),
         ),
     },
 }
@@ -285,10 +301,6 @@ NATIVE_UNSUPPORTED: dict[tuple[str, str], str] = {
     ("adk", "prebuilt-agent"): (
         "ADK's LlmAgent is already its one standard way to build an agent; the "
         "rest of the native group runs it"
-    ),
-    ("adk", "structured-response"): (
-        "an LlmAgent's output_schema answer reaches the client as the model's JSON "
-        "text; the server sends no object for it"
     ),
     ("adk", "subgraph"): (
         "ADK has no graphs inside graphs; it composes agents as sub_agents, which is "

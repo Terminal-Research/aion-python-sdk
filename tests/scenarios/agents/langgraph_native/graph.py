@@ -40,10 +40,11 @@ from langchain_core.tools import tool
 from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.prebuilt import InjectedState, ToolNode, tools_condition
 from langgraph.types import interrupt
-from pydantic import BaseModel
 
 from tests.scenarios.agents.native_script import (
     FAILURE_TEXT,
+    Forecast,
+    forecast_for,
     ModelFailure,
     ModelTurn,
     UserMessage,
@@ -230,17 +231,6 @@ def create_prebuilt_agent():
     return create_agent(ScriptedChatModel(), tools=_tools())
 
 
-class Forecast(BaseModel):
-    """The answer the structured agents give: the forecast for the city the user names."""
-
-    city: str
-    degrees: int
-
-
-FORECAST_DEGREES = 5
-"""The temperature every forecast reports."""
-
-
 class ForecastChatModel(BaseChatModel):
     """A chat model that answers with the forecast, in the form the agent asks for.
 
@@ -262,7 +252,7 @@ class ForecastChatModel(BaseChatModel):
     @staticmethod
     def _forecast(messages: Sequence[BaseMessage]) -> dict[str, Any]:
         user = next(message for message in reversed(messages) if isinstance(message, HumanMessage))
-        return Forecast(city=user.text.removeprefix("forecast ").strip(), degrees=FORECAST_DEGREES).model_dump()
+        return forecast_for(user.text)
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
         forecast = self._forecast(messages)

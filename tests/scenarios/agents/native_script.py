@@ -84,7 +84,12 @@ from dataclasses import dataclass
 from collections.abc import Iterable, Sequence
 from typing import Any, Optional
 
+from pydantic import BaseModel
+
 __all__ = [
+    "FORECAST_DEGREES",
+    "Forecast",
+    "forecast_for",
     "RECALL_PREFIX",
     "NOTED",
     "REPORT_FILENAME",
@@ -398,3 +403,20 @@ def model_turn(
         count = int(argument or "1")
         return ModelTurn(text=" ".join(f"word{index}" for index in range(count)), error=CUT_OFF)
     return ModelTurn(text=UNKNOWN_REPLY)
+
+
+class Forecast(BaseModel):
+    """The answer the structured agents give: the forecast for the city the user names."""
+
+    city: str
+    degrees: int
+
+
+FORECAST_DEGREES = 5
+"""The temperature every forecast reports."""
+
+
+def forecast_for(text: str) -> dict[str, Any]:
+    """The forecast the structured agents answer ``forecast <city>`` with, as a ``Forecast`` dumps it."""
+    return Forecast(city=text.removeprefix("forecast ").strip(), degrees=FORECAST_DEGREES).model_dump()
+

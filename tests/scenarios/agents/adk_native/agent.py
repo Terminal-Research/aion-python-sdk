@@ -45,6 +45,8 @@ from google.genai import types
 
 from tests.scenarios.agents.native_script import (
     APPROVE,
+    Forecast,
+    forecast_for,
     DELETED,
     DROPPED,
     REJECT,
@@ -66,11 +68,14 @@ from tests.scenarios.agents.native_script import (
 )
 
 __all__ = [
+    "ForecastLlm",
     "ScriptedLlm",
     "create_agent",
     "create_async_agent",
     "create_file_inlining_agent",
+    "create_provider_strategy_agent",
     "create_refused_files_agent",
+    "create_tool_strategy_agent",
 ]
 
 AGENT_NAME = "native_agent"
@@ -225,6 +230,43 @@ class ScriptedLlm(BaseLlm):
             )
             return
         yield _response(final, partial=False)
+
+
+class ForecastLlm(BaseLlm):
+    """A model that answers with the forecast, in the form ADK asks of an agent with an ``output_schema``.
+
+    With the schema as the response's (``response_schema``) it writes the
+    forecast as JSON text, streamed; when ADK gives it ``set_model_response``
+    instead - an agent with tools, on a model that cannot answer with a
+    schema and call tools at once - it calls that tool with the forecast.
+    """
+
+    model: str = "forecast"
+
+    async def generate_content_async(
+        self, llm_request: LlmRequest, stream: bool = False
+    ) -> AsyncGenerator[LlmResponse, None]:
+        user = next(content for content in reversed(llm_request.contents or []) if _is_user_turn(content))
+        forecast = forecast_for(_text(user))
+        if "set_model_response" in (llm_request.tools_dict or {}):
+            call = types.FunctionCall(name="set_model_response", args=forecast, id=f"call-{uuid.uuid4().hex[:8]}")
+            yield _response([types.Part(function_call=call)], partial=False)
+            return
+        text = json.dumps(forecast)
+        if stream:
+            for piece in tokens(text):
+                yield _response([types.Part(text=piece)], partial=True)
+        yield _response([types.Part(text=text)], partial=False)
+
+
+def create_tool_strategy_agent() -> LlmAgent:
+    """An ``LlmAgent`` whose answer is a ``Forecast``, with a tool: ADK has the model answer through ``set_model_response``."""
+    return LlmAgent(name=AGENT_NAME, model=ForecastLlm(), output_schema=Forecast, tools=[get_weather])
+
+
+def create_provider_strategy_agent() -> LlmAgent:
+    """An ``LlmAgent`` whose answer is a ``Forecast``, without tools: the model writes it as JSON by the schema."""
+    return LlmAgent(name=AGENT_NAME, model=ForecastLlm(), output_schema=Forecast)
 
 
 async def save_report(title: str, tool_context: ToolContext) -> str:

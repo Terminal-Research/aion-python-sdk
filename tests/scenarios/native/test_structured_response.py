@@ -1,12 +1,15 @@
-"""The answer ``create_agent`` gives through ``response_format`` reaches the client.
+"""The object an agent answers with by its schema reaches the client.
 
-An agent built with a ``response_format`` answers with an object of its
-schema, which LangChain keeps in the graph's ``structured_response``. The
-server sends it as an artifact of the task named ``structured_response``:
-one data part holding the object as JSON. With ``ToolStrategy`` the model
-only calls the schema's tool, so the artifact is the whole answer; with
-``ProviderStrategy`` the model's text is the JSON, which streams as usual,
-and the artifact follows it.
+An agent built to answer with an object of a schema - LangChain's
+``create_agent`` with a ``response_format``, an ADK ``LlmAgent`` with an
+``output_schema`` - gets its answer from the model one of two ways, and the
+server sends the object either way as an artifact of the task named
+``structured_response``: one data part holding the object as JSON. Through a
+tool (LangChain's ``ToolStrategy``, ADK's ``set_model_response`` for an agent
+with tools) the model streams no text: the artifact is the whole answer, and
+in ADK the object's JSON is a message besides. By the provider's structured
+output (``ProviderStrategy``, ADK's ``response_schema``) the model's text is
+the JSON, which streams as usual, and the artifact follows it.
 """
 
 from __future__ import annotations
@@ -16,7 +19,7 @@ import json
 import pytest
 import pytest_asyncio
 
-from tests.scenarios.agents.langgraph_native.graph import FORECAST_DEGREES
+from tests.scenarios.agents.native_script import FORECAST_DEGREES
 from tests.scenarios.conftest import serve_for
 from tests.scenarios.frameworks import STRUCTURED_RESPONSE_AGENTS, Framework
 from tests.scenarios.harness import (
