@@ -48,9 +48,15 @@ async def ask_twice(invocation: Invocation) -> None:
 
 
 async def ask_value(invocation: Invocation) -> None:
-    """Ask with options, then report the value ``interrupt()`` returned, as JSON."""
+    """Ask with options, then report the value ``interrupt()`` returned, as JSON, and the reply's files.
+
+    The node runs again from its start when the reply resumes it, with the
+    reply as the turn's message: the files are read after ``interrupt()``
+    returns, so they are the reply's.
+    """
     value = interrupt(ask_value_question())
-    await invocation.thread.reply(ask_value_text(value))
+    message = invocation.thread.message
+    await invocation.thread.reply(ask_value_text(value, [file.name for file in message.files] if message else ()))
 
 
 async def ask_fail(invocation: Invocation) -> None:

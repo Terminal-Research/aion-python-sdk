@@ -80,7 +80,8 @@ async def resume(invocation: Invocation, call: types.FunctionCall, response: dic
     args = dict(call.args or {})
     command = args.get("command")
     if command == "ask-value":
-        await invocation.thread.reply(ask_value_text(response))
+        message = invocation.thread.message
+        await invocation.thread.reply(ask_value_text(response, [file.name for file in message.files] if message else ()))
         return None
     answer = str(response.get("result", ""))
     if command == "ask":

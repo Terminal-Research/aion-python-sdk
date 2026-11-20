@@ -208,7 +208,7 @@ The answer is read by the rule both adapters follow (`aion.core.a2a.reply_of`):
 - without one, the `actionId` of a pressed card button is the answer, as a string;
 - otherwise the answer is the message's text, a string; JSON written in it stays text;
 - the parts a distribution adds on its own - those whose metadata carries the event extension, such as `MessageEventPayload` and `SourceSystemEventPayload` on a message from Slack - are not the answer; the node reads them from the event of its runtime context;
-- an answer with files is a `HumanMessage` instead, holding the answer's own parts as the blocks a turn's message gets (see [Inbound](#inbound)), so the node can hand the files to a model;
+- files sent with the answer do not change it: they are the files of the turn's message, read as on any turn (see [Files of the Answer](#files-of-the-answer));
 - a message with more than one data part of its own is refused with `invalid_payload` before the graph runs, and the task keeps waiting.
 
 The graph resumes by the interrupt's id, `Command(resume={interrupt_id: answer})`, even when one interrupt waits: LangGraph takes a dict whose keys all look like interrupt ids - an empty one among them - for a map of answers by id.
@@ -216,6 +216,27 @@ The graph resumes by the interrupt's id, `Command(resume={interrupt_id: answer})
 The interrupt value becomes the question the client sees in the `INPUT_REQUIRED` status, and the task keeps its id: the client resumes by sending the answer with the same `task_id` and `context_id`. The question's text part is a string value itself, or a dict's `"prompt"`, or "Agent requires input". A value that is not a plain string follows the text whole as a data part, as JSON with NaN and infinity as `null`, so the client sees what the graph asks about - the options of a choice, or the actions `HumanInTheLoopMiddleware` asks to review. A value with no JSON form leaves the question as text alone, with a warning.
 
 The question's message carries the interrupt's id as `interruptId` in its metadata. Several nodes of one step may interrupt at once; the questions are then asked one per turn, in the order LangGraph reports them, and each answer resumes one interrupt while the others keep waiting. An answer resumes the interrupt its message names under `interruptId` in the message's metadata, and the one asked without it. An answer that names an interrupt which no longer waits does not resume the graph: the question that waits is asked again.
+
+### Files of the Answer
+
+The answer resumes the graph in a turn of its own, whose message is the answer's message. A node reads its files the way it reads a turn's files, from the thread of its runtime context:
+
+```python
+from langgraph.runtime import Runtime
+from langgraph.types import interrupt
+
+from aion.core.runtime import AionRuntimeContext
+from aion.langgraph.authoring import Thread
+
+
+async def review_node(state: State, runtime: Runtime[AionRuntimeContext]) -> dict:
+    answer = interrupt("Send the signed contract and confirm")
+    files = Thread.from_context(runtime.context).message.files
+    contract = (await files[0].read()).decode() if files else ""
+    return {"approved": answer == "yes" and "Signed:" in contract}
+```
+
+LangGraph runs the interrupted node again from its start when the answer resumes it, so the code before `interrupt()` runs twice: once with the turn's message that led to the question, once with the answer. A node reads the answer's files after `interrupt()` returns. The files do not enter the graph's state on their own; a node that keeps them, or hands them to a model, puts them into its state or its model call itself.
 
 ---
 

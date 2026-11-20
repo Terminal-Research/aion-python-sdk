@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-281 scenarios in 52 files, 635 runs across 2 frameworks: 586 run, 48 skipped, 1 independent of the framework.
+282 scenarios in 52 files, 637 runs across 2 frameworks: 588 run, 48 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -75,7 +75,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `streaming` | streamed answers, thoughts, unary send | 18 | `make tests-scenarios TAGS=streaming` |
 | `events` | event order, ids, outbox, get_task agreement | 30 | `make tests-scenarios TAGS=events` |
 | `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 11 | `make tests-scenarios TAGS=terminal_states` |
-| `interrupts` | INPUT_REQUIRED and resume | 18 | `make tests-scenarios TAGS=interrupts` |
+| `interrupts` | INPUT_REQUIRED and resume | 19 | `make tests-scenarios TAGS=interrupts` |
 | `errors` | failures that must stay reported, not crash the server | 10 | `make tests-scenarios TAGS=errors` |
 | `artifacts` | artifact and card emission | 11 | `make tests-scenarios TAGS=artifacts` |
 | `files` | inline file parts: stored, rejected, or passed through | 20 | `make tests-scenarios TAGS=files` |
@@ -295,14 +295,15 @@ The user's reply to a question reaches the agent the way its framework hands ans
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The question carries what it asks about as data](core/test_interrupt_replies.py#L68 "test_the_question_carries_what_it_asks_about_as_data") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
-| [A text reply is its text](core/test_interrupt_replies.py#L83 "test_a_text_reply_is_its_text") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
-| [Json written in the text stays text](core/test_interrupt_replies.py#L87 "test_json_written_in_the_text_stays_text") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
-| [A data part is the reply as it is](core/test_interrupt_replies.py#L93 "test_a_data_part_is_the_reply_as_it_is") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
-| [``{}`` resumes the agent: it is not taken for a map of answers to no interrupt.](core/test_interrupt_replies.py#L101 "test_an_empty_object_is_a_reply_too") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
-| [A reply from a messaging distribution: the user's text, and the payloads it adds on its own.](core/test_interrupt_replies.py#L106 "test_the_parts_a_distribution_adds_are_not_the_reply") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
-| [A pressed card button is its action id](core/test_interrupt_replies.py#L122 "test_a_pressed_card_button_is_its_action_id") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
-| [A reply with several data parts is refused and the task keeps waiting](core/test_interrupt_replies.py#L132 "test_a_reply_with_several_data_parts_is_refused_and_the_task_keeps_waiting") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
+| [The question carries what it asks about as data](core/test_interrupt_replies.py#L71 "test_the_question_carries_what_it_asks_about_as_data") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
+| [A text reply is its text](core/test_interrupt_replies.py#L86 "test_a_text_reply_is_its_text") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
+| [Json written in the text stays text](core/test_interrupt_replies.py#L90 "test_json_written_in_the_text_stays_text") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
+| [A data part is the reply as it is](core/test_interrupt_replies.py#L96 "test_a_data_part_is_the_reply_as_it_is") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
+| [``{}`` resumes the agent: it is not taken for a map of answers to no interrupt.](core/test_interrupt_replies.py#L104 "test_an_empty_object_is_a_reply_too") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
+| [Files sent with the reply are the turns and leave its value](core/test_interrupt_replies.py#L109 "test_files_sent_with_the_reply_are_the_turns_and_leave_its_value") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
+| [A reply from a messaging distribution: the user's text, and the payloads it adds on its own.](core/test_interrupt_replies.py#L119 "test_the_parts_a_distribution_adds_are_not_the_reply") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
+| [A pressed card button is its action id](core/test_interrupt_replies.py#L135 "test_a_pressed_card_button_is_its_action_id") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
+| [A reply with several data parts is refused and the task keeps waiting](core/test_interrupt_replies.py#L145 "test_a_reply_with_several_data_parts_is_refused_and_the_task_keeps_waiting") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_interrupts.py`
 
@@ -764,7 +765,7 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | `ask` | Ask a question, then quote the answer | `interrupts` | 13 | ✓ | ✓ |
 | `ask-twice` | Ask two questions in a row | `interrupts` | 3 | ✓ | ✓ |
 | `ask-fail` | Ask a question, then fail on the answer | `interrupts`, `errors` | 3 | ✓ | ✓ |
-| `ask-value` | Ask a question with options, then report what the answer gave as JSON | `interrupts` | 8 | ✓ | ✓ |
+| `ask-value` | Ask a question with options, then report what the answer gave as JSON | `interrupts` | 9 | ✓ | ✓ |
 | `fail <mode>` | Fail on purpose: exception \| after-reply \| reason | `errors`, `terminal_states` | 9 | ✓ | ✓ |
 | `ext` | Report active and unknown extensions | `extensions` | 6 | ✓ | ✓ |
 | `whoami` | Report the daemon identity | `daemon` | 6 | ✓ | ✓ |

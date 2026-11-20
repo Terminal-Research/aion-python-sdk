@@ -6,7 +6,6 @@ import time
 from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from aion.core.a2a import reply_of
 from aion.core.config.models import AgentConfig
-from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.types import Command, Interrupt, StateSnapshot
 from collections.abc import AsyncIterator
@@ -21,7 +20,6 @@ from aion.server.agent.exceptions import ExecutionError, StateRetrievalError
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.server.a2a.utils import empty_input_warning, extract_input_preview
 from .event_converter import LangGraphA2AConverter
-from ..converters.a2a_to_lc import A2AToLcConverter
 from .event_preprocessor import LangGraphEventPreprocessor
 from .result_handler import ExecutionResultHandler
 from .stream_executor import StreamExecutor, StreamResult
@@ -282,14 +280,12 @@ def resume_value(message: Optional[Message]) -> Any:
     (``aion.core.a2a.reply_of``): its data part's value when it has one,
     else the ``actionId`` of the card button it presses, else its text - so a
     graph reads the answer as LangGraph documents it, ``interrupt(...) ==
-    "yes"`` or ``interrupt(...)["decisions"]``. A reply with files is a
-    ``HumanMessage`` instead, holding the reply's own parts as the blocks a
-    turn's message gets, so the node can hand the files to a model.
+    "yes"`` or ``interrupt(...)["decisions"]``. Files sent with the reply do
+    not change the value: they are the files of the turn's message, which the
+    node reads as on any turn, through
+    ``Thread.from_context(runtime.context).message.files``.
     """
-    reply = reply_of(message)
-    if reply.files:
-        return HumanMessage(content=A2AToLcConverter.from_parts(list(reply.parts)))
-    return reply.value
+    return reply_of(message).value
 
 
 INTERRUPT_ID_KEY = "interruptId"

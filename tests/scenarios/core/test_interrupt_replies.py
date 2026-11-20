@@ -14,7 +14,9 @@ reply is read by one rule on both frameworks:
 
 LangGraph hands the value over as it is. ADK takes a function response, an
 object: a data part that holds an object is the response itself, and any
-other value is ``{"result": ...}``.
+other value is ``{"result": ...}``. Files sent with the reply do not change
+the value: they are the files of the turn's message, which the agent reads
+from its thread as on any turn.
 
 The question carries what the agent asks about as a data part beside its
 text: the ``interrupt()`` value in LangGraph, the call in ADK.
@@ -34,6 +36,7 @@ from tests.scenarios.harness import (
     EVENT_EXTENSION_URI,
     MESSAGING_EXTENSION_URI,
     DataAttachment,
+    FileAttachment,
     ScenarioClient,
     card_action_event,
     data_of_parts,
@@ -101,6 +104,16 @@ async def test_a_data_part_is_the_reply_as_it_is(client: ScenarioClient, framewo
 async def test_an_empty_object_is_a_reply_too(client: ScenarioClient, framework: Framework) -> None:
     """``{}`` resumes the agent: it is not taken for a map of answers to no interrupt."""
     assert ask_value_text(_handed_over(framework, {})) in await _reply(client, "", data=[DataAttachment(data={})])
+
+
+async def test_files_sent_with_the_reply_are_the_turns_and_leave_its_value(
+    client: ScenarioClient, framework: Framework
+) -> None:
+    contract = FileAttachment(name="contract.txt", media_type="text/plain", content=b"signed\n")
+
+    replies = await _reply(client, "Go", files=[contract])
+
+    assert ask_value_text(_handed_over(framework, "Go"), ["contract.txt"]) in replies
 
 
 async def test_the_parts_a_distribution_adds_are_not_the_reply(client: ScenarioClient, framework: Framework) -> None:

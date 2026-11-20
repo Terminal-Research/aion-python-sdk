@@ -1,8 +1,8 @@
 """What ``interrupt()`` returns for the user's reply, and what the question carries.
 
 A graph reads the answer as LangGraph documents it: ``interrupt()`` returns
-the reply's value - its data part, else its text - and a reply with files is
-a ``HumanMessage`` holding them. The question the client sees carries the
+the reply's value - its data part, else its text - whatever files come with
+it; the files are the turn's message's. The question the client sees carries the
 interrupt's value as a data part beside its text. The graphs here are real,
 run through the executor with a checkpointer, so a standard agent such as
 ``create_agent`` with ``HumanInTheLoopMiddleware`` is answered as its own
@@ -22,7 +22,7 @@ from google.protobuf.json_format import MessageToDict
 from langchain.agents import create_agent
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -113,12 +113,15 @@ class TestWhatInterruptReturns:
         """LangGraph takes a dict of interrupt ids for answers by id; ``{}`` is still the user's answer."""
         assert await _answer(_data({})) == {}
 
-    async def test_a_reply_with_files_is_a_message_holding_them(self):
-        answer = await _answer(Part(text="here"), Part(url="https://files.test/a.pdf", media_type="application/pdf"))
+    @pytest.mark.parametrize(
+        ("reply", "value"),
+        [(Part(text="here"), "here"), (_data({"language": "Go"}), {"language": "Go"})],
+        ids=["text", "data"],
+    )
+    async def test_files_sent_with_the_reply_do_not_change_its_value(self, reply: Part, value: Any):
+        file = Part(url="https://files.test/a.pdf", media_type="application/pdf")
 
-        assert isinstance(answer, HumanMessage)
-        assert [block["type"] for block in answer.content] == ["text", "file"]
-        assert answer.content[0]["text"] == "here"
+        assert await _answer(reply, file) == value
 
 
 class TestTheQuestion:

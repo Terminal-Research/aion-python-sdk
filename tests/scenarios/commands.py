@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from collections.abc import Sequence
 from typing import Any, Optional
 
 from pydantic import BaseModel
@@ -517,9 +518,15 @@ def ask_value_question() -> dict[str, Any]:
     return {"prompt": ASK_VALUE_QUESTION, "options": list(ASK_VALUE_OPTIONS)}
 
 
-def ask_value_text(value: Any) -> str:
-    """What ``ask-value`` answers: the value the framework handed the agent, as JSON."""
-    return f"you sent: {json.dumps(value, sort_keys=True)}"
+def ask_value_text(value: Any, files: Sequence[str] = ()) -> str:
+    """What ``ask-value`` answers: the value the framework handed the agent, as JSON.
+
+    ``files`` are the names of the files of the reply's message, which the
+    agent reads from its thread as on any turn; the answer names them after
+    the value when there are any.
+    """
+    text = f"you sent: {json.dumps(value, sort_keys=True)}"
+    return f"{text}; files: {', '.join(files)}" if files else text
 
 
 def ask_twice_answer_text(first: str, second: str) -> str:
