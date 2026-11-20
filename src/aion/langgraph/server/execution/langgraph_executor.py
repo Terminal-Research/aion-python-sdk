@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import time
 
-from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
+from a2a.types import Message, Task, TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
 from aion.core.a2a import INTERRUPT_ID_KEY, reply_of
 from aion.core.config.models import AgentConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -118,7 +118,15 @@ class LangGraphExecutor(AgentFrameworkExecutor):
             context: "RequestContext",
             config: ExecutionConfig,
     ) -> AsyncIterator[AgentEvent]:
-        """Resume a previously interrupted graph execution and stream A2A events."""
+        """Go on with a graph whose task waits for input, and stream A2A events.
+
+        The message is the user's reply. A graph stopped on ``interrupt()``
+        resumes with the answer (``resume_value``); one stopped at a static
+        breakpoint (``interrupt_before``/``interrupt_after``) goes on with no
+        input, as LangGraph documents it, and the message's content does not
+        reach it. A task an outbox ``Task`` left waiting, with nothing in the
+        graph to go on with, runs the message as a new turn.
+        """
         if not config or not config.context_id:
             raise ValueError("context_id is required to resume execution")
 
@@ -127,9 +135,12 @@ class LangGraphExecutor(AgentFrameworkExecutor):
             snapshot = await self._graph_state(config)
             pending = pending_interrupts(snapshot)
 
-            if not pending:
+            at_breakpoint = not pending and bool(snapshot.next) and _waits_for_input(context)
+            if not pending and not at_breakpoint:
                 # The task waits without an interrupt - an outbox Task left it
-                # waiting for input - so the message is the next turn of it.
+                # waiting for input - or the message continues a task whose
+                # graph is not stopped here at all, as one still running on
+                # another server: the message is the next turn of it.
                 logger.info(
                     f"Task waits without an interrupt; the message runs as a new turn: {config.context_id}"
                 )
@@ -147,23 +158,33 @@ class LangGraphExecutor(AgentFrameworkExecutor):
                 task_id=context.task_id,
                 context_id=context.context_id,
             )
-            answered = _answered_interrupt(context, pending)
-            if answered is None:
-                # The message answers an interrupt that no longer waits:
-                # LangGraph would drop the answer and stop on the same
-                # question, so the graph is not resumed and the question that
-                # waits is asked again.
-                logger.warning(
-                    f"The message answers interrupt {_named_interrupt_id(context)!r}, which is not waiting; "
-                    f"asking interrupt {pending[0].id!r} again"
-                )
-                yield converter.convert_interrupt(pending)
-                return
-            # The answer goes by the interrupt's id even when one interrupt
-            # waits: LangGraph takes a dict whose keys all look like interrupt
-            # ids - an empty one among them - for a map of answers by id, and
-            # would resume nothing with the user's {} as a plain value.
-            resume_command = Command(resume={answered.id: resume_value(context.message)})
+            answered: Optional[Interrupt] = None
+            if not pending:
+                # The graph stopped at a static breakpoint (interrupt_before or
+                # interrupt_after) and goes on as LangGraph documents it, invoked
+                # with no input: the message continues it, and its content does
+                # not reach the graph.
+                logger.info(f"Continuing the graph from its breakpoint before {', '.join(snapshot.next)}")
+                graph_input: Any = None
+            else:
+                answered = _answered_interrupt(context, pending)
+                if answered is None:
+                    # The message answers an interrupt that no longer waits:
+                    # LangGraph would drop the answer and stop on the same
+                    # question, so the graph is not resumed and the question
+                    # that waits is asked again.
+                    logger.warning(
+                        f"The message answers interrupt {_named_interrupt_id(context)!r}, which is not waiting; "
+                        f"asking interrupt {pending[0].id!r} again"
+                    )
+                    yield converter.convert_interrupt(pending)
+                    return
+                # The answer goes by the interrupt's id even when one interrupt
+                # waits: LangGraph takes a dict whose keys all look like
+                # interrupt ids - an empty one among them - for a map of answers
+                # by id, and would resume nothing with the user's {} as a plain
+                # value.
+                graph_input = Command(resume={answered.id: resume_value(context.message)})
             lg_config = LangGraphTransformer.generate_langgraph_config(config)
 
             logger.debug(f"Resuming task")
@@ -171,14 +192,14 @@ class LangGraphExecutor(AgentFrameworkExecutor):
             runtime_context = await AionRuntimeContextRegistry.aget_current_context()
             stream_exec = StreamExecutor(self.compiled_graph, converter, self._preprocessor)
             events_generator = stream_exec.execute(
-                resume_command, lg_config,
+                graph_input, lg_config,
                 runtime_context=runtime_context
             )
             try:
                 async for a2a_event in events_generator:
                     yield a2a_event
             except Exception as error:
-                if not is_invalid_resume(error):
+                if answered is None or not is_invalid_resume(error):
                     raise
                 # The interrupt's response_schema refused the answer. LangGraph
                 # saved nothing and the interrupt still waits, so the same
@@ -286,6 +307,10 @@ class LangGraphExecutor(AgentFrameworkExecutor):
         pending = pending_interrupts(snapshot)
         if pending:
             yield converter.convert_interrupt(pending)
+        elif stream_result.breakpoint and snapshot.next:
+            # The run stopped at a static breakpoint, which waits for the next
+            # message to go on.
+            yield converter.convert_breakpoint(snapshot.next)
         else:
             yield converter.convert_complete()
 
@@ -304,6 +329,16 @@ def resume_value(message: Optional[Message]) -> Any:
     """
     return reply_of(message).value
 
+
+
+def _waits_for_input(context: "RequestContext") -> bool:
+    """Whether the task the message continues waits for input: the only state a breakpoint is answered in.
+
+    The graph's state alone does not tell a breakpoint from a run still going
+    on another server, which leaves its next nodes in the state too.
+    """
+    task = context.current_task
+    return task is not None and task.status.state == TaskState.TASK_STATE_INPUT_REQUIRED
 
 
 def pending_interrupts(snapshot: StateSnapshot) -> list[Interrupt]:

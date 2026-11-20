@@ -217,6 +217,10 @@ The interrupt value becomes the question the client sees in the `INPUT_REQUIRED`
 
 The question's message carries the interrupt's id as `interruptId` in its metadata. Several nodes of one step may interrupt at once; the questions are then asked one per turn, in the order LangGraph reports them, and each answer resumes one interrupt while the others keep waiting. An answer resumes the interrupt its message names under `interruptId` in the message's metadata, and the one asked without it. An answer that names an interrupt which no longer waits does not resume the graph: the question that waits is asked again.
 
+### Static Breakpoints
+
+A graph compiled with `interrupt_before` or `interrupt_after` stops at those nodes with nothing to ask, and LangGraph goes on when it is invoked again with no input. The task waits for input as well: the question's text is `Paused before <node>. Send any message to continue.`, its data part `{"next": [...]}` names the nodes the graph runs next, as LangGraph's state snapshot does, and it carries no `interruptId` and no `responseSchema`. Any message continues the graph with no input, as `graph.invoke(None, config)` does; its content does not reach the graph, so a reply of "no" goes on too. A graph that should ask the user something uses `interrupt()` or `HumanInTheLoopMiddleware`.
+
 ### The Schema of the Answer
 
 When the graph states what the answer must be, the question's metadata carries that JSON Schema as `responseSchema`, so a client knows how to answer - a string as text, anything else as a data part - and the server refuses an answer that does not match it before the graph runs:

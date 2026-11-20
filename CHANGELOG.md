@@ -25,6 +25,7 @@
 
 ### Bug Fixes
 
+* **langgraph:** a graph compiled with a static breakpoint (`interrupt_before`, `interrupt_after`) leaves the task waiting for input there, with the question `Paused before <node>. Send any message to continue.` and `{"next": [...]}` as data, and the next message goes on with the graph as `invoke(None)` does. The task completed at the breakpoint, and the next message started the graph over, so the node after the breakpoint never ran.
 * **files:** a part whose URL is a download link to a stored file - its content address with the grant added, as a client sends back a file from an earlier answer, or as an agent hands out `ConversationFile.link()` - becomes that stored file: the address alone and its `aion:file` reference, read from the address, so every reader gets a link of its own. A client's part with the stored file's address becomes it as well. The grant was kept in the task, checkpoint or session for every reader of the conversation until it expired.
 * **adk:** with google-adk 2.15 the server's session service passes on `append_events` and `flush_session`, which that release added, so a session service that writes a session's queued events at once, or flushes one session, keeps doing so; every event still goes through the turn's rules and has its inline files stored.
 * **langgraph:** an answer the interrupt's `response_schema` refuses (LangGraph 1.2.15 and later) asks the question again and the task keeps waiting, as LangGraph keeps the interrupt; the task failed.

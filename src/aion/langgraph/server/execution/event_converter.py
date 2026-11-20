@@ -689,6 +689,41 @@ class LangGraphA2AConverter:
             return []
         return [Part(data=data)]
 
+    def convert_breakpoint(self, nodes: Sequence[str]) -> TaskStatusUpdateEvent:
+        """Produce an input_required status event for a graph stopped at a static breakpoint.
+
+        A graph compiled with ``interrupt_before`` or ``interrupt_after``
+        stops before the nodes it runs next, with no ``interrupt()`` to ask
+        anything, and LangGraph goes on when it is invoked again with no
+        input. The question says so: its text names the nodes, a data part
+        carries them as ``{"next": [...]}``, as LangGraph's state snapshot
+        names them, and any message continues the graph
+        (``LangGraphExecutor.resume``). It has no ``interruptId`` and no
+        ``responseSchema``: there is no interrupt to name, and the reply's
+        content does not reach the graph.
+
+        Args:
+            nodes: The nodes the graph runs next (``StateSnapshot.next``).
+        """
+        names = ", ".join(nodes)
+        data = struct_pb2.Value()
+        json_format.ParseDict({"next": list(nodes)}, data)
+        logger.info(f"Stopped at a breakpoint (requires input), next={names}")
+        return TaskStatusUpdateEvent(
+            task_id=self._task_id,
+            context_id=self._context_id,
+            status=TaskStatus(
+                state=TaskState.TASK_STATE_INPUT_REQUIRED,
+                message=Message(
+                    context_id=self._context_id,
+                    task_id=self._task_id,
+                    message_id=str(uuid.uuid4()),
+                    role=Role.ROLE_AGENT,
+                    parts=[Part(text=f"Paused before {names}. Send any message to continue."), Part(data=data)],
+                ),
+            ),
+        )
+
     def convert_complete(self) -> TaskStatusUpdateEvent:
         """Produce a final TaskStatusUpdateEvent with state=completed.
 

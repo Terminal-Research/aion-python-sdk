@@ -23,7 +23,7 @@ import inspect
 
 import langgraph.errors
 import pytest
-from a2a.types import Message, Part, Role, TaskState
+from a2a.types import Message, Part, Role, Task, TaskState, TaskStatus
 from google.protobuf import json_format, struct_pb2
 from google.protobuf.json_format import MessageToDict
 from langchain.agents import create_agent
@@ -82,10 +82,12 @@ def _data(value: Any) -> Part:
     return Part(data=data)
 
 
-def _context(*parts: Part):
+def _context(*parts: Part, task_state: Optional[TaskState] = None):
     message = Message(message_id="m-1", role=Role.ROLE_USER, parts=list(parts))
     context = make_mock_request_context(task_id="task-1", context_id="ctx-1", message=message)
-    context.current_task = None
+    context.current_task = (
+        None if task_state is None else Task(id="task-1", context_id="ctx-1", status=TaskStatus(state=task_state))
+    )
     context.metadata = {}
     return context
 
@@ -96,9 +98,10 @@ def _config():
     return config
 
 
-async def _run(executor: LangGraphExecutor, method: str, *parts: Part) -> list:
+async def _run(executor: LangGraphExecutor, method: str, *parts: Part, task_state: Optional[TaskState] = None) -> list:
     with patch.object(executor._result_handler, "handle", return_value=[]):
-        return [event async for event in getattr(executor, method)(_context(*parts), _config())]
+        context = _context(*parts, task_state=task_state)
+        return [event async for event in getattr(executor, method)(context, _config())]
 
 
 def _question(events: list) -> Message:
@@ -201,6 +204,63 @@ class TestAnAnswerTheSchemaRefuses:
         assert events[-1].status.state == TaskState.TASK_STATE_COMPLETED
         answer = (await graph.aget_state({"configurable": {"thread_id": "thread-1"}})).values["answer"]
         assert answer == Choice(language="Go")
+
+
+class _Log(TypedDict, total=False):
+    log: list
+
+
+def _breakpoint_graph(**breakpoints: Any):
+    """``a`` then ``b``, compiled with the static breakpoints given, as an application compiles its graph."""
+    def a(state: _Log) -> dict:
+        return {"log": [*(state.get("log") or []), "a"]}
+
+    def b(state: _Log) -> dict:
+        return {"log": [*(state.get("log") or []), "b"]}
+
+    builder = StateGraph(_Log)
+    builder.add_node("a", a)
+    builder.add_node("b", b)
+    builder.add_edge(START, "a")
+    builder.add_edge("a", "b")
+    builder.add_edge("b", END)
+    graph = builder.compile(checkpointer=InMemorySaver(), **breakpoints)
+    return LangGraphExecutor(compiled_graph=graph, config=Mock()), graph
+
+
+class TestStaticBreakpoints:
+    """A graph compiled with ``interrupt_before``/``interrupt_after`` waits there, and any message goes on."""
+
+    @pytest.mark.parametrize("breakpoints", [{"interrupt_before": ["b"]}, {"interrupt_after": ["a"]}], ids=["before", "after"])
+    async def test_a_breakpoint_is_a_question_that_any_message_answers(self, breakpoints: dict):
+        executor, graph = _breakpoint_graph(**breakpoints)
+
+        question = _question(await _run(executor, "stream", Part(text="start")))
+
+        assert question.parts[0].text == "Paused before b. Send any message to continue."
+        assert MessageToDict(question.parts[1].data) == {"next": ["b"]}
+        assert MessageToDict(question.metadata) == {}
+        events = await _run(executor, "resume", Part(text="no"), task_state=TaskState.TASK_STATE_INPUT_REQUIRED)
+        assert events[-1].status.state == TaskState.TASK_STATE_COMPLETED
+        state = await graph.aget_state({"configurable": {"thread_id": "thread-1"}})
+        assert state.values["log"] == ["a", "b"]
+
+    async def test_a_message_to_a_task_that_does_not_wait_runs_as_a_turn_of_its_own(self):
+        """Nodes left to run do not make a breakpoint: a run still going on another server leaves them too."""
+        executor, graph = _breakpoint_graph(interrupt_before=["b"])
+        await _run(executor, "stream", Part(text="start"))
+
+        await _run(executor, "resume", Part(text="again"), task_state=TaskState.TASK_STATE_WORKING)
+
+        state = await graph.aget_state({"configurable": {"thread_id": "thread-1"}})
+        assert "b" not in state.values["log"]
+
+    async def test_a_graph_that_runs_to_its_end_completes(self):
+        executor, _ = _breakpoint_graph()
+
+        events = await _run(executor, "stream", Part(text="start"))
+
+        assert events[-1].status.state == TaskState.TASK_STATE_COMPLETED
 
 
 class ToolCallingModel(BaseChatModel):
