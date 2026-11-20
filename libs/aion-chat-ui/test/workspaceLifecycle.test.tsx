@@ -332,3 +332,52 @@ it.each([undefined, "home"])("serializes startup selection (%s) with later works
 	pending.resolve(); await ready();
 	await enter("/workspace team"); await ready("team");
 });
+
+
+it("renders an artifact-only canonical answer and restores the same content", async () => {
+	rpcReply = async (_request, body) => Response.json({ jsonrpc: "2.0", id: body.id,
+		result: { task: { id: "answer-task", contextId: body.params.message.contextId,
+			status: { state: "TASK_STATE_COMPLETED" }, history: [body.params.message],
+			artifacts: [{ artifactId: "aion:assistant-answer", parts: [{ text: "Artifact-only answer" }],
+				metadata: { "aion:sourceMessageId": "not-in-history" } }] } } });
+	app = render(<ChatApp options={options} />); await ready();
+	await enter("A question");
+	await vi.waitFor(() => expect(state.saves).toHaveLength(1));
+	expect(state.saves[0].messages.at(-1).parts[0].content.value).toBe("Artifact-only answer");
+	await vi.waitFor(() => expect(app!.frames.join("\n")).toContain("Artifact-only answer"));
+	expect(app.frames.join("\n")).not.toContain("no agent message");
+	app.unmount();
+	app = render(<ChatApp options={options} />);
+	await vi.waitFor(() => expect(app!.frames.join("\n")).toContain("Artifact-only answer"));
+	expect(rpc).toHaveLength(1);
+});
+
+it("reconciles a live stream to the final artifact and saves only the canonical answer", async () => {
+	state.settings.environments.production.requestMode = "streaming-message";
+	let finish: (() => void) | undefined;
+	rpcReply = async (_request, body) => new Response(new ReadableStream({ start(controller) {
+		const emit = (result: unknown) => controller.enqueue(new TextEncoder().encode(
+			`data: ${JSON.stringify({ jsonrpc: "2.0", id: body.id, result })}\n\n`));
+		emit({ artifactUpdate: { taskId: "stream-task", contextId: body.params.message.contextId,
+			artifact: { artifactId: "aion:stream-delta", parts: [{ text: "Live draft" }] } } });
+		finish = () => {
+			emit({ artifactUpdate: { taskId: "stream-task", contextId: body.params.message.contextId,
+				artifact: { artifactId: "aion:assistant-answer", parts: [{ text: "Final canonical answer" }] } } });
+			emit({ task: { id: "stream-task", contextId: body.params.message.contextId,
+				status: { state: "TASK_STATE_COMPLETED" },
+				history: [body.params.message, { messageId: "fallback", role: "ROLE_AGENT", parts: [{ text: "Wrong fallback" }] }],
+				artifacts: [{ artifactId: "aion:assistant-answer", parts: [{ text: "Final canonical answer" }] }] } });
+			controller.close();
+		};
+	} }), { headers: { "Content-Type": "text/event-stream" } });
+	app = render(<ChatApp options={options} />); await ready();
+	await enter("Stream question");
+	await vi.waitFor(() => expect(app!.lastFrame()).toContain("Live draft"));
+	await act(async () => finish!());
+	await vi.waitFor(() => expect(state.saves).toHaveLength(1));
+	expect(state.saves[0].messages).toHaveLength(2);
+	expect(state.saves[0].messages.at(-1).parts[0].content.value).toBe("Final canonical answer");
+	await vi.waitFor(() => expect(app!.lastFrame()).toContain("Final canonical answer"));
+	expect(app.lastFrame()).not.toContain("Live draft");
+	expect(app.lastFrame()).not.toContain("Wrong fallback");
+});

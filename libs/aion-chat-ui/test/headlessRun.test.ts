@@ -1,5 +1,5 @@
-import type { AgentCard, Message, Part, StreamResponse, Task } from "@a2a-js/sdk";
-import { Role, TaskState } from "@a2a-js/sdk";
+import type { AgentCard, Message, Part, SendMessageRequest, StreamResponse, Task } from "@a2a-js/sdk";
+import { Artifact, Role, TaskState, TaskArtifactUpdateEvent } from "@a2a-js/sdk";
 import { describe, expect, it, vi } from "vitest";
 
 import type { HeadlessRunOptions } from "../src/args.js";
@@ -586,9 +586,9 @@ describe("runHeadless", () => {
 			discoverAgentSourcesImpl: async () => discoveryResult(),
 			connectClientImpl: async () =>
 				connectedClient({
-					sendMessage: vi.fn(async () =>
+					sendMessage: vi.fn(async (request: SendMessageRequest) =>
 						task({
-							history: [message("user-1", "user", "question", "task-1")],
+							history: [request.message!],
 							status: {
 								state: TaskState.TASK_STATE_COMPLETED,
 								message: message("agent-1", "agent", "answer", "task-1"),
@@ -916,4 +916,55 @@ it("does not invoke a local fallback when workspace validation fails", async () 
 		createChatSessionLoggerImpl: () => ({ logger: createMockLogger() })
 	})).rejects.toThrow("Workspace selection failed");
 	expect(connect).not.toHaveBeenCalled();
+});
+
+/** Exercise real headless rendering, including the final task after stream events. */
+it.each(["send-message", "streaming-message"] as const)("selects one canonical answer in %s output", async (requestMode) => {
+	const stdout = createStream();
+	const stderr = createStream();
+	const answer = Artifact.fromJSON({ artifactId: "aion:assistant-answer",
+		parts: [{ text: "Canonical answer" }], metadata: { "aion:sourceMessageId": "absent" } });
+	const finalTask = task({ history: [message("fallback", "agent", "Message fallback")],
+		artifacts: [answer, Artifact.fromJSON({ artifactId: "aion:stream-delta", parts: [{ text: "Draft" }] })] });
+	await runHeadlessForTest(options({ requestMode }), {
+		stdout: stdout.stream, stderr: stderr.stream,
+		loadChatSettingsImpl: () => ({ settings: settings() }),
+		discoverAgentSourcesImpl: async () => discoveryResult(),
+		connectClientImpl: async () => connectedClient({
+			card: { ...agentCard, capabilities: { extensions: [], streaming: true } },
+			sendMessage: vi.fn(async () => finalTask),
+			streamEvents: [streamArtifactUpdate("Draft"),
+				{ payload: { $case: "artifactUpdate", value: {
+					...TaskArtifactUpdateEvent.fromJSON({ taskId: "task-1", contextId: "context-1" }), artifact: answer } } },
+				streamStatusUpdate("Status fallback"),
+				{ payload: { $case: "task", value: finalTask } }]
+		}),
+		buildMessagePartsImpl: async (text) => buildParts(text),
+		getStoredAccessTokenImpl: async () => undefined
+	});
+	expect(stdout.output()).toBe("Canonical answer\n");
+	expect(stderr.output()).toBe("");
+});
+
+
+it("does not retain a cached answer after an empty replacement", async () => {
+	const stdout = createStream();
+	const stderr = createStream();
+	const answerEvent = (text: string): StreamResponse => ({ payload: { $case: "artifactUpdate", value:
+		TaskArtifactUpdateEvent.fromJSON({ taskId: "task-1", contextId: "context-1",
+			artifact: { artifactId: "aion:assistant-answer", parts: [{ text }] } }) } });
+	await runHeadlessForTest(options({ requestMode: "streaming-message" }), {
+		stdout: stdout.stream, stderr: stderr.stream,
+		loadChatSettingsImpl: () => ({ settings: settings() }),
+		discoverAgentSourcesImpl: async () => discoveryResult(),
+		connectClientImpl: async () => connectedClient({
+			card: { ...agentCard, capabilities: { extensions: [], streaming: true } },
+			streamEvents: [answerEvent("obsolete"), answerEvent(""),
+				{ payload: { $case: "task", value: task() } }]
+		}),
+		buildMessagePartsImpl: async (text) => buildParts(text),
+		getStoredAccessTokenImpl: async () => undefined
+	});
+	expect(stdout.output()).toBe("");
+	expect(stderr.output()).toContain("no agent message");
 });

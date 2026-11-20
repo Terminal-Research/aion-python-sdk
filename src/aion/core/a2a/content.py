@@ -46,14 +46,6 @@ PartsSource = Union[Message, Artifact, Part, Iterable[Part], Any]
 """What the part readers take: a message, an artifact, an object holding one
 as ``artifact`` (an ``ArtifactVersion``), one part, or parts."""
 
-_NOT_AN_ANSWER = frozenset({
-    ArtifactId.THINKING_DELTA.value,
-    ArtifactId.REACTION.value,
-    ArtifactId.ASSISTANT_ANSWER.value,
-})
-"""Artifacts a task keeps that are not what it produced; the copied answer is read last."""
-
-
 def parts_of(content: PartsSource) -> list[Part]:
     """The parts of a message, an artifact, an ``ArtifactVersion``, one part, or parts."""
     if isinstance(content, Part):
@@ -153,32 +145,42 @@ def conversation_messages(task: Task) -> list[Message]:
 
 
 def answer_text(task: Task) -> Optional[str]:
-    """The text a task answered with, wherever the task keeps it.
+    """Select the canonical text of the task's current response.
 
-    A task's answer is what it produced, and a task keeps that in its
-    artifacts; only a task that produced nothing has its answer in a message.
-    The first of these that has text is returned:
-
-    1. the streamed answer (``aion:stream-delta``);
-    2. the last artifact of the agent's own that has text;
-    3. the answer the server copied from the last message of a completed task
-       (``aion:assistant-answer``);
-    4. the last message the agent sent - what a task that is still running,
-       waits for input or failed has said so far.
+    Prefer the latest ``aion:assistant-answer`` artifact, then agent messages
+    after the latest user message, then ``aion:stream-delta``. Artifacts are
+    complete snapshots here: their own parts supply the answer, without
+    requiring a source message in history. Other artifacts remain available
+    through the generic part readers and do not supply answer text.
 
     Returns:
-        The text, or None when the task holds none.
+        The selected text, or None when the current response has no text.
     """
-    produced = [artifact for artifact in task.artifacts if artifact.artifact_id not in _NOT_AN_ANSWER]
-    streamed = [artifact for artifact in produced if artifact.artifact_id == ArtifactId.STREAM_DELTA.value]
-    copied = [artifact for artifact in task.artifacts if artifact.artifact_id == ArtifactId.ASSISTANT_ANSWER.value]
-    for artifact in (*streamed, *reversed(produced), *copied):
-        text = text_of(artifact)
-        if text:
+    answers = [artifact for artifact in task.artifacts if artifact.artifact_id == ArtifactId.ASSISTANT_ANSWER.value]
+    if answers:
+        text = text_of(answers[-1], separator="\n")
+        if text.strip():
             return text
-    for message in reversed(conversation_messages(task)):
-        if message.role == Role.ROLE_AGENT:
-            text = text_of(message)
-            if text:
-                return text
+
+    messages = list(task.history)
+    if task.status.HasField("message") and not any(
+        is_same_message(message, task.status.message) for message in messages
+    ):
+        messages.append(task.status.message)
+    messages = [message for message in messages if is_conversation_message(message)]
+    turn_start = next(
+        (index + 1 for index in range(len(messages) - 1, -1, -1)
+         if messages[index].role == Role.ROLE_USER),
+        0,
+    )
+    texts = [text_of(message) for message in messages[turn_start:] if message.role == Role.ROLE_AGENT]
+    text = "\n\n".join(text for text in texts if text.strip())
+    if text:
+        return text
+
+    streams = [artifact for artifact in task.artifacts if artifact.artifact_id == ArtifactId.STREAM_DELTA.value]
+    if streams:
+        text = text_of(streams[-1])
+        if text.strip():
+            return text
     return None

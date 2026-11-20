@@ -38,9 +38,9 @@ class AssistantAnswer:
     last message the agent sent in that turn, the one on the ``COMPLETED``
     status included. The message stays in the history as well, and the
     answer names it in ``aion:sourceMessageId``, so a client can show one of
-    the two. The message's routing target is left out: the message was
-    delivered by it already, and a copy that carried it would be delivered
-    again. A completed task that produced neither gets no answer, and the
+    the two. Routing stays on the original message; the source ID associates
+    the artifact with that message without copying its routing payload.
+    An explicit Assistant Answer emitted in the turn is preserved. A completed task that produced neither gets no answer, and the
     server says so in its log. A task that ends any other way gets none: the
     last message of a failed or cancelled turn is not its answer. Neither
     does a turn whose agent handed over a whole Task through its outbox:
@@ -55,7 +55,12 @@ class AssistantAnswer:
     def observe(self, event: object) -> None:
         """Take note of an event the turn delivers."""
         if isinstance(event, TaskArtifactUpdateEvent):
-            self._result_seen = self._result_seen or is_result_artifact(event.artifact)
+            # An explicit answer belongs to this turn; a stored answer can
+            # belong to an earlier turn and must not suppress a new copy.
+            self._result_seen = self._result_seen or (
+                is_result_artifact(event.artifact)
+                or event.artifact.artifact_id == ArtifactId.ASSISTANT_ANSWER.value
+            )
         elif isinstance(event, TaskStatusUpdateEvent):
             if event.status.HasField("message"):
                 self._note(event.status.message)

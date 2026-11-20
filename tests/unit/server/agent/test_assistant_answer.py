@@ -142,7 +142,7 @@ class TestTheAnswer:
         assert answer.artifact.metadata[A2AMetadataKey.SOURCE_MESSAGE_ID.value] == last.message_id
 
     def test_the_answer_leaves_out_the_messages_routing_target(self):
-        """The message was delivered where its target says; a copy carrying the target would be delivered again."""
+        """Routing stays on the original message, associated through the source message ID."""
         routing = MessageActionPayload(trajectory="reply", context_id="C1", reply_to_message_id="m-1")
         last = _message("done")
         last.parts.append(routing.to_part())
@@ -176,6 +176,13 @@ class TestTheAnswer:
 
 
 class TestNoAnswer:
+    def test_an_explicit_answer_is_not_overwritten_by_the_last_message(self):
+        assert _answer_after(
+            _artifact(ArtifactId.ASSISTANT_ANSWER.value),
+            _message("different message"),
+            completed=_completed(_message("completion message")),
+        ) is None
+
     def test_a_result_of_the_turn_means_no_answer(self):
         assert _answer_after(_message("here it is"), _artifact("report")) is None
 

@@ -75,7 +75,9 @@ def stream_delta_chunk(
         metadata: The agent's own metadata for the artifact.
         routing: The section's routing target, for its first chunk only:
             the parts of a later chunk are added to the artifact, so a
-            target there would repeat in the task.
+            target there would repeat in the task. A distribution can use
+            it when buffering the response. Once delivery streams live,
+            the destination stays the source of the request.
     """
     artifact = Artifact(
         artifact_id=ArtifactId.STREAM_DELTA.value,

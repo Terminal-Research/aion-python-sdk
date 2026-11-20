@@ -94,9 +94,16 @@ logged.
 
 `aion.core.a2a` reads any message, artifact or task the same way:
 `text_of`, `data_of`, `files_of` - its files as `ConversationFile` -
-`conversation_messages(task)` and `answer_text(task)`, the text a task
-answered with, wherever the task keeps it - a streamed answer, an artifact,
-or its last message.
+`conversation_messages(task)` and `answer_text(task)`. For the current
+response, `answer_text` selects the first source with text in this order:
+
+1. The latest `aion:assistant-answer` artifact.
+2. Agent messages after the latest user message.
+3. The latest `aion:stream-delta` artifact.
+
+The answer artifact supplies its own text. It does not need a matching
+`aion:sourceMessageId` in task history. Other artifacts do not supply answer
+text.
 
 A turn reads the context of its task as the context's holder: every
 participant's tasks and messages of a shared conversation, nothing of another

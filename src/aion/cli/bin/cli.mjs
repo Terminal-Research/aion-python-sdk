@@ -49753,12 +49753,12 @@ function taskStateToJSON(object) {
       return "UNRECOGNIZED";
   }
 }
-var Role = /* @__PURE__ */ ((Role2) => {
-  Role2[Role2["ROLE_UNSPECIFIED"] = 0] = "ROLE_UNSPECIFIED";
-  Role2[Role2["ROLE_USER"] = 1] = "ROLE_USER";
-  Role2[Role2["ROLE_AGENT"] = 2] = "ROLE_AGENT";
-  Role2[Role2["UNRECOGNIZED"] = -1] = "UNRECOGNIZED";
-  return Role2;
+var Role = /* @__PURE__ */ ((Role22) => {
+  Role22[Role22["ROLE_UNSPECIFIED"] = 0] = "ROLE_UNSPECIFIED";
+  Role22[Role22["ROLE_USER"] = 1] = "ROLE_USER";
+  Role22[Role22["ROLE_AGENT"] = 2] = "ROLE_AGENT";
+  Role22[Role22["UNRECOGNIZED"] = -1] = "UNRECOGNIZED";
+  return Role22;
 })(Role || {});
 function roleFromJSON(object) {
   switch (object) {
@@ -52453,6 +52453,7 @@ var CaseInsensitiveMap = class extends Map {
 import crypto from "crypto";
 var DISTRIBUTION_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/distribution/1.0.0";
 var TRACEABILITY_EXTENSION_URI_V1 = "https://docs.aion.to/a2a/extensions/aion/traceability/1.0.0";
+var ASSISTANT_ANSWER_ARTIFACT_ID = "aion:assistant-answer";
 var STREAM_DELTA_ARTIFACT_ID = "aion:stream-delta";
 var THINKING_DELTA_ARTIFACT_ID = "aion:thinking-delta";
 function tokenHex(bytes) {
@@ -52728,7 +52729,7 @@ function createChatThread(options2) {
 }
 
 // src/app.tsx
-import { randomUUID as randomUUID4 } from "crypto";
+import { randomUUID as randomUUID5 } from "crypto";
 var import_react37 = __toESM(require_react(), 1);
 
 // src/components/ChatComposer.tsx
@@ -53335,20 +53336,6 @@ function upsertTranscriptEntry(entries, entryId, role, body, isFinalized = true)
   };
   return next;
 }
-function replaceTranscriptEntryBody(entries, entryId, role, body, isFinalized = true) {
-  const existingIndex = entries.findIndex((item) => item.id === entryId);
-  if (existingIndex === -1) {
-    return { entries, replaced: false };
-  }
-  const next = [...entries];
-  next[existingIndex] = {
-    ...next[existingIndex],
-    role,
-    body,
-    isFinalized
-  };
-  return { entries: next, replaced: true };
-}
 function finalizeTranscriptEntries(entries, entryIds) {
   let changed = false;
   const next = entries.map((entry) => {
@@ -53515,6 +53502,24 @@ function closeStreamTranscriptSections({
     );
   }
   return entryIds;
+}
+function reconcileResponseTranscript(entries, answer, body, responseEntryIds) {
+  const replaced = new Set([...answer.replacedEntryIds()].filter((id) => id === answer.entryId || responseEntryIds.has(id)));
+  const streamEntryIds = new Set([...responseEntryIds].filter((id) => id.startsWith("artifact:") && id.includes(":aion:stream-delta:")));
+  const removedDividers = new Set([...streamEntryIds].map((id) => {
+    const taskId = id.slice("artifact:".length, id.lastIndexOf(":aion:stream-delta:"));
+    return `artifact-divider:${taskId}:${id.split(":").at(-1)}`;
+  }));
+  const canonical = { id: answer.entryId, role: "agent", body, isFinalized: false };
+  let inserted = false;
+  const result = entries.flatMap((entry) => {
+    if (removedDividers.has(entry.id)) return [];
+    if (!replaced.has(entry.id) && !streamEntryIds.has(entry.id)) return [entry];
+    if (inserted) return [];
+    inserted = true;
+    return [canonical];
+  });
+  return inserted ? result : [...result, canonical];
 }
 
 // src/components/HomeScreen.tsx
@@ -59002,6 +59007,9 @@ var ChatOperationGate = class {
   }
 };
 
+// src/lib/responseAnswer.ts
+import { randomUUID as randomUUID4 } from "crypto";
+
 // src/lib/messageDisplay.ts
 function formatRawPart(part) {
   const metadata = {};
@@ -59050,6 +59058,180 @@ function getTaskMessages(task) {
   return statusMessage ? [statusMessage] : [];
 }
 
+// src/lib/responseAnswer.ts
+var EVENT_EXTENSION = "https://docs.aion.to/a2a/extensions/aion/event/1.0.0";
+function textOf(parts, separator) {
+  return parts.flatMap((part) => part.content?.$case === "text" && part.content.value && !part.metadata?.[EVENT_EXTENSION] ? [part.content.value] : []).join(separator);
+}
+function isConversationMessage(message) {
+  const kind = message.metadata?.["aion:messageType"];
+  return kind === void 0 || kind === "message";
+}
+var ResponseAnswer = class {
+  constructor(requestMessageId) {
+    this.requestMessageId = requestMessageId;
+    this.entryId = `answer:${requestMessageId ?? randomUUID4()}`;
+  }
+  requestMessageId;
+  entryId;
+  taskId = "";
+  contextId = "";
+  assistant;
+  stream;
+  messages = [];
+  notice;
+  baseline = /* @__PURE__ */ new Set();
+  baselineStream;
+  opened = false;
+  /** Updates append only when requested; snapshots replace complete artifacts. */
+  observe(event) {
+    const taskId = isTask(event) ? event.id : event.taskId;
+    if (taskId && this.taskId && taskId !== this.taskId) {
+      this.assistant = void 0;
+      this.stream = void 0;
+      this.messages = [];
+      this.notice = void 0;
+      this.baseline.clear();
+      this.baselineStream = void 0;
+      this.opened = false;
+    }
+    this.taskId = taskId || this.taskId;
+    this.contextId = event.contextId || this.contextId;
+    if (isTaskArtifactUpdateEvent(event)) {
+      const artifact = event.artifact;
+      if (!artifact) return;
+      if (artifact.artifactId === ASSISTANT_ANSWER_ARTIFACT_ID) {
+        this.assistant = this.merge(this.assistant, artifact, event.append);
+      } else if (artifact.artifactId === STREAM_DELTA_ARTIFACT_ID) {
+        if (event.append || textOf(artifact.parts, "").trim()) {
+          this.stream = this.merge(this.stream, artifact, event.append);
+        }
+      }
+    } else if (isTask(event)) {
+      this.observeTask(event);
+    } else if (isMessage(event)) {
+      if (isAgentMessage(event) && isConversationMessage(event)) this.messages = [event];
+    } else if (isTaskStatusUpdateEvent(event) && (isTerminalTaskState(event.status?.state) || isTaskContinuationState(event.status?.state))) {
+      this.observeNotice(event.status);
+      const message = event.status?.message;
+      if (message && isAgentMessage(message) && isConversationMessage(message)) {
+        this.messages = [message];
+      }
+    }
+  }
+  /** Produce a self-contained message for display and saved transcript restore. */
+  message() {
+    const message = this.selectMessage();
+    if (!message || this.notice) return message;
+    const candidates = [
+      ...this.assistant?.parts ?? [],
+      ...this.messages.flatMap((value) => value.parts)
+    ];
+    const seen = new Set(message.parts.map((part) => JSON.stringify(part)));
+    const files = candidates.filter((part) => {
+      if (part.content?.$case !== "url" && part.content?.$case !== "raw") return false;
+      const key = JSON.stringify(part);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    return { ...message, parts: [...message.parts, ...files] };
+  }
+  selectMessage() {
+    if (this.notice) return { ...this.notice, messageId: this.entryId, taskId: this.taskId };
+    if (this.assistant && textOf(this.assistant.parts, "\n").trim()) {
+      return this.fromArtifact(this.assistant, "\n");
+    }
+    const text = this.messages.map((message) => textOf(message.parts, "\n")).filter((value) => value.trim()).join("\n\n");
+    if (text) {
+      const last2 = this.messages.at(-1);
+      return {
+        ...last2,
+        messageId: this.entryId,
+        taskId: this.taskId,
+        parts: [makeTextPart(text), ...this.messages.flatMap((message) => message.parts.filter((part) => part.content?.$case !== "text"))]
+      };
+    }
+    if (this.stream && textOf(this.stream.parts, "").trim()) {
+      return this.fromArtifact(this.stream, "");
+    }
+    const last = this.messages.at(-1);
+    if (last?.parts.length) return { ...last, messageId: this.entryId, taskId: this.taskId };
+    if (this.assistant?.parts.some((part) => part.content?.$case === "url" || part.content?.$case === "raw")) {
+      return this.fromArtifact(this.assistant, "\n");
+    }
+    return void 0;
+  }
+  /** Source IDs associate rendered duplicates; they never gate artifact text. */
+  replacedEntryIds() {
+    const source = this.assistant?.metadata?.["aion:sourceMessageId"];
+    const ids = this.notice ? [this.notice.messageId] : this.assistant && textOf(this.assistant.parts, "\n").trim() ? typeof source === "string" ? [source] : [] : this.messages.map((message) => message.messageId);
+    return /* @__PURE__ */ new Set([this.entryId, ...ids.map((id) => `message:${this.taskId || "no-task"}:${id}`)]);
+  }
+  observeTask(task) {
+    this.observeNotice(task.status);
+    const terminal = isTerminalTaskState(task.status?.state) || isTaskContinuationState(task.status?.state);
+    const opening = !this.opened && !terminal;
+    const history = getTaskMessages(task).filter(isConversationMessage);
+    const requestIndex = this.requestMessageId ? history.findIndex((message) => message.messageId === this.requestMessageId) : -1;
+    const lastUserIndex = history.map((message) => message.role).lastIndexOf(Role.ROLE_USER);
+    const turnIndex = requestIndex >= 0 ? requestIndex : lastUserIndex;
+    if (opening && requestIndex < 0) {
+      for (const message of history) this.baseline.add(message.messageId);
+    }
+    this.opened = true;
+    if (terminal) {
+      const unanchored = this.requestMessageId && requestIndex < 0 && lastUserIndex >= 0;
+      const observed = new Set(this.messages.map((message) => message.messageId));
+      this.messages = history.slice(turnIndex + 1).filter((message) => isAgentMessage(message) && !this.baseline.has(message.messageId) && (!unanchored || observed.has(message.messageId)));
+    }
+    for (const artifact of task.artifacts ?? []) {
+      if (artifact.artifactId === ASSISTANT_ANSWER_ARTIFACT_ID) this.assistant = artifact;
+      else if (artifact.artifactId === STREAM_DELTA_ARTIFACT_ID) {
+        const snapshot = JSON.stringify(artifact);
+        if (opening) this.baselineStream = snapshot;
+        else if (terminal && snapshot !== this.baselineStream) this.stream = artifact;
+      }
+    }
+  }
+  /** Pause prompts and failure explanations remain visible as task status. */
+  observeNotice(status) {
+    const message = status?.message;
+    if (status?.state !== TaskState.TASK_STATE_COMPLETED && (isTerminalTaskState(status?.state) || isTaskContinuationState(status?.state)) && message && isAgentMessage(message) && isConversationMessage(message)) {
+      this.notice = message;
+    }
+  }
+  merge(previous, next, append) {
+    return append && previous ? {
+      ...next,
+      parts: [...previous.parts, ...next.parts],
+      metadata: { ...previous.metadata, ...next.metadata },
+      extensions: [.../* @__PURE__ */ new Set([...previous.extensions, ...next.extensions])]
+    } : next;
+  }
+  fromArtifact(artifact, separator) {
+    return {
+      messageId: this.entryId,
+      taskId: this.taskId,
+      contextId: this.contextId,
+      role: Role.ROLE_AGENT,
+      referenceTaskIds: [],
+      metadata: artifact.metadata,
+      extensions: artifact.extensions,
+      parts: [
+        makeTextPart(textOf(artifact.parts, separator)),
+        ...artifact.parts.filter((part) => part.content?.$case !== "text")
+      ]
+    };
+  }
+};
+function responseMessages(response, requestMessageId) {
+  const answer = new ResponseAnswer(requestMessageId);
+  answer.observe(response);
+  const message = answer.message();
+  return message ? [message] : [];
+}
+
 // src/lib/chatSession.ts
 var NO_TASK_ID = "no-task";
 function getMessageTaskId(message, fallbackTaskId) {
@@ -59065,18 +59247,10 @@ function getShownMessageKey(message, fallbackTaskId) {
     messageId: message.messageId
   });
 }
-function hasShownMessage(shownMessageKeys, message, fallbackTaskId) {
-  return shownMessageKeys.has(getShownMessageKey(message, fallbackTaskId));
-}
 function markShownMessage(shownMessageKeys, message, fallbackTaskId) {
   const key = getShownMessageKey(message, fallbackTaskId);
   shownMessageKeys.add(key);
   return key;
-}
-function getUnshownTaskAgentMessages(task, shownMessageKeys) {
-  return getTaskMessages(task).filter(
-    (message) => isAgentMessage(message) && !hasShownMessage(shownMessageKeys, message, task.id)
-  );
 }
 function shouldRenderLiveResponseMessage(message) {
   return isAgentMessage(message);
@@ -60301,6 +60475,7 @@ function ChatApp({ options: options2 }) {
   const shownMessageKeysRef = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
   const streamedTaskIdsRef = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
   const streamTranscriptStateRef = (0, import_react37.useRef)(createStreamTranscriptState());
+  const responseEntriesRef = (0, import_react37.useRef)(/* @__PURE__ */ new WeakMap());
   const lastCopyableResponseRef = (0, import_react37.useRef)(void 0);
   const lastConnectionNoticeRef = (0, import_react37.useRef)(void 0);
   const notificationTimersRef = (0, import_react37.useRef)([]);
@@ -60308,7 +60483,7 @@ function ChatApp({ options: options2 }) {
     setEntries((current) => [
       ...current,
       {
-        id: randomUUID4(),
+        id: randomUUID5(),
         role,
         body,
         isFinalized: true
@@ -60319,7 +60494,7 @@ function ChatApp({ options: options2 }) {
     appendEntry("system", body);
   };
   const appendNotification = (body) => {
-    const id = randomUUID4();
+    const id = randomUUID5();
     chatSessionLogger.info("system.notification.shown", {
       notificationId: id,
       body
@@ -60921,59 +61096,26 @@ ${JSON.stringify(
     selectedAgent && isTransientAgentSource(selectedAgent.source),
     selectedEnvironment
   ]);
-  const replaceLastResponseStreamSection = (message, fallbackTaskId) => {
-    if (!shouldRenderLiveResponseMessage(message)) {
-      return false;
-    }
-    const streamTaskId = getMessageTaskId(message, fallbackTaskId);
-    if (!streamTaskId) {
-      return false;
-    }
-    const activeSection = getActiveStreamTranscriptSection(
-      streamTranscriptStateRef.current,
-      streamTaskId,
-      STREAM_DELTA_ARTIFACT_ID
-    );
-    if (activeSection?.kind !== "response") {
-      return false;
-    }
-    if (shownMessageKeysRef.current.has(getShownMessageKey(message, fallbackTaskId))) {
+  const rememberResponseEntry = (answer, entryId) => {
+    const entryIds = responseEntriesRef.current.get(answer) ?? /* @__PURE__ */ new Set();
+    entryIds.add(entryId);
+    responseEntriesRef.current.set(answer, entryIds);
+  };
+  const renderCanonicalResponse = (answer) => {
+    const message = answer.message();
+    if (!message) {
+      lastCopyableResponseRef.current = void 0;
+      setEntries((current) => current.filter((entry) => entry.id !== answer.entryId));
       return false;
     }
     const body = formatMessageParts(message.parts);
-    if (!body) {
-      return false;
-    }
-    const shownMessageKey = markShownMessage(
-      shownMessageKeysRef.current,
-      message,
-      fallbackTaskId
-    );
+    if (!body) return false;
     lastCopyableResponseRef.current = { kind: "message", content: body };
-    chatSessionLogger.debug("chat.agent_message.stream_replaced", {
-      fallbackTaskId,
-      streamTaskId,
-      streamEntryId: activeSection.entryId,
-      body,
-      message: summarizeMessageForLog(message)
-    });
-    setEntries((current) => {
-      lastCopyableResponseRef.current = { kind: "message", content: body };
-      return replaceTranscriptEntryBody(
-        current,
-        activeSection.entryId,
-        "agent",
-        body
-      ).entries;
-    });
-    clearActiveStreamTranscriptSection(
-      streamTranscriptStateRef.current,
-      streamTaskId,
-      STREAM_DELTA_ARTIFACT_ID
-    );
+    const responseEntries = responseEntriesRef.current.get(answer) ?? /* @__PURE__ */ new Set();
+    setEntries((current) => reconcileResponseTranscript(current, answer, body, responseEntries));
     return true;
   };
-  const renderAgentResponseBubble = (message, fallbackTaskId) => {
+  const renderAgentResponseBubble = (message, fallbackTaskId, answer) => {
     if (!shouldRenderLiveResponseMessage(message)) {
       return false;
     }
@@ -60989,6 +61131,7 @@ ${JSON.stringify(
       message,
       fallbackTaskId
     );
+    if (answer) rememberResponseEntry(answer, `message:${shownMessageKey}`);
     lastCopyableResponseRef.current = { kind: "message", content: body };
     chatSessionLogger.debug("chat.agent_message.rendered", {
       fallbackTaskId,
@@ -61000,7 +61143,8 @@ ${JSON.stringify(
     );
     return true;
   };
-  const handleMessage = (message, protocolPayload = message) => {
+  const handleMessage = (message, protocolPayload = message, answer = new ResponseAnswer()) => {
+    answer.observe(message);
     if (message.contextId) {
       setCurrentContextId(message.contextId);
     }
@@ -61009,9 +61153,10 @@ ${JSON.stringify(
       appendProtocol(protocolPayload);
       return true;
     }
-    return replaceLastResponseStreamSection(message) || renderAgentResponseBubble(message);
+    return renderCanonicalResponse(answer);
   };
-  const handleTaskSnapshot = (task, protocolPayload = task) => {
+  const handleTaskSnapshot = (task, protocolPayload = task, answer = new ResponseAnswer()) => {
+    answer.observe(task);
     setCurrentContextId(task.contextId);
     const isTerminalTask = isTerminalTaskState(task.status?.state);
     setTaskId(isTaskContinuationState(task.status?.state) ? task.id : void 0);
@@ -61019,18 +61164,13 @@ ${JSON.stringify(
       appendProtocol(protocolPayload);
       return true;
     }
-    if (!isTerminalTask) {
+    if (!isTerminalTask && !isTaskContinuationState(task.status?.state)) {
       return false;
     }
-    const messages = getUnshownTaskAgentMessages(task, shownMessageKeysRef.current);
-    let renderedAgentOutput = false;
-    for (const message of messages) {
-      renderedAgentOutput = replaceLastResponseStreamSection(message, task.id) || renderAgentResponseBubble(message, task.id) || renderedAgentOutput;
-    }
-    finalizeOpenStreamEntries(task.id);
-    return renderedAgentOutput;
+    return renderCanonicalResponse(answer);
   };
-  const handleStatusUpdate = (event, protocolPayload = event) => {
+  const handleStatusUpdate = (event, protocolPayload = event, answer = new ResponseAnswer()) => {
+    answer.observe(event);
     setCurrentContextId(event.contextId);
     setTaskId(isTaskContinuationState(event.status?.state) ? event.taskId : void 0);
     setStreamLabel(taskStateLabel(event.status?.state));
@@ -61038,10 +61178,10 @@ ${JSON.stringify(
       appendProtocol(protocolPayload);
       return true;
     }
-    let renderedAgentOutput = false;
-    if (event.status?.message && (isTerminalTaskState(event.status.state) || isFinalStatusEvent(event)) && replaceLastResponseStreamSection(event.status.message, event.taskId)) {
-      renderedAgentOutput = true;
+    if (isTerminalTaskState(event.status?.state) || isTaskContinuationState(event.status?.state)) {
+      return renderCanonicalResponse(answer);
     }
+    let renderedAgentOutput = false;
     const activeStreamSection = getLastStreamTranscriptSection(
       streamTranscriptStateRef.current,
       event.taskId
@@ -61052,14 +61192,12 @@ ${JSON.stringify(
       streamedTaskIds: streamedTaskIdsRef.current,
       activeStreamSectionKind: activeStreamSection?.kind
     })) {
-      renderedAgentOutput = event.status?.message ? renderAgentResponseBubble(event.status.message, event.taskId) : false;
-    }
-    if (isTerminalTaskState(event.status?.state) || isFinalStatusEvent(event)) {
-      finalizeOpenStreamEntries(event.taskId);
+      renderedAgentOutput = event.status?.message ? renderAgentResponseBubble(event.status.message, event.taskId, answer) : false;
     }
     return renderedAgentOutput;
   };
-  const handleArtifactUpdate = (event, protocolPayload = event) => {
+  const handleArtifactUpdate = (event, protocolPayload = event, answer = new ResponseAnswer()) => {
+    answer.observe(event);
     setCurrentContextId(event.contextId);
     setTaskId(void 0);
     const artifact = event.artifact;
@@ -61099,6 +61237,9 @@ ${JSON.stringify(
       append: event.append === true,
       replaceCurrentSection
     });
+    if (streamArtifactKind === "response") {
+      rememberResponseEntry(answer, preparedDelta.section.entryId);
+    }
     chatSessionLogger.debug("chat.stream_delta.prepared", {
       taskId: event.taskId,
       contextId: event.contextId,
@@ -61447,7 +61588,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
         onCreated: activateNewContext,
         onWelcome: (request, response) => {
           const originalContext = request.message.contextId;
-          const messages = isMessage(response) ? [request.message, response] : [request.message, ...getTaskMessages(response)];
+          const messages = [request.message, ...responseMessages(response, request.message.messageId)];
           const warning = saveCompletedExchange({
             environment: selectedEnvironment,
             agentKey: selectedContextAgentKey,
@@ -61645,16 +61786,7 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
     const displayBody = attachedFiles.length > 0 ? `${trimmed}
 
 *Attached: ${attachedFiles.join(", ")}*` : trimmed;
-    setEntries((current) => [
-      ...current,
-      {
-        id: randomUUID4(),
-        role: "user",
-        body: displayBody,
-        isFinalized: true
-      }
-    ]);
-    const requestContextId = contextIdRef.current ?? randomUUID4();
+    const requestContextId = contextIdRef.current ?? randomUUID5();
     if (!contextIdRef.current) activateNewContext(requestContextId);
     const params = buildMessageParams(parts, requestContextId, taskId, pushConfig);
     const outboundMessage = params.message;
@@ -61662,12 +61794,22 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       appendStatus("Unable to build outbound A2A message.");
       return;
     }
+    setEntries((current) => [
+      ...current,
+      {
+        id: randomUUID5(),
+        role: "user",
+        body: displayBody,
+        isFinalized: false
+      }
+    ]);
     chatSessionLogger.debug("chat.user_message.submitted", {
       body: displayBody,
       attachedFiles,
       selectedAgent: summarizeAgentForLog2(selectedAgent),
       message: summarizeMessageForLog(outboundMessage)
     });
+    const answer = new ResponseAnswer(outboundMessage.messageId);
     const canStream2 = Boolean(clientState.agentCard.capabilities?.streaming);
     const useStreaming = requestMode === "streaming-message" && canStream2;
     let requestStartedAt;
@@ -61692,7 +61834,6 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       if (useStreaming) {
         setStreamLabel("Streaming");
         let completedTask;
-        const completedMessages = [];
         let finalStatusUpdate;
         let reachedTerminal = false;
         let renderedAgentOutput = false;
@@ -61706,14 +61847,13 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
             event: summarizeProtocolEventForLog(event)
           });
           if (isMessage(event)) {
-            if (event.role === Role.ROLE_AGENT && shouldRenderLiveResponseMessage(event)) completedMessages.push(event);
-            renderedAgentOutput = handleMessage(event, streamResponse) || renderedAgentOutput;
+            renderedAgentOutput = handleMessage(event, streamResponse, answer) || renderedAgentOutput;
           } else if (isTask(event)) {
             if (isTerminalTaskState(event.status?.state)) {
               completedTask = event;
               reachedTerminal = true;
             }
-            renderedAgentOutput = handleTaskSnapshot(event, streamResponse) || renderedAgentOutput;
+            renderedAgentOutput = handleTaskSnapshot(event, streamResponse, answer) || renderedAgentOutput;
           } else if (isTaskStatusUpdateEvent(event)) {
             if (isTerminalTaskState(event.status?.state)) {
               reachedTerminal = true;
@@ -61721,12 +61861,15 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
             if (isFinalStatusEvent(event)) {
               finalStatusUpdate = event;
             }
-            renderedAgentOutput = handleStatusUpdate(event, streamResponse) || renderedAgentOutput;
+            renderedAgentOutput = handleStatusUpdate(event, streamResponse, answer) || renderedAgentOutput;
           } else {
-            renderedAgentOutput = handleArtifactUpdate(event, streamResponse) || renderedAgentOutput;
+            renderedAgentOutput = handleArtifactUpdate(event, streamResponse, answer) || renderedAgentOutput;
           }
         }
         if (requestSignal.aborted) return;
+        if (responseMode !== "a2a-protocol") {
+          renderedAgentOutput = renderCanonicalResponse(answer) || renderedAgentOutput;
+        }
         if (shouldShowNoAgentMessageNotice({
           responseMode,
           reachedTerminal,
@@ -61738,21 +61881,12 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
           });
           appendSystem(NO_AGENT_MESSAGE_NOTICE);
         }
-        if (completedTask) {
-          persistCompletedExchange(
-            completedTask.contextId,
-            [outboundMessage, ...getTaskMessages(completedTask)],
-            completedTask.id
-          );
-        } else if (finalStatusUpdate?.status?.message) {
-          persistCompletedExchange(
-            finalStatusUpdate.contextId,
-            [outboundMessage, finalStatusUpdate.status.message],
-            finalStatusUpdate.taskId
-          );
-        } else if (completedMessages.length) {
-          persistCompletedExchange(completedMessages.at(-1)?.contextId || requestContextId, [outboundMessage, ...completedMessages]);
-        }
+        const canonicalMessage = answer.message();
+        persistCompletedExchange(
+          completedTask?.contextId || finalStatusUpdate?.contextId || canonicalMessage?.contextId || requestContextId,
+          [outboundMessage, ...canonicalMessage ? [canonicalMessage] : []],
+          completedTask?.id || finalStatusUpdate?.taskId || canonicalMessage?.taskId
+        );
         chatSessionLogger.debug("a2a.request.completed", {
           transport: "stream",
           durationMs: Date.now() - requestStartedAt,
@@ -61773,19 +61907,19 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
         let reachedTerminal = isMessage(response);
         let renderedAgentOutput = false;
         if (isMessage(response)) {
-          renderedAgentOutput = handleMessage(response);
+          renderedAgentOutput = handleMessage(response, response, answer);
           persistCompletedExchange(
             response.contextId || outboundMessage.contextId,
-            [outboundMessage, response],
+            [outboundMessage, ...responseMessages(response, outboundMessage.messageId)],
             response.taskId
           );
         } else {
           reachedTerminal = isTerminalTaskState(response.status?.state);
-          renderedAgentOutput = handleTaskSnapshot(response);
-          if (reachedTerminal) {
+          renderedAgentOutput = handleTaskSnapshot(response, response, answer);
+          if (reachedTerminal || isTaskContinuationState(response.status?.state)) {
             persistCompletedExchange(
               response.contextId,
-              [outboundMessage, ...getTaskMessages(response)],
+              [outboundMessage, ...responseMessages(response, outboundMessage.messageId)],
               response.id
             );
           }
@@ -61823,7 +61957,10 @@ Available environments: ${AION_ENVIRONMENT_IDS.join(", ")}`
       if (useStreaming && !requestSignal.aborted) {
         finalizeOpenStreamEntries();
       }
-      if (!requestSignal.aborted) setWorkingStartedAt(void 0);
+      if (!requestSignal.aborted) {
+        setEntries((current) => finalizeTranscriptEntries(current));
+        setWorkingStartedAt(void 0);
+      }
     }
   };
   use_input_default((input, key) => {
@@ -62386,7 +62523,6 @@ function appendOutput(state, key, body, append = false) {
   } else {
     state.entries.push({ key, body });
   }
-  state.renderedAgentOutput = true;
   return true;
 }
 function renderAgentMessage(state, message, fallbackTaskId) {
@@ -62416,6 +62552,7 @@ function renderArtifact(state, artifact, taskId, append = false) {
 function renderTaskArtifacts(state, task) {
   let rendered = false;
   for (const artifact of task.artifacts ?? []) {
+    if (isAnswerArtifact(artifact)) continue;
     const artifactKey = `${task.id}:${artifact.artifactId}`;
     if (state.shownArtifactKeys.has(artifactKey)) {
       continue;
@@ -62424,30 +62561,31 @@ function renderTaskArtifacts(state, task) {
   }
   return rendered;
 }
+function renderCanonicalOutput(state) {
+  const replaced = state.answer.replacedEntryIds();
+  state.entries = state.entries.filter((entry) => !replaced.has(entry.key));
+  const message = state.answer.message();
+  if (!message) return false;
+  return appendOutput(state, state.answer.entryId, formatMessageParts(message.parts));
+}
 function handleMessageOutputMessage(state, message, reachedTerminal = false) {
-  if (reachedTerminal) {
-    state.reachedTerminal = true;
-  }
-  return renderAgentMessage(state, message);
+  state.reachedTerminal ||= reachedTerminal;
+  state.answer.observe(message);
+  return renderCanonicalOutput(state);
 }
 function handleMessageOutputTask(state, task) {
-  const isTerminalTask = isTerminalTaskState(task.status?.state);
-  if (isTerminalTask) {
-    state.reachedTerminal = true;
-  }
-  if (!isTerminalTask || state.streamedTaskIds.has(task.id)) {
-    return false;
-  }
-  let rendered = false;
-  for (const message of getUnshownTaskAgentMessages(task, state.shownMessageKeys)) {
-    rendered = renderAgentMessage(state, message, task.id) || rendered;
-  }
-  rendered = renderTaskArtifacts(state, task) || rendered;
-  return rendered;
+  state.answer.observe(task);
+  const terminal = isTerminalTaskState(task.status?.state);
+  if (!terminal && !isTaskContinuationState(task.status?.state)) return false;
+  state.reachedTerminal ||= terminal;
+  const artifactsRendered = renderTaskArtifacts(state, task);
+  return renderCanonicalOutput(state) || artifactsRendered;
 }
 function handleMessageOutputStatusUpdate(state, event) {
+  state.answer.observe(event);
   if (isTerminalTaskState(event.status?.state)) {
     state.reachedTerminal = true;
+    return renderCanonicalOutput(state);
   }
   if (shouldRenderLiveStatusMessage({
     message: event.status?.message,
@@ -62459,26 +62597,29 @@ function handleMessageOutputStatusUpdate(state, event) {
   return false;
 }
 function handleMessageOutputArtifactUpdate(state, event) {
-  if (!event.artifact) {
-    return false;
-  }
-  const rendered = renderArtifact(state, event.artifact, event.taskId, event.append);
-  if (rendered && event.artifact.artifactId === STREAM_DELTA_ARTIFACT_ID) {
+  state.answer.observe(event);
+  if (!event.artifact) return false;
+  if (event.artifact.artifactId === STREAM_DELTA_ARTIFACT_ID) {
     state.streamedTaskIds.add(event.taskId);
   }
-  return rendered;
+  if (isAnswerArtifact(event.artifact)) return renderCanonicalOutput(state);
+  return renderArtifact(state, event.artifact, event.taskId, event.append);
 }
-function createMessageOutputState() {
+function isAnswerArtifact(artifact) {
+  return artifact.artifactId === ASSISTANT_ANSWER_ARTIFACT_ID || artifact.artifactId === STREAM_DELTA_ARTIFACT_ID;
+}
+function createMessageOutputState(requestMessageId) {
   return {
+    answer: new ResponseAnswer(requestMessageId),
     entries: [],
     shownMessageKeys: /* @__PURE__ */ new Set(),
     shownArtifactKeys: /* @__PURE__ */ new Set(),
     streamedTaskIds: /* @__PURE__ */ new Set(),
-    reachedTerminal: false,
-    renderedAgentOutput: false
+    reachedTerminal: false
   };
 }
 function writeMessageOutput(state, responseMode, stdout, stderr) {
+  renderCanonicalOutput(state);
   const output = state.entries.map((entry) => entry.body).filter(Boolean).join("\n\n");
   if (output) {
     writeLine(stdout, output);
@@ -62486,7 +62627,7 @@ function writeMessageOutput(state, responseMode, stdout, stderr) {
   if (shouldShowNoAgentMessageNotice({
     responseMode,
     reachedTerminal: state.reachedTerminal,
-    renderedAgentOutput: state.renderedAgentOutput
+    renderedAgentOutput: Boolean(output)
   })) {
     writeLine(stderr, NO_AGENT_MESSAGE_NOTICE2);
   }
@@ -62506,7 +62647,7 @@ async function sendSingleMessage({
     writeRawPayload(stdout, response);
     return;
   }
-  const state = createMessageOutputState();
+  const state = createMessageOutputState(params.message?.messageId);
   if (isMessage(response)) {
     handleMessageOutputMessage(state, response, true);
   } else {
@@ -62521,7 +62662,7 @@ async function sendStreamingMessage({
   stdout,
   stderr
 }) {
-  const state = createMessageOutputState();
+  const state = createMessageOutputState(params.message?.messageId);
   for await (const streamResponse of clientState.client.sendMessageStream(params)) {
     if (responseMode === "a2a-protocol") {
       writeRawPayload(stdout, streamResponse);
