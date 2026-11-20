@@ -28,6 +28,7 @@ from aion.core.agent.invocation.card.utils import build_card_a2a_part
 from aion.core.constants import CARDS_EXTENSION_URI_V1, MESSAGING_EXTENSION_URI_V1, REACTION_ACTION_PAYLOAD_SCHEMA_V1
 from google.adk.events import Event
 from google.protobuf import json_format, struct_pb2
+from pydantic_core import to_jsonable_python
 
 from aion.adk.authoring.transformers import convert_a2a_part_to_genai_part
 from aion.adk.server.artifacts.backends.a2a import A2AArtifactService
@@ -479,11 +480,15 @@ class ADKToA2AEventConverter:
     def generate_pause(self, call: PendingCall) -> TaskStatusUpdateEvent:
         """Produce the input_required status of a run that paused on a long-running tool call.
 
-        Shaped as the LangGraph adapter shapes an ``interrupt()``: one text
-        part asking the question, and the call's id as ``interruptId``, so a
-        client answers either framework the same way.
+        Shaped as the LangGraph adapter shapes an ``interrupt()``: a text part
+        asking the question, a data part with the call - its ``name`` and
+        ``args``, such as ``request_input``'s ``response_schema`` or the
+        confirmation's ``toolConfirmation`` - and the call's id as
+        ``interruptId``, so a client answers either framework the same way.
         """
         logger.info("Paused for input on %s, call id=%s", call.name, call.call_id)
+        call_data = struct_pb2.Value()
+        json_format.ParseDict(to_jsonable_python({"name": call.name, "args": call.args}, inf_nan_mode="null"), call_data)
         return TaskStatusUpdateEvent(
             task_id=self._task_id,
             context_id=self._context_id,
@@ -494,7 +499,7 @@ class ADKToA2AEventConverter:
                     task_id=self._task_id,
                     message_id=str(uuid.uuid4()),
                     role=Role.ROLE_AGENT,
-                    parts=[Part(text=call.question)],
+                    parts=[Part(text=call.question), Part(data=call_data)],
                     metadata={"interruptId": call.call_id},
                 ),
             ),

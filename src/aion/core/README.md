@@ -17,6 +17,7 @@ All other Aion subpackages depend on this one; it has no internal Aion dependenc
 | `aion.core.agent` | `BaseThread`, `BaseMessage`, `User` — the base invocation abstractions (`card`, `message`, `thread`) frameworks build on; `conversation` — the messages, tasks, artifacts and files of the conversation the current turn belongs to; `testing` — a conversation for tests |
 | `aion.core.a2a.content` | Reading a message, an artifact or a task: `text_of`, `data_of`, `file_parts`, `conversation_messages`, `answer_text` |
 | `aion.core.a2a.files` | The files of a message or an artifact: `files_of`, `ConversationFile`, and `StoredFile`, where the server keeps a stored file |
+| `aion.core.a2a.reply` | The user's reply to a task that waits for input: `reply_of` reads it by the rule every framework adapter follows, `Reply` holds its value, text, data, pressed button and files, and `ReplyError` refuses a message with more than one data part of its own |
 | `aion.core.constants` | Shared A2A extension URI constants |
 | `aion.core.runtime` | `AionRuntimeContext` — invocation-scoped context carrier |
 | `aion.core.a2a.codes`, `aion.core.a2a.errors` | The error codes the server reserves for executable extensions, and the A2A shape of an extension's error (`{uri}#ExtensionError`) |

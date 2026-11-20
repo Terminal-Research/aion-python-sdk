@@ -52,8 +52,8 @@ class ScenarioAgent(BaseAgent):
         if answered is not None:
             # The turn answers a question this agent asked: ADK hands the
             # reply over as the function response to the asking call.
-            call, answer = answered
-            emitted = await resume(Invocation(thread=thread, context=runtime, command=command), call, answer)
+            call, response = answered
+            emitted = await resume(Invocation(thread=thread, context=runtime, command=command), call, response)
             if emitted is not None:
                 yield emitted
         elif not command.known:
@@ -69,7 +69,7 @@ class ScenarioAgent(BaseAgent):
                 yield emitted
 
 
-def _answered_call(ctx: AionInvocationContext) -> Optional[tuple[types.FunctionCall, str]]:
+def _answered_call(ctx: AionInvocationContext) -> Optional[tuple[types.FunctionCall, dict]]:
     """The question this turn answers and the answer, when its user content is a reply to one."""
     parts = (ctx.user_content.parts if ctx.user_content is not None else None) or []
     for part in parts:
@@ -79,7 +79,7 @@ def _answered_call(ctx: AionInvocationContext) -> Optional[tuple[types.FunctionC
         for event in reversed(ctx.session.events):
             for call in event.get_function_calls():
                 if call.id == response.id:
-                    return call, str((response.response or {}).get("result", ""))
+                    return call, dict(response.response or {})
     return None
 
 

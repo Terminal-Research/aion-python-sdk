@@ -5,6 +5,7 @@ from __future__ import annotations
 from a2a.types import Message, Part, Role
 from google.adk.events import Event
 from google.genai import types
+from google.protobuf import json_format
 from google.protobuf.struct_pb2 import Value
 
 from aion.adk.server.execution.pause import (
@@ -15,6 +16,12 @@ from aion.adk.server.execution.pause import (
     paused_on,
     reply_content,
     waiting_call,
+)
+from aion.core.constants.a2a import (
+    CARD_ACTION_EVENT_PAYLOAD_SCHEMA_V1,
+    EVENT_EXTENSION_URI_V1,
+    MESSAGE_EVENT_PAYLOAD_SCHEMA_V1,
+    SOURCE_SYSTEM_EVENT_PAYLOAD_SCHEMA_V1,
 )
 
 
@@ -56,6 +63,20 @@ def _data(value: dict) -> Part:
     data = Value()
     data.struct_value.update(value)
     return Part(data=data)
+
+
+def _channel_part(value: dict, schema: str) -> Part:
+    """A part a distribution adds on its own, marked with the event extension."""
+    part = _data(value)
+    part.metadata.update({EVENT_EXTENSION_URI_V1: {"schema": schema}})
+    return part
+
+
+def _card_press(action_id: str) -> Message:
+    """The message a distribution sends when the user presses a card button."""
+    return Message(message_id="m-1", role=Role.ROLE_USER, parts=[
+        _channel_part({"userId": "U1", "contextId": "C1", "actionId": action_id}, CARD_ACTION_EVENT_PAYLOAD_SCHEMA_V1),
+    ])
 
 
 def _response(content: types.Content) -> dict:
@@ -123,32 +144,51 @@ class TestReplyContent:
     def test_text_is_the_result(self):
         assert _response(reply_content(_call(INPUT_CALL), _message("Kyiv"))) == {"result": "Kyiv"}
 
-    def test_a_json_object_is_the_response_itself(self):
-        assert _response(reply_content(_call(INPUT_CALL), _message('{"city": "Kyiv"}'))) == {"city": "Kyiv"}
+    def test_json_written_in_the_text_stays_text(self):
+        for text in ('{"city": "Kyiv"}', "42", "null"):
+            assert _response(reply_content(_call(INPUT_CALL), _message(text))) == {"result": text}
 
-    def test_other_json_is_the_result(self):
-        assert _response(reply_content(_call(INPUT_CALL), _message("42"))) == {"result": 42}
+    def test_data_that_is_not_an_object_is_the_result(self):
+        for value in (42, ["Kyiv", "Lviv"], None):
+            data = Value()
+            json_format.ParseDict(value, data)
+            message = Message(message_id="m-1", role=Role.ROLE_USER, parts=[Part(data=data)])
 
-    def test_adks_confirmation_object_is_the_response_as_it_is(self):
-        """ADK's own way to answer: a ``ToolConfirmation``, as text or as a data part."""
-        typed = _message('{"confirmed": true, "payload": {"keep": "logs"}}')
-        assert _response(reply_content(_call(CONFIRMATION_CALL), typed)) == {"confirmed": True, "payload": {"keep": "logs"}}
-        sent = Message(message_id="m-1", role=Role.ROLE_USER, parts=[_data({"confirmed": False})])
-        assert _response(reply_content(_call(CONFIRMATION_CALL), sent)) == {"confirmed": False}
+            assert _response(reply_content(_call(INPUT_CALL), message)) == {"result": value}
+
+    def test_adks_confirmation_object_in_a_data_part_is_the_response_as_it_is(self):
+        """ADK's own way to answer: a ``ToolConfirmation``, sent as a data part."""
+        sent = Message(message_id="m-1", role=Role.ROLE_USER, parts=[_data({"confirmed": True, "payload": {"keep": "logs"}})])
+        assert _response(reply_content(_call(CONFIRMATION_CALL), sent)) == {"confirmed": True, "payload": {"keep": "logs"}}
+        typed = _message('{"confirmed": true}')
+        assert _response(reply_content(_call(CONFIRMATION_CALL), typed)) == {"payload": {"text": '{"confirmed": true}'}}
+
+    def test_the_parts_a_distribution_adds_are_not_the_reply(self):
+        """A reply from Slack: the user's text, and the event payloads the distribution adds."""
+        message = Message(message_id="m-1", role=Role.ROLE_USER, parts=[
+            Part(text="Kyiv"),
+            _channel_part({"userId": "U1", "contextId": "C1", "messageId": "M1"}, MESSAGE_EVENT_PAYLOAD_SCHEMA_V1),
+            _channel_part({"provider": "slack", "event": {"type": "message"}}, SOURCE_SYSTEM_EVENT_PAYLOAD_SCHEMA_V1),
+        ])
+
+        assert _response(reply_content(_call(INPUT_CALL), message)) == {"result": "Kyiv"}
+
+    def test_a_pressed_card_button_is_its_action_id(self):
+        assert _response(reply_content(_call(INPUT_CALL), _card_press("approve"))) == {"result": "approve"}
+        assert _response(reply_content(_call(CONFIRMATION_CALL), _card_press("approve"))) == {
+            "payload": {"text": "approve"}
+        }
 
     def test_any_other_answer_reaches_the_agent_unconfirmed(self):
         """The server reads no word as a yes, ADK's own words included: the agent decides."""
         for text in ("yes", "sure", '{"approved": true}'):
             assert _response(reply_content(_call(CONFIRMATION_CALL), _message(text))) == {"payload": {"text": text}}
 
-    def test_a_pressed_button_reaches_the_agent_as_its_data(self):
-        click = {"userId": "U1", "contextId": "C1", "actionId": "approve"}
-        message = Message(message_id="m-1", role=Role.ROLE_USER, parts=[_data(click)])
+    def test_other_data_reaches_the_agent_unconfirmed(self):
+        sent = {"choice": "approve"}
+        message = Message(message_id="m-1", role=Role.ROLE_USER, parts=[_data(sent)])
 
-        assert _response(reply_content(_call(CONFIRMATION_CALL), message)) == {"payload": {"data": click}}
-
-    def test_a_null_answer_to_a_question_is_still_json(self):
-        assert _response(reply_content(_call(INPUT_CALL), _message("null"))) == {"result": None}
+        assert _response(reply_content(_call(CONFIRMATION_CALL), message)) == {"payload": {"data": sent}}
 
     def test_a_data_part_is_the_response_as_it_is(self):
         data = Value()
@@ -328,9 +368,8 @@ class TestConfirmation:
             seen.append((tool_context.tool_confirmation.confirmed, tool_context.tool_confirmation.payload))
             return {"deleted": tool_context.tool_confirmation.confirmed}
 
-        happened = await self._answer(
-            FunctionTool(delete_cache), _message('{"confirmed": true, "payload": {"keep": "logs"}}')
-        )
+        sent = Message(message_id="m-2", role=Role.ROLE_USER, parts=[_data({"confirmed": True, "payload": {"keep": "logs"}})])
+        happened = await self._answer(FunctionTool(delete_cache), sent)
 
         assert seen == [(True, {"keep": "logs"})]
         assert happened[-1] == {"deleted": True}
@@ -342,13 +381,14 @@ class TestConfirmation:
             """Delete the build cache."""
             return {"deleted": True}
 
-        confirmed = await self._answer(FunctionTool(delete_cache, require_confirmation=True), _message('{"confirmed": true}'))
+        sent = Message(message_id="m-2", role=Role.ROLE_USER, parts=[_data({"confirmed": True})])
+        confirmed = await self._answer(FunctionTool(delete_cache, require_confirmation=True), sent)
         typed = await self._answer(FunctionTool(delete_cache, require_confirmation=True), _message("yes"))
-        click = Message(message_id="m-2", role=Role.ROLE_USER, parts=[_data({"userId": "U1", "actionId": "approve"})])
-        pressed = await self._answer(FunctionTool(delete_cache, require_confirmation=True), click)
+        written = await self._answer(FunctionTool(delete_cache, require_confirmation=True), _message('{"confirmed": true}'))
+        pressed = await self._answer(FunctionTool(delete_cache, require_confirmation=True), _card_press("approve"))
 
         assert confirmed[-1] == {"deleted": True}
-        assert typed[-1] == pressed[-1] == {"error": "This tool call is rejected."}
+        assert typed[-1] == written[-1] == pressed[-1] == {"error": "This tool call is rejected."}
 
     async def test_the_agent_can_judge_the_answer_for_a_tool_adk_confirms(self):
         """``before_tool_callback`` runs before ADK checks the confirmation, so it may set it."""
@@ -369,3 +409,25 @@ class TestConfirmation:
 
         assert agreed[-1] == {"deleted": True}
         assert declined[-1] == {"error": "This tool call is rejected."}
+
+
+class TestTheQuestion:
+    """The input-required status a pause produces: the question, and the call it asks with."""
+
+    def test_the_call_goes_with_the_question_as_data(self):
+        from google.protobuf.json_format import MessageToDict
+
+        from aion.adk.server.execution.event_converter import ADKToA2AEventConverter
+
+        schema = {"type": "object", "properties": {"city": {"type": "string"}}}
+        call = _call(INPUT_CALL, {"message": "Which city?", "response_schema": schema})
+
+        question = ADKToA2AEventConverter(task_id="t-1", context_id="c-1").generate_pause(call).status.message
+
+        text, data = question.parts
+        assert text.text == "Which city?"
+        assert MessageToDict(data.data) == {
+            "name": INPUT_CALL,
+            "args": {"message": "Which city?", "response_schema": schema},
+        }
+        assert question.metadata["interruptId"] == "call-1"

@@ -12,6 +12,7 @@ answers with.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -43,6 +44,8 @@ __all__ = [
     "ask_answer_text",
     "ask_twice_questions",
     "ask_twice_answer_text",
+    "ask_value_question",
+    "ask_value_text",
     "NOT_IMPLEMENTED_PREFIX",
     "not_implemented_text",
     "IdsResponse",
@@ -244,6 +247,7 @@ COMMANDS: tuple[Command, ...] = (
     Command("ask", "Ask a question, then quote the answer", tags=("interrupts",)),
     Command("ask-twice", "Ask two questions in a row", tags=("interrupts",)),
     Command("ask-fail", "Ask a question, then fail on the answer", tags=("interrupts", "errors")),
+    Command("ask-value", "Ask a question with options, then report what the answer gave as JSON", tags=("interrupts",)),
     Command("fail", "Fail on purpose: exception | after-reply | reason", "<mode>",
             ("errors", "terminal_states")),
     Command("ext", "Report active and unknown extensions", tags=("extensions",),
@@ -502,6 +506,20 @@ def ask_answer_text(answer: str) -> str:
 def ask_twice_questions() -> tuple[str, str]:
     """The two questions ``ask-twice`` interrupts with, in order."""
     return ("First of two: what should I use?", "Second of two: are you sure?")
+
+
+ASK_VALUE_QUESTION = "Which language?"
+ASK_VALUE_OPTIONS = ("Python", "Go")
+
+
+def ask_value_question() -> dict[str, Any]:
+    """What ``ask-value`` asks: a question with options, the shape a client shows as a choice."""
+    return {"prompt": ASK_VALUE_QUESTION, "options": list(ASK_VALUE_OPTIONS)}
+
+
+def ask_value_text(value: Any) -> str:
+    """What ``ask-value`` answers: the value the framework handed the agent, as JSON."""
+    return f"you sent: {json.dumps(value, sort_keys=True)}"
 
 
 def ask_twice_answer_text(first: str, second: str) -> str:

@@ -9,9 +9,9 @@ tool uses is a card: ``confirm_with_card`` shows its question on one, with
 two buttons, through ``emit_card``.
 
 Confirmations are ADK's own, answered either ADK's way or the agent's: a
-``ToolConfirmation`` the client sends is taken as it is, and any other answer
-- a typed word, a pressed button - reaches the agent unconfirmed in the
-confirmation's payload, where ``agreed`` reads it. ``confirm_action`` and
+``ToolConfirmation`` the client sends as a data part is taken as it is, and
+any other answer - a typed word, a pressed button's ``actionId`` - reaches the
+agent unconfirmed in the confirmation's payload, where ``agreed`` reads it. ``confirm_action`` and
 ``confirm_with_card`` ask for themselves and read it when ADK runs them
 again; ``delete_cache`` is confirmed by ADK, and ``judge_confirmation``, the
 agent's ``before_tool_callback``, judges its answer before ADK checks it;
@@ -314,14 +314,16 @@ def drop_table() -> str:
 
 
 def agreed(confirmation: ToolConfirmation) -> bool:
-    """This agent's reading of an answer: ADK's object as it says, a button by its id, a word from its list."""
+    """This agent's reading of an answer: ADK's object as it says, a pressed button by its id, a word from its list.
+
+    A pressed card button arrives as its ``actionId``, in the payload's text
+    as a typed word does.
+    """
     if confirmation.confirmed:
         return True
     answer = confirmation.payload if isinstance(confirmation.payload, dict) else {}
-    pressed = (answer.get("data") or {}).get("actionId")
-    if pressed:
-        return pressed == APPROVE
-    return str(answer.get("text", "")).strip().lower() in YES_WORDS
+    said = str(answer.get("text", "")).strip().lower()
+    return said == APPROVE or said in YES_WORDS
 
 
 def judge_confirmation(tool: Any, args: dict[str, Any], tool_context: ToolContext) -> None:

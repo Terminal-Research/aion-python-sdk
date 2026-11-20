@@ -110,15 +110,16 @@ class TestResume:
         graph.aget_state = AsyncMock(return_value=make_interrupted_snapshot())
         executor = LangGraphExecutor(compiled_graph=graph, config=Mock())
 
+        answer = Message(message_id="m-1", role=Role.ROLE_USER, parts=[Part(text="yes")])
         with patch.object(
             executor._result_handler,
             "handle",
             return_value=[],
         ):
-            events = [event async for event in executor.resume(make_context(), make_config())]
+            events = [event async for event in executor.resume(make_context(answer), make_config())]
 
         astream_inputs = graph.astream.call_args.args[0]
-        assert astream_inputs.resume == {"messages": []}
+        assert astream_inputs.resume == {"i-1": "yes"}
         assert events[-1].status.state == TaskState.TASK_STATE_INPUT_REQUIRED
 
     async def test_resume_non_interrupted_state_with_input_delegates_to_stream(self):
@@ -290,10 +291,10 @@ class TestSeveralInterruptsAtOnce:
             answers: Annotated[list, operator.add]
 
         def first(state):
-            return {"answers": [("first", interrupt("First question?")["messages"][0].text)]}
+            return {"answers": [("first", interrupt("First question?"))]}
 
         def second(state):
-            return {"answers": [("second", interrupt("Second question?")["messages"][0].text)]}
+            return {"answers": [("second", interrupt("Second question?"))]}
 
         builder = StateGraph(State)
         builder.add_node("first", first)

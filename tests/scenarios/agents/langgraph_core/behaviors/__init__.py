@@ -16,7 +16,7 @@ from .config import config, event, ext, whoami
 from .errors import fail
 from .events import history, ids, react, steps
 from .files import artifacts, parts, send_file
-from .interrupts import ask, ask_fail, ask_twice
+from .interrupts import ask, ask_fail, ask_twice, ask_value
 from .lifecycle import slow
 from .outbox import (
     outbox_after_reply,
@@ -47,6 +47,7 @@ BEHAVIORS: dict[str, Behavior] = {
     "ask": ask,
     "ask-twice": ask_twice,
     "ask-fail": ask_fail,
+    "ask-value": ask_value,
     "ids": ids,
     "history": history,
     "parts": parts,

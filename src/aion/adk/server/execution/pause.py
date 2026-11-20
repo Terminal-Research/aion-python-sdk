@@ -9,22 +9,24 @@ end that way. The agent returns, and the call waits in the session until a
 function response with its id arrives.
 
 On the A2A side the pause looks the way a LangGraph ``interrupt()`` does:
-``INPUT_REQUIRED`` with one text part asking the question and the call's id
-as ``interruptId``. The user answers with an ordinary message, and the
-server turns it into the function response ADK waits for. A data part is
-the response as it is; otherwise the response is the JSON object the text
-holds, or the text's value as ``{"result": ...}``.
+``INPUT_REQUIRED`` with a text part asking the question, a data part with
+the call (``{"name": ..., "args": ...}``), and the call's id as
+``interruptId``. The user answers with an ordinary message, read by the rule
+every adapter follows (``aion.core.a2a.reply_of``), and the server turns it
+into the function response ADK waits for: a data part that holds an object is
+the response as it is, and any other value - other data, the ``actionId`` of
+a pressed card button, the text - is ``{"result": ...}``. Text stays text:
+JSON written in it is not parsed.
 
 A confirmation (``adk_request_confirmation``) is ADK's ``ToolConfirmation``,
-and the server judges no answer on the agent's behalf: a reply that is that
-object - a data part, or text holding it as JSON - is the response as it is,
-and anything else, a text or a pressed button's data, reaches the agent
-unconfirmed, as the confirmation's ``payload`` (``{"text": ...}``,
-``{"data": ...}``). A tool that asked with ``tool_context.request_confirmation``
-reads it there and decides; a tool ADK confirms for itself
-(``require_confirmation=True``) is confirmed by the object, or by the agent's
-``before_tool_callback``, which runs before ADK checks the confirmation and
-may set it from the payload.
+and the server judges no answer on the agent's behalf: a data part that is
+that object is the response as it is, and anything else - a text, a pressed
+button, other data - reaches the agent unconfirmed, as the confirmation's
+``payload`` (``{"text": ...}``, ``{"data": ...}``). A tool that asked with
+``tool_context.request_confirmation`` reads it there and decides; a tool ADK
+confirms for itself (``require_confirmation=True``) is confirmed by the
+object, or by the agent's ``before_tool_callback``, which runs before ADK
+checks the confirmation and may set it from the payload.
 
 The files the reply carries follow the function response in the same
 content, so the agent's model reads them with the answer.
@@ -32,17 +34,16 @@ content, so the agent's model reads them with the answer.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any, Optional
 
 from a2a.types import Message
 from aion.adk.server.transformers.a2a_to_adk import file_part
+from aion.core.a2a import Reply, reply_of
 from google.adk.events import Event
 from google.adk.tools.tool_confirmation import ToolConfirmation
 from google.genai import types
-from google.protobuf.json_format import MessageToDict
 from pydantic import ValidationError
 
 __all__ = [
@@ -149,31 +150,25 @@ def waiting_call(events: Iterable[Event]) -> Optional[PendingCall]:
     return pending
 
 
-def _response(call: PendingCall, message: Optional[Message]) -> dict[str, Any]:
-    parts = list(message.parts) if message is not None else []
-    data = next((MessageToDict(part.data) for part in parts if part.HasField("data")), None)
-    text = "".join(part.text for part in parts if part.HasField("text"))
+def _response(call: PendingCall, reply: Reply) -> dict[str, Any]:
     if call.name == CONFIRMATION_CALL:
-        return _confirmation(data, text)
-    if data is not None:
-        return data if isinstance(data, dict) else {"result": data}
-    parsed = _json(text)
-    if parsed is _NOT_JSON:
-        return {"result": text}
-    return parsed if isinstance(parsed, dict) else {"result": parsed}
+        return _confirmation(reply)
+    if reply.has_data and isinstance(reply.data, dict):
+        return reply.data
+    return {"result": reply.value}
 
 
-def _confirmation(data: Any, text: str) -> dict[str, Any]:
+def _confirmation(reply: Reply) -> dict[str, Any]:
     """The confirmation a reply gives: ADK's object as it is, else the reply itself, unconfirmed."""
-    for candidate in (data, _json(text)):
-        if _is_tool_confirmation(candidate):
-            return candidate
-    reply: dict[str, Any] = {}
+    if reply.has_data and _is_tool_confirmation(reply.data):
+        return reply.data
+    answer: dict[str, Any] = {}
+    text = reply.text or reply.action_id
     if text:
-        reply["text"] = text
-    if data is not None:
-        reply["data"] = data
-    return {"payload": reply}
+        answer["text"] = text
+    if reply.has_data:
+        answer["data"] = reply.data
+    return {"payload": answer}
 
 
 def _is_tool_confirmation(value: Any) -> bool:
@@ -184,18 +179,6 @@ def _is_tool_confirmation(value: Any) -> bool:
     except ValidationError:
         return False
     return True
-
-
-_NOT_JSON = object()
-"""What ``_json`` returns for text that holds no JSON; ``null`` is JSON."""
-
-
-def _json(text: str) -> Any:
-    """The JSON value ``text`` holds, or ``_NOT_JSON``."""
-    try:
-        return json.loads(text)
-    except ValueError:
-        return _NOT_JSON
 
 
 def reply_content(call: PendingCall, message: Optional[Message]) -> types.Content:
@@ -209,12 +192,12 @@ def reply_content(call: PendingCall, message: Optional[Message]) -> types.Conten
         call: The call the session waits on.
         message: The user's A2A message.
     """
+    reply = reply_of(message)
     answer = types.Part(
         function_response=types.FunctionResponse(
             id=call.call_id,
             name=call.name,
-            response=_response(call, message),
+            response=_response(call, reply),
         )
     )
-    files = [file_part(part) for part in message.parts if part.raw or part.url] if message is not None else []
-    return types.Content(role="user", parts=[answer, *files])
+    return types.Content(role="user", parts=[answer, *(file_part(part) for part in reply.files)])

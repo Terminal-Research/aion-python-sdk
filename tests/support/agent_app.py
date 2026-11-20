@@ -70,9 +70,8 @@ def _graph(release: asyncio.Event) -> StateGraph:
             await release.wait()
             return {"messages": [AIMessage(content="released")]}
         if text == "ask":
-            resume = interrupt("question?")
-            (reply,) = resume["messages"]
-            return {"messages": [AIMessage(content=f"answered: {reply.text}")]}
+            reply = interrupt("question?")
+            return {"messages": [AIMessage(content=f"answered: {reply}")]}
         return {"messages": [AIMessage(content=f"echo: {text}")]}
 
     builder = StateGraph(MessagesState)

@@ -43,7 +43,10 @@ from aion.core.a2a import (
     DeleteContextResult,
     GetContextParams,
     GetContextsParams,
+    ReplyError,
+    reply_of,
 )
+from aion.core.a2a import codes
 from aion.core.constants import USAGE_ATTRIBUTION_EXTENSION_URI_V1
 from aion.core.exceptions import AionAuthenticationError
 from aion.core.runtime import ExtensionActivationError, aion_a2a_extension_registry
@@ -60,6 +63,7 @@ from aion.server.agent.execution.context.attribution import callback_attribution
 from aion.server.agent.execution.request_executor import attribution_runtime_context
 from aion.server.agent.execution.pool import EXTENSION_ROUTE_STATE_KEY, refusal_data
 from aion.server.a2a.constants import ACTIVE_TASK_STATES, TERMINAL_TASK_STATES
+from aion.server.a2a.utils import routed_extension_of
 from aion.server.auth import has_individual_access
 from aion.server.files.links import FILE_LINK_SCOPE_KEY, StoredFileLinks, link_scope_of
 from aion.server.files.storage import UploadContext, resolve_upload_context
@@ -127,6 +131,26 @@ def _unversioned(versioned_store) -> BaseTaskStore:
     if isinstance(versioned_store, LegacyTaskStoreAdapter):
         return versioned_store.store
     return versioned_store.as_task_store
+
+
+def _require_reply(message, task: Task) -> None:
+    """Refuse a message to a task waiting for input that is no reply: one with several data parts of its own.
+
+    A message to a framework executor's task in ``INPUT_REQUIRED`` is the
+    user's reply, read by ``aion.core.a2a.reply_of`` before the task runs. A
+    reply carries one value; a message with more than one data part of its
+    own carries several, and is refused with ``invalid_payload`` while the
+    task keeps waiting.
+
+    Raises:
+        InvalidParamsError: The message carries more than one data part of its own.
+    """
+    if task.status.state != TaskState.TASK_STATE_INPUT_REQUIRED or routed_extension_of(task) is not None:
+        return
+    try:
+        reply_of(message)
+    except ReplyError as error:
+        raise InvalidParamsError(message=str(error), data=refusal_data(codes.INVALID_PAYLOAD)) from error
 
 
 def _require_individual_access(context: ServerCallContext | None, task_id: str) -> None:
@@ -350,7 +374,10 @@ class AionRequestHandler(DefaultRequestHandlerV2):
           (``AionAgentRequestExecutor.admit_continuation``): a task routed to
           an extension this server does not serve is refused with
           ``extension_unavailable``, a running task whose executor refuses a
-          message with ``task_busy``;
+          message with ``task_busy``; a message to the framework executor's
+          task waiting for input is the user's reply, refused with
+          ``invalid_payload`` when it carries more than one data part of its
+          own (``_require_reply``);
         * any other message starts a task, and the extension it is routed
           to, if any, is kept on the call context for the request executor.
 
@@ -371,6 +398,7 @@ class AionRequestHandler(DefaultRequestHandlerV2):
             admit_continuation = getattr(executor, "admit_continuation", None)
             if admit_continuation is not None:
                 admit_continuation(task)
+            _require_reply(params.message, task)
             return
         if uri is not None:
             call_context.state[EXTENSION_ROUTE_STATE_KEY] = uri

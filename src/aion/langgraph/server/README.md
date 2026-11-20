@@ -191,21 +191,29 @@ This applies to a graph returned uncompiled, and to one returned already compile
 
 ## Interrupts and Resume
 
-LangGraph `interrupt()` calls are mapped to `TaskStatusUpdateEvent(INPUT_REQUIRED)`. The client resumes the graph by sending a new A2A message to the same task, which is forwarded as a `Command(resume=...)` to LangGraph.
-
-The value `interrupt()` returns on resume is the same graph input the server builds for any turn — `{"messages": [HumanMessage(...)]}`, holding the resuming A2A message as described under [Inbound](#inbound) — not the bare answer:
+LangGraph `interrupt()` calls are mapped to `TaskStatusUpdateEvent(INPUT_REQUIRED)`. The client resumes the graph by sending a new A2A message to the same task, and `interrupt()` returns the user's answer, as LangGraph documents it:
 
 ```python
 from langgraph.types import interrupt
 
 def review_node(state: State) -> State:
-    resume = interrupt("Please confirm the action.")
-    # execution resumes here; the user's reply is the HumanMessage inside
-    answer = resume["messages"][0].text
-    return {**state, "confirmation": answer}
+    answer = interrupt("Deploy to production?")
+    # execution resumes here with the answer itself
+    return {**state, "approved": answer == "yes"}
 ```
 
-The interrupt value becomes the question the client sees in the `INPUT_REQUIRED` status, and the task keeps its id: the client resumes by sending the answer with the same `task_id` and `context_id`.
+The answer is read by the rule both adapters follow (`aion.core.a2a.reply_of`):
+
+- a data part is the answer as it is - a dict, a list, a number - so `interrupt(...)["decisions"]` works, and so does `HumanInTheLoopMiddleware`, whose `{"decisions": [...]}` a client sends as a data part;
+- without one, the `actionId` of a pressed card button is the answer, as a string;
+- otherwise the answer is the message's text, a string; JSON written in it stays text;
+- the parts a distribution adds on its own - those whose metadata carries the event extension, such as `MessageEventPayload` and `SourceSystemEventPayload` on a message from Slack - are not the answer; the node reads them from the event of its runtime context;
+- an answer with files is a `HumanMessage` instead, holding the answer's own parts as the blocks a turn's message gets (see [Inbound](#inbound)), so the node can hand the files to a model;
+- a message with more than one data part of its own is refused with `invalid_payload` before the graph runs, and the task keeps waiting.
+
+The graph resumes by the interrupt's id, `Command(resume={interrupt_id: answer})`, even when one interrupt waits: LangGraph takes a dict whose keys all look like interrupt ids - an empty one among them - for a map of answers by id.
+
+The interrupt value becomes the question the client sees in the `INPUT_REQUIRED` status, and the task keeps its id: the client resumes by sending the answer with the same `task_id` and `context_id`. The question's text part is a string value itself, or a dict's `"prompt"`, or "Agent requires input". A value that is not a plain string follows the text whole as a data part, as JSON with NaN and infinity as `null`, so the client sees what the graph asks about - the options of a choice, or the actions `HumanInTheLoopMiddleware` asks to review. A value with no JSON form leaves the question as text alone, with a warning.
 
 The question's message carries the interrupt's id as `interruptId` in its metadata. Several nodes of one step may interrupt at once; the questions are then asked one per turn, in the order LangGraph reports them, and each answer resumes one interrupt while the others keep waiting. An answer resumes the interrupt its message names under `interruptId` in the message's metadata, and the one asked without it. An answer that names an interrupt which no longer waits does not resume the graph: the question that waits is asked again.
 

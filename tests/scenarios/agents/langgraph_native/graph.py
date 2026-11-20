@@ -185,16 +185,14 @@ class ScriptedChatModel(BaseChatModel):
 
 
 def _answer_text(resume: Any) -> str:
-    """The user's answer out of what ``interrupt()`` returned.
+    """The user's answer: what ``interrupt()`` returned for a text reply, the text itself.
 
-    The server resumes with ``Command(resume=<the graph input it built from
-    the A2A message>)``, so the value is ``{"messages": [HumanMessage]}``
-    rather than the answer itself - the form the LangGraph adapter's README
-    documents. Read strictly, with no fallback, so a change of that form
-    fails the interrupt scenarios instead of passing unnoticed.
+    Read strictly, with no fallback, so a change of what the server resumes
+    with fails the interrupt scenarios instead of passing unnoticed.
     """
-    (message,) = resume["messages"]
-    return message.text
+    if not isinstance(resume, str):
+        raise TypeError(f"interrupt() returned {type(resume).__name__}, not the text of the reply")
+    return resume
 
 
 def confirm_action(action: str) -> str:

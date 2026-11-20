@@ -34,6 +34,7 @@ from collections.abc import Sequence
 from google.protobuf import json_format, struct_pb2
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from langgraph.types import Interrupt
+from pydantic_core import to_jsonable_python
 from typing import Any, Optional
 
 from ..converters.lc_to_a2a import LcToA2AConverter
@@ -597,6 +598,11 @@ class LangGraphA2AConverter:
         interrupts waiting at once are asked one per turn; an answer that
         names an ``interruptId`` resumes that one (``LangGraphExecutor.resume``).
 
+        The message's text part is the question as text
+        (``_interrupt_prompt``). A value that is not a plain string - a dict,
+        say, or ``HumanInTheLoopMiddleware``'s request - follows it whole as
+        a data part, so the client sees what the graph asks about.
+
         Args:
             interrupts: The interrupts that wait for an answer, in LangGraph's
                 order (``pending_interrupts``).
@@ -612,7 +618,7 @@ class LangGraphA2AConverter:
                 task_id=self._task_id,
                 message_id=str(uuid.uuid4()),
                 role=Role.ROLE_AGENT,
-                parts=[Part(text=self._interrupt_prompt(interrupt.value))],
+                parts=[Part(text=self._interrupt_prompt(interrupt.value)), *self._interrupt_data(interrupt.value)],
                 metadata={"interruptId": interrupt_id},
             )
 
@@ -640,6 +646,28 @@ class LangGraphA2AConverter:
         if isinstance(value, dict) and value.get("prompt"):
             return value["prompt"]
         return "Agent requires input"
+
+    @staticmethod
+    def _interrupt_data(value: Any) -> list[Part]:
+        """The data part that carries an ``interrupt()`` value whole, or none.
+
+        A string is the question itself and ``None`` asks nothing, so neither
+        gets one. Any other value goes as JSON, as Pydantic dumps it, with NaN
+        and infinity as ``null``; a value with no JSON form leaves the
+        question as text alone, with a warning.
+        """
+        if value is None or isinstance(value, str):
+            return []
+        try:
+            data = struct_pb2.Value()
+            json_format.ParseDict(to_jsonable_python(value, inf_nan_mode="null"), data)
+        except (ValueError, TypeError, json_format.Error):
+            logger.warning(
+                "The interrupt's value (%s) has no JSON form; the question goes out as text alone",
+                type(value).__name__,
+            )
+            return []
+        return [Part(data=data)]
 
     def convert_complete(self) -> TaskStatusUpdateEvent:
         """Produce a final TaskStatusUpdateEvent with state=completed.
