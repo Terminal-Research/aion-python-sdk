@@ -282,9 +282,10 @@ class ConversationFile:
     storage the version's protected content address, which works only with
     authorization. ``read`` does not fetch it as it is: the server reads the
     file through a link it issues for the turn's sender, for as long as the
-    file is stored. ``link`` gives that link to code that passes an address
-    on instead of reading the bytes - to a model that takes a file by URL,
-    say. The storage service issues such a link only to the file's owner,
+    file is stored. ``link`` gives that link to code that hands the file,
+    within the turn, to a service that downloads it right away - a
+    transcription or OCR service, say - instead of reading the bytes. The
+    storage service issues such a link only to the file's owner,
     the usage attribution it was stored under: in a shared conversation the
     file another participant sent is not available to the turn's sender, and
     ``read`` and ``link`` raise ``ConversationFileForbiddenError`` for it. A
@@ -342,8 +343,17 @@ class ConversationFile:
 
         For a stored file, a link the server issues for the turn's sender to
         the file version the part names; for an address the server did not
-        store the file under, that address. A link gives access to whoever
-        holds it: pass it on, do not log it.
+        store the file under, that address.
+
+        The link is for handing the file, within the turn, to a service that
+        downloads it right away. It is a credential: whoever holds it
+        downloads the file, with no authorization, until it expires. Do not
+        log it, and do not put it into a reply, an artifact or the agent's
+        state - there it reaches every reader of the conversation and stops
+        working when it expires - nor send it to a model, which takes the
+        file's content (``inline_files`` in LangGraph). To give the user the
+        file, send its part, in a message or an artifact: the server issues
+        every reader a link of their own.
 
         Raises:
             ConversationFileError: The file is inline and has no address.

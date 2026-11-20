@@ -86,12 +86,14 @@ service did not issue now - it was unavailable, or did not answer in time -
 raises `ConversationFileUnavailableError`, and a later read asks again; a
 file whose link cannot be issued for another reason raises
 `ConversationFileError`, which the other three are kinds of. `await file.link()` gives the working link to code
-that passes an address on - to a model that takes a file by URL - and
-`file.stored` says where the server keeps the file: `file_id`,
+that hands the file, within the turn, to a service that downloads it right away - a transcription or OCR service,
+say - and `file.stored` says where the server keeps the file: `file_id`,
 `version_id`, `access_expires_at`, `retention_expires_at`; it is None for
 an inline file and for an address the server did not store the file under.
-A link gives access to whoever holds it, so it is passed on and never
-logged.
+A link is a credential: whoever holds it downloads the file until it expires. It is never logged, put into a reply,
+an artifact or the agent's state - where it would reach every reader of the conversation and stop working when it
+expires - or sent to a model, which takes the file's content. To give the user a file, send its part: the server
+issues every reader a link of their own.
 
 `aion.core.a2a` reads any message, artifact or task the same way:
 `text_of`, `data_of`, `files_of` - its files as `ConversationFile` -
