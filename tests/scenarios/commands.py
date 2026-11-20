@@ -253,7 +253,7 @@ COMMANDS: tuple[Command, ...] = (
     Command("ask-value", "Ask a question with options, then report what the answer gave as JSON", tags=("interrupts",)),
     Command("ask-schema", "Ask a question whose answer must match a JSON Schema, then report it as JSON",
             tags=("interrupts",)),
-    Command("fail", "Fail on purpose: exception | after-reply | reason", "<mode>",
+    Command("fail", "Fail on purpose: exception | after-reply | reason | mid-stream", "<mode>",
             ("errors", "terminal_states")),
     Command("ext", "Report active and unknown extensions", tags=("extensions",),
             response_model=ExtResponse),
@@ -584,7 +584,7 @@ OUTBOX_PREFACE_TEXT = "said before the outbox"
 # terminal state: `a2a_outbox` is read from the final state, which a crash
 # never reaches. It is a unit test on the executor instead
 # (tests/unit/server/agent/test_failed_task_closing.py).
-FAIL_MODES = ("exception", "after-reply", "reason")
+FAIL_MODES = ("exception", "after-reply", "reason", "mid-stream")
 FAIL_REPLY_TEXT = "about to fail"
 FAIL_MESSAGE = "scenario failure"
 FAIL_REASON_TEXT = "The scenario service is unavailable; try again later."

@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-284 scenarios in 52 files, 641 runs across 2 frameworks: 592 run, 48 skipped, 1 independent of the framework.
+285 scenarios in 52 files, 643 runs across 2 frameworks: 594 run, 48 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -74,9 +74,9 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `smoke` | agent answers at all: card, health, help, echo | 9 | `make tests-scenarios TAGS=smoke` |
 | `streaming` | streamed answers, thoughts, unary send | 18 | `make tests-scenarios TAGS=streaming` |
 | `events` | event order, ids, outbox, get_task agreement | 30 | `make tests-scenarios TAGS=events` |
-| `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 11 | `make tests-scenarios TAGS=terminal_states` |
+| `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 12 | `make tests-scenarios TAGS=terminal_states` |
 | `interrupts` | INPUT_REQUIRED and resume | 21 | `make tests-scenarios TAGS=interrupts` |
-| `errors` | failures that must stay reported, not crash the server | 10 | `make tests-scenarios TAGS=errors` |
+| `errors` | failures that must stay reported, not crash the server | 11 | `make tests-scenarios TAGS=errors` |
 | `artifacts` | artifact and card emission | 11 | `make tests-scenarios TAGS=artifacts` |
 | `files` | inline file parts: stored, rejected, or passed through | 20 | `make tests-scenarios TAGS=files` |
 | `extensions` | extension activation and payload delivery | 12 | `make tests-scenarios TAGS=extensions` |
@@ -199,13 +199,14 @@ An agent that crashes must leave a task that says so.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The stream ends in a terminal task, not in silence.](core/test_errors.py#L32 "test_a_crash_before_any_answer_closes_the_task_as_failed") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
-| [What was already delivered stays delivered, and the task still fails.](core/test_errors.py#L52 "test_a_crash_after_a_reply_keeps_the_reply") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
-| [A later `tasks/get` reports the failure too.](core/test_errors.py#L66 "test_the_failure_is_in_the_stored_task_not_only_on_the_wire") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
-| [The exception is logged, not published.](core/test_errors.py#L84 "test_the_failed_task_does_not_carry_the_exception") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
-| [The next request is answered normally.](core/test_errors.py#L100 "test_a_failing_turn_does_not_take_the_agent_with_it") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
-| [Not a bare FAILED: the caller learns the turn crashed, and the task to look for.](core/test_errors.py#L122 "test_a_crash_says_so_and_where_the_log_has_it") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
-| [`TaskFailedError` is the agent's own word on the failure, and every reader gets it.](core/test_errors.py#L134 "test_an_agents_reason_reaches_every_reader_of_the_task") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [The stream ends in a terminal task, not in silence.](core/test_errors.py#L36 "test_a_crash_before_any_answer_closes_the_task_as_failed") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [The failure of a streamed answer is the turn's failure, not a shorter answer.](core/test_errors.py#L56 "test_a_model_that_fails_mid_stream_fails_the_task") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [What was already delivered stays delivered, and the task still fails.](core/test_errors.py#L70 "test_a_crash_after_a_reply_keeps_the_reply") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [A later `tasks/get` reports the failure too.](core/test_errors.py#L84 "test_the_failure_is_in_the_stored_task_not_only_on_the_wire") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [The exception is logged, not published.](core/test_errors.py#L102 "test_the_failed_task_does_not_carry_the_exception") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [The next request is answered normally.](core/test_errors.py#L118 "test_a_failing_turn_does_not_take_the_agent_with_it") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [Not a bare FAILED: the caller learns the turn crashed, and the task to look for.](core/test_errors.py#L140 "test_a_crash_says_so_and_where_the_log_has_it") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [`TaskFailedError` is the agent's own word on the failure, and every reader gets it.](core/test_errors.py#L152 "test_an_agents_reason_reaches_every_reader_of_the_task") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_event_payloads.py`
 
@@ -769,7 +770,7 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | `ask-fail` | Ask a question, then fail on the answer | `interrupts`, `errors` | 3 | ✓ | ✓ |
 | `ask-value` | Ask a question with options, then report what the answer gave as JSON | `interrupts` | 9 | ✓ | ✓ |
 | `ask-schema` | Ask a question whose answer must match a JSON Schema, then report it as JSON | `interrupts` | 2 | ✓ | ✓ |
-| `fail <mode>` | Fail on purpose: exception \| after-reply \| reason | `errors`, `terminal_states` | 9 | ✓ | ✓ |
+| `fail <mode>` | Fail on purpose: exception \| after-reply \| reason \| mid-stream | `errors`, `terminal_states` | 10 | ✓ | ✓ |
 | `ext` | Report active and unknown extensions | `extensions` | 6 | ✓ | ✓ |
 | `whoami` | Report the daemon identity | `daemon` | 6 | ✓ | ✓ |
 | `event` | Report the event this turn carried | `extensions`, `events` | 4 | ✓ | ✓ |

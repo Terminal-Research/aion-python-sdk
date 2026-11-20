@@ -89,9 +89,10 @@ def emit_message(
       of text is a partial ADK Event, a chunk of ``aion:stream-delta``, and
       the whole text follows as a complete Event that ends the section; its
       text is not sent again, and the ADK session keeps it, not the chunks.
-      An iterator that raises ends the section with what it yielded, and
-      the error is logged; an item that is not text is left out with a
-      warning.
+      An iterator that raises fails the turn, as the same failure of a
+      model call does outside the emitter: no complete Event ends the
+      section, and the chunks already sent are not the answer. An item that
+      is not text is left out with a warning.
 
     An ADK ``Event`` is not a message here: an agent yields its own events,
     and ``Thread.post`` passes one on as it is.
@@ -114,6 +115,11 @@ def emit_message(
     Raises:
         TypeError: ``message`` is an async iterator, which ``aemit_message``
             streams, or neither text nor an iterator of text.
+        Whatever the iterator raises: the section ends there without a whole
+            message, the chunks already sent stay in the task's
+            ``aion:stream-delta`` artifact and are not its answer, and the
+            exception goes on and fails the turn, as the same failure does
+            outside the emitter.
 
     Example:
         def my_agent(ctx, emitter):
@@ -130,11 +136,8 @@ def emit_message(
     if isinstance(message, (bytes, Mapping, BaseModel)) or not isinstance(message, Iterable):
         raise TypeError(f"emit_message() takes text or an iterator of text, not {type(message).__name__}.")
     section = _StreamedSection(emitter, routing, metadata)
-    try:
-        for item in message:
-            section.send(item)
-    except Exception as e:
-        logger.error("Error reading the iterator emit_message() streams: %s", e, exc_info=True)
+    for item in message:
+        section.send(item)
     return section.close()
 
 
@@ -161,6 +164,13 @@ async def aemit_message(
         The Event emitted; for an iterator, the complete Event that ended its
         section, or None when it yielded no text.
 
+    Raises:
+        Whatever the iterator raises: the section ends there without a whole
+            message, the chunks already sent stay in the task's
+            ``aion:stream-delta`` artifact and are not its answer, and the
+            exception goes on and fails the turn, as the same failure does
+            outside the emitter.
+
     Example:
         async def my_agent(ctx, emitter):
             await aemit_message(emitter, summarize(ctx))
@@ -168,11 +178,8 @@ async def aemit_message(
     if not hasattr(message, "__aiter__"):
         return emit_message(emitter, message, routing=routing, metadata=metadata)
     section = _StreamedSection(emitter, routing, metadata)
-    try:
-        async for item in message:
-            section.send(item)
-    except Exception as e:
-        logger.error("Error reading the async iterator aemit_message() streams: %s", e, exc_info=True)
+    async for item in message:
+        section.send(item)
     return section.close()
 
 

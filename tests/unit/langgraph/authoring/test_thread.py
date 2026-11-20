@@ -1,4 +1,6 @@
 from unittest.mock import MagicMock, Mock, patch
+
+import pytest
 from langchain_core.messages import AIMessage, AIMessageChunk
 
 from aion.core.a2a.artifacts import file_artifact, url_artifact, data_artifact
@@ -246,8 +248,8 @@ class TestThreadPost:
         assert isinstance(result, AIMessage)
         assert result.content == "part1part2"
 
-    async def test_post_async_iterator_exception_returns_accumulated(self):
-        # if the iterator raises mid-stream, content accumulated so far is still returned
+    async def test_post_async_iterator_that_raises_fails_the_turn(self):
+        # a model that fails mid-stream fails the turn; the chunk already sent is all that went out
         writer = MagicMock()
         thread = make_thread()
 
@@ -256,10 +258,10 @@ class TestThreadPost:
             raise RuntimeError("stream broke")
 
         with patch(_GET_STREAM_WRITER, return_value=writer):
-            result = await thread.post(gen())
+            with pytest.raises(RuntimeError, match="stream broke"):
+                await thread.post(gen())
 
-        assert isinstance(result, AIMessage)
-        assert result.content == "partial"
+        assert writer.call_count == 1
 
     async def test_post_async_iterator_empty_returns_none(self):
         # iterator that yields nothing returns None (nothing to accumulate)
