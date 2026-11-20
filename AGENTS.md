@@ -42,14 +42,30 @@ contracts; reconcile this file with them when behavior changes.
   when applicable; `A2AError` subclasses remain in the a2a-sdk hierarchy.
 - No general formatter or type checker is configured for this Python project.
   Follow surrounding style and do not introduce unrelated tooling changes.
-- Until the first final release, `CHANGELOG.md` stays empty under
-  `## Unreleased`: there is no earlier release to list changes against. From
-  that release on, record every change a client of an agent's server or a
-  project installing the SDK can notice in `CHANGELOG.md`, under
-  `## Unreleased`, in the a2a-python changelog format: `### ⚠ BREAKING CHANGES`, `### Features` and
-  `### Bug Fixes`, one short `* **scope:** description` line each. Before a
-  final release the section must be complete and renamed to the released
-  version; a pre-release leaves it under `## Unreleased`. See `RELEASE.md`.
+- `CHANGELOG.md` follows the a2a-python changelog
+  (<https://github.com/a2aproject/a2a-python/blob/main/CHANGELOG.md>). Record
+  every change a client of an agent's server or a project installing the SDK
+  can notice under `## Unreleased`, in sections in this order:
+  `### ⚠ BREAKING CHANGES`, `### Features`, `### Bug Fixes`,
+  `### Documentation`, `### Code Refactoring`, `### Miscellaneous Chores`.
+  One change is one line: `* **scope:** description ([#PR](pr link))
+  ([sha](commit link))`, the description short, in the imperative and
+  starting lower-case - "keep a reply's value when it carries files" - with
+  `, closes [#N](issue link)` when it resolves an issue. The detail of a change
+  belongs in its PR and in the documentation, not in the changelog. A final
+  release renames the section to
+  `## [X.Y.Z](https://github.com/Terminal-Research/aion-python-sdk/compare/py-vA.B.C...py-vX.Y.Z) (YYYY-MM-DD)`;
+  a pre-release leaves it under `## Unreleased`. The sections of 0.1.0 and
+  0.2.0 predate this format and stay as they were. See `RELEASE.md`.
+- Commit messages and PR titles are Conventional Commits, as in a2a-python:
+  `type(scope): description`, with the type `feat`, `fix`, `docs`,
+  `refactor`, `test` or `chore`, the scope one of the changelog's - `core`,
+  `server`, `a2a`, `files`, `langgraph`, `adk`, `authoring`, `cli` - and the
+  description as in the changelog line. A breaking change is `type(scope)!:`
+  with a `BREAKING CHANGE:` footer saying what a client or an agent author has
+  to change. A bug is fixed by one commit `fix(scope): ...` with a test that
+  fails without the fix, and one `### Bug Fixes` line; a fix of a reported
+  issue says `closes #N` in the commit and in the line.
 - Running a task across several instances is a2a-sdk's cluster mode, not an
   Aion mechanism: with PostgreSQL the handler gets a `VersionedTaskStore`
   (`PostgresVersionedTaskStore`) and a2a-sdk's `DatabaseTaskEventStream`.
@@ -99,10 +115,10 @@ contracts; reconcile this file with them when behavior changes.
   public, so the section describes the gap, not whom or what it waits on.
   Remove the comment and the section together when the item is done;
   `tests/unit/test_open_items.py` checks that they match.
-- Keep unrelated user changes intact. Commit messages must read like ordinary
-  developer messages, without AI attribution, `Co-Authored-By`, or generated-by
-  markers. If a commit is blocked, preserve the staged state and give the exact
-  manual commands.
+- Keep unrelated user changes intact. Commit messages, in the Conventional
+  Commits form above, must read like ordinary developer messages, without AI
+  attribution, `Co-Authored-By`, or generated-by markers. If a commit is
+  blocked, preserve the staged state and give the exact manual commands.
 
 ## Architecture boundaries
 

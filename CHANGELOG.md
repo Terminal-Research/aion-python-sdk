@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Miscellaneous Chores
+
+* link the documentation and the changelog from the package page ([f93e48f](https://github.com/Terminal-Research/aion-python-sdk/commit/f93e48f48e9a682fea3b6ff2e5652dc388239f14))
+
 ## 0.2.0 (2026-11-20)
 
 ### ⚠ BREAKING CHANGES
