@@ -207,6 +207,8 @@ aion = "aion.cli.cli:cli"
 [project.urls]
 Homepage = "https://github.com/Terminal-Research/aion-python-sdk"
 Repository = "https://github.com/Terminal-Research/aion-python-sdk"
+Documentation = "https://docs.aion.to/sdk/python"
+Changelog = "https://github.com/Terminal-Research/aion-python-sdk/blob/main/CHANGELOG.md"
 
 [tool.poetry]
 packages = [{ include = "aion", from = "src" }]
