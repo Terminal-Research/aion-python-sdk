@@ -25,6 +25,7 @@
 
 ### Bug Fixes
 
+* **adk:** with google-adk 2.15 the server's session service passes on `append_events` and `flush_session`, which that release added, so a session service that writes a session's queued events at once, or flushes one session, keeps doing so; every event still goes through the turn's rules and has its inline files stored.
 * **langgraph:** an answer the interrupt's `response_schema` refuses (LangGraph 1.2.15 and later) asks the question again and the task keeps waiting, as LangGraph keeps the interrupt; the task failed.
 * **a2a:** canonical answer selection prefers `aion:assistant-answer`, then current-turn agent messages, then Stream Delta text. Generic result artifacts remain available through the part readers. The server preserves explicit Assistant Answer updates instead of replacing them with an automatic message copy.
 * **chat:** interactive and headless replies use the same canonical answer, reconcile streamed text, and preserve artifact-only answers when saving and restoring conversations.

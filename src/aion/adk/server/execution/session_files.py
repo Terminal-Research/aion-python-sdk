@@ -74,12 +74,16 @@ def with_content_of(session: Session, event: Event) -> None:
     """Give the invocation's session the content ``event`` had before its files were linked.
 
     The session service has just appended the linked copy to ``session`` - the
-    session object the running invocation reads - and kept it in its store.
-    The entry in ``session`` is replaced by one with the event's own content,
-    so the invocation goes on with the bytes; what is stored keeps the links.
+    session object the running invocation reads - and kept it in its store,
+    alone or with other events appended at once. The newest entry of
+    ``session`` with the event's id is replaced by one with the event's own
+    content, so the invocation goes on with the bytes; what is stored keeps
+    the links.
     """
-    if session.events and session.events[-1].id == event.id:
-        session.events[-1] = session.events[-1].model_copy(update={"content": event.content})
+    for index in range(len(session.events) - 1, -1, -1):
+        if session.events[index].id == event.id:
+            session.events[index] = session.events[index].model_copy(update={"content": event.content})
+            return
 
 
 async def _content(
