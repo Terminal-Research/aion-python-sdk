@@ -25,6 +25,7 @@ from typing import Annotated, Any, Optional
 from aion.langgraph.authoring import inline_files
 from aion.langgraph.authoring.models import _file_inlining_chat_openai
 from langchain.agents import create_agent
+from langchain.agents.structured_output import ProviderStrategy, ToolStrategy
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
     AIMessage,
@@ -42,6 +43,8 @@ from langgraph.types import interrupt
 
 from tests.scenarios.agents.native_script import (
     FAILURE_TEXT,
+    Forecast,
+    forecast_for,
     ModelFailure,
     ModelTurn,
     UserMessage,
@@ -55,11 +58,14 @@ from tests.scenarios.agents.native_script import (
 )
 
 __all__ = [
+    "Forecast",
     "ScriptedChatModel",
     "create_async_graph",
     "create_graph",
     "create_prebuilt_agent",
+    "create_provider_strategy_agent",
     "create_refused_files_graph",
+    "create_tool_strategy_agent",
 ]
 
 
@@ -180,16 +186,14 @@ class ScriptedChatModel(BaseChatModel):
 
 
 def _answer_text(resume: Any) -> str:
-    """The user's answer out of what ``interrupt()`` returned.
+    """The user's answer: what ``interrupt()`` returned for a text reply, the text itself.
 
-    The server resumes with ``Command(resume=<the graph input it built from
-    the A2A message>)``, so the value is ``{"messages": [HumanMessage]}``
-    rather than the answer itself - the form the LangGraph adapter's README
-    documents. Read strictly, with no fallback, so a change of that form
-    fails the interrupt scenarios instead of passing unnoticed.
+    Read strictly, with no fallback, so a change of what the server resumes
+    with fails the interrupt scenarios instead of passing unnoticed.
     """
-    (message,) = resume["messages"]
-    return message.text
+    if not isinstance(resume, str):
+        raise TypeError(f"interrupt() returned {type(resume).__name__}, not the text of the reply")
+    return resume
 
 
 def confirm_action(action: str) -> str:
@@ -225,6 +229,65 @@ def create_prebuilt_agent():
     first. The server has to supply the checkpointer for it to run at all.
     """
     return create_agent(ScriptedChatModel(), tools=_tools())
+
+
+class ForecastChatModel(BaseChatModel):
+    """A chat model that answers with the forecast, in the form the agent asks for.
+
+    Bound with ``response_format`` - what ``ProviderStrategy`` passes - it
+    writes the forecast as JSON text, as a provider's own structured output
+    does; bound to the schema's tool - ``ToolStrategy`` - it calls that tool.
+    """
+
+    model_name: str = "forecast"
+    as_text: bool = False
+
+    @property
+    def _llm_type(self) -> str:
+        return "forecast"
+
+    def bind_tools(self, tools: Sequence[Any], **kwargs: Any) -> "ForecastChatModel":
+        return self.model_copy(update={"as_text": "response_format" in kwargs})
+
+    @staticmethod
+    def _forecast(messages: Sequence[BaseMessage]) -> dict[str, Any]:
+        user = next(message for message in reversed(messages) if isinstance(message, HumanMessage))
+        return forecast_for(user.text)
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        forecast = self._forecast(messages)
+        if self.as_text:
+            message = AIMessage(content=json.dumps(forecast))
+        else:
+            message = AIMessage(content="", tool_calls=[{"name": "Forecast", "args": forecast, "id": "call-forecast"}])
+        return ChatResult(generations=[ChatGeneration(message=message)])
+
+    async def _astream(
+        self, messages, stop=None, run_manager=None, **kwargs
+    ) -> AsyncIterator[ChatGenerationChunk]:
+        forecast = self._forecast(messages)
+        if self.as_text:
+            for piece in tokens(json.dumps(forecast)):
+                yield ChatGenerationChunk(message=AIMessageChunk(content=piece))
+            return
+        yield ChatGenerationChunk(
+            message=AIMessageChunk(
+                content="",
+                tool_call_chunks=[
+                    {"name": "Forecast", "args": json.dumps(forecast), "id": "call-forecast", "index": 0}
+                ],
+            )
+        )
+
+
+def create_tool_strategy_agent():
+    """A ``create_agent`` agent whose answer is a ``Forecast``, through the schema's tool."""
+    return create_agent(ForecastChatModel(), tools=[], response_format=ToolStrategy(Forecast))
+
+
+def create_provider_strategy_agent():
+    """A ``create_agent`` agent whose answer is a ``Forecast``, through the provider's structured output."""
+    return create_agent(ForecastChatModel(), tools=[], response_format=ProviderStrategy(Forecast))
 
 
 def create_graph() -> StateGraph:

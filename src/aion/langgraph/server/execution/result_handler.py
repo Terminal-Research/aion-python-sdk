@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, TYPE_CHECKING
 
 from a2a.types import (
@@ -10,9 +11,9 @@ from a2a.types import (
     TaskArtifactUpdateEvent,
     TaskStatusUpdateEvent,
 )
-
 from aion.core.a2a import A2AOutbox
 from aion.server.a2a.outbox import outbox_message, outbox_task
+from aion.server.a2a.structured_response import structured_response_event
 from .stream_executor import StreamResult
 
 if TYPE_CHECKING:
@@ -20,6 +21,8 @@ if TYPE_CHECKING:
     from langgraph.types import StateSnapshot
 
 AgentEvent = TaskStatusUpdateEvent | TaskArtifactUpdateEvent | Task | Message
+
+logger = logging.getLogger(__name__)
 
 
 class ExecutionResultHandler:
@@ -31,6 +34,14 @@ class ExecutionResultHandler:
     comes from the run's own updates, not from the graph's final state: the
     checkpoint keeps the last value written in the context, and the next
     turn would otherwise answer with it again.
+
+    A run that wrote no outbox but a `structured_response` - the object an
+    agent built by `create_agent` with a `response_format` answers with -
+    sends that object as an artifact of the task named `structured_response`,
+    one data part holding it as JSON. The model's own text, which
+    `ProviderStrategy` streams, stays the streamed answer beside it. An
+    outbox is the run's answer when there is one, and the structured
+    response is then not sent.
 
     Subclass and override `handle` to extend or replace the default logic.
     """
@@ -58,12 +69,20 @@ class ExecutionResultHandler:
 
         Returns:
             A2A events to emit before Complete/Interrupt.
+
+        Raises:
+            TaskFailedError: The structured response cannot be expressed as JSON.
         """
         outbox = stream_result.outbox
+        structured_response = stream_result.structured_response
         if outbox is not None:
             result = self._handle_outbox(outbox, context, task_id, context_id)
             if result is not None:
+                if structured_response is not None:
+                    logger.info("The run wrote an outbox, which answers it; its structured response is not sent")
                 return result
+        if structured_response is not None:
+            return [structured_response_event(structured_response, task_id, context_id)]
         return []
 
     def _handle_outbox(

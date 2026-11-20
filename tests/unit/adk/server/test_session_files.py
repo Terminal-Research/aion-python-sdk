@@ -229,6 +229,22 @@ async def test_the_running_invocation_goes_on_with_the_bytes() -> None:
     assert stored.events[-1].content.parts[1].file_data.file_uri == LINK
 
 
+async def test_events_appended_at_once_keep_links_and_the_invocation_keeps_the_bytes() -> None:
+    """ADK 2.15 appends a session's queued events in one call; each one is kept as ``append_event`` keeps it."""
+    sessions = InMemorySessionService()
+    session = await sessions.create_session(app_name=APP, user_id=USER)
+    first, second = _event(types.Part(text="One."), _report()), _event(types.Part(text="Two."), _report())
+
+    with storing_turn(NumberingBackend()):
+        returned = await TurnSessionService(sessions).append_events(session, [first, second])
+
+    assert returned[0] is first and returned[1] is second
+    assert [event.content.parts[1].inline_data.data for event in session.events] == [PDF, PDF]
+    stored = await sessions.get_session(app_name=APP, user_id=USER, session_id=session.id)
+    assert [event.content.parts[1].inline_data for event in stored.events] == [None, None]
+    assert all(event.content.parts[1].file_data.file_uri for event in stored.events)
+
+
 @pytest.mark.skipif(
     not hasattr(adk_functions, "_extract_multimodal_parts"),
     reason="this google-adk does not move the media a tool returns into its function response",

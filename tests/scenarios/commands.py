@@ -12,7 +12,9 @@ answers with.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from collections.abc import Sequence
 from typing import Any, Optional
 
 from pydantic import BaseModel
@@ -43,6 +45,10 @@ __all__ = [
     "ask_answer_text",
     "ask_twice_questions",
     "ask_twice_answer_text",
+    "ask_value_question",
+    "ask_value_text",
+    "ASK_SCHEMA",
+    "ASK_SCHEMA_QUESTION",
     "NOT_IMPLEMENTED_PREFIX",
     "not_implemented_text",
     "IdsResponse",
@@ -244,7 +250,10 @@ COMMANDS: tuple[Command, ...] = (
     Command("ask", "Ask a question, then quote the answer", tags=("interrupts",)),
     Command("ask-twice", "Ask two questions in a row", tags=("interrupts",)),
     Command("ask-fail", "Ask a question, then fail on the answer", tags=("interrupts", "errors")),
-    Command("fail", "Fail on purpose: exception | after-reply | reason", "<mode>",
+    Command("ask-value", "Ask a question with options, then report what the answer gave as JSON", tags=("interrupts",)),
+    Command("ask-schema", "Ask a question whose answer must match a JSON Schema, then report it as JSON",
+            tags=("interrupts",)),
+    Command("fail", "Fail on purpose: exception | after-reply | reason | mid-stream", "<mode>",
             ("errors", "terminal_states")),
     Command("ext", "Report active and unknown extensions", tags=("extensions",),
             response_model=ExtResponse),
@@ -504,6 +513,37 @@ def ask_twice_questions() -> tuple[str, str]:
     return ("First of two: what should I use?", "Second of two: are you sure?")
 
 
+ASK_VALUE_QUESTION = "Which language?"
+ASK_VALUE_OPTIONS = ("Python", "Go")
+
+
+def ask_value_question() -> dict[str, Any]:
+    """What ``ask-value`` asks: a question with options, the shape a client shows as a choice."""
+    return {"prompt": ASK_VALUE_QUESTION, "options": list(ASK_VALUE_OPTIONS)}
+
+
+ASK_SCHEMA_QUESTION = "Which language? Answer with an object."
+"""What ``ask-schema`` asks."""
+
+ASK_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"language": {"type": "string", "enum": list(ASK_VALUE_OPTIONS)}},
+    "required": ["language"],
+}
+"""The JSON Schema ``ask-schema`` states for its answer; it answers with ``ask_value_text``."""
+
+
+def ask_value_text(value: Any, files: Sequence[str] = ()) -> str:
+    """What ``ask-value`` answers: the value the framework handed the agent, as JSON.
+
+    ``files`` are the names of the files of the reply's message, which the
+    agent reads from its thread as on any turn; the answer names them after
+    the value when there are any.
+    """
+    text = f"you sent: {json.dumps(value, sort_keys=True)}"
+    return f"{text}; files: {', '.join(files)}" if files else text
+
+
 def ask_twice_answer_text(first: str, second: str) -> str:
     """What ``ask-twice`` answers once both questions have been answered.
 
@@ -544,7 +584,7 @@ OUTBOX_PREFACE_TEXT = "said before the outbox"
 # terminal state: `a2a_outbox` is read from the final state, which a crash
 # never reaches. It is a unit test on the executor instead
 # (tests/unit/server/agent/test_failed_task_closing.py).
-FAIL_MODES = ("exception", "after-reply", "reason")
+FAIL_MODES = ("exception", "after-reply", "reason", "mid-stream")
 FAIL_REPLY_TEXT = "about to fail"
 FAIL_MESSAGE = "scenario failure"
 FAIL_REASON_TEXT = "The scenario service is unavailable; try again later."

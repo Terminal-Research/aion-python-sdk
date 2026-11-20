@@ -18,19 +18,34 @@ STREAM_MODES = ["values", "messages", "custom", "updates"]
 
 OUTBOX_KEY = "a2a_outbox"
 
+STRUCTURED_RESPONSE_KEY = "structured_response"
+
+INTERRUPT_KEY = "__interrupt__"
+"""The update under which LangGraph reports what the graph stopped on: its interrupts, or none at a breakpoint."""
+"""Where ``langchain.agents.create_agent`` puts the answer its ``response_format`` asks for."""
+
 
 @dataclass(frozen=True)
 class StreamResult:
     """Accumulated state after one stream cycle.
 
-    outbox — the last `a2a_outbox` a node of the graph wrote during this
-        cycle, or None when no node wrote one. Taken from the cycle's own
-        updates rather than from the graph state: the checkpoint keeps the
-        channel's value across turns, and the next turn in the context would
-        read it back.
+    Both values are the last a node of the graph wrote during this cycle, or
+    None when no node wrote one. They are taken from the cycle's own updates
+    rather than from the graph state: the checkpoint keeps a channel's value
+    across turns, and the next turn in the context would read it back.
+
+    outbox — the `a2a_outbox` a node wrote.
+    structured_response — the `structured_response` a node wrote: the
+        object an agent built by `create_agent` with a `response_format`
+        answers with, or the same key in a graph of the application's own.
+    breakpoint — whether the cycle stopped at a static breakpoint
+        (``interrupt_before``/``interrupt_after``): LangGraph reports that
+        stop as an ``__interrupt__`` update with no interrupts in it.
     """
 
     outbox: Any = None
+    structured_response: Any = None
+    breakpoint: bool = False
 
 
 class StreamExecutor:
@@ -46,7 +61,8 @@ class StreamExecutor:
     the subgraph's namespace, and leaves it out of a stream of the parent
     graph alone. Messages and custom events are converted whichever graph
     they come from. The outbox is the parent graph's: a subgraph's state
-    reaches the parent as the update of the node that runs it.
+    reaches the parent as the update of the node that runs it, and so is
+    the structured response.
     """
 
     def __init__(
@@ -59,11 +75,17 @@ class StreamExecutor:
         self._converter = converter
         self._preprocessor = preprocessor
         self._outbox: Any = None
+        self._structured_response: Any = None
+        self._breakpoint = False
 
     @property
     def result(self) -> StreamResult:
         """Accumulated state. Valid after `execute()` iteration is complete."""
-        return StreamResult(outbox=self._outbox)
+        return StreamResult(
+            outbox=self._outbox,
+            structured_response=self._structured_response,
+            breakpoint=self._breakpoint,
+        )
 
     async def execute(
         self,
@@ -73,7 +95,8 @@ class StreamExecutor:
     ) -> AsyncIterator[AgentEvent]:
         """Run astream and yield A2A events directly.
 
-        Tracks the outbox nodes write as events pass through.
+        Tracks the outbox and the structured response nodes write as events
+        pass through.
 
         Args:
             inputs: astream input — state dict or Command object (for resume).
@@ -96,7 +119,7 @@ class StreamExecutor:
             # An empty namespace is the graph itself; a subgraph's names the
             # nodes that lead to it.
             if event_type == "updates" and not namespace:
-                self._track_outbox(event_data)
+                self._track_updates(event_data)
 
             if self._preprocessor:
                 self._preprocessor.process(event_type, event_data)
@@ -105,14 +128,22 @@ class StreamExecutor:
             for a2a_event in a2a_events:
                 yield a2a_event
 
-    def _track_outbox(self, updates: Any) -> None:
-        """Remember an `a2a_outbox` written by a node in this cycle.
+    def _track_updates(self, updates: Any) -> None:
+        """Remember an `a2a_outbox` or a `structured_response` written by a node in this cycle, and a breakpoint.
 
         An "updates" event maps each node that just ran to what it wrote. A
-        node writing None clears an outbox written earlier in the same cycle.
+        node writing None clears a value written earlier in the same cycle.
+        The graph's stop is an update under ``__interrupt__``: the interrupts
+        ``interrupt()`` raised, or none at a static breakpoint.
         """
         if not isinstance(updates, dict):
             return
+        if INTERRUPT_KEY in updates:
+            self._breakpoint = not updates[INTERRUPT_KEY]
         for written in updates.values():
-            if isinstance(written, dict) and OUTBOX_KEY in written:
+            if not isinstance(written, dict):
+                continue
+            if OUTBOX_KEY in written:
                 self._outbox = written[OUTBOX_KEY]
+            if STRUCTURED_RESPONSE_KEY in written:
+                self._structured_response = written[STRUCTURED_RESPONSE_KEY]

@@ -590,6 +590,35 @@ class TestContentAddressRecognition:
         assert storage.stored_file_at(f"https://api.aion.test/files/{FILE_ID}/versions/{VERSION_ID}/content") is None
 
 
+class TestTheAddressAPartLeadsTo:
+    """A download link leads to the content address it adds a grant to; the address itself leads to itself."""
+
+    ADDRESS = f"https://api.aion.test/files/{FILE_ID}/versions/{VERSION_ID}/content"
+
+    @pytest.mark.parametrize("url", [
+        pytest.param(ADDRESS, id="address"),
+        pytest.param(f"{ADDRESS}?grant=secret", id="grant-link"),
+        pytest.param(f"{ADDRESS}?grant=secret&expires=1", id="any-query"),
+        pytest.param(f"{ADDRESS}?", id="empty-query"),
+    ])
+    def test_it_is_the_content_address_and_its_file_version(self, url):
+        storage, _ = addressing("https://api.aion.test")
+
+        assert storage.stored_address(url) == (self.ADDRESS, StoredFile.create(FILE_ID, VERSION_ID))
+        assert FileUploadManager(storage).stored_address(url) == (self.ADDRESS, StoredFile.create(FILE_ID, VERSION_ID))
+
+    @pytest.mark.parametrize("url", [
+        pytest.param(f"{ADDRESS}#part", id="fragment"),
+        pytest.param(f"https://files.elsewhere.test/files/{FILE_ID}/versions/{VERSION_ID}/content?grant=s", id="other-host"),
+        pytest.param(f"https://api.aion.test/files/{FILE_ID}/versions/{VERSION_ID}/grants?grant=s", id="other-route"),
+        pytest.param("", id="empty"),
+    ])
+    def test_any_other_url_leads_to_no_file(self, url):
+        storage, _ = addressing("https://api.aion.test")
+
+        assert storage.stored_address(url) is None
+
+
 class TestLifecycle:
     async def test_from_settings_refuses_to_start_without_credentials(self, monkeypatch):
         from aion.core.settings import api_settings

@@ -9,9 +9,9 @@ tool uses is a card: ``confirm_with_card`` shows its question on one, with
 two buttons, through ``emit_card``.
 
 Confirmations are ADK's own, answered either ADK's way or the agent's: a
-``ToolConfirmation`` the client sends is taken as it is, and any other answer
-- a typed word, a pressed button - reaches the agent unconfirmed in the
-confirmation's payload, where ``agreed`` reads it. ``confirm_action`` and
+``ToolConfirmation`` the client sends as a data part is taken as it is, and
+any other answer - a typed word, a pressed button's ``actionId`` - reaches the
+agent unconfirmed in the confirmation's payload, where ``agreed`` reads it. ``confirm_action`` and
 ``confirm_with_card`` ask for themselves and read it when ADK runs them
 again; ``delete_cache`` is confirmed by ADK, and ``judge_confirmation``, the
 agent's ``before_tool_callback``, judges its answer before ADK checks it;
@@ -45,6 +45,8 @@ from google.genai import types
 
 from tests.scenarios.agents.native_script import (
     APPROVE,
+    Forecast,
+    forecast_for,
     DELETED,
     DROPPED,
     REJECT,
@@ -66,11 +68,14 @@ from tests.scenarios.agents.native_script import (
 )
 
 __all__ = [
+    "ForecastLlm",
     "ScriptedLlm",
     "create_agent",
     "create_async_agent",
     "create_file_inlining_agent",
+    "create_provider_strategy_agent",
     "create_refused_files_agent",
+    "create_tool_strategy_agent",
 ]
 
 AGENT_NAME = "native_agent"
@@ -227,6 +232,43 @@ class ScriptedLlm(BaseLlm):
         yield _response(final, partial=False)
 
 
+class ForecastLlm(BaseLlm):
+    """A model that answers with the forecast, in the form ADK asks of an agent with an ``output_schema``.
+
+    With the schema as the response's (``response_schema``) it writes the
+    forecast as JSON text, streamed; when ADK gives it ``set_model_response``
+    instead - an agent with tools, on a model that cannot answer with a
+    schema and call tools at once - it calls that tool with the forecast.
+    """
+
+    model: str = "forecast"
+
+    async def generate_content_async(
+        self, llm_request: LlmRequest, stream: bool = False
+    ) -> AsyncGenerator[LlmResponse, None]:
+        user = next(content for content in reversed(llm_request.contents or []) if _is_user_turn(content))
+        forecast = forecast_for(_text(user))
+        if "set_model_response" in (llm_request.tools_dict or {}):
+            call = types.FunctionCall(name="set_model_response", args=forecast, id=f"call-{uuid.uuid4().hex[:8]}")
+            yield _response([types.Part(function_call=call)], partial=False)
+            return
+        text = json.dumps(forecast)
+        if stream:
+            for piece in tokens(text):
+                yield _response([types.Part(text=piece)], partial=True)
+        yield _response([types.Part(text=text)], partial=False)
+
+
+def create_tool_strategy_agent() -> LlmAgent:
+    """An ``LlmAgent`` whose answer is a ``Forecast``, with a tool: ADK has the model answer through ``set_model_response``."""
+    return LlmAgent(name=AGENT_NAME, model=ForecastLlm(), output_schema=Forecast, tools=[get_weather])
+
+
+def create_provider_strategy_agent() -> LlmAgent:
+    """An ``LlmAgent`` whose answer is a ``Forecast``, without tools: the model writes it as JSON by the schema."""
+    return LlmAgent(name=AGENT_NAME, model=ForecastLlm(), output_schema=Forecast)
+
+
 async def save_report(title: str, tool_context: ToolContext) -> str:
     """Save a report as an artifact.
 
@@ -314,14 +356,16 @@ def drop_table() -> str:
 
 
 def agreed(confirmation: ToolConfirmation) -> bool:
-    """This agent's reading of an answer: ADK's object as it says, a button by its id, a word from its list."""
+    """This agent's reading of an answer: ADK's object as it says, a pressed button by its id, a word from its list.
+
+    A pressed card button arrives as its ``actionId``, in the payload's text
+    as a typed word does.
+    """
     if confirmation.confirmed:
         return True
     answer = confirmation.payload if isinstance(confirmation.payload, dict) else {}
-    pressed = (answer.get("data") or {}).get("actionId")
-    if pressed:
-        return pressed == APPROVE
-    return str(answer.get("text", "")).strip().lower() in YES_WORDS
+    said = str(answer.get("text", "")).strip().lower()
+    return said == APPROVE or said in YES_WORDS
 
 
 def judge_confirmation(tool: Any, args: dict[str, Any], tool_context: ToolContext) -> None:

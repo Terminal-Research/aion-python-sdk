@@ -19,6 +19,7 @@ __all__ = [
     "NATIVE_AGENTS",
     "NATIVE_AGENTS_BY_NAME",
     "PREBUILT_AGENTS",
+    "STRUCTURED_RESPONSE_AGENTS",
     "SUBGRAPH_AGENTS",
     "PARALLEL_AGENTS",
     "FILE_INLINING_AGENTS",
@@ -128,6 +129,42 @@ PREBUILT_AGENTS: dict[str, Framework] = {
         agent_entry="graph.py:create_prebuilt_agent",
         sdk_extras=("langgraph-server",),
     ),
+}
+
+
+STRUCTURED_RESPONSE_AGENTS: dict[str, dict[str, Framework]] = {
+    # An agent that answers with an object of a schema, one per way it gets
+    # the model to answer in the schema: `native/test_structured_response.py`.
+    "langgraph": {
+        "tool": Framework(
+            name="langgraph",
+            agent_package="tests.scenarios.agents.langgraph_native",
+            agent_entry="graph.py:create_tool_strategy_agent",
+            sdk_extras=("langgraph-server",),
+        ),
+        "provider": Framework(
+            name="langgraph",
+            agent_package="tests.scenarios.agents.langgraph_native",
+            agent_entry="graph.py:create_provider_strategy_agent",
+            sdk_extras=("langgraph-server",),
+        ),
+    },
+    # An LlmAgent with an `output_schema`: with a tool, answering through ADK's
+    # `set_model_response`; without one, writing JSON by the schema.
+    "adk": {
+        "tool": Framework(
+            name="adk",
+            agent_package="tests.scenarios.agents.adk_native",
+            agent_entry="agent.py:create_tool_strategy_agent",
+            sdk_extras=("adk-server",),
+        ),
+        "provider": Framework(
+            name="adk",
+            agent_package="tests.scenarios.agents.adk_native",
+            agent_entry="agent.py:create_provider_strategy_agent",
+            sdk_extras=("adk-server",),
+        ),
+    },
 }
 
 

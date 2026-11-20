@@ -210,8 +210,9 @@ def emit_message(
     the call from the graph's stream and leaves out what is emitted here,
     ``routing`` and ``metadata`` with it; text taken from such a call carries
     no id to know it by, and the answer reaches the client twice. An
-    iterator that raises ends the section with what it yielded, and the
-    error is logged.
+    iterator that raises fails the turn, as the same failure of a model
+    call does outside the emitter: no whole message ends the section, and
+    the chunks already sent are not the answer.
 
     Reading an iterator blocks the thread that runs the node; in an async
     node, ``await aemit_message(writer, llm.astream(...))`` streams without
@@ -233,6 +234,11 @@ def emit_message(
     Raises:
         TypeError: ``message`` is an async iterator, which ``aemit_message``
             streams, or of a type that cannot be emitted.
+        Whatever the iterator raises: the section ends there without a whole
+            message, the chunks already sent stay in the task's
+            ``aion:stream-delta`` artifact and are not its answer, and the
+            exception goes on and fails the turn, as the same failure does
+            outside the emitter.
 
     Example:
         def my_node(state: dict, writer: StreamWriter):
@@ -255,12 +261,9 @@ def emit_message(
             f"AIMessageChunk, not {type(message).__name__}."
         )
     section = _StreamedSection(writer, routing, metadata)
-    try:
-        with _model_calls_off_the_graph_stream():
-            for item in message:
-                section.send(item)
-    except Exception as e:
-        logger.error("Error reading the iterator emit_message() streams: %s", e, exc_info=True)
+    with _model_calls_off_the_graph_stream():
+        for item in message:
+            section.send(item)
     return section.close()
 
 
@@ -287,6 +290,13 @@ async def aemit_message(
         The message or chunk emitted; for an iterator, the whole message that
         ended its section, or None when it yielded no text.
 
+    Raises:
+        Whatever the iterator raises: the section ends there without a whole
+            message, the chunks already sent stay in the task's
+            ``aion:stream-delta`` artifact and are not its answer, and the
+            exception goes on and fails the turn, as the same failure does
+            outside the emitter.
+
     Example:
         async def answer_node(state: dict, writer: StreamWriter):
             return {"messages": [await aemit_message(writer, llm.astream(state["messages"]))]}
@@ -294,12 +304,9 @@ async def aemit_message(
     if not hasattr(message, "__aiter__"):
         return emit_message(writer, message, routing=routing, metadata=metadata)
     section = _StreamedSection(writer, routing, metadata)
-    try:
-        with _model_calls_off_the_graph_stream():
-            async for item in message:
-                section.send(item)
-    except Exception as e:
-        logger.error("Error reading the async iterator aemit_message() streams: %s", e, exc_info=True)
+    with _model_calls_off_the_graph_stream():
+        async for item in message:
+            section.send(item)
     return section.close()
 
 

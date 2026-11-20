@@ -172,15 +172,16 @@ class TestEmitMessageStream:
         assert emit_message(writer, iter([])) is None
         writer.assert_not_called()
 
-    def test_an_iterator_that_raises_ends_with_what_it_yielded(self, writer):
+    def test_an_iterator_that_raises_fails_after_what_it_yielded(self, writer):
+        """A model call that fails mid-stream fails the turn; what it streamed is not a whole answer."""
         def answer():
             yield "partial"
             raise RuntimeError("stream broke")
 
-        result = emit_message(writer, answer())
+        with pytest.raises(RuntimeError, match="stream broke"):
+            emit_message(writer, answer())
 
-        assert result.text == "partial"
-        assert isinstance(self._sent(writer)[-1], AIMessage)
+        assert [(type(m), m.text) for m in self._sent(writer)] == [(AIMessageChunk, "partial")]
 
     def test_an_async_iterator_is_for_aemit_message(self, writer):
         async def answer():
@@ -230,6 +231,16 @@ class TestEmitMessageStream:
 
         assert [m.text for m in self._sent(writer)] == ["It ", "is sunny.", "It is sunny."]
         assert result is self._sent(writer)[-1]
+
+    async def test_aemit_message_fails_when_its_iterator_raises(self, writer):
+        async def answer():
+            yield "partial"
+            raise RuntimeError("stream broke")
+
+        with pytest.raises(RuntimeError, match="stream broke"):
+            await aemit_message(writer, answer())
+
+        assert [(type(m), m.text) for m in self._sent(writer)] == [(AIMessageChunk, "partial")]
 
     async def test_aemit_message_emits_anything_else_as_emit_message_does(self, writer):
         msg = AIMessage(content="Done")

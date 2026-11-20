@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-270 scenarios in 50 files, 611 runs across 2 frameworks: 566 run, 44 skipped, 1 independent of the framework.
+285 scenarios in 52 files, 643 runs across 2 frameworks: 597 run, 45 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -14,15 +14,15 @@ A status cell reads `✓` when it runs, `skip` when `frameworks.UNSUPPORTED`, `f
 
 |  | Covered | Not yet |
 |---|---|---|
-| Commands | 30 of 30: `help`, `echo`, `stream`, `stream-marked`, `think`, `react`, `steps`, `slow`, `artifacts`, `send-file`, `card`, `outbox-task`, `outbox-message`, `outbox-history`, `outbox-failed`, `outbox-pause`, `outbox-after-reply`, `outbox-failed-after-reply`, `ask`, `ask-twice`, `ask-fail`, `fail`, `ext`, `whoami`, `event`, `config`, `ids`, `history`, `big`, `parts` | — |
+| Commands | 32 of 32: `help`, `echo`, `stream`, `stream-marked`, `think`, `react`, `steps`, `slow`, `artifacts`, `send-file`, `card`, `outbox-task`, `outbox-message`, `outbox-history`, `outbox-failed`, `outbox-pause`, `outbox-after-reply`, `outbox-failed-after-reply`, `ask`, `ask-twice`, `ask-fail`, `ask-value`, `ask-schema`, `fail`, `ext`, `whoami`, `event`, `config`, `ids`, `history`, `big`, `parts` | — |
 | Suites | 18 of 18: `smoke`, `streaming`, `events`, `terminal_states`, `interrupts`, `errors`, `artifacts`, `files`, `extensions`, `daemon`, `authentication`, `config`, `lifecycle`, `contexts`, `evolution`, `persistence`, `distributed`, `native` | — |
 
 ## Frameworks
 
 | Framework | Agent package | Entry | SDK extras | Commands implemented |
 |---|---|---|---|---|
-| langgraph | `tests.scenarios.agents.langgraph_core` | `graph.py:create_graph` | `langgraph-server` | 30 of 30 |
-| adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 29 of 30 |
+| langgraph | `tests.scenarios.agents.langgraph_core` | `graph.py:create_graph` | `langgraph-server` | 32 of 32 |
+| adk | `tests.scenarios.agents.adk_core` | `agent.py:create_agent` | `adk-server` | 31 of 32 |
 
 The `native` suite runs a second agent per framework instead: an ordinary agent on the framework's own path - a model, a tool, the framework's loop and memory - with no Aion authoring API and no part of the command contract. Its cells name the agent.
 
@@ -73,9 +73,9 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `smoke` | agent answers at all: card, health, help, echo | 9 | `make tests-scenarios TAGS=smoke` |
 | `streaming` | streamed answers, thoughts, unary send | 18 | `make tests-scenarios TAGS=streaming` |
 | `events` | event order, ids, outbox, get_task agreement | 30 | `make tests-scenarios TAGS=events` |
-| `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 11 | `make tests-scenarios TAGS=terminal_states` |
-| `interrupts` | INPUT_REQUIRED and resume | 10 | `make tests-scenarios TAGS=interrupts` |
-| `errors` | failures that must stay reported, not crash the server | 10 | `make tests-scenarios TAGS=errors` |
+| `terminal_states` | COMPLETED, FAILED, CANCELED, INPUT_REQUIRED | 12 | `make tests-scenarios TAGS=terminal_states` |
+| `interrupts` | INPUT_REQUIRED and resume | 21 | `make tests-scenarios TAGS=interrupts` |
+| `errors` | failures that must stay reported, not crash the server | 11 | `make tests-scenarios TAGS=errors` |
 | `artifacts` | artifact and card emission | 11 | `make tests-scenarios TAGS=artifacts` |
 | `files` | inline file parts: stored, rejected, or passed through | 20 | `make tests-scenarios TAGS=files` |
 | `extensions` | extension activation and payload delivery | 12 | `make tests-scenarios TAGS=extensions` |
@@ -87,7 +87,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `evolution` | the evolution extension through the SDK's wrapper and a stand-in toolkit: the standard path, refusals as REJECTED tasks, a cancel | 15 | `make tests-scenarios TAGS=evolution` |
 | `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 21 | `make tests-scenarios-persistence` |
 | `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 19 | `make tests-scenarios-distributed` |
-| `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 62 | `make tests-scenarios TAGS=native` |
+| `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 65 | `make tests-scenarios TAGS=native` |
 
 ## Scenarios by file
 
@@ -198,13 +198,14 @@ An agent that crashes must leave a task that says so.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [The stream ends in a terminal task, not in silence.](core/test_errors.py#L32 "test_a_crash_before_any_answer_closes_the_task_as_failed") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
-| [What was already delivered stays delivered, and the task still fails.](core/test_errors.py#L52 "test_a_crash_after_a_reply_keeps_the_reply") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
-| [A later `tasks/get` reports the failure too.](core/test_errors.py#L66 "test_the_failure_is_in_the_stored_task_not_only_on_the_wire") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
-| [The exception is logged, not published.](core/test_errors.py#L84 "test_the_failed_task_does_not_carry_the_exception") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
-| [The next request is answered normally.](core/test_errors.py#L100 "test_a_failing_turn_does_not_take_the_agent_with_it") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
-| [Not a bare FAILED: the caller learns the turn crashed, and the task to look for.](core/test_errors.py#L122 "test_a_crash_says_so_and_where_the_log_has_it") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
-| [`TaskFailedError` is the agent's own word on the failure, and every reader gets it.](core/test_errors.py#L134 "test_an_agents_reason_reaches_every_reader_of_the_task") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [The stream ends in a terminal task, not in silence.](core/test_errors.py#L36 "test_a_crash_before_any_answer_closes_the_task_as_failed") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [The failure of a streamed answer is the turn's failure, not a shorter answer.](core/test_errors.py#L56 "test_a_model_that_fails_mid_stream_fails_the_task") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [What was already delivered stays delivered, and the task still fails.](core/test_errors.py#L70 "test_a_crash_after_a_reply_keeps_the_reply") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [A later `tasks/get` reports the failure too.](core/test_errors.py#L84 "test_the_failure_is_in_the_stored_task_not_only_on_the_wire") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [The exception is logged, not published.](core/test_errors.py#L102 "test_the_failed_task_does_not_carry_the_exception") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [The next request is answered normally.](core/test_errors.py#L118 "test_a_failing_turn_does_not_take_the_agent_with_it") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [Not a bare FAILED: the caller learns the turn crashed, and the task to look for.](core/test_errors.py#L140 "test_a_crash_says_so_and_where_the_log_has_it") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
+| [`TaskFailedError` is the agent's own word on the failure, and every reader gets it.](core/test_errors.py#L152 "test_an_agents_reason_reaches_every_reader_of_the_task") | `errors`, `terminal_states` | `fail` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_event_payloads.py`
 
@@ -287,6 +288,24 @@ Inline file parts: stored on the way in and out, rejected, or passed through.
 | [No route an agent hands the server a file by skips storage.](core/test_files.py#L306 "test_every_route_out_of_the_agent_delivers_a_file_as_a_url") | `files` | `send-file` | `file-storage` | ✓ | ✓ |
 | [No backend, no conversion, whichever route the file takes.](core/test_files.py#L334 "test_without_a_backend_every_route_delivers_the_bytes") | `files` | `send-file` | `default` | ✓ | ✓ |
 | [Selecting the Aion backend without AION_CLIENT_ID and AION_CLIENT_SECRET is a startup error.](core/test_files.py#L355 "test_the_aion_backend_does_not_serve_without_credentials") | `files` | — | `aion-no-credentials` | ✓ | ✓ |
+
+### `tests/scenarios/core/test_interrupt_replies.py`
+
+The user's reply to a question reaches the agent the way its framework hands answers over.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The question carries what it asks about as data](core/test_interrupt_replies.py#L78 "test_the_question_carries_what_it_asks_about_as_data") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
+| [A text reply is its text](core/test_interrupt_replies.py#L93 "test_a_text_reply_is_its_text") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
+| [Json written in the text stays text](core/test_interrupt_replies.py#L97 "test_json_written_in_the_text_stays_text") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
+| [A data part is the reply as it is](core/test_interrupt_replies.py#L103 "test_a_data_part_is_the_reply_as_it_is") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
+| [``{}`` resumes the agent: it is not taken for a map of answers to no interrupt.](core/test_interrupt_replies.py#L111 "test_an_empty_object_is_a_reply_too") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
+| [Files sent with the reply are the turns and leave its value](core/test_interrupt_replies.py#L116 "test_files_sent_with_the_reply_are_the_turns_and_leave_its_value") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
+| [A reply from a messaging distribution: the user's text, and the payloads it adds on its own.](core/test_interrupt_replies.py#L126 "test_the_parts_a_distribution_adds_are_not_the_reply") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
+| [A pressed card button is its action id](core/test_interrupt_replies.py#L142 "test_a_pressed_card_button_is_its_action_id") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
+| [A reply with several data parts is refused and the task keeps waiting](core/test_interrupt_replies.py#L152 "test_a_reply_with_several_data_parts_is_refused_and_the_task_keeps_waiting") | `interrupts` | `ask-value` | `default` | ✓ | ✓ |
+| [The question carries the schema of its answer](core/test_interrupt_replies.py#L182 "test_the_question_carries_the_schema_of_its_answer") | `interrupts` | `ask-schema` | `default` | ✓ | ✓ |
+| [A reply that does not match the schema is refused and the task keeps waiting](core/test_interrupt_replies.py#L192 "test_a_reply_that_does_not_match_the_schema_is_refused_and_the_task_keeps_waiting") | `interrupts` | `ask-schema` | `default` | ✓ | ✓ |
 
 ### `tests/scenarios/core/test_interrupts.py`
 
@@ -632,6 +651,16 @@ A stored file reaches the model by its content, and the framework's state by its
 | [One upload: the state holds the address the task holds, and no bytes.](native/test_stored_files.py#L100 "test_a_file_the_model_answers_with_is_kept_in_the_state_as_the_address_the_client_got") | `native`, `files` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
 | [A tools image is kept as a link and reaches the model as its content](native/test_stored_files.py#L125 "test_a_tools_image_is_kept_as_a_link_and_reaches_the_model_as_its_content") | `native`, `files` | — | `default` | [skip](#frameworks) | ✓ `adk_native`, [skip](#frameworks) before google-adk 2.7.0 |
 
+### `tests/scenarios/native/test_structured_response.py`
+
+The object an agent answers with by its schema reaches the client.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [Tool strategy answers with the object](native/test_structured_response.py#L69 "test_tool_strategy_answers_with_the_object") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [Provider strategy streams the json and sends the object](native/test_structured_response.py#L80 "test_provider_strategy_streams_the_json_and_sends_the_object") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The next turn sends its own object](native/test_structured_response.py#L91 "test_the_next_turn_sends_its_own_object") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+
 ### `tests/scenarios/native/test_subgraph.py`
 
 An agent whose work happens inside a subgraph.
@@ -650,13 +679,13 @@ A tool's confirmation, answered ADK's way or the agent's, through the server.
 
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
-| [A tool shows its question on a card and waits](native/test_tool_confirmation.py#L66 "test_a_tool_shows_its_question_on_a_card_and_waits") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
-| [Adks confirmation object typed as json answers as it is](native/test_tool_confirmation.py#L77 "test_adks_confirmation_object_typed_as_json_answers_as_it_is") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
-| [Adks confirmation object sent as data answers as it is](native/test_tool_confirmation.py#L83 "test_adks_confirmation_object_sent_as_data_answers_as_it_is") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
-| [A pressed button reaches the tool that decides](native/test_tool_confirmation.py#L89 "test_a_pressed_button_reaches_the_tool_that_decides") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
-| [A typed answer reaches the tool that decides](native/test_tool_confirmation.py#L100 "test_a_typed_answer_reaches_the_tool_that_decides") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
-| [``before_tool_callback`` runs before ADK checks the confirmation, and sets it.](native/test_tool_confirmation.py#L111 "test_the_agent_judges_the_answer_for_a_tool_adk_confirms") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
-| [With no judge of the agent's, an answer that is not ADK's object is a refusal, not a crash.](native/test_tool_confirmation.py#L128 "test_a_tool_adk_confirms_takes_only_its_object") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+| [A tool shows its question on a card and waits](native/test_tool_confirmation.py#L71 "test_a_tool_shows_its_question_on_a_card_and_waits") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+| [Adks confirmation object typed as json is text the tool reads](native/test_tool_confirmation.py#L82 "test_adks_confirmation_object_typed_as_json_is_text_the_tool_reads") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+| [Adks confirmation object sent as data answers as it is](native/test_tool_confirmation.py#L88 "test_adks_confirmation_object_sent_as_data_answers_as_it_is") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+| [A pressed button reaches the tool that decides](native/test_tool_confirmation.py#L94 "test_a_pressed_button_reaches_the_tool_that_decides") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+| [A typed answer reaches the tool that decides](native/test_tool_confirmation.py#L105 "test_a_typed_answer_reaches_the_tool_that_decides") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+| [``before_tool_callback`` runs before ADK checks the confirmation, and sets it.](native/test_tool_confirmation.py#L116 "test_the_agent_judges_the_answer_for_a_tool_adk_confirms") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+| [With no judge of the agent's, an answer that is not ADK's object as data is a refusal, not a crash.](native/test_tool_confirmation.py#L135 "test_a_tool_adk_confirms_takes_only_its_object") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
 
 ### `tests/scenarios/persistence/test_database_migrations.py`
 
@@ -738,7 +767,9 @@ The contract from `commands.py`. `Scenarios` counts the scenarios driving the co
 | `ask` | Ask a question, then quote the answer | `interrupts` | 13 | ✓ | ✓ |
 | `ask-twice` | Ask two questions in a row | `interrupts` | 3 | ✓ | ✓ |
 | `ask-fail` | Ask a question, then fail on the answer | `interrupts`, `errors` | 3 | ✓ | ✓ |
-| `fail <mode>` | Fail on purpose: exception \| after-reply \| reason | `errors`, `terminal_states` | 9 | ✓ | ✓ |
+| `ask-value` | Ask a question with options, then report what the answer gave as JSON | `interrupts` | 9 | ✓ | ✓ |
+| `ask-schema` | Ask a question whose answer must match a JSON Schema, then report it as JSON | `interrupts` | 2 | ✓ | ✓ |
+| `fail <mode>` | Fail on purpose: exception \| after-reply \| reason \| mid-stream | `errors`, `terminal_states` | 10 | ✓ | ✓ |
 | `ext` | Report active and unknown extensions | `extensions` | 6 | ✓ | ✓ |
 | `whoami` | Report the daemon identity | `daemon` | 6 | ✓ | ✓ |
 | `event` | Report the event this turn carried | `extensions`, `events` | 4 | ✓ | ✓ |

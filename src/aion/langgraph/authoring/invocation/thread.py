@@ -73,7 +73,9 @@ class Thread(BaseThread):
 
         Supports str, AIMessage, AIMessageChunk, or async iterator of those types.
         An async iterator over a model's stream, or over text taken from it, sends
-        the answer once (see ``aemit_message``).
+        the answer once (see ``aemit_message``). An exception the iterator raises -
+        a model call that fails - goes on and fails the turn; the text sent before
+        it is not the answer.
         metadata is applied only when the SDK constructs the message (str or async iterator);
         it is ignored for AIMessage and AIMessageChunk which are sent as-is, except that an
         AIMessage without an id gets one (see ``emit_message``).

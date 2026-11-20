@@ -14,6 +14,7 @@ from a2a.types import (
 
 from aion.core.a2a import A2AOutbox
 from aion.server.a2a.outbox import outbox_message, outbox_task
+from aion.server.a2a.structured_response import structured_response_event
 from .event_converter import ADKToA2AEventConverter
 from .stream_executor import ADKStreamResult
 
@@ -56,7 +57,10 @@ class ADKExecutionResultHandler:
 
         Checks the `a2a_outbox` written during this run. If present and
         parseable as a Task or Message, returns that object for the pipeline to
-        merge into the task. A section of the streamed answer the run left
+        merge into the task. Otherwise the object an agent with an
+        ``output_schema`` answered with goes out as the ``structured_response``
+        artifact (``aion.server.a2a.structured_response``); an outbox answers
+        the run instead of it. A section of the streamed answer the run left
         open is already closed when this runs.
 
         Args:
@@ -78,11 +82,16 @@ class ADKExecutionResultHandler:
             A2A events to emit before the terminal complete/error event.
         """
         outbox = stream_result.outbox
+        structured_response = stream_result.structured_response
         if outbox is not None:
             result = self._handle_outbox(outbox, context, task_id, context_id)
             if result is not None:
                 logger.debug("Result via outbox: %d event(s)", len(result))
+                if structured_response is not None:
+                    logger.info("The run wrote an outbox, which answers it; its structured response is not sent")
                 return result
+        if structured_response is not None:
+            return [structured_response_event(structured_response, task_id, context_id)]
         return []
 
     def _handle_outbox(

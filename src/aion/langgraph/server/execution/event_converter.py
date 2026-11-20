@@ -12,7 +12,7 @@ from a2a.types import (
     TaskStatus,
     TaskStatusUpdateEvent,
 )
-from aion.core.a2a import ArtifactId, ArtifactName
+from aion.core.a2a import ArtifactId, ArtifactName, question_metadata
 from aion.core.a2a.deltas import stream_delta_chunk, stream_delta_end, thinking_delta
 from aion.core.a2a.metadata import agent_metadata
 from aion.core.a2a.extensions.messaging import MessageActionPayload
@@ -34,8 +34,10 @@ from collections.abc import Sequence
 from google.protobuf import json_format, struct_pb2
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from langgraph.types import Interrupt
+from pydantic_core import to_jsonable_python
 from typing import Any, Optional
 
+from . import hitl
 from ..converters.lc_to_a2a import LcToA2AConverter
 
 LangChainAgentMessage = AIMessage | AIMessageChunk
@@ -597,6 +599,13 @@ class LangGraphA2AConverter:
         interrupts waiting at once are asked one per turn; an answer that
         names an ``interruptId`` resumes that one (``LangGraphExecutor.resume``).
 
+        The message's text part is the question as text
+        (``_interrupt_prompt``). A value that is not a plain string - a dict,
+        say, or ``HumanInTheLoopMiddleware``'s request - follows it whole as
+        a data part, so the client sees what the graph asks about. The JSON
+        Schema of the answer goes under ``responseSchema`` in the metadata
+        when there is one (``_response_schema``).
+
         Args:
             interrupts: The interrupts that wait for an answer, in LangGraph's
                 order (``pending_interrupts``).
@@ -612,8 +621,8 @@ class LangGraphA2AConverter:
                 task_id=self._task_id,
                 message_id=str(uuid.uuid4()),
                 role=Role.ROLE_AGENT,
-                parts=[Part(text=self._interrupt_prompt(interrupt.value))],
-                metadata={"interruptId": interrupt_id},
+                parts=[Part(text=self._interrupt_prompt(interrupt.value)), *self._interrupt_data(interrupt.value)],
+                metadata=question_metadata(interrupt_id, self._response_schema(interrupt)),
             )
 
         logger.info(
@@ -629,6 +638,23 @@ class LangGraphA2AConverter:
         )
 
     @staticmethod
+    def _response_schema(interrupt: Interrupt) -> Optional[dict[str, Any]]:
+        """The JSON Schema of the answer an interrupt waits for, or None when nothing states one.
+
+        The schema the graph gave ``interrupt(value, response_schema=...)``,
+        which LangGraph keeps as JSON Schema whatever form it was given in -
+        ``HumanInTheLoopMiddleware`` in its ``per_call`` mode gives one too.
+        LangGraph releases before ``response_schema`` have none. Without one,
+        a ``HumanInTheLoopMiddleware`` question in the default batched mode
+        has the schema of its ``{"decisions": [...]}`` answer
+        (``hitl.response_schema``).
+        """
+        schema = getattr(interrupt, "response_schema", None)
+        if schema is not None:
+            return schema
+        return hitl.response_schema(interrupt.value)
+
+    @staticmethod
     def _interrupt_prompt(value: Any) -> str:
         """The question the client sees for an ``interrupt()`` value.
 
@@ -640,6 +666,63 @@ class LangGraphA2AConverter:
         if isinstance(value, dict) and value.get("prompt"):
             return value["prompt"]
         return "Agent requires input"
+
+    @staticmethod
+    def _interrupt_data(value: Any) -> list[Part]:
+        """The data part that carries an ``interrupt()`` value whole, or none.
+
+        A string is the question itself and ``None`` asks nothing, so neither
+        gets one. Any other value goes as JSON, as Pydantic dumps it, with NaN
+        and infinity as ``null``; a value with no JSON form leaves the
+        question as text alone, with a warning.
+        """
+        if value is None or isinstance(value, str):
+            return []
+        try:
+            data = struct_pb2.Value()
+            json_format.ParseDict(to_jsonable_python(value, inf_nan_mode="null"), data)
+        except (ValueError, TypeError, json_format.Error):
+            logger.warning(
+                "The interrupt's value (%s) has no JSON form; the question goes out as text alone",
+                type(value).__name__,
+            )
+            return []
+        return [Part(data=data)]
+
+    def convert_breakpoint(self, nodes: Sequence[str]) -> TaskStatusUpdateEvent:
+        """Produce an input_required status event for a graph stopped at a static breakpoint.
+
+        A graph compiled with ``interrupt_before`` or ``interrupt_after``
+        stops before the nodes it runs next, with no ``interrupt()`` to ask
+        anything, and LangGraph goes on when it is invoked again with no
+        input. The question says so: its text names the nodes, a data part
+        carries them as ``{"next": [...]}``, as LangGraph's state snapshot
+        names them, and any message continues the graph
+        (``LangGraphExecutor.resume``). It has no ``interruptId`` and no
+        ``responseSchema``: there is no interrupt to name, and the reply's
+        content does not reach the graph.
+
+        Args:
+            nodes: The nodes the graph runs next (``StateSnapshot.next``).
+        """
+        names = ", ".join(nodes)
+        data = struct_pb2.Value()
+        json_format.ParseDict({"next": list(nodes)}, data)
+        logger.info(f"Stopped at a breakpoint (requires input), next={names}")
+        return TaskStatusUpdateEvent(
+            task_id=self._task_id,
+            context_id=self._context_id,
+            status=TaskStatus(
+                state=TaskState.TASK_STATE_INPUT_REQUIRED,
+                message=Message(
+                    context_id=self._context_id,
+                    task_id=self._task_id,
+                    message_id=str(uuid.uuid4()),
+                    role=Role.ROLE_AGENT,
+                    parts=[Part(text=f"Paused before {names}. Send any message to continue."), Part(data=data)],
+                ),
+            ),
+        )
 
     def convert_complete(self) -> TaskStatusUpdateEvent:
         """Produce a final TaskStatusUpdateEvent with state=completed.

@@ -129,6 +129,29 @@ For full outbound precedence rules, see [Message Mapping](https://docs.aion.to/s
 
 ---
 
+## Outbound — `structured_response`
+
+An agent built by `langchain.agents.create_agent` with a `response_format` answers with an object of that schema, which LangChain puts in the graph's `structured_response`. The server sends it as an artifact of the task named `structured_response`: one data part holding the object as JSON, as Pydantic dumps it - a model, a dataclass, a dict, an enum, a date - with NaN and infinity as `null`. A value that has no JSON form fails the task, with a reason that says so.
+
+```python
+from pydantic import BaseModel
+from langchain.agents import create_agent
+
+class Forecast(BaseModel):
+    city: str
+    degrees: int
+
+agent = create_agent(model, tools=[get_weather], response_format=Forecast)
+# The client receives an artifact named "structured_response":
+# one data part, {"city": "Kyiv", "degrees": 5}
+```
+
+How the model answers in the schema decides what else the client sees. With `ToolStrategy` the model calls the schema's tool; that call and the `ToolMessage` closing it are not sent, so the artifact is the whole answer. With `ProviderStrategy` the model's text is the JSON itself, and it streams as `aion:stream-delta` as any answer does: the task holds both, the text for a reader and the object for code. A schema passed as it is lets LangChain choose by the model: `ProviderStrategy` for a model with structured output of its own, `ToolStrategy` otherwise. The artifact is a result of the task, so a task with one gets no `aion:assistant-answer`.
+
+The server reads the value the way it reads `a2a_outbox`: from what a node of the parent graph wrote during the run, never from the checkpoint, which keeps it across turns. Each turn that produces an object sends its own. A graph of your own that writes `structured_response` sends it the same way, so keep a value meant for the graph alone under another key. An agent that runs as a node of a larger graph hands its object over only if the parent's state has the key. A run that writes an `a2a_outbox` answers with the outbox, and the structured response is not sent.
+
+---
+
 ## Failing a task
 
 A node that raises ends the turn with the task `FAILED`, and the status message says why, the same on the stream, in the unary answer and in a later `tasks/get`. To give the caller a reason of your own, raise `TaskFailedError`; its text is the message, as written:
@@ -168,23 +191,81 @@ This applies to a graph returned uncompiled, and to one returned already compile
 
 ## Interrupts and Resume
 
-LangGraph `interrupt()` calls are mapped to `TaskStatusUpdateEvent(INPUT_REQUIRED)`. The client resumes the graph by sending a new A2A message to the same task, which is forwarded as a `Command(resume=...)` to LangGraph.
-
-The value `interrupt()` returns on resume is the same graph input the server builds for any turn — `{"messages": [HumanMessage(...)]}`, holding the resuming A2A message as described under [Inbound](#inbound) — not the bare answer:
+LangGraph `interrupt()` calls are mapped to `TaskStatusUpdateEvent(INPUT_REQUIRED)`. The client resumes the graph by sending a new A2A message to the same task, and `interrupt()` returns the user's answer, as LangGraph documents it:
 
 ```python
 from langgraph.types import interrupt
 
 def review_node(state: State) -> State:
-    resume = interrupt("Please confirm the action.")
-    # execution resumes here; the user's reply is the HumanMessage inside
-    answer = resume["messages"][0].text
-    return {**state, "confirmation": answer}
+    answer = interrupt("Deploy to production?")
+    # execution resumes here with the answer itself
+    return {**state, "approved": answer == "yes"}
 ```
 
-The interrupt value becomes the question the client sees in the `INPUT_REQUIRED` status, and the task keeps its id: the client resumes by sending the answer with the same `task_id` and `context_id`.
+The answer is read by the rule both adapters follow (`aion.core.a2a.reply_of`):
+
+- a data part is the answer as it is - a dict, a list, a number - so `interrupt(...)["decisions"]` works, and so does `HumanInTheLoopMiddleware`, whose `{"decisions": [...]}` a client sends as a data part;
+- without one, the `actionId` of a pressed card button is the answer, as a string;
+- otherwise the answer is the message's text, a string; JSON written in it stays text;
+- the parts a distribution adds on its own - those whose metadata carries the event extension, such as `MessageEventPayload` and `SourceSystemEventPayload` on a message from Slack - are not the answer; the node reads them from the event of its runtime context;
+- files sent with the answer do not change it: they are the files of the turn's message, read as on any turn (see [Files of the Answer](#files-of-the-answer));
+- a message with more than one data part of its own, or whose answer does not match the question's `responseSchema` (below), is refused with `invalid_payload` before the graph runs, and the task keeps waiting.
+
+The graph resumes by the interrupt's id, `Command(resume={interrupt_id: answer})`, even when one interrupt waits: LangGraph takes a dict whose keys all look like interrupt ids - an empty one among them - for a map of answers by id.
+
+The interrupt value becomes the question the client sees in the `INPUT_REQUIRED` status, and the task keeps its id: the client resumes by sending the answer with the same `task_id` and `context_id`. The question's text part is a string value itself, or a dict's `"prompt"`, or "Agent requires input". A value that is not a plain string follows the text whole as a data part, as JSON with NaN and infinity as `null`, so the client sees what the graph asks about - the options of a choice, or the actions `HumanInTheLoopMiddleware` asks to review. A value with no JSON form leaves the question as text alone, with a warning.
 
 The question's message carries the interrupt's id as `interruptId` in its metadata. Several nodes of one step may interrupt at once; the questions are then asked one per turn, in the order LangGraph reports them, and each answer resumes one interrupt while the others keep waiting. An answer resumes the interrupt its message names under `interruptId` in the message's metadata, and the one asked without it. An answer that names an interrupt which no longer waits does not resume the graph: the question that waits is asked again.
+
+### Static Breakpoints
+
+A graph compiled with `interrupt_before` or `interrupt_after` stops at those nodes with nothing to ask, and LangGraph goes on when it is invoked again with no input. The task waits for input as well: the question's text is `Paused before <node>. Send any message to continue.`, its data part `{"next": [...]}` names the nodes the graph runs next, as LangGraph's state snapshot does, and it carries no `interruptId` and no `responseSchema`. Any message continues the graph with no input, as `graph.invoke(None, config)` does; its content does not reach the graph, so a reply of "no" goes on too. A graph that should ask the user something uses `interrupt()` or `HumanInTheLoopMiddleware`.
+
+### The Schema of the Answer
+
+When the graph states what the answer must be, the question's metadata carries that JSON Schema as `responseSchema`, so a client knows how to answer - a string as text, anything else as a data part - and the server refuses an answer that does not match it before the graph runs:
+
+- the schema given to `interrupt(value, response_schema=...)`, as LangGraph keeps it: a JSON Schema `dict` as it is, a Pydantic model, `TypedDict` or dataclass converted to JSON Schema. `interrupt()` takes it from LangGraph 1.2.12; on older releases the question carries none;
+- `HumanInTheLoopMiddleware` in its default batched mode: the schema of its `{"decisions": [...]}` answer, built from LangChain's own decision types and the question's `review_configs` - exactly one decision per tool call, each one its tool allows. In its `per_call` mode the middleware states a schema of its own, which goes as it is;
+- any other `interrupt()`: none, and the answer is whatever the client sends.
+
+A Pydantic model, `TypedDict` or dataclass also makes LangGraph check the answer itself, and `interrupt()` returns the validated object. An answer LangGraph refuses that way - a validator of the model the JSON Schema cannot express, say - is not saved, and the question is asked again; the task keeps waiting. LangGraph marks such a refusal from 1.2.15; before it the task fails.
+
+```python
+from pydantic import BaseModel
+from langgraph.types import interrupt
+
+
+class Deploy(BaseModel):
+    environment: str
+    confirmed: bool
+
+
+def deploy_node(state: State) -> dict:
+    answer = interrupt("Where should I deploy?", response_schema=Deploy)  # a Deploy instance
+    return {"environment": answer.environment, "approved": answer.confirmed}
+```
+
+### Files of the Answer
+
+The answer resumes the graph in a turn of its own, whose message is the answer's message. A node reads its files the way it reads a turn's files, from the thread of its runtime context:
+
+```python
+from langgraph.runtime import Runtime
+from langgraph.types import interrupt
+
+from aion.core.runtime import AionRuntimeContext
+from aion.langgraph.authoring import Thread
+
+
+async def review_node(state: State, runtime: Runtime[AionRuntimeContext]) -> dict:
+    answer = interrupt("Send the signed contract and confirm")
+    files = Thread.from_context(runtime.context).message.files
+    contract = (await files[0].read()).decode() if files else ""
+    return {"approved": answer == "yes" and "Signed:" in contract}
+```
+
+LangGraph runs the interrupted node again from its start when the answer resumes it, so the code before `interrupt()` runs twice: once with the turn's message that led to the question, once with the answer. A node reads the answer's files after `interrupt()` returns. The files do not enter the graph's state on their own; a node that keeps them, or hands them to a model, puts them into its state or its model call itself.
 
 ---
 
@@ -210,7 +291,7 @@ aion.server
         ├── LangGraphExecutor      — orchestrates stream / resume lifecycle
         │   ├── StreamExecutor     — calls graph.astream(), yields A2A events
         │   ├── EventConverter     — maps LangGraph events → A2A protocol events
-        │   └── ResultHandler      — produces terminal events from a2a_outbox or delta text
+        │   └── ResultHandler      — produces result events from a2a_outbox or structured_response
         ├── CheckpointerFactory    — creates PostgreSQL or memory checkpointer
         └── Converters             — bidirectional A2A ↔ LangChain content block conversion
 ```

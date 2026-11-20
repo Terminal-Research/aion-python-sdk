@@ -17,10 +17,20 @@ async def fail(invocation: Invocation) -> None:
     content at all. `after-reply` answers and then raises, which is the case
     where a client already holds something the task is about to disown.
     `reason` fails the task on purpose, with a reason the caller reads.
+    `mid-stream` streams an answer through the thread from a model that
+    fails after its first chunk, and goes on as if the answer were whole:
+    the failure has to reach the turn by itself.
     """
     mode = invocation.command.argument.strip() or FAIL_MODES[0]
     if mode == "reason":
         raise TaskFailedError(FAIL_REASON_TEXT)
+    if mode == "mid-stream":
+        async def answer():
+            yield FAIL_REPLY_TEXT
+            raise RuntimeError(f"{FAIL_MESSAGE}: {mode}")
+
+        await invocation.thread.reply(answer())
+        return
     if mode == "after-reply":
         await invocation.thread.reply(FAIL_REPLY_TEXT)
     raise RuntimeError(f"{FAIL_MESSAGE}: {mode}")

@@ -9,7 +9,9 @@ still in progress that nothing is doing.
 Both crashing modes of `fail` are here, and the difference between them is
 what the caller already has when the crash happens. The third, `reason`, is
 an agent failing on purpose and saying why: the one case where what the task
-says comes from the agent.
+says comes from the agent. The fourth, `mid-stream`, is a model that fails
+while its answer streams through the thread: the turn fails as it would
+without the thread, and the text streamed before is not the answer.
 """
 
 from __future__ import annotations
@@ -19,7 +21,9 @@ from a2a.types import TaskState
 
 from tests.scenarios.commands import FAIL_MESSAGE, FAIL_REASON_TEXT, FAIL_REPLY_TEXT, echo_text
 from tests.scenarios.harness import (
+    STREAM_DELTA_ARTIFACT_ID,
     ScenarioClient,
+    artifact_updates,
     assert_shape,
     final_task,
     reply_texts,
@@ -47,6 +51,20 @@ async def test_a_crash_before_any_answer_closes_the_task_as_failed(
         task("FAILED"),
     ])
     assert final_task(events).final is True
+
+
+@pytest.mark.command("fail")
+async def test_a_model_that_fails_mid_stream_fails_the_task(client: ScenarioClient) -> None:
+    """The failure of a streamed answer is the turn's failure, not a shorter answer.
+
+    The chunk that arrived before the failure stays in the stream, but no
+    whole message ends the section, so nothing presents it as the answer.
+    """
+    events = await client.send("fail mid-stream")
+
+    assert final_task(events).state == "FAILED"
+    assert [event.text for event in artifact_updates(events, STREAM_DELTA_ARTIFACT_ID) if event.text] == [FAIL_REPLY_TEXT]
+    assert FAIL_REPLY_TEXT not in reply_texts(events)
 
 
 @pytest.mark.command("fail")

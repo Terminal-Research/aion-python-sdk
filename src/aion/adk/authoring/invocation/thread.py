@@ -53,7 +53,9 @@ class Thread(BaseThread):
 
         Supports str, Card, a2a.types.Artifact, google.adk.events.Event, or an
         async iterator of str, which streams as one section of the answer (see
-        ``aemit_message``). Returns the emitted Event - for an iterator, the
+        ``aemit_message``); an exception the iterator raises goes on and fails
+        the turn, and the text sent before it is not the answer. Returns the
+        emitted Event - for an iterator, the
         complete Event that ended its section - or None for a card or an
         artifact, when nothing was sent, or when the emitter is not available
         or the content type is unsupported. An Event is passed on as it is.

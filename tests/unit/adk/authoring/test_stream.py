@@ -118,13 +118,28 @@ class TestEmitMessageStream:
         assert emit_message(emitter, iter([])) is None
         emitter.assert_not_called()
 
-    def test_an_iterator_that_raises_ends_with_what_it_yielded(self):
+    def test_an_iterator_that_raises_fails_after_what_it_yielded(self):
+        """A model call that fails mid-stream fails the turn; what it streamed is not a complete Event."""
         def answer():
             yield "partial"
             raise RuntimeError("stream broke")
 
         emitter = MagicMock()
-        assert self._text(emit_message(emitter, answer())) == "partial"
+        with pytest.raises(RuntimeError, match="stream broke"):
+            emit_message(emitter, answer())
+
+        assert [(e.partial, self._text(e)) for e in self._sent(emitter)] == [(True, "partial")]
+
+    def test_aemit_message_fails_when_its_iterator_raises(self):
+        async def answer():
+            yield "partial"
+            raise RuntimeError("stream broke")
+
+        emitter = MagicMock()
+        with pytest.raises(RuntimeError, match="stream broke"):
+            asyncio.run(aemit_message(emitter, answer()))
+
+        assert [(e.partial, self._text(e)) for e in self._sent(emitter)] == [(True, "partial")]
 
     def test_an_async_iterator_is_for_aemit_message(self):
         async def answer():

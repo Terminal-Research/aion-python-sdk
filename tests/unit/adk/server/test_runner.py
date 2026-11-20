@@ -150,6 +150,55 @@ async def test_a_write_the_turn_refuses_never_reaches_the_servers_service() -> N
     inner.append_event.assert_not_awaited()
 
 
+async def test_a_batch_goes_to_the_servers_service_in_one_call() -> None:
+    inner = Mock(append_events=AsyncMock(side_effect=lambda session, events: list(events)))
+    first, second = Event(author="agent"), Event(author="agent")
+
+    returned = await TurnSessionService(inner).append_events(session="s", events=[first, second])
+
+    inner.append_events.assert_awaited_once_with(session="s", events=[first, second])
+    assert returned == [first, second]
+
+
+async def test_the_turn_decides_about_each_event_of_a_batch() -> None:
+    inner = Mock(append_events=AsyncMock(side_effect=lambda session, events: list(events)))
+    refused, kept = Event(author="agent"), Event(author="agent")
+    turn = Mock(keeps=Mock(side_effect=lambda event: event is kept))
+
+    with running_turn(turn):
+        returned = await TurnSessionService(inner).append_events(session="s", events=[refused, kept])
+
+    inner.append_events.assert_awaited_once_with(session="s", events=[kept])
+    assert returned[0] is refused and returned[1] is kept
+
+
+async def test_a_batch_to_a_service_without_the_call_goes_one_event_at_a_time() -> None:
+    """A session service of an ADK release before 2.15 has no ``append_events``."""
+    inner = Mock(spec=["append_event"], append_event=AsyncMock(side_effect=lambda session, event: event))
+    first, second = Event(author="agent"), Event(author="agent")
+
+    returned = await TurnSessionService(inner).append_events(session="s", events=[first, second])
+
+    assert [call.kwargs["event"] for call in inner.append_event.await_args_list] == [first, second]
+    assert returned == [first, second]
+
+
+async def test_flushing_one_session_is_passed_on() -> None:
+    inner = Mock(flush_session=AsyncMock())
+
+    await TurnSessionService(inner).flush_session(app_name="a", user_id="u", session_id="s")
+
+    inner.flush_session.assert_awaited_once_with(app_name="a", user_id="u", session_id="s")
+
+
+async def test_flushing_one_session_flushes_all_without_the_call() -> None:
+    inner = Mock(spec=["flush"], flush=AsyncMock())
+
+    await TurnSessionService(inner).flush_session(app_name="a", user_id="u", session_id="s")
+
+    inner.flush.assert_awaited_once_with()
+
+
 def test_the_executor_builds_one_runner_per_agent_on_its_own_services() -> None:
     sessions, artifacts = InMemorySessionService(), Mock()
     executor = ADKExecutor(

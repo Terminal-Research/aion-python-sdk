@@ -17,6 +17,7 @@ All other Aion subpackages depend on this one; it has no internal Aion dependenc
 | `aion.core.agent` | `BaseThread`, `BaseMessage`, `User` — the base invocation abstractions (`card`, `message`, `thread`) frameworks build on; `conversation` — the messages, tasks, artifacts and files of the conversation the current turn belongs to; `testing` — a conversation for tests |
 | `aion.core.a2a.content` | Reading a message, an artifact or a task: `text_of`, `data_of`, `file_parts`, `conversation_messages`, `answer_text` |
 | `aion.core.a2a.files` | The files of a message or an artifact: `files_of`, `ConversationFile`, and `StoredFile`, where the server keeps a stored file |
+| `aion.core.a2a.reply` | The user's reply to a task that waits for input: `reply_of` reads it by the rule every framework adapter follows, `Reply` holds its value, text, data, pressed button and files, and `ReplyError` refuses a message with more than one data part of its own. `question_metadata` is the metadata of the message that asks: the question's id under `interruptId` and the JSON Schema of the answer's value under `responseSchema` |
 | `aion.core.constants` | Shared A2A extension URI constants |
 | `aion.core.runtime` | `AionRuntimeContext` — invocation-scoped context carrier |
 | `aion.core.a2a.codes`, `aion.core.a2a.errors` | The error codes the server reserves for executable extensions, and the A2A shape of an extension's error (`{uri}#ExtensionError`) |
@@ -85,12 +86,14 @@ service did not issue now - it was unavailable, or did not answer in time -
 raises `ConversationFileUnavailableError`, and a later read asks again; a
 file whose link cannot be issued for another reason raises
 `ConversationFileError`, which the other three are kinds of. `await file.link()` gives the working link to code
-that passes an address on - to a model that takes a file by URL - and
-`file.stored` says where the server keeps the file: `file_id`,
+that hands the file, within the turn, to a service that downloads it right away - a transcription or OCR service,
+say - and `file.stored` says where the server keeps the file: `file_id`,
 `version_id`, `access_expires_at`, `retention_expires_at`; it is None for
 an inline file and for an address the server did not store the file under.
-A link gives access to whoever holds it, so it is passed on and never
-logged.
+A link is a credential: whoever holds it downloads the file until it expires. It is never logged, put into a reply,
+an artifact or the agent's state - where it would reach every reader of the conversation and stop working when it
+expires - or sent to a model, which takes the file's content. To give the user a file, send its part: the server
+issues every reader a link of their own.
 
 `aion.core.a2a` reads any message, artifact or task the same way:
 `text_of`, `data_of`, `files_of` - its files as `ConversationFile` -

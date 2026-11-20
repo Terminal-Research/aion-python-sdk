@@ -90,7 +90,8 @@ class TurnSessionService(BaseSessionService):
     """The server's session service as the Runner sees it.
 
     Every call goes to the wrapped service unchanged, except
-    ``append_event``: the turn in progress is asked first (``Turn.keeps``),
+    ``append_event`` and ``append_events``: the turn in progress is asked
+    about each event first (``Turn.keeps``),
     so one place decides what a session holds, whoever writes - the Runner,
     for the user's message and the agent's events, or the server, for what
     the agent sent through the thread. The session service is given a copy
@@ -127,6 +128,18 @@ class TurnSessionService(BaseSessionService):
         if flush is not None:
             await flush()
 
+    async def flush_session(self, *, app_name: str, user_id: str, session_id: str) -> None:
+        """Flush one session's buffered writes, by the wrapped service's own call when it has one.
+
+        ADK 2.15 added the call; a wrapped service of an earlier release
+        flushes everything instead, as ADK's default does.
+        """
+        flush_session = getattr(self._inner, "flush_session", None)
+        if flush_session is None:
+            await self.flush()
+            return
+        await flush_session(app_name=app_name, user_id=user_id, session_id=session_id)
+
     async def append_event(self, session: Session, event: Event) -> Event:
         turn = _TURN.get()
         if turn is not None and not turn.keeps(event):
@@ -137,6 +150,36 @@ class TurnSessionService(BaseSessionService):
             return appended
         with_content_of(session, event)
         return event
+
+    async def append_events(self, session: Session, events: list[Event]) -> list[Event]:
+        """Append ``events`` in order, each as ``append_event`` does, in one call to the wrapped service.
+
+        The turn decides about each event, and the ones it refuses come back
+        as they are. The rest go to the wrapped service together, through
+        its ``append_events`` - ADK 2.15 added the call, and a service that
+        implements it stores all of them or none - or one by one to a
+        service of an earlier release.
+        """
+        turn = _TURN.get()
+        written = [
+            (event, await kept_in_session(event))
+            for event in events
+            if turn is None or turn.keeps(event)
+        ]
+        kept = [copy for _, copy in written]
+        append_events = getattr(self._inner, "append_events", None)
+        if append_events is not None:
+            appended = await append_events(session=session, events=kept) if kept else []
+        else:
+            appended = [await self._inner.append_event(session=session, event=copy) for copy in kept]
+        returned = {}
+        for (event, copy), stored in zip(written, appended):
+            if copy is event:
+                returned[id(event)] = stored
+            else:
+                with_content_of(session, event)
+                returned[id(event)] = event
+        return [returned.get(id(event), event) for event in events]
 
 
 class AionRunner(Runner):

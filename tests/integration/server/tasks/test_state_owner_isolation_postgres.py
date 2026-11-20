@@ -170,9 +170,8 @@ def _counting_graph() -> StateGraph:
     async def count(state: _CountingState) -> dict:
         humans = [m for m in state["messages"] if isinstance(m, HumanMessage)]
         if humans[-1].text == "ask":
-            resume = interrupt("question?")
-            (answer,) = resume["messages"]
-            return {"messages": [AIMessage(content=f"answered={answer.text}")], "turns": len(humans)}
+            answer = interrupt("question?")
+            return {"messages": [AIMessage(content=f"answered={answer}")], "turns": len(humans)}
         return {"messages": [AIMessage(content=f"turns={len(humans)}")], "turns": len(humans)}
 
     builder = StateGraph(_CountingState)
