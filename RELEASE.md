@@ -23,9 +23,12 @@ The work for the next version collects on one branch named after it,
   with a merge commit once its CI is green; `make release` then runs on
   `main`, and the next version's branch is cut from `main` after it.
 
-Pages on <https://docs.aion.to> about behavior that is not released yet go on
-the documentation repository's branch for the next release and are published
-after the release.
+The documentation on <https://docs.aion.to>
+([aion-docs-mintlify](https://github.com/Terminal-Research/aion-docs-mintlify))
+follows the same scheme with a version branch of the same name: a task that
+changes both repositories has a branch of the same name in each. Its version
+branch goes into its `main` with a merge commit once the release is on PyPI,
+never before.
 
 ## Releasing
 
