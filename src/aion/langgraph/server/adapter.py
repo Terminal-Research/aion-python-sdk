@@ -15,6 +15,7 @@ from langgraph.graph import StateGraph
 from langgraph.pregel import Pregel
 
 from .checkpoint import CheckpointerFactory
+from .checkpoint.files import linking_files
 from .execution import LangGraphExecutor
 from .outbox_channel import untracked_outbox_channels
 
@@ -137,6 +138,9 @@ class LangGraphAdapter(AgentAdapter):
         without a checkpointer, and memory between turns and ``interrupt()``
         need one too. A copy is returned; the caller's graph is not modified.
         ``checkpointer=False`` is an explicit choice and is left alone.
+        A checkpointer of the graph's own is replaced in the copy by a copy
+        of it that saves files as the server's do, as links to stored files
+        (``checkpoint.files.linking_files``); its storage is the same.
 
         A state field that holds an ``A2AOutbox`` on LangGraph's ordinary
         channel is given the untracked channel ``A2AOutboxField`` declares,
@@ -155,11 +159,15 @@ class LangGraphAdapter(AgentAdapter):
             "CompiledMessageGraph"
         }:
             update: dict[str, Any] = {}
-            if getattr(graph, "checkpointer", None) is None and hasattr(graph, "copy"):
+            own = getattr(graph, "checkpointer", None)
+            if own is None and hasattr(graph, "copy"):
                 logger.debug("Graph is already compiled; attaching the server checkpointer")
                 update["checkpointer"] = await self._get_checkpointer()
             else:
-                logger.debug(f"Graph is already compiled with its own checkpointer")
+                logger.debug("Graph is already compiled with its own checkpointer")
+                linked = linking_files(own)
+                if linked is not own and hasattr(graph, "copy"):
+                    update["checkpointer"] = linked
             channels = untracked_outbox_channels(graph)
             if channels is not None and hasattr(graph, "copy"):
                 update["channels"] = channels

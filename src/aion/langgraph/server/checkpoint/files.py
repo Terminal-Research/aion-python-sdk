@@ -18,6 +18,13 @@ issued for the turn's sender (``aion.langgraph.authoring.files``). The graph's o
 changed: what is saved is a copy, and the run goes on with the content it
 has.
 
+A message is found wherever LangGraph saves it: in a list, a tuple or a
+dict, subclasses and named tuples included, in a Pydantic model or a
+dataclass the state holds, in the argument of a ``Send`` and in the value of
+an ``interrupt()``. A copy keeps the type of what it copies. A graph
+compiled with a checkpointer of its own is given a copy of it that saves the
+same way (``linking_files``).
+
 A block in the standard form (``base64``), in the older one (``source_type``
 ``"base64"``) or in OpenAI's chat format that LangChain reads (a ``data:``
 URL in ``image_url``, say) is stored; a saved block is in the standard form.
@@ -26,18 +33,26 @@ With no storage backend configured, a checkpoint keeps the bytes.
 
 from __future__ import annotations
 
+import copy
+import dataclasses
+import logging
 from collections.abc import Sequence
 from typing import Any, Optional
 
 from a2a.types import Part
 from langchain_core.messages import BaseMessage, HumanMessage
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.types import Send
+from pydantic import BaseModel
 
 from aion.core.a2a.files import STORED_FILE_KEY, StoredFile
 from aion.core.a2a.models import A2AOutbox
 from aion.langgraph.server.converters.lc_to_a2a import LcToA2AConverter
 from aion.server.files.turn import TurnFiles, current_turn_files
 
-__all__ = ["LinkedFilesSaver", "with_linked_files"]
+__all__ = ["LinkedFilesSaver", "linking_files", "with_linked_files"]
+
+logger = logging.getLogger(__name__)
 
 FILE_BLOCK_TYPES = frozenset({"image", "audio", "video", "file"})
 """LangChain's standard blocks that carry a file."""
@@ -59,21 +74,20 @@ class LinkedFilesSaver:
 
     async def aput(self, config: Any, checkpoint: Any, metadata: Any, new_versions: Any) -> Any:
         """Save a checkpoint, the files of the channels it saves stored and linked first."""
-        files = current_turn_files()
-        if files is not None:
-            checkpoint = await _checkpoint_with_links(checkpoint, new_versions, files)
+        checkpoint = await _linked_checkpoint(checkpoint, new_versions)
         return await super().aput(config, checkpoint, metadata, new_versions)  # type: ignore[misc]
 
     async def aput_writes(self, config: Any, writes: Sequence[tuple[str, Any]], task_id: str, *args: Any, **kwargs: Any) -> Any:
         """Save a task's pending writes, their files stored and linked first."""
-        files = current_turn_files()
-        if files is not None:
-            writes = [(channel, await with_linked_files(value, files)) for channel, value in writes]
+        writes = await _linked_writes(writes)
         return await super().aput_writes(config, writes, task_id, *args, **kwargs)  # type: ignore[misc]
 
 
-async def _checkpoint_with_links(checkpoint: Any, new_versions: Any, files: TurnFiles) -> Any:
+async def _linked_checkpoint(checkpoint: Any, new_versions: Any) -> Any:
     """The checkpoint with linked files in the channels it saves: those of ``new_versions``."""
+    files = current_turn_files()
+    if files is None:
+        return checkpoint
     values = checkpoint["channel_values"]
     changed = {}
     for channel in new_versions:
@@ -86,31 +100,143 @@ async def _checkpoint_with_links(checkpoint: Any, new_versions: Any, files: Turn
     return {**checkpoint, "channel_values": {**values, **changed}}
 
 
+async def _linked_writes(writes: Sequence[tuple[str, Any]]) -> Sequence[tuple[str, Any]]:
+    """The pending writes with linked files."""
+    files = current_turn_files()
+    if files is None:
+        return writes
+    return [(channel, await with_linked_files(value, files)) for channel, value in writes]
+
+
+def linking_files(saver: Any) -> Any:
+    """A copy of a graph's own checkpointer that saves files as the server's checkpointers do.
+
+    The copy shares the saver's storage - its connection, its dictionaries in
+    memory - and differs only in its class, a subclass that links the files
+    of a checkpoint and of pending writes before it saves them. The saver
+    given is not changed. ``True``, ``False``, a saver that already links
+    files, and one that cannot be copied this way are returned as they are;
+    the last with a warning, since its checkpoints keep the bytes of the
+    files the graph makes.
+    """
+    if not isinstance(saver, BaseCheckpointSaver) or isinstance(saver, LinkedFilesSaver):
+        return saver
+    try:
+        linked = copy.copy(saver)
+        linked.__class__ = _linked_class(type(saver))
+    except Exception as error:
+        logger.warning(
+            "The graph's checkpointer %s cannot be given file linking (%s); "
+            "its checkpoints keep the bytes of the files the graph makes",
+            type(saver).__qualname__,
+            error,
+        )
+        return saver
+    return linked
+
+
+_LINKED_CLASSES: dict[type, type] = {}
+
+
+def _linked_class(cls: type) -> type:
+    """``cls`` that saves its checkpoints and pending writes with their files linked.
+
+    ``cls`` is the first base, so an instance keeps its layout and a copy of
+    one can take the class; ``LinkedFilesSaver`` is a base only to mark it.
+    The two methods are the class's own, so they run ahead of ``cls``'s.
+    """
+    linked = _LINKED_CLASSES.get(cls)
+    if linked is None:
+
+        async def aput(self: Any, config: Any, checkpoint: Any, metadata: Any, new_versions: Any) -> Any:
+            checkpoint = await _linked_checkpoint(checkpoint, new_versions)
+            return await cls.aput(self, config, checkpoint, metadata, new_versions)
+
+        async def aput_writes(self: Any, config: Any, writes: Sequence[tuple[str, Any]], task_id: str, *args: Any, **kwargs: Any) -> Any:
+            writes = await _linked_writes(writes)
+            return await cls.aput_writes(self, config, writes, task_id, *args, **kwargs)
+
+        namespace = {"__qualname__": f"Linked{cls.__qualname__}", "aput": aput, "aput_writes": aput_writes}
+        linked = type(f"Linked{cls.__name__}", (cls, LinkedFilesSaver), namespace)
+        _LINKED_CLASSES[cls] = linked
+    return linked
+
+
 async def with_linked_files(value: Any, files: TurnFiles) -> Any:
     """``value`` with every inline file of its messages and outboxes stored and linked.
 
-    Messages are found in lists, tuples and dicts, the containers a state is
-    made of. What carries no inline file is returned as it is, so is
-    ``value`` itself when nothing changes.
+    Messages are found wherever LangGraph saves them: in lists, tuples and
+    dicts, in Pydantic models and dataclasses, in a ``Send``'s argument and
+    an ``Interrupt``'s value. A container that holds a linked file is
+    copied with its type kept; what carries no inline file is returned as it
+    is, so is ``value`` itself when nothing changes.
 
     Raises:
         StateFileNotStoredError: A file could not be stored.
     """
+    if value is None or isinstance(value, (str, bytes, int, float)):
+        return value
     if isinstance(value, BaseMessage):
         return await _message(value, files)
     if isinstance(value, A2AOutbox):
         return await files.keep_outbox(value)
-    if type(value) in (list, tuple):
+    if isinstance(value, BaseModel):
+        fields = [(name, getattr(value, name)) for name in type(value).model_fields]
+        changed = await _changed([*fields, *(value.model_extra or {}).items()], files)
+        return value.model_copy(update=changed) if changed else value
+    if isinstance(value, Send):
+        changed = await _changed([("arg", value.arg)], files)
+        return _replaced(value, changed) if changed else value
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        fields = [(field.name, getattr(value, field.name)) for field in dataclasses.fields(value) if hasattr(value, field.name)]
+        changed = await _changed(fields, files)
+        return _replaced(value, changed) if changed else value
+    if isinstance(value, (list, tuple)):
         items = [await with_linked_files(item, files) for item in value]
         if all(new is old for new, old in zip(items, value)):
             return value
-        return type(value)(items)
-    if type(value) is dict:
-        entries = {key: await with_linked_files(item, files) for key, item in value.items()}
-        if all(entries[key] is item for key, item in value.items()):
+        return _sequence_like(value, items)
+    if isinstance(value, dict):
+        changed = await _changed(list(value.items()), files)
+        if not changed:
             return value
-        return entries
+        if type(value) is dict:
+            return {**value, **changed}
+        copied = copy.copy(value)
+        copied.update(changed)
+        return copied
     return value
+
+
+async def _changed(entries: Sequence[tuple[Any, Any]], files: TurnFiles) -> dict[Any, Any]:
+    """The entries whose values link a file, with the values that do."""
+    changed = {}
+    for key, item in entries:
+        linked = await with_linked_files(item, files)
+        if linked is not item:
+            changed[key] = linked
+    return changed
+
+
+def _replaced(value: Any, changed: dict[str, Any]) -> Any:
+    """A copy of ``value`` with ``changed`` set on it, frozen dataclasses and ``__slots__`` included."""
+    copied = copy.copy(value)
+    for name, item in changed.items():
+        object.__setattr__(copied, name, item)
+    return copied
+
+
+def _sequence_like(value: list | tuple, items: list[Any]) -> list | tuple:
+    """``items`` in a sequence of ``value``'s type."""
+    if type(value) is list:
+        return items
+    if isinstance(value, list):
+        copied = copy.copy(value)
+        copied[:] = items
+        return copied
+    if hasattr(type(value), "_make"):
+        return value._make(items)
+    return type(value)(items)
 
 
 async def _message(message: BaseMessage, files: TurnFiles) -> BaseMessage:

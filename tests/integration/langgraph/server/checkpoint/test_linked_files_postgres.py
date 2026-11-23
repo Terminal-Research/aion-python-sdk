@@ -2,7 +2,8 @@
 
 Every row of the checkpoint tables is read back after a run whose node
 answered with a file inline: neither the file's content nor its base64 is
-there, in the checkpoints, their blobs or the pending writes.
+there, in the checkpoints, their blobs or the pending writes - the SDK's saver's,
+and a graph's own saver's served by the server.
 """
 
 from __future__ import annotations
@@ -10,15 +11,18 @@ from __future__ import annotations
 import base64
 import os
 import uuid
+from unittest.mock import Mock
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.messages.content import create_file_block
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph import END, START, MessagesState, StateGraph
 from psycopg import sql
 from psycopg_pool import AsyncConnectionPool
 
 from aion.db.postgres.constants import AION_SCHEMA
+from aion.langgraph.server.adapter import LangGraphAdapter
 from aion.langgraph.server.checkpoint.backends.postgres import AionAsyncPostgresSaver
 from tests.unit.support.files import NumberingBackend, storing_turn
 
@@ -74,4 +78,36 @@ async def test_a_file_a_node_returns_is_saved_as_a_link_in_every_table() -> None
             assert not any(_holds_the_file(value) for row in rows for value in row)
         finally:
             async with pool.connection() as conn:
+                await conn.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(schema)))
+
+
+async def test_a_graph_compiled_with_its_own_postgres_checkpointer_saves_a_file_as_a_link() -> None:
+    """The server serves a copy of the graph whose own saver links files, over the saver's own pool."""
+    schema = f"langgraph_own_{uuid.uuid4().hex[:12]}"
+    async with AsyncConnectionPool(POSTGRES_TEST_URL, open=False) as admin:
+        async with admin.connection() as conn:
+            await conn.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
+        try:
+            options = {"autocommit": True, "prepare_threshold": 0, "options": f"-c search_path={schema}"}
+            async with AsyncConnectionPool(POSTGRES_TEST_URL, open=False, kwargs=options) as pool:
+                own = AsyncPostgresSaver(pool)
+                await own.setup()
+                report = create_file_block(base64=PDF_B64, mime_type="application/pdf", filename="report.pdf")
+                builder = StateGraph(MessagesState)
+                builder.add_node("answer", lambda state: {"messages": [AIMessage(content=[report])]})
+                builder.add_edge(START, "answer")
+                builder.add_edge("answer", END)
+                compiled = builder.compile(checkpointer=own)
+                graph = await LangGraphAdapter()._compile_graph(compiled, Mock())
+
+                with storing_turn(NumberingBackend()):
+                    await graph.ainvoke({"messages": [HumanMessage("Make a report")]}, CONFIG)
+
+                saved = (await compiled.aget_state(CONFIG)).values["messages"][-1].content[0]
+                assert saved["url"] == "https://files.test/1?grant=g" and "base64" not in saved
+                rows = await _rows(admin, schema)
+                assert rows
+                assert not any(_holds_the_file(value) for row in rows for value in row)
+        finally:
+            async with admin.connection() as conn:
                 await conn.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(schema)))

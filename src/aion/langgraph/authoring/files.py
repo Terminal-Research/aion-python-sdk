@@ -25,8 +25,7 @@ Only the model's answer goes back into the state. The messages ``inline_files``
 returns keep the ids of the ones they copy, so returning them replaces the
 messages of the state with copies that carry the files' content. The
 server's checkpointer then links each such file to the stored file the turn
-read it from, and stores it only when it cannot tell which one that is; a
-checkpointer of the graph's own keeps the bytes in every checkpoint.
+read it from, and stores it only when it cannot tell which one that is.
 
 Every file of the messages is sent, on every call: a model keeps nothing
 between requests, so a graph that should stop sending an old file leaves its
