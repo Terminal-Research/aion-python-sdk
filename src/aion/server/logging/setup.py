@@ -11,6 +11,7 @@ def setup_root_logger():
     from aion.core.settings import api_settings
     from .filters import (
         BASE_RULES,
+        HTTP_CLIENT_LOGGERS,
         MODEL_CLIENT_LOGGERS,
         NamespaceFilter,
         ServerAionContextFilter,
@@ -24,7 +25,7 @@ def setup_root_logger():
         return
 
     root.setLevel(app_settings.log_level)
-    for name in MODEL_CLIENT_LOGGERS:
+    for name in (*MODEL_CLIENT_LOGGERS, *HTTP_CLIENT_LOGGERS):
         logging.getLogger(name).setLevel(logging.WARNING)
 
     log_namespace_filter = NamespaceFilter(BASE_RULES)

@@ -669,7 +669,10 @@ records without a running version, invocation distribution, or trace.
 The model clients' loggers (`LiteLLM`, `LiteLLM Proxy`, `LiteLLM Router` and
 `openai`) are held at `WARNING` whatever `LOG_LEVEL` says: below it they print
 every model request whole, the conversation, its files as base64 and the
-attribution token. Every file the server stores is logged once at `INFO` -
+attribution token. So are the HTTP client's (`httpx`, `httpcore`): at `INFO`
+they print every request's full URL, a stored file's download link with its
+grant among them, and a handler the agent adds itself would print it. Every
+file the server stores is logged once at `INFO` -
 whose it is (`inbound` or `agent`), its name, type and size, the file and
 version the storage service gave it, and the task and context - without its
 link, which carries its own access. A file downloaded because it was not in

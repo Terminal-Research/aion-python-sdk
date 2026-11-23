@@ -290,3 +290,43 @@ class TestPushNotificationLogging:
         f = NamespaceFilter(BASE_RULES)
 
         assert f.filter(self._record("a2a.server.tasks.task_manager", logging.WARNING))
+
+
+class TestHttpClientLoggers:
+    def test_a_request_url_reaches_no_handler_the_agent_adds(self):
+        """httpx prints a download link whole, grant included, at INFO; the logger itself is held back."""
+        from aion.server.logging import setup_root_logger
+        from aion.server.logging.filters import HTTP_CLIENT_LOGGERS
+        from aion.server.logging.handlers import AionLogstashHandler, LogStreamHandler
+
+        root = logging.getLogger()
+        original, root_level = root.handlers[:], root.level
+        levels = {name: logging.getLogger(name).level for name in HTTP_CLIENT_LOGGERS}
+        root.handlers = [h for h in original if not isinstance(h, (LogStreamHandler, AionLogstashHandler))]
+        agents_handler = MagicMock(spec=logging.Handler, level=logging.NOTSET)
+        try:
+            with patch("aion.server.settings.app_settings") as ms, \
+                 patch("aion.core.settings.api_settings") as ma:
+                ms.log_level = logging.DEBUG
+                ms.logstash_host = "localhost"
+                ms.logstash_port = 5000
+                ms.is_logstash_configured = False
+                ms.host_name = "n"
+                ma.client_id = "c"
+
+                setup_root_logger()
+            root.addHandler(agents_handler)
+
+            logging.getLogger("httpx").info('HTTP Request: GET https://files.test/content?grant=secret "HTTP/1.1 200 OK"')
+
+            assert set(HTTP_CLIENT_LOGGERS) == {"httpx", "httpcore"}
+            for name in HTTP_CLIENT_LOGGERS:
+                logger = logging.getLogger(name)
+                assert not logger.isEnabledFor(logging.INFO), name
+                assert logger.isEnabledFor(logging.WARNING), name
+            agents_handler.handle.assert_not_called()
+        finally:
+            root.handlers = original
+            root.setLevel(root_level)
+            for name, level in levels.items():
+                logging.getLogger(name).setLevel(level)

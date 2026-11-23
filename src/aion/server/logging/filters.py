@@ -34,6 +34,12 @@ its files as base64 and the attribution token. LiteLLM writes through a
 handler of its own as well, which no filter on the server's handlers reaches,
 so these loggers are held at WARNING themselves rather than by a rule here."""
 
+HTTP_CLIENT_LOGGERS: tuple[str, ...] = ("httpx", "httpcore")
+"""Loggers that print every request's full URL at INFO, the download link of a
+stored file with its grant in the query among them. A rule here keeps them
+off the server's handlers only; a handler the agent adds itself would print
+the grant, so these loggers are held at WARNING themselves as well."""
+
 
 class NamespaceFilter(logging.Filter):
     """Filter log records by logger namespace with per-namespace minimum log levels.
