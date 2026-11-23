@@ -2,11 +2,13 @@
 
 ADK pauses a run on a long-running tool call: a call whose id is in the
 event's ``long_running_tool_ids`` and which no function response has
-answered yet. ``LongRunningFunctionTool``, the built-in ``request_input``
-tool, ``tool_context.request_confirmation`` (``adk_request_confirmation``)
-and ``tool_context.request_credential`` (``adk_request_credential``) all
-end that way. The agent returns, and the call waits in the session until a
-function response with its id arrives.
+answered yet. A ``LongRunningFunctionTool`` whose function returns None,
+the built-in ``request_input`` tool, ``tool_context.request_confirmation``
+(``adk_request_confirmation``) and ``tool_context.request_credential``
+(``adk_request_credential``) all end that way. The agent returns, and the
+call waits in the session until a function response with its id arrives.
+A long-running function that returns a value answers its own call, so the
+run goes on without a pause, as in ADK itself.
 
 On the A2A side the pause looks the way a LangGraph ``interrupt()`` does:
 ``INPUT_REQUIRED`` with a text part asking the question, a data part with

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Documentation
+
+* **adk:** say that a `LongRunningFunctionTool` pauses a run only when its function returns `None`
+* **files:** say that a stored part keeps the file's protected address, and its download link is issued on behalf of the caller
+
 ### Miscellaneous Chores
 
 * link the documentation and the changelog from the package page ([f93e48f](https://github.com/Terminal-Research/aion-python-sdk/commit/f93e48f48e9a682fea3b6ff2e5652dc388239f14))

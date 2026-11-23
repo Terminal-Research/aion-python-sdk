@@ -11,7 +11,7 @@ What stays the server's is everything the Runner is given:
   no memory service, credential service or plugin is passed;
 - every write to the session goes through ``TurnSessionService``, where the
   turn in progress decides whether an event is kept and prepares it, and
-  where a file the event carries inline is stored and kept as a link
+  where a file the event carries inline is stored and kept by its address
   (``session_files``);
 - the invocation context is ``AionInvocationContext``, carrying the Aion
   runtime context of the request;
@@ -95,7 +95,7 @@ class TurnSessionService(BaseSessionService):
     so one place decides what a session holds, whoever writes - the Runner,
     for the user's message and the agent's events, or the server, for what
     the agent sent through the thread. The session service is given a copy
-    of the event with its inline files stored and linked
+    of the event with its inline files stored and named by their address
     (``kept_in_session``); the event goes back to the writer as it was, and
     the invocation's session goes on with its content (``with_content_of``).
     """
@@ -223,9 +223,11 @@ def build_runner(
     Every invocation is resumable, as in an ADK ``App`` with
     ``ResumabilityConfig(is_resumable=True)``: a run that makes a
     long-running tool call - ``request_input``, a tool confirmation, a
-    ``LongRunningFunctionTool`` - stops there, and the reply resumes the same
-    invocation. Without it ADK calls the model again at once and the user is
-    never asked.
+    ``LongRunningFunctionTool`` whose function returns None - stops there,
+    and the reply resumes the same invocation. Without it ADK calls the
+    model again at once and the user is never asked. A long-running function
+    that returns a value does not stop the run: the value is the call's
+    response, as in ADK itself.
 
     Args:
         agent: The root agent.

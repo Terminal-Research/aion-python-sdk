@@ -26,7 +26,7 @@ class AppSettings(BaseEnvSettings):
             "rejects the request, an outbound one fails the task and is logged "
             "rather than falling back to base64. A file the framework keeps in its "
             "own state - a LangGraph checkpoint, an ADK session - is stored the same "
-            "way and kept there as a link; a file the turn also sends out is stored once. "
+            "way and kept there by its address; a file the turn also sends out is stored once. "
             "Options: 'aion' (the Aion Files API; requires AION_CLIENT_ID and "
             "AION_CLIENT_SECRET, the server refuses to start without them), "
             "'stub' (development only: it keeps the files in the server process's memory "

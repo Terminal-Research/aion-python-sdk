@@ -221,7 +221,8 @@ a `ConversationFile` per file part. A file reaches a task inline or, once
 the server stored it, as an address: `read()` returns the bytes either way
 and keeps them on the object. A stored file is downloaded through a link,
 with no credentials added and never named by its address in an error or a
-log - the address is a download link that carries its own access.
+log: the address itself works only with authorization, and the link is
+issued on behalf of the turn's usage attribution.
 `aion.core.a2a` reads the parts of any message or artifact the same way
 (`text_of`, `data_of`, and `files_of` for its files as `ConversationFile`),
 and `answer_text(task)` gives the text a task answered with, wherever the

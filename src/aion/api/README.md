@@ -204,9 +204,11 @@ its normal update permission and revision fence. Artifact uploads may omit
 deployment's current payer. An explicit organization must match that payer.
 Neither distribution recipients nor reported callers select the File owner.
 
-The Aion storage backend obtains an exact-version grant after upload and emits
-that URL for recipient delivery. Grant retries do not repeat a confirmed upload.
-Receipts retain File/version IDs and separate access/retention deadlines; stored
-history links are not renewed automatically. No finite retention is added unless
-the uploader supplies an absolute deadline. Grant failure is a delivery failure,
-even if the upload committed; it never falls back to a protected content URL.
+The Aion storage backend obtains an exact-version grant after upload. A stored
+part keeps the version's protected content address, which carries no credential
+and works only with authorization; the grant is the receipt's `link`, a download
+link the server hands out only on behalf of the usage attribution it was issued
+to, and asks for again when it has expired. Grant retries do not repeat a
+confirmed upload. Receipts retain File/version IDs and separate access/retention
+deadlines. No finite retention is added unless the uploader supplies an absolute
+deadline. Grant failure is a delivery failure, even if the upload committed.
