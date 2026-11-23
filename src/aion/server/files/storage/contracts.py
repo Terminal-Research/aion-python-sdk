@@ -152,15 +152,16 @@ class UploadReceipt:
     """Proof that one file's bytes are stored and reachable at ``uri``.
 
     ``uri`` is the file's address, forwarded unchanged into ``Part(url=...)``
-    and kept wherever the part is stored. ``link`` is a download link that
-    works without credentials, issued with the receipt, when ``uri`` itself
-    needs them: a stored part then keeps no credential, and the link is
-    handed out only to whom it was issued for (``aion.server.files.links``).
-    Without ``link``, ``uri`` is the link to hand out. The SDK does not
-    rewrite, sign, or otherwise interpret either - and does not log them: a
-    service is free to answer with a signed URL whose query string is a
-    credential, so neither is in the receipt's ``repr``. Stable File/version
-    IDs remain independent of access and storage deadlines.
+    and kept wherever the part is stored - the task, its journal, the
+    framework's state - for every reader of the conversation to see, so it
+    carries no credential. ``link`` is a download link that works without
+    credentials, issued with the receipt, when ``uri`` itself needs them: it
+    is handed out only to whom it was issued for (``aion.server.files.links``),
+    and a backend that answers with a signed URL puts that URL here. Without
+    ``link``, ``uri`` is the link to hand out. The SDK does not rewrite, sign,
+    or otherwise interpret either - and does not log them: neither is in the
+    receipt's ``repr``. Stable File/version IDs remain independent of access
+    and storage deadlines.
 
     Attributes:
         access_expires_at: When the link handed out - ``link``, or ``uri``

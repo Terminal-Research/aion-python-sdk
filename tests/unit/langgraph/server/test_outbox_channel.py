@@ -102,7 +102,7 @@ async def test_a_graph_compiled_with_its_own_checkpointer_keeps_it_and_the_outbo
 
     await _two_turns(graph)
 
-    assert graph.checkpointer is compiled.checkpointer
+    assert graph.checkpointer.storage is own.storage and compiled.checkpointer is own
     assert OUTBOX_CLASS not in _saved(own)
 
 

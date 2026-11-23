@@ -7,6 +7,7 @@ from langgraph.graph import StateGraph
 from langgraph.pregel import Pregel
 
 from aion.langgraph.server.adapter import LangGraphAdapter
+from aion.langgraph.server.checkpoint.files import LinkedFilesSaver
 from aion.langgraph.server.execution import LangGraphExecutor
 
 
@@ -215,7 +216,8 @@ class TestCompiledGraphCheckpointer:
         state = await result.aget_state({"configurable": {"thread_id": "ctx-1"}})
         assert state.values == {}
 
-    async def test_a_graph_compiled_with_its_own_keeps_it(self):
+    async def test_a_graph_compiled_with_its_own_keeps_its_storage(self):
+        """The copy served links files, as the server's checkpointers do, in the same storage."""
         from langgraph.checkpoint.memory import InMemorySaver
 
         own = InMemorySaver()
@@ -223,8 +225,9 @@ class TestCompiledGraphCheckpointer:
         with patch.object(self.adapter, "_get_checkpointer", new=AsyncMock()) as server:
             result = await self.adapter._compile_graph(graph, self.config)
 
-        assert result is graph
-        assert result.checkpointer is own
+        assert isinstance(result.checkpointer, LinkedFilesSaver)
+        assert result.checkpointer.storage is own.storage
+        assert graph.checkpointer is own
         server.assert_not_awaited()
 
     async def test_a_checkpointer_explicitly_turned_off_stays_off(self):

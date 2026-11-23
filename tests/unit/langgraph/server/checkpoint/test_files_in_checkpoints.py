@@ -9,14 +9,21 @@ stored file it names.
 from __future__ import annotations
 
 import base64
-from typing import Annotated, Optional, TypedDict
+import logging
+from collections import OrderedDict, defaultdict
+from dataclasses import dataclass, field
+from typing import Annotated, Any, NamedTuple, Optional, TypedDict
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from a2a.types import Message, Part, Role
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, ToolMessage
 from langchain_core.messages.content import create_file_block
 from langgraph.graph import END, START, StateGraph
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.message import add_messages
+from langgraph.types import Send, interrupt
+from pydantic import BaseModel
 
 import aion.core.runtime.context.conversation as conversation_module
 from aion.core.a2a.file_contents import FileContents, keeping_file_contents
@@ -24,7 +31,9 @@ from aion.core.a2a.files import STORED_FILE_KEY, StoredFile
 from aion.core.a2a.models import A2AOutbox
 from aion.core.agent.testing import InMemoryConversation, use_conversation
 from aion.langgraph.authoring import inline_files
+from aion.langgraph.server.adapter import LangGraphAdapter
 from aion.langgraph.server.checkpoint.backends.memory import AionInMemorySaver, MemoryBackend
+from aion.langgraph.server.checkpoint.files import linking_files, with_linked_files
 from aion.langgraph.server.converters.a2a_to_lc import A2AToLcConverter
 from aion.core.runtime.context.conversation import Conversation
 from aion.langgraph.server.converters.lc_to_a2a import LcToA2AConverter
@@ -275,3 +284,192 @@ class TestAGraphThatReturnsTheInlinedMessages:
         assert StoredFile.from_metadata(report["extras"][STORED_FILE_KEY]) == self.INBOUND
         assert PDF_B64 not in _saved(graph.checkpointer)
         assert downloads == [self.ADDRESS, self.ADDRESS]
+
+
+class Report(BaseModel):
+    title: str = "report"
+    messages: list[AnyMessage] = []
+
+
+@dataclass
+class Box:
+    messages: list = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class FrozenBox:
+    messages: tuple = ()
+
+
+class Pair(NamedTuple):
+    title: str
+    messages: list
+
+
+class Messages(list):
+    pass
+
+
+class HeldState(TypedDict, total=False):
+    messages: Annotated[list, add_messages]
+    held: Any
+    note: str
+
+
+def _chart() -> AIMessage:
+    return AIMessage(content=[{"type": "text", "text": "The chart."}, {"type": "image", "base64": PNG_B64, "mime_type": "image/png"}])
+
+
+def _held_graph(builder: StateGraph):
+    return builder.compile(checkpointer=AionInMemorySaver())
+
+
+def _one_node(answer) -> StateGraph:
+    builder = StateGraph(HeldState)
+    builder.add_node("answer", answer)
+    builder.add_edge(START, "answer")
+    builder.add_edge("answer", END)
+    return builder
+
+
+SHAPES = {
+    "pydantic-model": lambda: Report(messages=[_chart()]),
+    "dataclass": lambda: Box(messages=[_chart()]),
+    "frozen-slots-dataclass": lambda: FrozenBox(messages=(_chart(),)),
+    "ordered-dict": lambda: OrderedDict(messages=[_chart()]),
+    "defaultdict": lambda: defaultdict(list, messages=[_chart()]),
+    "named-tuple": lambda: Pair("charts", [_chart()]),
+    "list-subclass": lambda: Messages([_chart()]),
+}
+
+
+class TestFilesWhereverTheStateKeepsThem:
+    """A message is saved from wherever LangGraph saves it, and its file is linked there too."""
+
+    @pytest.mark.parametrize("make", SHAPES.values(), ids=SHAPES.keys())
+    async def test_a_file_in_a_container_the_state_holds_is_saved_as_a_link(self, make) -> None:
+        graph = _held_graph(_one_node(lambda state: {"held": make()}))
+        backend = NumberingBackend()
+
+        with storing_turn(backend):
+            await graph.ainvoke({"messages": [HumanMessage("Draw it")]}, CONFIG)
+
+        assert PNG_B64 not in _saved(graph.checkpointer)
+        assert len(backend.stored) == 1
+
+    async def test_a_file_a_send_carries_to_a_node_is_saved_as_a_link(self) -> None:
+        builder = StateGraph(HeldState)
+        builder.add_node("plan", lambda state: {"note": "planned"})
+        builder.add_node("draw", lambda state: {"note": "drawn"})
+        builder.add_edge(START, "plan")
+        builder.add_conditional_edges("plan", lambda state: [Send("draw", {"messages": [_chart()]})], ["draw"])
+        builder.add_edge("draw", END)
+        graph = _held_graph(builder)
+        backend = NumberingBackend()
+
+        with storing_turn(backend):
+            await graph.ainvoke({"messages": [HumanMessage("Draw it")]}, CONFIG)
+
+        assert PNG_B64 not in _saved(graph.checkpointer)
+        assert len(backend.stored) == 1
+
+    async def test_a_file_an_interrupt_asks_with_is_saved_as_a_link(self) -> None:
+        graph = _held_graph(_one_node(lambda state: {"note": interrupt(_chart())}))
+        backend = NumberingBackend()
+
+        with storing_turn(backend):
+            await graph.ainvoke({"messages": [HumanMessage("Draw it")]}, CONFIG)
+
+        assert (await graph.aget_state(CONFIG)).interrupts
+        assert PNG_B64 not in _saved(graph.checkpointer)
+        assert len(backend.stored) == 1
+
+
+class TestTheCopiesThatAreSaved:
+    """What is saved is a copy of the graph's object, of the same type."""
+
+    @pytest.mark.parametrize("make", SHAPES.values(), ids=SHAPES.keys())
+    async def test_a_container_with_a_linked_file_is_copied_with_its_type(self, make) -> None:
+        held = make()
+
+        with storing_turn(NumberingBackend()) as files:
+            saved = await with_linked_files(held, files)
+
+        assert saved is not held and type(saved) is type(held)
+        assert PNG_B64 not in repr(saved)
+        assert PNG_B64 in repr(held)
+
+    async def test_a_defaultdict_keeps_its_factory(self) -> None:
+        with storing_turn(NumberingBackend()) as files:
+            saved = await with_linked_files(defaultdict(list, messages=[_chart()]), files)
+
+        assert saved.default_factory is list
+
+    async def test_a_send_keeps_its_node(self) -> None:
+        with storing_turn(NumberingBackend()) as files:
+            saved = await with_linked_files(Send("draw", {"messages": [_chart()]}), files)
+
+        assert saved.node == "draw"
+        assert saved.arg["messages"][0].content[1]["url"] == LINK
+
+    @pytest.mark.parametrize("make", SHAPES.values(), ids=SHAPES.keys())
+    async def test_a_container_without_an_inline_file_is_saved_as_it_is(self, make) -> None:
+        held = make()
+        with storing_turn(NumberingBackend()) as files:
+            linked = await with_linked_files(held, files)
+            assert await with_linked_files(linked, files) is linked
+
+
+class TestAGraphCompiledWithItsOwnCheckpointer:
+    """The server serves a copy of the graph whose checkpointer links files and keeps the same storage."""
+
+    async def _served(self, compiled):
+        adapter = LangGraphAdapter()
+        with patch.object(adapter, "_get_checkpointer", new=AsyncMock()) as server:
+            graph = await adapter._compile_graph(compiled, Mock())
+        server.assert_not_awaited()
+        return graph
+
+    async def test_its_checkpoints_keep_files_as_links(self) -> None:
+        own = InMemorySaver()
+        compiled = _one_node(lambda state: {"messages": [_chart()]}).compile(checkpointer=own)
+        graph = await self._served(compiled)
+        backend = NumberingBackend()
+
+        with storing_turn(backend):
+            await graph.ainvoke({"messages": [HumanMessage("Draw it")]}, CONFIG)
+
+        assert own.storage and PNG_B64 not in _saved(own)
+        assert len(backend.stored) == 1
+        saved = (await compiled.aget_state(CONFIG)).values["messages"][-1].content[1]
+        assert saved["url"] == LINK
+
+    async def test_the_graph_and_the_checkpointer_it_was_given_are_not_changed(self) -> None:
+        own = InMemorySaver()
+        compiled = _one_node(lambda state: {"note": "done"}).compile(checkpointer=own)
+
+        graph = await self._served(compiled)
+
+        assert compiled.checkpointer is own and type(own) is InMemorySaver
+        assert isinstance(graph.checkpointer, InMemorySaver) and graph.checkpointer is not own
+
+    async def test_the_servers_checkpointer_is_not_copied_again(self) -> None:
+        saver = AionInMemorySaver()
+
+        assert linking_files(saver) is saver
+
+    @pytest.mark.parametrize("given", [True, False, None])
+    def test_a_checkpointer_setting_that_is_no_saver_is_left_as_it_is(self, given) -> None:
+        assert linking_files(given) is given
+
+    def test_a_checkpointer_that_cannot_be_copied_is_kept_with_a_warning(self, caplog) -> None:
+        class Uncopyable(InMemorySaver):
+            def __reduce_ex__(self, protocol):
+                raise TypeError("not copyable")
+
+        own = Uncopyable()
+
+        with caplog.at_level(logging.WARNING, logger="aion.langgraph.server.checkpoint.files"):
+            assert linking_files(own) is own
+
+        assert "keep the bytes of the files the graph makes" in caplog.text
