@@ -7,6 +7,29 @@ tag is what publishes it: `.github/workflows/publish-python.yml` builds,
 checks and uploads automatically after the build job succeeds. Nothing is
 published from a laptop, and the repository holds no PyPI credentials.
 
+## Branches
+
+The work for the next version collects on one branch named after it,
+`dev/<version>` - `dev/0.2.1` - cut from `main`:
+
+- every task is a branch of its own from the version branch, merged back
+  into it through a pull request, squashed into one commit; the pull request
+  runs the full CI;
+- `main` is merged into the version branch whenever `main` moves, so the
+  release brings no conflicts with it;
+- a fix for the released version goes to `main` through a pull request of its
+  own, and reaches the version branch with the next merge of `main`;
+- the release is one pull request from the version branch into `main`, merged
+  with a merge commit once its CI is green; `make release` then runs on
+  `main`, and the next version's branch is cut from `main` after it.
+
+The documentation on <https://docs.aion.to>
+([aion-docs-mintlify](https://github.com/Terminal-Research/aion-docs-mintlify))
+follows the same scheme with a version branch of the same name: a task that
+changes both repositories has a branch of the same name in each. Its version
+branch goes into its `main` with a merge commit once the release is on PyPI,
+never before.
+
 ## Releasing
 
 Make sure that:
