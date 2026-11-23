@@ -66,7 +66,7 @@ import copy
 import hashlib
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Iterable, Optional, Sequence, TypeVar, Union
 
@@ -133,9 +133,12 @@ def link_scope_of(call_context: Any) -> Optional[UploadContext]:
 
 @dataclass(frozen=True)
 class _Link:
-    """A link issued here and the reference it goes out with."""
+    """A link issued here and the reference it goes out with.
 
-    uri: str
+    The link carries its grant, so it is not in the ``repr``.
+    """
+
+    uri: str = field(repr=False)
     file: StoredFile
 
 

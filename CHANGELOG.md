@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Bug Fixes
+
+* **files:** keep a stored file's download link out of the logs
+
 ### Documentation
 
 * **adk:** say that a `LongRunningFunctionTool` pauses a run only when its function returns `None`

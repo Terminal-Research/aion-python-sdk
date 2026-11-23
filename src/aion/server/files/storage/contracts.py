@@ -7,7 +7,7 @@ honour the guarantee this feature exists for, namely that inline file content
 is never written to the task record.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Optional, Union
@@ -159,21 +159,21 @@ class UploadReceipt:
     Without ``link``, ``uri`` is the link to hand out. The SDK does not
     rewrite, sign, or otherwise interpret either - and does not log them: a
     service is free to answer with a signed URL whose query string is a
-    credential. Stable File/version IDs remain independent of access and
-    storage deadlines.
+    credential, so neither is in the receipt's ``repr``. Stable File/version
+    IDs remain independent of access and storage deadlines.
 
     Attributes:
         access_expires_at: When the link handed out - ``link``, or ``uri``
             without one - stops working.
     """
 
-    uri: str
+    uri: str = field(repr=False)
     file_id: Optional[str] = None
     version_id: Optional[str] = None
     revision: Optional[int] = None
     access_expires_at: Optional[str] = None
     retention_expires_at: Optional[str] = None
-    link: Optional[str] = None
+    link: Optional[str] = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)

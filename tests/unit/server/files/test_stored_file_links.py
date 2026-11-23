@@ -739,3 +739,14 @@ class TestAFailureThatMayPass:
         task = task_with(protected_part())
 
         assert await links.refresh(task, context=self._as("carrier-1")) is task
+
+
+def test_neither_a_receipt_nor_an_issued_link_shows_its_grant_in_its_repr() -> None:
+    receipt = UploadReceipt(
+        uri="https://files.test/content?grant=address", file_id="f1", version_id="v1", link=STORED_LINK,
+    )
+    issued = links_module._Link(uri=STORED_LINK, file=StoredFile(file_id="f1", version_id="v1"))
+
+    for value in (receipt, issued):
+        assert "grant=" not in repr(value)
+        assert "f1" in repr(value)
