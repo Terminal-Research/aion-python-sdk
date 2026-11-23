@@ -17,6 +17,7 @@ from .interfaces import (
     StateScope,
     TaskExecutor,
     is_state_key,
+    state_key_parts,
     normalize_role_to_a2a,
     create_message_from_parts,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "LegacyStateError",
     "StateScope",
     "is_state_key",
+    "state_key_parts",
     "normalize_role_to_a2a",
     "create_message_from_parts",
     # Registry

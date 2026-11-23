@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, ClassVar, Literal, Optional, TYPE_CHECKING
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 
 from a2a.server.events import Event
@@ -124,6 +124,21 @@ class StateScope:
 def is_state_key(value: str) -> bool:
     """Whether ``value`` has the shape of a key ``StateScope.key_for`` builds."""
     return value.startswith(f"{STATE_KEY_PREFIX}:")
+
+
+def state_key_parts(value: str) -> Optional[tuple[str, str, str]]:
+    """The agent id, state owner and context id of a key ``StateScope.key_for`` built, or None.
+
+    Each part is percent-encoded in the key, so the separators between them
+    are the only ``:`` it holds.
+    """
+    if not is_state_key(value):
+        return None
+    parts = value.split(":")
+    if len(parts) != 4:
+        return None
+    agent_id, state_owner, context_id = (unquote(part) for part in parts[1:])
+    return agent_id, state_owner, context_id
 
 
 class ExecutionConfig:

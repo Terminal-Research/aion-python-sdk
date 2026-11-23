@@ -187,6 +187,25 @@ Checkpoints saved before this key existed sit under the bare `context_id` and ca
 
 This applies to a graph returned uncompiled, and to one returned already compiled without a checkpointer of its own — what `langchain.agents.create_agent(model, tools)` gives you. The server needs a checkpointer to run a graph at all: it reads the graph's state at the end of every turn, and memory between turns and `interrupt()` depend on it. A graph compiled with its own checkpointer keeps its storage, and then its state lives wherever that checkpointer keeps it rather than in the server's database; files are saved there as links all the same (see [Files in checkpoints](#files-in-checkpoints)). A graph compiled with `checkpointer=False` is left as it is and cannot finish a turn under the server.
 
+## Store
+
+The server gives a graph a LangGraph store as well: memory across conversations, through `runtime.store` in a node and `get_store()` in a tool. What the agent keeps there in one conversation with a user, it finds in the next. A graph returned uncompiled, and one compiled without a store of its own, gets the server's; one compiled with its own keeps it, and the server does not touch it.
+
+- **PostgreSQL** — with the checkpoints: LangGraph's own store tables in the `aion_langgraph` schema, migrated together with the checkpoint tables, by the startup migration and `aion db migrate`. `aion db check` reports both as one line, "LangGraph checkpoint and store tables". It needs langgraph-checkpoint-postgres 2.0.4 or later, the first whose store runs on a connection pool, as the server's does: with an older one the graph gets no store from the server, the store tables are not created, and the log says so at startup.
+- **In-memory** — when no database is configured; lost on process restart, and not shared by several servers.
+
+Each user's memory is apart (`store.OwnerScopedStore`). Every namespace a graph names is kept under two labels it never sees - the agent and the conversation's state owner, the same two its checkpoints are keyed by - and every namespace a result carries comes back without them: a graph writes `("memories",)` and reads back `("memories",)`, and another user of the agent, or another agent on the same database, finds nothing of it. A private conversation's state owner is its caller, an anonymous session included, whose memory stays with that session; a conversation shared through Aion's gateway is its own state owner, so its participants share its memory as they share its history. The labels come from the run's `thread_id`: outside a turn of the server there is no owner, and the store raises `StoreOwnerUnavailableError` rather than reach any data.
+
+The memory is the user's, not a conversation's: `DeleteContext` deletes a context's checkpoints and leaves the store as it is. A graph forgets a user with the store's own methods, which reach that user's data only:
+
+```python
+while items := await runtime.store.asearch((), limit=100):
+    for item in items:
+        await runtime.store.adelete(item.namespace, item.key)
+```
+
+The server's store has no semantic search index and no TTL; a graph that needs either compiles with a store of its own. A value is saved as the graph gives it: a file inside it keeps its bytes, unlike a file in a checkpoint.
+
 ---
 
 ## Interrupts and Resume

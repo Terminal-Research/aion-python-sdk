@@ -64,3 +64,18 @@ async def test_a_distribution_does_not_split_the_conversation(client: ScenarioCl
     events = await client.send("recall", context_id=first.context_id, **_through("distribution-b"))
 
     assert section_texts(events) == [RECALL_PREFIX + "say hello"]
+
+
+@pytest.mark.capability("store")
+async def test_what_a_tool_remembered_in_the_store_is_there_in_the_next_conversation(client: ScenarioClient) -> None:
+    """The LangGraph store the server gives the graph is the user's, across conversations.
+
+    The tools run synchronously, so the store answers them from the server's
+    event loop, PostgreSQL included.
+    """
+    await client.send("remember milk")
+    await client.send("remember bread")
+
+    events = await client.send("memories")
+
+    assert section_texts(events) == ["bread, milk"]

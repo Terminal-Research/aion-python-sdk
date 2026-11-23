@@ -1,6 +1,7 @@
 """PostgreSQL checkpointer backend."""
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -30,6 +31,37 @@ CHECKPOINT_SETUP_LOCK_KEY = 7_382_194_612
 # CONCURRENTLY, which waits for every open transaction, and a statement blocked
 # in pg_advisory_lock is one - the holder and the waiter would deadlock.
 CHECKPOINT_SETUP_LOCK_POLL_SECONDS = 0.1
+
+
+async def run_under_setup_lock(conn: AsyncConnection[Any], setup: Callable[[], Awaitable[None]]) -> None:
+    """Run ``setup`` on ``conn`` while holding ``CHECKPOINT_SETUP_LOCK_KEY``.
+
+    The setups of LangGraph's tables - the checkpoints and the store - take
+    the same lock, so servers that start together against one database run
+    them one after another. ``conn`` is an autocommit connection: the lock is
+    taken for its session and released when ``setup`` ends, however it ends.
+    """
+    while not await _try_setup_lock(conn):
+        await asyncio.sleep(CHECKPOINT_SETUP_LOCK_POLL_SECONDS)
+    try:
+        await setup()
+    finally:
+        # A session-level lock survives a rolled-back transaction, and an
+        # aborted one would refuse the unlock, so roll back first.
+        if conn.info.transaction_status == TransactionStatus.INERROR:
+            await conn.rollback()
+        await conn.execute(
+            "SELECT pg_advisory_unlock(%s::bigint)", (CHECKPOINT_SETUP_LOCK_KEY,)
+        )
+
+
+async def _try_setup_lock(conn: AsyncConnection[Any]) -> bool:
+    """Take the setup lock if no other session holds it, without waiting."""
+    cursor = await conn.execute(
+        "SELECT pg_try_advisory_lock(%s::bigint)", (CHECKPOINT_SETUP_LOCK_KEY,)
+    )
+    row = await cursor.fetchone()
+    return bool(row and row[0])
 
 
 class AionAsyncPostgresSaver(LinkedFilesSaver, AsyncPostgresSaver):
@@ -78,29 +110,13 @@ class AionAsyncPostgresSaver(LinkedFilesSaver, AsyncPostgresSaver):
 
     async def _locked_setup(self, conn: AsyncConnection[Any]) -> None:
         """Run the schema and table setup on ``conn`` while holding the setup lock."""
-        while not await self._try_setup_lock(conn):
-            await asyncio.sleep(CHECKPOINT_SETUP_LOCK_POLL_SECONDS)
-        try:
+
+        async def setup() -> None:
             await self._ensure_schema_exists(conn, self._schema)
             await self._set_search_path(conn, self._schema)
             await AsyncPostgresSaver(conn=conn).setup()
-        finally:
-            # A session-level lock survives a rolled-back transaction, and an
-            # aborted one would refuse the unlock, so roll back first.
-            if conn.info.transaction_status == TransactionStatus.INERROR:
-                await conn.rollback()
-            await conn.execute(
-                "SELECT pg_advisory_unlock(%s::bigint)", (CHECKPOINT_SETUP_LOCK_KEY,)
-            )
 
-    @staticmethod
-    async def _try_setup_lock(conn: AsyncConnection[Any]) -> bool:
-        """Take the setup lock if no other session holds it, without waiting."""
-        cursor = await conn.execute(
-            "SELECT pg_try_advisory_lock(%s::bigint)", (CHECKPOINT_SETUP_LOCK_KEY,)
-        )
-        row = await cursor.fetchone()
-        return bool(row and row[0])
+        await run_under_setup_lock(conn, setup)
 
     @asynccontextmanager
     async def _cursor(self, *, pipeline: bool = False):
@@ -202,4 +218,5 @@ __all__ = [
     "PostgresBackend",
     "check_checkpoint_tables",
     "migrate_checkpoint_tables",
+    "run_under_setup_lock",
 ]

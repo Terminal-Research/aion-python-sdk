@@ -35,7 +35,10 @@ latest user message, the way a scenario decides what to send:
     sign-in <service>   call ``sign_in``, which asks for credentials (ADK
                         ``request_credential``)
     report <title>      call ``save_report``, which saves an ADK artifact
-    remember <note>     call ``remember``, which writes the note to ADK state
+    remember <note>     call ``remember``, which writes the note to ADK state,
+                        or to the LangGraph store
+    memories            call ``memories``, which answers with every note the
+                        LangGraph store keeps for the user, in any conversation
     attach              answer with ``ATTACHED`` and the file ``ATTACHMENT``,
                         inline in the model's own answer
     state-files         call ``state_files``, which describes every file the
@@ -150,6 +153,7 @@ REJECTED = "rejected"
 SIGN_IN_TOOL = "sign_in"
 REPORT_TOOL = "save_report"
 REMEMBER_TOOL = "remember"
+MEMORIES_TOOL = "memories"
 STATE_FILES_TOOL = "state_files"
 SNAPSHOT_TOOL = "snapshot"
 SLOW_WORDS = 600
@@ -372,6 +376,7 @@ def model_turn(
         "sign-in": (SIGN_IN_TOOL, {"service": argument}, lambda result: str(result)),
         "report": (REPORT_TOOL, {"title": argument}, lambda result: REPORT_SAVED),
         "remember": (REMEMBER_TOOL, {"note": argument}, lambda result: NOTED),
+        "memories": (MEMORIES_TOOL, {}, lambda result: result),
         "state-files": (STATE_FILES_TOOL, {}, lambda result: result),
         "snapshot": (SNAPSHOT_TOOL, {}, lambda result: json.dumps(list(tool_media))),
     }
