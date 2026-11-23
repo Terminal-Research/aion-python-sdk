@@ -18,6 +18,7 @@ from .checkpoint import CheckpointerFactory
 from .checkpoint.files import linking_files
 from .execution import LangGraphExecutor
 from .outbox_channel import untracked_outbox_channels
+from .store import OwnerScopedStore, StoreFactory
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +131,7 @@ class LangGraphAdapter(AgentAdapter):
             graph: Any,
             config: AgentConfig
     ) -> Any:
-        """Compile a LangGraph graph with checkpointer.
+        """Compile a LangGraph graph with a checkpointer and a store.
 
         A graph that arrives compiled - what ``langchain.agents.create_agent``
         returns - keeps a checkpointer it was compiled with, and is given the
@@ -142,6 +143,11 @@ class LangGraphAdapter(AgentAdapter):
         A checkpointer of the graph's own is replaced in the copy by a copy
         of it that saves files as the server's do, as links to stored files
         (``checkpoint.files.linking_files``); its storage is the same.
+
+        A graph without a store of its own - one the server compiles, or a
+        compiled one without - is given the server's (``store``): memory
+        across the user's conversations, kept apart for every agent and state
+        owner. A store of the graph's own is left as it is.
 
         A state field that holds an ``A2AOutbox`` on LangGraph's ordinary
         channel is given the untracked channel ``A2AOutboxField`` declares,
@@ -169,6 +175,10 @@ class LangGraphAdapter(AgentAdapter):
                 linked = linking_files(own)
                 if linked is not own and hasattr(graph, "copy"):
                     update["checkpointer"] = linked
+            if getattr(graph, "store", None) is None and hasattr(graph, "copy"):
+                store = await self._get_store()
+                if store is not None:
+                    update["store"] = store
             channels = untracked_outbox_channels(graph)
             if channels is not None and hasattr(graph, "copy"):
                 update["channels"] = channels
@@ -181,7 +191,7 @@ class LangGraphAdapter(AgentAdapter):
                 graph = copy.copy(graph)
                 graph.channels = channels
             checkpointer = await self._get_checkpointer()
-            compiled_graph = graph.compile(checkpointer=checkpointer)
+            compiled_graph = graph.compile(checkpointer=checkpointer, store=await self._get_store())
             return compiled_graph
         else:
             logger.debug(f"Graph doesn't require compilation")
@@ -198,6 +208,14 @@ class LangGraphAdapter(AgentAdapter):
                 initialize; startup stops instead of degrading to in-memory.
         """
         return await CheckpointerFactory.create(db_manager=self._db_manager)
+
+    async def _get_store(self) -> Optional[OwnerScopedStore]:
+        """The server's store: PostgreSQL with the checkpoints' database, memory without one.
+
+        None where the installed langgraph-checkpoint-postgres cannot keep it
+        on the server's pool (``store.StoreFactory``).
+        """
+        return await StoreFactory.create(db_manager=self._db_manager)
 
     @staticmethod
     def _is_graph_instance(obj: Any) -> bool:

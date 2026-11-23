@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-285 scenarios in 52 files, 643 runs across 2 frameworks: 597 run, 45 skipped, 1 independent of the framework.
+287 scenarios in 52 files, 647 runs across 2 frameworks: 599 run, 47 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -51,6 +51,7 @@ Features a framework's native agent does not have; a native scenario driving one
 | langgraph | `agent-transfer` | LangGraph has no transfer between agents of its own; a graph routes with its edges and keeps who is active in its state |
 | langgraph | `error-response` | a LangChain chat model has no error response; it reports a failed call by raising, which `fail-after` drives |
 | langgraph | `session-state` | LangGraph has no output_key or tool-written session state; its state is the graph's own channels |
+| adk | `store` | ADK keeps memory across conversations in a memory service, which the server does not give an ADK agent yet |
 
 Features a framework gained inside the range the SDK allows; a native scenario driving one runs where the server has that release or a newer one and `skip`s on an older one, such as the oldest releases `make tests-floors` installs:
 
@@ -85,9 +86,9 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `lifecycle` | cancel, concurrency, push notifications, startup | 15 | `make tests-scenarios TAGS=lifecycle` |
 | `contexts` | Context extension: list, read and delete conversations | 6 | `make tests-scenarios TAGS=contexts` |
 | `evolution` | the evolution extension through the SDK's wrapper and a stand-in toolkit: the standard path, refusals as REJECTED tasks, a cancel | 15 | `make tests-scenarios TAGS=evolution` |
-| `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 21 | `make tests-scenarios-persistence` |
+| `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 22 | `make tests-scenarios-persistence` |
 | `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 19 | `make tests-scenarios-distributed` |
-| `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 65 | `make tests-scenarios TAGS=native` |
+| `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 67 | `make tests-scenarios TAGS=native` |
 
 ## Scenarios by file
 
@@ -568,6 +569,7 @@ A native agent remembers the conversation, the framework's way.
 | [The next turn sees the earlier ones](native/test_memory.py#L28 "test_the_next_turn_sees_the_earlier_ones") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
 | [Memory is per context, not per server.](native/test_memory.py#L37 "test_another_context_starts_empty") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
 | [The distribution a request came through is its channel, not its owner.](native/test_memory.py#L54 "test_a_distribution_does_not_split_the_conversation") | `native` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [The LangGraph store the server gives the graph is the user's, across conversations.](native/test_memory.py#L69 "test_what_a_tool_remembered_in_the_store_is_there_in_the_next_conversation") | `native` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
 
 ### `tests/scenarios/native/test_model_and_tools.py`
 
@@ -599,8 +601,9 @@ A native agent's memory and pause live in the database, not in the process.
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
 | [The conversation survives a restart](native/test_persistence.py#L56 "test_the_conversation_survives_a_restart") | `native`, `persistence` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [The run paused inside ``interrupt()`` continues from the PG checkpoint.](native/test_persistence.py#L68 "test_a_paused_tool_resumes_after_a_restart") | `native`, `persistence` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
-| [``create_agent`` brings no checkpointer; the one it runs with is the](native/test_persistence.py#L84 "test_a_prebuilt_agents_conversation_survives_a_restart") | `native`, `persistence` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
+| [What a tool remembered in the LangGraph store is in PostgreSQL, for any later conversation.](native/test_persistence.py#L68 "test_the_users_store_survives_a_restart") | `native`, `persistence` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
+| [The run paused inside ``interrupt()`` continues from the PG checkpoint.](native/test_persistence.py#L82 "test_a_paused_tool_resumes_after_a_restart") | `native`, `persistence` | — | `default` | ✓ `langgraph_native` | ✓ `adk_native` |
+| [``create_agent`` brings no checkpointer; the one it runs with is the](native/test_persistence.py#L98 "test_a_prebuilt_agents_conversation_survives_a_restart") | `native`, `persistence` | — | `default` | ✓ `langgraph_native` | [skip](#frameworks) |
 
 ### `tests/scenarios/native/test_prebuilt_agent.py`
 

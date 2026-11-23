@@ -4,6 +4,7 @@
 
 ### Features
 
+* **langgraph:** give a graph without a store of its own the server's: memory across a user's conversations, kept apart for every agent and state owner, in PostgreSQL with the checkpoints
 * **langgraph:** say in the log at startup that a graph whose input has no `messages` field reads the message from the turn's context
 
 ### Bug Fixes

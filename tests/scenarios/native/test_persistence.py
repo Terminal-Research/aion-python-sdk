@@ -65,6 +65,20 @@ async def test_the_conversation_survives_a_restart(pg_server: ServeProcess) -> N
     assert section_texts(events) == [RECALL_PREFIX + "say hello"]
 
 
+@pytest.mark.capability("store")
+async def test_the_users_store_survives_a_restart(pg_server: ServeProcess) -> None:
+    """What a tool remembered in the LangGraph store is in PostgreSQL, for any later conversation."""
+    async with await _connect(pg_server) as client:
+        await client.send("remember milk")
+
+    pg_server.restart()
+
+    async with await _connect(pg_server) as client:
+        events = await client.send("memories")
+
+    assert section_texts(events) == ["milk"]
+
+
 @pytest.mark.capability("interrupt")
 async def test_a_paused_tool_resumes_after_a_restart(pg_server: ServeProcess) -> None:
     """The run paused inside ``interrupt()`` continues from the PG checkpoint."""

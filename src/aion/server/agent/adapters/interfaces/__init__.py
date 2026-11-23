@@ -6,6 +6,7 @@ from .executor import (
     LegacyStateError,
     StateScope,
     is_state_key,
+    state_key_parts,
 )
 from .messages import (
     normalize_role_to_a2a,
@@ -23,6 +24,7 @@ __all__ = [
     "LegacyStateError",
     "StateScope",
     "is_state_key",
+    "state_key_parts",
     # Message helpers
     "normalize_role_to_a2a",
     "create_message_from_parts",

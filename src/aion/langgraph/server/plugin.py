@@ -5,10 +5,24 @@ from typing import Any, Optional, override
 
 from aion.core.db import DbManagerProtocol
 from aion.core.logging import AionLogger
-from aion.db.postgres.migrations import SchemaCheck
+from aion.db.postgres.migrations import SchemaCheck, SchemaState
 from aion.server.plugins import AgentPluginProtocol
 
 from .adapter import LangGraphAdapter
+
+
+LANGGRAPH_TABLES_NAME = "LangGraph checkpoint and store tables"
+
+
+def combined_check(name: str, checks: list[SchemaCheck]) -> SchemaCheck:
+    """One check for several sets of tables migrated together: ahead if any is, else behind if any is."""
+    if any(check.state is SchemaState.AHEAD for check in checks):
+        state = SchemaState.AHEAD
+    elif any(check.state is SchemaState.BEHIND for check in checks):
+        state = SchemaState.BEHIND
+    else:
+        state = SchemaState.CURRENT
+    return SchemaCheck(name, state, "; ".join(f"{check.name}: {check.detail}" for check in checks))
 
 
 class LangGraphPlugin(AgentPluginProtocol):
@@ -42,17 +56,28 @@ class LangGraphPlugin(AgentPluginProtocol):
 
     @override
     async def migrate_database(self, db_manager: DbManagerProtocol) -> None:
-        """Run LangGraph's checkpoint migrations in the checkpoint schema."""
+        """Run LangGraph's checkpoint and store migrations in the LangGraph schema.
+
+        The store's only where the installed langgraph-checkpoint-postgres can
+        keep the store on the server's pool (``store.postgres``).
+        """
         from .checkpoint.backends.postgres import migrate_checkpoint_tables
+        from .store.postgres import migrate_store_tables, postgres_store_supported
 
         await migrate_checkpoint_tables(db_manager)
+        if postgres_store_supported():
+            await migrate_store_tables(db_manager)
 
     @override
     async def check_database(self, db_manager: DbManagerProtocol) -> Optional[SchemaCheck]:
-        """Report whether LangGraph's checkpoint migrations are applied."""
+        """Report whether LangGraph's checkpoint and store migrations are applied, as one check."""
         from .checkpoint.backends.postgres import check_checkpoint_tables
+        from .store.postgres import check_store_tables, postgres_store_supported
 
-        return await check_checkpoint_tables(db_manager)
+        checks = [await check_checkpoint_tables(db_manager)]
+        if postgres_store_supported():
+            checks.append(await check_store_tables(db_manager))
+        return combined_check(LANGGRAPH_TABLES_NAME, checks)
 
     @override
     async def teardown(self) -> None:

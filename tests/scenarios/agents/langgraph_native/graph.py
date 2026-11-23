@@ -37,6 +37,7 @@ from langchain_core.messages import (
 from langchain_core.messages.content import create_file_block
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.tools import tool
+from langgraph.config import get_store
 from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.prebuilt import InjectedState, ToolNode, tools_condition
 from langgraph.types import interrupt
@@ -218,8 +219,31 @@ def state_files(state: Annotated[dict, InjectedState]) -> str:
     )
 
 
+def remember(note: str) -> str:
+    """Remember a note for the user, for this conversation and every later one.
+
+    Args:
+        note: What to remember.
+    """
+    get_store().put(("notes",), note, {"note": note})
+    return "remembered"
+
+
+def memories() -> str:
+    """Every note remembered for the user, in any conversation."""
+    return ", ".join(sorted(item.value["note"] for item in get_store().search(("notes",))))
+
+
 def _tools() -> list:
-    return [tool(get_weather), tool(ticker), tool(confirm_action), tool(count_call), tool(state_files)]
+    return [
+        tool(get_weather),
+        tool(ticker),
+        tool(confirm_action),
+        tool(count_call),
+        tool(state_files),
+        tool(remember),
+        tool(memories),
+    ]
 
 
 def create_prebuilt_agent():

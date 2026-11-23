@@ -92,5 +92,5 @@ async def test_a_database_newer_than_the_code_is_left_as_it_is_and_served(db, mo
         await _execute(db, f"DELETE FROM {LANGGRAPH_SCHEMA}.checkpoint_migrations WHERE v = 999")
 
     assert states["SDK tables"] is SchemaState.AHEAD
-    assert states["LangGraph checkpoint tables"] is SchemaState.AHEAD
+    assert states["LangGraph checkpoint and store tables"] is SchemaState.AHEAD
     assert "newer than this SDK version" in caplog.text

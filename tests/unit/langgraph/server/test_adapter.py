@@ -11,6 +11,7 @@ from langgraph.pregel import Pregel
 from aion.langgraph.server.adapter import LangGraphAdapter
 from aion.langgraph.server.checkpoint.files import LinkedFilesSaver
 from aion.langgraph.server.execution import LangGraphExecutor
+from aion.langgraph.server.store import OwnerScopedStore
 
 
 class TestCanHandle:
@@ -220,14 +221,16 @@ class TestCompileGraph:
         assert result is graph
 
     async def test_state_graph_with_compile_method_is_compiled(self):
-        """StateGraph with .compile() has it called with a checkpointer."""
+        """StateGraph with .compile() has it called with a checkpointer and a store."""
         checkpointer = Mock()
+        store = Mock()
         compiled = Mock()
         graph = Mock(spec=StateGraph)
         graph.compile = Mock(return_value=compiled)
-        with patch.object(self.adapter, "_get_checkpointer", new=AsyncMock(return_value=checkpointer)):
+        with patch.object(self.adapter, "_get_checkpointer", new=AsyncMock(return_value=checkpointer)), \
+             patch.object(self.adapter, "_get_store", new=AsyncMock(return_value=store)):
             result = await self.adapter._compile_graph(graph, self.config)
-        graph.compile.assert_called_once_with(checkpointer=checkpointer)
+        graph.compile.assert_called_once_with(checkpointer=checkpointer, store=store)
         assert result is compiled
 
     async def test_object_without_compile_is_returned_as_is(self):
@@ -288,8 +291,26 @@ class TestCompiledGraphCheckpointer:
         with patch.object(self.adapter, "_get_checkpointer", new=AsyncMock()) as server:
             result = await self.adapter._compile_graph(graph, self.config)
 
-        assert result is graph
+        assert result.checkpointer is False and graph.checkpointer is False
         server.assert_not_awaited()
+
+    async def test_a_graph_compiled_without_a_store_gets_the_servers(self):
+        graph = self._agent()
+
+        result = await self.adapter._compile_graph(graph, self.config)
+
+        assert isinstance(result.store, OwnerScopedStore)
+        assert graph.store is None
+
+    async def test_a_graph_compiled_with_its_own_store_keeps_it(self):
+        from langgraph.store.memory import InMemoryStore
+
+        own = InMemoryStore()
+        graph = self._agent(store=own)
+
+        result = await self.adapter._compile_graph(graph, self.config)
+
+        assert result.store is own
 
 
 class TestCreateExecutor:

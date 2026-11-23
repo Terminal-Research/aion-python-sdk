@@ -322,6 +322,10 @@ NATIVE_UNSUPPORTED: dict[tuple[str, str], str] = {
         "LangGraph has no output_key or tool-written session state; its state is the "
         "graph's own channels"
     ),
+    ("adk", "store"): (
+        "ADK keeps memory across conversations in a memory service, which the server "
+        "does not give an ADK agent yet"
+    ),
 }
 
 
