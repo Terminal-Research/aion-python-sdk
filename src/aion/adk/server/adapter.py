@@ -13,6 +13,7 @@ from google.adk.agents import BaseAgent
 
 from .artifacts.factory import ArtifactServiceFactory
 from .execution import ADKExecutor
+from .memory import MemoryServiceFactory
 from .session import SessionServiceFactory
 
 logger = logging.getLogger(__name__)
@@ -101,7 +102,14 @@ class ADKAdapter(AgentAdapter):
 
         session_service = await SessionServiceFactory.create(db_manager=self.db_manager)
         artifact_service = ArtifactServiceFactory.create(db_manager=self.db_manager)
-        return ADKExecutor(agent, config, session_service=session_service, artifact_service=artifact_service)
+        memory_service = MemoryServiceFactory.create(db_manager=self.db_manager)
+        return ADKExecutor(
+            agent,
+            config,
+            session_service=session_service,
+            artifact_service=artifact_service,
+            memory_service=memory_service,
+        )
 
     def validate_config(self, config: AgentConfig) -> None:
         """Raise AdapterConfigurationError if required ADK config fields are absent."""

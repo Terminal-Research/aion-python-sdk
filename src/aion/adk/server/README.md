@@ -22,7 +22,8 @@ The Runner works only with what the server gives it (`execution/runner.py`):
 
 - **Sessions** are the server's session service, memory or PostgreSQL. Every write, the Runner's included, passes one point where the turn in progress decides what a session keeps (`TurnSessionService`), and where a file an event carries inline is stored and kept as a link (see [Files in the session](#files-in-the-session)).
 - **Artifacts** are the server's artifact service.
-- **Nothing else is passed**: no memory service, no credential service, no plugins, no context cache, no event compaction. The Runner creates no session on its own; the server finds or creates it first.
+- **Memory** is the server's memory service (see [Memory](#memory)).
+- **Nothing else is passed**: no credential service, no plugins, no context cache, no event compaction. The Runner creates no session on its own; the server finds or creates it first.
 - **The run configuration is fixed**: text out, streamed (`RUN_CONFIG`), and every invocation resumable.
 - **The invocation context** is `AionInvocationContext`, which carries the Aion runtime context of the request.
 
@@ -55,6 +56,24 @@ An `LlmAgent` with an `output_schema` answers with an object of that schema, and
 With a file storage backend configured, a session never holds a file's bytes. An event can carry a file inline - `inline_data` in its content, written by the agent, a callback, a model or `thread.post`, or a tool's media in its function response (`FunctionResponse.parts`), where ADK 2.7 and later put an image or a document a tool returns - and the session service would save it for as long as the session lives. `TurnSessionService` gives the session service a copy of the event with each such file stored and replaced by `file_data` holding the file's address, with the same media type and name; the files of an `a2a_outbox` in the event's state delta are kept as addresses the same way. The copy names the stored file behind each address in its `custom_metadata` (`aion:files`), which the session keeps and a model is never sent. A file the turn also sends to the client is stored once: the task and the session name the same stored file, whichever of the two asks first. Content the turn read from a stored file - a tool that returns the bytes of a file of the conversation - is not stored again: the session links that stored file, with its own reference and retention, unless the turn read several stored files with the same bytes (`aion.server.files.turn`). The running invocation is not affected: the event the Runner hands on is not changed, and the invocation's own session goes on with the event's content, so a model later in the same invocation is sent the bytes whatever its model class. A later turn reads the session as stored, with addresses: `aion_lite_llm`, or an agent's `before_model_callback=inline_files_before_model`, sends the model the content of every linked file, a tool's media as `inline_data` of its function response - the one form in which ADK's `LiteLlm` sends a tool's media at all - and reads a file by the stored file the session names, through a link issued for the turn. Inline data that carries an A2A data part is not a file and stays as it is. A file that cannot be stored fails the task, and the session is not written with the bytes instead. Without a file storage backend, the session keeps the bytes.
 
 Before ADK 2.7 a tool has no media: a `Part` it returns is a value of its function response like any other result. The session keeps that value as it is, bytes included, and a model gets it inside the tool's result rather than as an image. ADK's `MultimodalToolResultsPlugin` adds the image to the one model call right after the tool, and does not change what the session keeps.
+
+## Memory
+
+The server gives the agent a memory service: what the agent keeps for a user in one conversation, it finds in the next, through ADK's `load_memory` and `preload_memory` tools and `tool_context.search_memory`. As in ADK, nothing goes into memory unless the agent puts it there - typically every conversation, from a callback:
+
+```python
+async def keep_in_memory(callback_context):
+    await callback_context.add_session_to_memory()
+
+agent = LlmAgent(..., tools=[load_memory], after_agent_callback=keep_in_memory)
+```
+
+Memory is keyed as the sessions are, by ADK's `app_name` and `user_id` - the agent and the conversation's state owner - so an agent finds only what it kept for that owner, and another agent on the same database nothing of it. A private conversation's state owner is its caller, an anonymous session included; a conversation shared through Aion's gateway is its own, so its participants share its memory as they share its session.
+
+- **PostgreSQL** - the SDK's own memory service (`memory.postgres.AionADKMemoryService`), its table `memory_entries` in the `aion_adk` schema beside google-adk's session tables. The SDK's tables there come from its own migrations (`tables`), run by the plugin's migration after google-adk's tables and under the same lock; `aion db check` reports both as one line, "ADK session and memory tables". It keeps the text of each event - not its files, function calls or the model's thoughts - and adding a session again adds only its new events. A search matches the words of the query, in any language, and answers with the ten best matches.
+- **In-memory** - ADK's `InMemoryMemoryService` when no database is configured; lost on process restart.
+
+The memory is the user's, not a conversation's: `DeleteContext` leaves it. ADK's memory service has no way to delete, so neither the agent nor a client can remove what was kept. There is no semantic search.
 
 ## Asking the user
 

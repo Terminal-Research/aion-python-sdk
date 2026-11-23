@@ -5,10 +5,13 @@ from typing import Optional, Any, override
 
 from aion.core.db import DbManagerProtocol
 from aion.core.logging import AionLogger
-from aion.db.postgres.migrations import SchemaCheck
+from aion.db.postgres.migrations import SchemaCheck, combined_check
 from aion.server.plugins import AgentPluginProtocol
 
 from .adapter import ADKAdapter
+
+
+ADK_TABLES_NAME = "ADK session and memory tables"
 
 
 class ADKPlugin(AgentPluginProtocol):
@@ -46,17 +49,22 @@ class ADKPlugin(AgentPluginProtocol):
 
     @override
     async def migrate_database(self, db_manager: DbManagerProtocol) -> None:
-        """Create google-adk's session tables in the session schema."""
+        """Create google-adk's session tables in the ADK schema, then the SDK's own beside them (``tables``)."""
         from .session.backends.postgres import migrate_session_tables
+        from .tables import migrate_aion_tables
 
         await migrate_session_tables(db_manager)
+        await migrate_aion_tables(db_manager)
 
     @override
     async def check_database(self, db_manager: DbManagerProtocol) -> Optional[SchemaCheck]:
-        """Report whether google-adk's session tables exist."""
+        """Report whether google-adk's session tables and the SDK's memory tables are in place, as one check."""
         from .session.backends.postgres import check_session_tables
+        from .tables import check_aion_tables
 
-        return await check_session_tables(db_manager)
+        return combined_check(
+            ADK_TABLES_NAME, [await check_session_tables(db_manager), await check_aion_tables(db_manager)]
+        )
 
     @override
     async def teardown(self) -> None:

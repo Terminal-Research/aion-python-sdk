@@ -56,16 +56,39 @@ def test_the_runner_keeps_artifacts_in_the_servers_service() -> None:
     assert _runner(artifacts=artifacts).artifact_service is artifacts
 
 
-def test_the_runner_is_given_no_service_or_plugin_of_adks_own() -> None:
-    """No memory, no credentials, no plugins, no cache or compaction, no sessions created on its own."""
+def test_the_runner_is_given_no_other_service_or_plugin_of_adks_own() -> None:
+    """No credentials, no plugins, no cache or compaction, no sessions created on its own."""
     runner = _runner()
 
-    assert runner.memory_service is None
     assert runner.credential_service is None
     assert list(runner.plugin_manager.plugins) == []
     assert runner.context_cache_config is None
     assert runner.app.events_compaction_config is None
     assert runner.auto_create_session is False
+
+
+def test_the_runner_keeps_memory_in_the_servers_service() -> None:
+    memory = Mock()
+
+    runner = build_runner(
+        BaseAgent(name="showcase"),
+        app_name="agent-1",
+        session_service=InMemorySessionService(),
+        artifact_service=None,
+        memory_service=memory,
+    )
+
+    assert runner.memory_service is memory
+
+
+def test_the_executors_runner_is_given_the_servers_memory_service() -> None:
+    memory = Mock()
+    executor = ADKExecutor(
+        BaseAgent(name="showcase"), Mock(), session_service=InMemorySessionService(), artifact_service=Mock(),
+        memory_service=memory,
+    )
+
+    assert executor._runner("agent-1").memory_service is memory
 
 
 def test_sessions_and_artifacts_are_keyed_by_the_aion_agent_id() -> None:

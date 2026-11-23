@@ -356,7 +356,8 @@ the ADK artifact version numbers given in the context and the bindings are
 removed in one storage step. The reservation becomes `deleted`, and the next
 message with that context ID reserves it afresh: a new conversation, with
 nothing of the old one. What a framework keeps for the user rather than the
-conversation - a LangGraph graph's store - stays.
+conversation - a LangGraph graph's store, an ADK agent's memory and its
+`user:` state - stays.
 
 **Retention.** A context keeps its whole history for as long as it lives:
 every task, with its messages, artifacts, versions and journal events, and

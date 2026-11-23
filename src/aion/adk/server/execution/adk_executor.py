@@ -15,11 +15,13 @@ from aion.server.agent.adapters import (
 from aion.server.agent.exceptions import ExecutionError
 from aion.core.config.models import AgentConfig
 from google.adk.artifacts import BaseArtifactService
+from google.adk.memory import BaseMemoryService
 from google.adk.sessions import Session, BaseSessionService
 
 from aion.adk.server.artifacts import ArtifactServiceFactory
 from aion.adk.server.artifacts.backends.a2a import A2AArtifactService
 from aion.adk.server.constants import DEFAULT_USER_ID
+from aion.adk.server.memory import MemoryServiceFactory
 from aion.adk.server.session import SessionServiceFactory
 from aion.adk.server.transformers.a2a_to_adk import ADKTransformer
 from aion.server.a2a.utils import empty_input_warning, extract_input_preview
@@ -61,11 +63,13 @@ class ADKExecutor(AgentFrameworkExecutor):
             session_service: Optional[BaseSessionService] = None,
             artifact_service: Optional[BaseArtifactService] = None,
             result_handler: Optional[ADKExecutionResultHandler] = None,
+            memory_service: Optional[BaseMemoryService] = None,
     ):
         self.agent = agent
         self.config = config
         self._session_service = session_service or SessionServiceFactory().create()
         self._artifact_service = artifact_service or ArtifactServiceFactory.create()
+        self._memory_service = memory_service or MemoryServiceFactory.create()
         self._result_handler = result_handler or ADKExecutionResultHandler()
         self._runners: dict[str, AionRunner] = {}
 
@@ -78,6 +82,7 @@ class ADKExecutor(AgentFrameworkExecutor):
                 app_name=agent_id,
                 session_service=self._session_service,
                 artifact_service=self._artifact_service,
+                memory_service=self._memory_service,
             )
             self._runners[agent_id] = runner
         return runner
