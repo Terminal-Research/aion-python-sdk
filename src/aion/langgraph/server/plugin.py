@@ -5,24 +5,13 @@ from typing import Any, Optional, override
 
 from aion.core.db import DbManagerProtocol
 from aion.core.logging import AionLogger
-from aion.db.postgres.migrations import SchemaCheck, SchemaState
+from aion.db.postgres.migrations import SchemaCheck, combined_check
 from aion.server.plugins import AgentPluginProtocol
 
 from .adapter import LangGraphAdapter
 
 
 LANGGRAPH_TABLES_NAME = "LangGraph checkpoint and store tables"
-
-
-def combined_check(name: str, checks: list[SchemaCheck]) -> SchemaCheck:
-    """One check for several sets of tables migrated together: ahead if any is, else behind if any is."""
-    if any(check.state is SchemaState.AHEAD for check in checks):
-        state = SchemaState.AHEAD
-    elif any(check.state is SchemaState.BEHIND for check in checks):
-        state = SchemaState.BEHIND
-    else:
-        state = SchemaState.CURRENT
-    return SchemaCheck(name, state, "; ".join(f"{check.name}: {check.detail}" for check in checks))
 
 
 class LangGraphPlugin(AgentPluginProtocol):

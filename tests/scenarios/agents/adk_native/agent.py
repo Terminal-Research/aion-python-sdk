@@ -36,6 +36,7 @@ from aion.adk.authoring.invocation import get_adk_emitter
 from aion.core.agent.invocation.card import Actions, Button, Card, Text
 from fastapi.openapi.models import APIKey, APIKeyIn
 from google.adk.agents import LlmAgent
+from google.adk.agents.callback_context import CallbackContext
 from google.adk.auth.auth_credential import AuthCredential, AuthCredentialTypes
 from google.adk.auth.auth_tool import AuthConfig
 from google.adk.models import BaseLlm, LlmRequest, LlmResponse
@@ -391,6 +392,22 @@ def sign_in(service: str, tool_context: ToolContext) -> str:
     return f"waiting for a key to {service}"
 
 
+async def recall_memory(query: str, tool_context: ToolContext) -> str:
+    """Search what was kept in memory in the user's earlier conversations.
+
+    Args:
+        query: The words to look for.
+    """
+    found = await tool_context.search_memory(query)
+    texts = {part.text for memory in found.memories for part in memory.content.parts or () if part.text}
+    return " | ".join(sorted(texts))
+
+
+async def keep_in_memory(callback_context: CallbackContext) -> None:
+    """Keep the conversation in memory after every turn, the way ADK has an agent do it."""
+    await callback_context.add_session_to_memory()
+
+
 def create_agent() -> LlmAgent:
     """Build the agent: a model, its tools, and an answer kept in state."""
     return _build_agent()
@@ -427,12 +444,13 @@ def _build_agent(*, model: Optional[BaseLlm] = None, **kwargs: Any) -> LlmAgent:
         instruction=INSTRUCTION,
         tools=[
             get_weather, ticker, save_report, remember, count_call, confirm_action, confirm_with_card, state_files,
-            snapshot,
+            snapshot, recall_memory,
             FunctionTool(delete_cache, require_confirmation=True),
             FunctionTool(drop_table, require_confirmation=True),
             sign_in,
         ],
         output_key=LAST_ANSWER_KEY,
         before_tool_callback=judge_confirmation,
+        after_agent_callback=keep_in_memory,
         **kwargs,
     )

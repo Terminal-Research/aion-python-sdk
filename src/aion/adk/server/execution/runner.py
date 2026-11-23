@@ -34,6 +34,7 @@ from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.apps import App, ResumabilityConfig
 from google.adk.artifacts import BaseArtifactService
 from google.adk.events import Event
+from google.adk.memory import BaseMemoryService
 from google.adk.runners import Runner
 from google.adk.sessions import BaseSessionService, Session
 
@@ -217,6 +218,7 @@ def build_runner(
         app_name: str,
         session_service: BaseSessionService,
         artifact_service: Optional[BaseArtifactService],
+        memory_service: Optional[BaseMemoryService] = None,
 ) -> AionRunner:
     """Build the Runner that runs ``agent`` for the Aion agent ``app_name``.
 
@@ -235,6 +237,10 @@ def build_runner(
         session_service: The server's session service. The Runner writes
             through ``TurnSessionService`` around it.
         artifact_service: The server's artifact service.
+        memory_service: The server's memory service: what the agent keeps
+            for an owner across conversations, which ``load_memory``,
+            ``preload_memory`` and ``search_memory`` read. The agent writes
+            it itself, as in ADK - ``add_session_to_memory`` from a callback.
     """
     app = App(
         name=APP_NAME,
@@ -246,4 +252,5 @@ def build_runner(
         app_name=app_name,
         session_service=TurnSessionService(session_service),
         artifact_service=artifact_service,
+        memory_service=memory_service,
     )

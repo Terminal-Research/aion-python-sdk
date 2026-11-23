@@ -79,3 +79,19 @@ async def test_what_a_tool_remembered_in_the_store_is_there_in_the_next_conversa
     events = await client.send("memories")
 
     assert section_texts(events) == ["bread, milk"]
+
+
+@pytest.mark.capability("memory-service")
+async def test_what_the_agent_kept_in_memory_is_found_in_the_next_conversation(client: ScenarioClient) -> None:
+    """The ADK memory service the server gives the agent is the user's, across conversations.
+
+    The agent keeps each conversation in memory from its ``after_agent_callback``,
+    and its tool searches it with ``tool_context.search_memory``, the call
+    ``load_memory`` makes.
+    """
+    await client.send("say the password is swordfish")
+
+    events = await client.send("search-memory password")
+
+    (answer,) = section_texts(events)
+    assert "the password is swordfish" in answer.split(" | ")

@@ -323,8 +323,12 @@ NATIVE_UNSUPPORTED: dict[tuple[str, str], str] = {
         "graph's own channels"
     ),
     ("adk", "store"): (
-        "ADK keeps memory across conversations in a memory service, which the server "
-        "does not give an ADK agent yet"
+        "ADK has no LangGraph store; its memory across conversations is the memory "
+        "service, which the `memory-service` scenarios drive"
+    ),
+    ("langgraph", "memory-service"): (
+        "LangGraph has no memory service; its memory across conversations is the store, "
+        "which the `store` scenarios drive"
     ),
 }
 

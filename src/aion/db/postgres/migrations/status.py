@@ -14,7 +14,7 @@ from sqlalchemy import create_engine
 from aion.db.postgres.constants import AION_SCHEMA
 from .env import config
 
-__all__ = ["SchemaCheck", "SchemaState", "check_sdk_schema"]
+__all__ = ["SchemaCheck", "SchemaState", "check_sdk_schema", "combined_check"]
 
 SDK_SCHEMA_NAME = "SDK tables"
 
@@ -45,6 +45,17 @@ class SchemaCheck:
     name: str
     state: SchemaState
     detail: str
+
+
+def combined_check(name: str, checks: list[SchemaCheck]) -> SchemaCheck:
+    """One check for several sets of tables migrated together: ahead if any is, else behind if any is."""
+    if any(check.state is SchemaState.AHEAD for check in checks):
+        state = SchemaState.AHEAD
+    elif any(check.state is SchemaState.BEHIND for check in checks):
+        state = SchemaState.BEHIND
+    else:
+        state = SchemaState.CURRENT
+    return SchemaCheck(name, state, "; ".join(f"{check.name}: {check.detail}" for check in checks))
 
 
 async def check_sdk_schema() -> SchemaCheck:

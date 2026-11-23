@@ -39,6 +39,9 @@ latest user message, the way a scenario decides what to send:
                         or to the LangGraph store
     memories            call ``memories``, which answers with every note the
                         LangGraph store keeps for the user, in any conversation
+    search-memory <q>   call ``recall_memory``, which searches what the ADK agent
+                        kept in memory in the user's conversations, then answer
+                        with the texts found, sorted, joined by `` | ``
     attach              answer with ``ATTACHED`` and the file ``ATTACHMENT``,
                         inline in the model's own answer
     state-files         call ``state_files``, which describes every file the
@@ -154,6 +157,7 @@ SIGN_IN_TOOL = "sign_in"
 REPORT_TOOL = "save_report"
 REMEMBER_TOOL = "remember"
 MEMORIES_TOOL = "memories"
+RECALL_MEMORY_TOOL = "recall_memory"
 STATE_FILES_TOOL = "state_files"
 SNAPSHOT_TOOL = "snapshot"
 SLOW_WORDS = 600
@@ -377,6 +381,7 @@ def model_turn(
         "report": (REPORT_TOOL, {"title": argument}, lambda result: REPORT_SAVED),
         "remember": (REMEMBER_TOOL, {"note": argument}, lambda result: NOTED),
         "memories": (MEMORIES_TOOL, {}, lambda result: result),
+        "search-memory": (RECALL_MEMORY_TOOL, {"query": argument}, lambda result: result),
         "state-files": (STATE_FILES_TOOL, {}, lambda result: result),
         "snapshot": (SNAPSHOT_TOOL, {}, lambda result: json.dumps(list(tool_media))),
     }

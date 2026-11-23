@@ -79,6 +79,21 @@ async def test_the_users_store_survives_a_restart(pg_server: ServeProcess) -> No
     assert section_texts(events) == ["milk"]
 
 
+@pytest.mark.capability("memory-service")
+async def test_the_agents_memory_survives_a_restart(pg_server: ServeProcess) -> None:
+    """What the ADK agent kept in memory is in PostgreSQL, for any later conversation."""
+    async with await _connect(pg_server) as client:
+        await client.send("say the password is swordfish")
+
+    pg_server.restart()
+
+    async with await _connect(pg_server) as client:
+        events = await client.send("search-memory swordfish")
+
+    (answer,) = section_texts(events)
+    assert "the password is swordfish" in answer.split(" | ")
+
+
 @pytest.mark.capability("interrupt")
 async def test_a_paused_tool_resumes_after_a_restart(pg_server: ServeProcess) -> None:
     """The run paused inside ``interrupt()`` continues from the PG checkpoint."""
