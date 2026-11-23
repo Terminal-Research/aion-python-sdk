@@ -1,7 +1,8 @@
 """The tables the SDK keeps for ADK in the ADK schema, beside google-adk's own.
 
 google-adk creates and versions its session tables itself. What the SDK adds
-for an ADK agent - the memory the server gives it (``memory``) - lies in the
+for an ADK agent - the memory the server gives it (``memory``), the version
+numbers its artifact service gives (``artifacts.versions``) - lies in the
 same schema, so a database without ADK installed has none of it, and comes
 from the migrations here: a list of statements that only add, applied in
 order and recorded one row per statement in ``aion_migrations``, as
@@ -17,11 +18,14 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from aion.core.db import DbManagerProtocol
 from aion.db.postgres.migrations import SchemaCheck, SchemaState
 
+from aion.db.postgres.constants import AION_SCHEMA
+
+from .artifacts.versions import ARTIFACT_VERSIONS_TABLE
 from .constants import AION_ADK_SCHEMA
 
 __all__ = ["AION_TABLES_NAME", "MEMORY_TABLE", "MIGRATIONS", "check_aion_tables", "migrate_aion_tables"]
 
-AION_TABLES_NAME = "ADK memory tables"
+AION_TABLES_NAME = "SDK tables for ADK"
 
 MEMORY_TABLE = "memory_entries"
 """One row per memory: the text of one event, or one entry an agent added, of one agent and owner."""
@@ -44,6 +48,32 @@ MIGRATIONS: tuple[str, ...] = (
     )
     """,
     f"CREATE INDEX IF NOT EXISTS {MEMORY_TABLE}_search_idx ON {{schema}}.{MEMORY_TABLE} USING gin (search)",
+    f"""
+    CREATE TABLE IF NOT EXISTS {{schema}}.{ARTIFACT_VERSIONS_TABLE} (
+        agent_id text NOT NULL,
+        owner_scope text NOT NULL,
+        context_id text NOT NULL,
+        artifact_name text NOT NULL,
+        version integer NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+        PRIMARY KEY (agent_id, owner_scope, context_id, artifact_name, version)
+    )
+    """,
+    # The numbers given while the table was in the SDK's own schema, so none
+    # of them is given again. TODO(drop-aion-adk-artifact-versions)
+    f"""
+    DO $copy$
+    BEGIN
+        IF to_regclass('{AION_SCHEMA}.{ARTIFACT_VERSIONS_TABLE}') IS NOT NULL THEN
+            INSERT INTO {{schema}}.{ARTIFACT_VERSIONS_TABLE}
+                (agent_id, owner_scope, context_id, artifact_name, version, created_at)
+            SELECT agent_id, owner_scope, context_id, artifact_name, version, created_at
+            FROM "{AION_SCHEMA}".{ARTIFACT_VERSIONS_TABLE}
+            ON CONFLICT DO NOTHING;
+        END IF;
+    END
+    $copy$
+    """,
 )
 """Every migration of the SDK's ADK tables, in order. Only ever appended to, and each one only adds."""
 

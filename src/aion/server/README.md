@@ -349,11 +349,11 @@ caller is bound, that is all. Removing the last one makes the deletion durable:
 the reservation becomes `deleting`, and no message is admitted into the context
 until it ends. Then every active task of the context, whoever owns it, is
 cancelled through the ordinary cancellation path, in groups of ten; once all
-are terminal the framework state - LangGraph checkpoints, ADK sessions - is
-deleted under the context holder's state scope, and the tasks, their messages,
-artifacts, versions, journal events (`task_events`) and push configurations,
-the ADK artifact version numbers given in the context and the bindings are
-removed in one storage step. The reservation becomes `deleted`, and the next
+are terminal the framework state - LangGraph checkpoints, ADK sessions and
+the version numbers ADK's artifact service gave - is deleted under the
+context holder's state scope, and the tasks, their messages, artifacts,
+versions, journal events (`task_events`), push configurations and the bindings
+are removed in one storage step. The reservation becomes `deleted`, and the next
 message with that context ID reserves it afresh: a new conversation, with
 nothing of the old one. What a framework keeps for the user rather than the
 conversation - a LangGraph graph's store, an ADK agent's memory and its

@@ -14,7 +14,7 @@ from aion.core.db import DbManagerProtocol
 from aion.core.runtime.context.conversation import Conversation
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.core.exceptions import AionError
-from aion.db.postgres.repositories.adk_artifact_versions import AdkArtifactVersionsRepository
+from aion.adk.server.artifacts.versions import ArtifactVersions
 from aion.db.postgres.repositories.tasks.repository import TasksRepository
 from google.adk.artifacts import BaseArtifactService
 from google.adk.artifacts.base_artifact_service import ArtifactVersion, ensure_part
@@ -78,7 +78,7 @@ class A2AArtifactService(BaseArtifactService):
     next write re-syncs with DB.
 
     With a database, every number of a session-scoped artifact is also
-    recorded as it is given (``adk_artifact_versions``), and the next number
+    recorded as it is given (``artifacts.versions``), and the next number
     counts the recorded ones too. Several servers of an agent, or several
     processes, saving one artifact at once therefore never give one number
     twice: a number another server recorded first is refused, and the save
@@ -264,7 +264,7 @@ class A2AArtifactService(BaseArtifactService):
             try:
                 async with self._db_manager.get_session() as db_session:
                     async with db_session.begin():
-                        recorded = await AdkArtifactVersionsRepository(db_session).claim(
+                        recorded = await ArtifactVersions(db_session).claim(
                             agent_id=app_name,
                             owner_scope=user_id,
                             context_id=session_id,
@@ -425,6 +425,19 @@ class A2AArtifactService(BaseArtifactService):
         as the process runs.
         """
         self._forget(self._artifact_path(app_name, user_id, filename, session_id))
+
+    async def forget_context_versions(self, *, app_name: str, session_id: str) -> None:
+        """Forget every version number given in the context, whoever its owner, so a context reused numbers from 0.
+
+        Part of deleting the context's ADK state, before its tasks and their
+        artifacts go; without a database there is nothing recorded.
+        """
+        if not self._is_db_available():
+            return
+        assert self._db_manager is not None
+        async with self._db_manager.get_session() as db_session:
+            async with db_session.begin():
+                await ArtifactVersions(db_session).delete_context(app_name, session_id)
 
     def forget_turn(self, *, app_name: str, user_id: str, session_id: str, task_id: str) -> None:
         """Drop from memory the session's artifacts the turn of ``task_id`` wrote; the turn has ended.
@@ -720,7 +733,7 @@ class A2AArtifactService(BaseArtifactService):
         assert self._db_manager is not None
         try:
             async with self._db_manager.get_session() as db_session:
-                return await AdkArtifactVersionsRepository(db_session).latest(
+                return await ArtifactVersions(db_session).latest(
                     agent_id=app_name, owner_scope=user_id, context_id=session_id, artifact_name=filename
                 )
         except Exception as e:

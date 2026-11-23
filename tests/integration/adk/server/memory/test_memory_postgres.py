@@ -18,7 +18,7 @@ from sqlalchemy import text
 
 from aion.adk.server.memory.postgres import MAX_SEARCH_RESULTS, AionADKMemoryService
 from aion.adk.server.plugin import ADKPlugin
-from aion.adk.server.tables import MEMORY_TABLE, check_aion_tables, migrate_aion_tables
+from aion.adk.server.tables import MEMORY_TABLE, MIGRATIONS, check_aion_tables, migrate_aion_tables
 from aion.db.postgres.constants import ADK_SCHEMA
 from aion.db.postgres.migrations import SchemaState
 from tests.integration.server.tasks.postgres_support import POSTGRES_TEST_URL, prepared_database
@@ -62,7 +62,7 @@ async def test_the_memory_tables_are_migrated_with_the_adk_tables(db) -> None:
 
     check = await ADKPlugin().check_database(db)
 
-    assert (check.name, check.state) == ("ADK session and memory tables", SchemaState.CURRENT)
+    assert (check.name, check.state) == ("ADK tables", SchemaState.CURRENT)
 
 
 async def test_servers_starting_together_migrate_a_fresh_schema_once(db) -> None:
@@ -71,7 +71,7 @@ async def test_servers_starting_together_migrate_a_fresh_schema_once(db) -> None
         await asyncio.gather(*(migrate_aion_tables(db, schema=schema) for _ in range(6)))
         async with db.get_engine().connect() as conn:
             versions = (await conn.execute(text(f"SELECT v FROM {schema}.aion_migrations ORDER BY v"))).scalars().all()
-        assert versions == [0, 1]
+        assert versions == list(range(len(MIGRATIONS)))
     finally:
         async with db.get_engine().begin() as conn:
             await conn.execute(text(f"DROP SCHEMA IF EXISTS {schema} CASCADE"))

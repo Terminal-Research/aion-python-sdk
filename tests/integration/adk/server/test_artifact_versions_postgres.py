@@ -20,9 +20,17 @@ from sqlalchemy import text
 
 from tests.integration.server.tasks.postgres_support import POSTGRES_TEST_URL, prepared_database
 
+from unittest.mock import Mock
+
+from google.adk.agents import BaseAgent
+from google.adk.memory import InMemoryMemoryService
+from google.adk.sessions import InMemorySessionService
+
 from aion.adk.server.artifacts.backends.a2a import A2AArtifactService
-from aion.server.tasks.admission import ContextHolder, PostgresContextAdmission
-from aion.server.tasks.contexts import DeletionStep, FinishOutcome, PostgresContextCatalog
+from aion.adk.server.execution.adk_executor import ADKExecutor
+from aion.adk.server.tables import migrate_aion_tables
+from aion.db.postgres.constants import ADK_SCHEMA, AION_SCHEMA
+from aion.server.agent.adapters import ExecutionConfig, StateScope
 from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore
 
 pytestmark = [
@@ -83,7 +91,7 @@ async def _recorded(db, agent_id: str, context_id: str) -> list[int]:
     async with db.get_session() as session:
         rows = await session.execute(
             text(
-                "SELECT version FROM adk_artifact_versions "
+                f"SELECT version FROM {ADK_SCHEMA}.adk_artifact_versions "
                 "WHERE agent_id = :agent AND context_id = :context ORDER BY version"
             ),
             {"agent": agent_id, "context": context_id},
@@ -137,19 +145,45 @@ async def test_a_server_numbers_after_versions_given_but_not_yet_stored(db, serv
     assert await _save(services(), agent_id, context_id, "elsewhere") == 3
 
 
-async def test_deleting_the_context_forgets_its_versions(db, services) -> None:
+async def test_deleting_the_contexts_adk_state_forgets_its_versions(db, services) -> None:
+    """``DeleteContext`` deletes the framework state first: there the version numbers go, before the tasks."""
     agent_id, context_id, kept_id = f"agent-{uuid.uuid4()}", str(uuid.uuid4()), str(uuid.uuid4())
-    admission = PostgresContextAdmission(agent_id, db)
-    catalog = PostgresContextCatalog(agent_id, db)
+    service = services()
     for context in (context_id, kept_id):
-        assert await admission.admit(context, ContextHolder.private("alice"), "alice")
-        await _save(services(), agent_id, context, "first")
+        await _save(service, agent_id, context, "first")
         await _store_version(agent_id, context, 0, "first")
+    executor = ADKExecutor(
+        BaseAgent(name="agent"), Mock(), session_service=InMemorySessionService(), artifact_service=service,
+        memory_service=InMemoryMemoryService(),
+    )
 
-    ticket = await catalog.begin_deletion(context_id, "alice")
-    assert ticket.step == DeletionStep.STARTED
-    outcome, _ = await catalog.finish_deletion(context_id, ticket.operation_id)
+    await executor.delete_state(
+        ExecutionConfig(context_id=context_id, state_scope=StateScope(agent_id=agent_id, owner_scope=USER))
+    )
 
-    assert outcome == FinishOutcome.FINISHED
     assert await _recorded(db, agent_id, context_id) == []
     assert await _recorded(db, agent_id, kept_id) == [0]
+
+
+async def test_the_numbers_given_in_the_sdks_own_schema_are_copied_into_the_adk_schema(db) -> None:
+    """The table moved from the SDK's schema; a number given there is not given again."""
+    agent_id, schema = f"agent-{uuid.uuid4()}", f"adk_copy_{uuid.uuid4().hex[:10]}"
+    async with db.get_engine().begin() as conn:
+        await conn.execute(
+            text(
+                f"INSERT INTO {AION_SCHEMA}.adk_artifact_versions "
+                "(agent_id, owner_scope, context_id, artifact_name, version) VALUES (:a, '', 'ctx', 'report.txt', 4)"
+            ),
+            {"a": agent_id},
+        )
+    try:
+        await migrate_aion_tables(db, schema=schema)
+        async with db.get_engine().connect() as conn:
+            copied = (await conn.execute(
+                text(f"SELECT version FROM {schema}.adk_artifact_versions WHERE agent_id = :a"), {"a": agent_id}
+            )).scalars().all()
+        assert copied == [4]
+    finally:
+        async with db.get_engine().begin() as conn:
+            await conn.execute(text(f"DELETE FROM {AION_SCHEMA}.adk_artifact_versions WHERE agent_id = :a"), {"a": agent_id})
+            await conn.execute(text(f"DROP SCHEMA IF EXISTS {schema} CASCADE"))
