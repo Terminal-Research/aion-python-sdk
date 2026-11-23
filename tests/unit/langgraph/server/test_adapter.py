@@ -1,9 +1,11 @@
 import inspect
+import logging
+from typing import TypedDict
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from aion.server.agent.exceptions import AdapterConfigurationError
-from langgraph.graph import StateGraph
+from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.pregel import Pregel
 
 from aion.langgraph.server.adapter import LangGraphAdapter
@@ -130,6 +132,57 @@ class TestInitializeAgent:
         with patch.object(LangGraphAdapter, "_is_graph_instance", return_value=False):
             with pytest.raises(TypeError):
                 await self.adapter.initialize_agent(42, self.config)
+
+
+class TestGraphInputWithoutMessages:
+    """A graph whose input has no ``messages`` field is served, and the log says where its message is."""
+
+    LOGGER = "aion.langgraph.server.adapter"
+
+    class _Topic(TypedDict, total=False):
+        topic: str
+
+    async def _initialized(self, builder: StateGraph, caplog) -> str:
+        from langgraph.checkpoint.memory import InMemorySaver
+
+        adapter = LangGraphAdapter()
+        with patch.object(adapter, "_get_checkpointer", new=AsyncMock(return_value=InMemorySaver())):
+            with caplog.at_level(logging.INFO, logger=self.LOGGER):
+                await adapter.initialize_agent(builder, Mock())
+        return caplog.text
+
+    @staticmethod
+    def _builder(state, **kwargs) -> StateGraph:
+        builder = StateGraph(state, **kwargs)
+        builder.add_node("answer", lambda state: {})
+        builder.add_edge(START, "answer")
+        builder.add_edge("answer", END)
+        return builder
+
+    async def test_a_graph_without_messages_is_served_with_a_note_in_the_log(self, caplog) -> None:
+        text = await self._initialized(self._builder(self._Topic), caplog)
+
+        assert "input has no 'messages' field" in text
+        assert "Thread.from_context(runtime.context).message" in text
+
+    async def test_an_input_schema_without_messages_gets_the_note_too(self, caplog) -> None:
+        text = await self._initialized(self._builder(MessagesState, input_schema=self._Topic), caplog)
+
+        assert "input has no 'messages' field" in text
+
+    async def test_a_graph_with_messages_gets_no_note(self, caplog) -> None:
+        text = await self._initialized(self._builder(MessagesState), caplog)
+
+        assert "'messages' field" not in text
+
+    async def test_a_graph_whose_input_schema_cannot_be_read_gets_no_note(self, caplog) -> None:
+        graph = Mock(spec=Pregel)
+        graph.get_input_jsonschema.side_effect = TypeError("no schema")
+
+        with caplog.at_level(logging.INFO, logger=self.LOGGER):
+            assert await LangGraphAdapter().initialize_agent(graph, Mock()) is graph
+
+        assert "'messages' field" not in caplog.text
 
 
 class TestCompileGraph:

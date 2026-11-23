@@ -81,9 +81,8 @@ class LangGraphAdapter(AgentAdapter):
         logger.debug(f"Initializing agent of type '{type(agent_obj).__name__}'")
 
         if self._is_graph_instance(agent_obj):
-            return await self._compile_graph(agent_obj, config)
-
-        if callable(agent_obj) and not inspect.isclass(agent_obj):
+            graph = agent_obj
+        elif callable(agent_obj) and not inspect.isclass(agent_obj):
             logger.debug(f"Calling function to get graph")
             graph = agent_obj()
             if inspect.isawaitable(graph):
@@ -92,12 +91,14 @@ class LangGraphAdapter(AgentAdapter):
                 raise TypeError(
                     f"Function returned {type(graph).__name__}, expected a LangGraph graph"
                 )
-            return await self._compile_graph(graph, config)
-
-        raise TypeError(
-            f"Cannot initialize agent from object of type '{type(agent_obj).__name__}'. "
-            f"Expected a LangGraph graph instance or a function that returns a graph."
-        )
+        else:
+            raise TypeError(
+                f"Cannot initialize agent from object of type '{type(agent_obj).__name__}'. "
+                f"Expected a LangGraph graph instance or a function that returns a graph."
+            )
+        compiled = await self._compile_graph(graph, config)
+        _note_input_without_messages(compiled)
+        return compiled
 
     async def create_executor(self, agent: Any, config: AgentConfig) -> AgentFrameworkExecutor:
         """Create executor for the agent.
@@ -214,6 +215,31 @@ class LangGraphAdapter(AgentAdapter):
         if isinstance(obj, (StateGraph, Pregel)):
             return True
         return False
+
+
+def _note_input_without_messages(graph: Any) -> None:
+    """Log once, at startup, that a graph whose input has no ``messages`` field reads the message from its context.
+
+    The server runs every turn with ``{"messages": [HumanMessage]}``, and
+    LangGraph drops a key the graph's input does not declare. Such a graph
+    is a valid one: it reads the turn's message with
+    ``Thread.from_context(runtime.context).message``. An input schema that
+    cannot be read, or is not an object of fields, says nothing either way.
+    """
+    input_jsonschema = getattr(graph, "get_input_jsonschema", None)
+    if not callable(input_jsonschema):
+        return
+    try:
+        schema = input_jsonschema()
+    except Exception:
+        logger.debug("The graph's input schema could not be read", exc_info=True)
+        return
+    fields = schema.get("properties") if isinstance(schema, dict) else None
+    if isinstance(fields, dict) and "messages" not in fields:
+        logger.info(
+            "The graph's input has no 'messages' field, so the inbound message does not reach its state; "
+            "the graph reads it from the turn's context: Thread.from_context(runtime.context).message."
+        )
 
 
 def _copy_compiled(graph: Any, update: dict[str, Any]) -> Any:

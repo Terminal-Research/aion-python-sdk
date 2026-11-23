@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Features
+
+* **langgraph:** say in the log at startup that a graph whose input has no `messages` field reads the message from the turn's context
+
 ### Bug Fixes
 
 * **files:** keep a stored file's download link out of the logs
