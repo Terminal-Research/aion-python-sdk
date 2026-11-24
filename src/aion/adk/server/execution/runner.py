@@ -7,8 +7,11 @@ and drives the agent. Nothing of that is repeated here.
 
 What stays the server's is everything the Runner is given:
 
-- the session service and the artifact service are the server's own, and
-  no memory service, credential service or plugin is passed;
+- the session, artifact and memory services are the server's own, and no
+  credential service is passed;
+- the agent runs in an ADK ``App``: the agent's own, when the agent was
+  given as one - its plugins, events compaction and context cache run with
+  it - or one the server makes around the agent;
 - every write to the session goes through ``TurnSessionService``, where the
   turn in progress decides whether an event is kept and prepares it, and
   where a file the event carries inline is stored and kept by its address
@@ -24,7 +27,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any, Optional, Protocol
+from typing import Any, Optional, Protocol, Union
 
 from aion.adk.authoring.invocation import AionInvocationContext
 from aion.adk.server.execution.session_files import kept_in_session, with_content_of
@@ -46,12 +49,14 @@ __all__ = [
     "TurnSessionService",
     "build_runner",
     "running_turn",
+    "server_app",
 ]
 
 APP_NAME = "aion_agent"
-"""The name of the ADK ``App`` the agent is wrapped in. ADK requires an
-identifier there; sessions and artifacts are keyed by the Runner's
-``app_name``, which is the Aion agent id."""
+"""The name of the ADK ``App`` the agent runs in, whatever name the agent's
+own App has. ADK requires an identifier there; sessions, memory and
+artifacts are keyed by the Runner's ``app_name``, which is the Aion agent
+id."""
 
 RUN_CONFIG = RunConfig(
     response_modalities=["TEXT"],
@@ -204,16 +209,9 @@ class AionRunner(Runner):
         """
         self._app_name_alignment_hint = None
 
-    def _warn_uncached_agent_transfer(self) -> None:
-        """Skip ADK's advice to set a context cache for agents that transfer.
-
-        The server passes no context cache configuration, so the advice
-        cannot be followed here.
-        """
-
 
 def build_runner(
-        agent: BaseAgent,
+        agent: Union[BaseAgent, App],
         *,
         app_name: str,
         session_service: BaseSessionService,
@@ -221,6 +219,10 @@ def build_runner(
         memory_service: Optional[BaseMemoryService] = None,
 ) -> AionRunner:
     """Build the Runner that runs ``agent`` for the Aion agent ``app_name``.
+
+    The agent runs in an ADK ``App`` (``server_app``): its own, when it is
+    given as one, so the App's plugins, events compaction and context cache
+    run with it.
 
     Every invocation is resumable, as in an ADK ``App`` with
     ``ResumabilityConfig(is_resumable=True)``: a run that makes a
@@ -232,8 +234,9 @@ def build_runner(
     response, as in ADK itself.
 
     Args:
-        agent: The root agent.
-        app_name: The Aion agent id; sessions and artifacts are keyed by it.
+        agent: The root agent, or an ADK ``App`` whose ``root_agent`` it is.
+        app_name: The Aion agent id; sessions, memory and artifacts are
+            keyed by it.
         session_service: The server's session service. The Runner writes
             through ``TurnSessionService`` around it.
         artifact_service: The server's artifact service.
@@ -242,15 +245,24 @@ def build_runner(
             ``preload_memory`` and ``search_memory`` read. The agent writes
             it itself, as in ADK - ``add_session_to_memory`` from a callback.
     """
-    app = App(
-        name=APP_NAME,
-        root_agent=agent,
-        resumability_config=ResumabilityConfig(is_resumable=True),
-    )
     return AionRunner(
-        app=app,
+        app=server_app(agent),
         app_name=app_name,
         session_service=TurnSessionService(session_service),
         artifact_service=artifact_service,
         memory_service=memory_service,
     )
+
+
+def server_app(agent: Union[BaseAgent, App]) -> App:
+    """The ADK ``App`` the server runs ``agent`` in.
+
+    An App given as the agent is kept whole - its root agent, plugins,
+    events compaction and context cache, and whatever else ADK adds to it -
+    except its name, ``APP_NAME``, and resumability, which is always on.
+    An agent given alone runs in an App of its own with nothing else set.
+    """
+    resumable = ResumabilityConfig(is_resumable=True)
+    if isinstance(agent, App):
+        return agent.model_copy(update={"name": APP_NAME, "resumability_config": resumable})
+    return App(name=APP_NAME, root_agent=agent, resumability_config=resumable)

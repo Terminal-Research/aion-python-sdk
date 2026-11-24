@@ -120,3 +120,30 @@ async def test_shutdown_without_a_request_handler_is_a_no_op(factory):
     assert factory._request_handler is None
 
     await factory.shutdown()
+
+
+async def test_the_executors_close_once_no_task_runs_and_before_the_plugins(factory):
+    """An ADK agent's plugins and toolsets close after the tasks settled, while the plugins and storage still work."""
+    call_order: list[str] = []
+
+    factory._request_handler = Mock()
+    factory._request_handler.aclose = AsyncMock(side_effect=lambda: call_order.append("tasks"))
+    factory._executor = Mock()
+    factory._executor.close_executors = AsyncMock(side_effect=lambda within: call_order.append("executors"))
+    factory.plugin_factory.is_initialized.return_value = True
+    factory.plugin_factory.teardown_all = AsyncMock(side_effect=lambda: call_order.append("plugins"))
+
+    await factory.shutdown()
+
+    assert call_order == ["tasks", "executors", "plugins"]
+    within = factory._executor.close_executors.await_args.args[0]
+    assert 0 < within <= 3.0
+
+
+async def test_shutdown_survives_executors_that_fail_to_close(factory):
+    factory._executor = Mock()
+    factory._executor.close_executors = AsyncMock(side_effect=RuntimeError("boom"))
+
+    await factory.shutdown()
+
+    factory.upload_manager.aclose.assert_awaited_once()

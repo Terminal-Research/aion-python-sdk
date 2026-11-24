@@ -27,6 +27,7 @@ __all__ = [
     "ASYNC_FACTORY_AGENTS",
     "SEQUENCE_AGENTS",
     "TRANSFER_AGENTS",
+    "APP_AGENTS",
     "NATIVE_UNSUPPORTED",
     "native_unsupported_reason",
     "Since",
@@ -280,6 +281,19 @@ TRANSFER_AGENTS: dict[str, Framework] = {
 }
 
 
+APP_AGENTS: dict[str, Framework] = {
+    # An ADK App with a plugin, beside its agent in one module, served by a
+    # path that names neither: `native/test_app.py`. The server takes the
+    # App, as ADK's loader does, and runs the agent with its plugins.
+    "adk": Framework(
+        name="adk",
+        agent_package="tests.scenarios.agents.adk_app",
+        agent_entry="agent.py",
+        sdk_extras=("adk-server",),
+    ),
+}
+
+
 NATIVE_UNSUPPORTED: dict[tuple[str, str], str] = {
     # (framework name, capability) -> why the framework has no such thing.
     #
@@ -325,6 +339,10 @@ NATIVE_UNSUPPORTED: dict[tuple[str, str], str] = {
     ("adk", "store"): (
         "ADK has no LangGraph store; its memory across conversations is the memory "
         "service, which the `memory-service` scenarios drive"
+    ),
+    ("langgraph", "app"): (
+        "LangGraph has no App that holds a graph with plugins; a graph is compiled "
+        "with what it runs with"
     ),
     ("langgraph", "memory-service"): (
         "LangGraph has no memory service; its memory across conversations is the store, "

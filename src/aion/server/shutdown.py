@@ -12,7 +12,8 @@ it among the steps of its shutdown, which run one after another:
    connections still open, after which they are cancelled;
 3. **settlement** - the drain of the active tasks settles the tasks the
    shutdown interrupted;
-4. **cleanup** - plugins, the database and the process exit.
+4. **cleanup** - the executors (``TaskExecutor.aclose``: an ADK agent's
+   plugins and toolsets), the plugins, the database and the process exit.
 
 The last three are fixed in size and shrink with a small budget: each takes
 at most a share of it (``GRACEFUL_SHARE``, ``SETTLEMENT_SHARE``,
@@ -54,7 +55,7 @@ SETTLEMENT_SHARE = 0.08
 """The largest share of the budget the settlement takes."""
 
 CLEANUP_SECONDS = 3.0
-"""Room for the rest of an agent's shutdown: plugins, the database, the process exit."""
+"""Room for the rest of an agent's shutdown: the executors, plugins, the database, the process exit."""
 
 CLEANUP_SHARE = 0.12
 """The largest share of the budget the cleanup is given."""

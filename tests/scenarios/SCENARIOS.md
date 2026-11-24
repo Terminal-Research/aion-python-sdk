@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-289 scenarios in 52 files, 651 runs across 2 frameworks: 601 run, 49 skipped, 1 independent of the framework.
+290 scenarios in 53 files, 653 runs across 2 frameworks: 602 run, 50 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -52,6 +52,7 @@ Features a framework's native agent does not have; a native scenario driving one
 | langgraph | `error-response` | a LangChain chat model has no error response; it reports a failed call by raising, which `fail-after` drives |
 | langgraph | `session-state` | LangGraph has no output_key or tool-written session state; its state is the graph's own channels |
 | adk | `store` | ADK has no LangGraph store; its memory across conversations is the memory service, which the `memory-service` scenarios drive |
+| langgraph | `app` | LangGraph has no App that holds a graph with plugins; a graph is compiled with what it runs with |
 | langgraph | `memory-service` | LangGraph has no memory service; its memory across conversations is the store, which the `store` scenarios drive |
 
 Features a framework gained inside the range the SDK allows; a native scenario driving one runs where the server has that release or a newer one and `skip`s on an older one, such as the oldest releases `make tests-floors` installs:
@@ -89,7 +90,7 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `evolution` | the evolution extension through the SDK's wrapper and a stand-in toolkit: the standard path, refusals as REJECTED tasks, a cancel | 15 | `make tests-scenarios TAGS=evolution` |
 | `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 23 | `make tests-scenarios-persistence` |
 | `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 19 | `make tests-scenarios-distributed` |
-| `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 69 | `make tests-scenarios TAGS=native` |
+| `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 70 | `make tests-scenarios TAGS=native` |
 
 ## Scenarios by file
 
@@ -516,6 +517,14 @@ Who answers after one agent handed the conversation to another.
 | [A sub agent hands the conversation on and it stays there](native/test_agent_transfer.py#L48 "test_a_sub_agent_hands_the_conversation_on_and_it_stays_there") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
 | [``disallow_transfer_to_parent``: the agent answers its turn, and the root agent gets the next one.](native/test_agent_transfer.py#L58 "test_an_agent_that_may_not_hand_back_leaves_the_next_message_to_the_root") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
 | [Another context starts at the root agent](native/test_agent_transfer.py#L68 "test_another_context_starts_at_the_root_agent") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
+
+### `tests/scenarios/native/test_app.py`
+
+An ADK ``App`` served as the agent, with its plugins.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [The apps plugin runs with its agent](native/test_app.py#L30 "test_the_apps_plugin_runs_with_its_agent") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
 
 ### `tests/scenarios/native/test_async_factory.py`
 

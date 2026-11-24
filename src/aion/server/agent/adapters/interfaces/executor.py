@@ -263,6 +263,15 @@ class TaskExecutor(ABC):
         """
         raise UnsupportedOperationError()
 
+    async def aclose(self) -> None:
+        """Release what this executor holds; no turn runs on it any more.
+
+        Called once, at the end of a server shutdown, after the running
+        turns were stopped and their tasks settled, within the cleanup
+        window of the shutdown budget (``aion.server.shutdown``). Default:
+        nothing to release.
+        """
+
 
 class AgentFrameworkExecutor(TaskExecutor):
     """The executor of the agent's framework (LangGraph, ADK, ...), created by its plugin.

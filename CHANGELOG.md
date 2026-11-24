@@ -4,12 +4,15 @@
 
 ### Features
 
+* **adk:** run an ADK `App` given as the agent with its plugins, events compaction and context cache; a path that names no object takes the module's `App` first
 * **adk:** give an agent a memory service: what it keeps for a user is found in the user's later conversations, kept apart for every agent and state owner, in PostgreSQL beside the sessions
 * **langgraph:** give a graph without a store of its own the server's: memory across a user's conversations, kept apart for every agent and state owner, in PostgreSQL with the checkpoints
 * **langgraph:** say in the log at startup that a graph whose input has no `messages` field reads the message from the turn's context
 
 ### Bug Fixes
 
+* **adk:** close the agent's toolsets and its `App`'s plugins when the server stops
+* **adk:** refuse an ADK `Workflow` at startup instead of completing its tasks without an answer
 * **adk:** find the artifacts of a shared conversation's earlier turns with a database, whichever participant saved them
 * **files:** keep a stored file's download link out of the logs
 * **langgraph:** save a file as a link wherever the checkpoint keeps its message - in a model, a dataclass, a `Send` or an `interrupt()` - and in a checkpointer of the graph's own
