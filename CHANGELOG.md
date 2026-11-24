@@ -10,6 +10,7 @@
 
 ### Bug Fixes
 
+* **adk:** find the artifacts of a shared conversation's earlier turns with a database, whichever participant saved them
 * **files:** keep a stored file's download link out of the logs
 * **langgraph:** save a file as a link wherever the checkpoint keeps its message - in a model, a dataclass, a `Send` or an `interrupt()` - and in a checkpointer of the graph's own
 

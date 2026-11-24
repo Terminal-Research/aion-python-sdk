@@ -1,4 +1,4 @@
-"""The artifact service across turns: what the store holds, what this turn wrote, and no database.
+"""The artifact service across turns: what the store holds and what this turn wrote, with a database or without.
 
 What a turn wrote is held in memory until the turn ends; the turn's task
 answers for it from then on.
@@ -78,9 +78,13 @@ async def _load(service: A2AArtifactService, name: str = "report") -> Optional[s
     return part.text if part is not None else None
 
 
-async def test_without_a_database_the_tasks_artifacts_are_found_by_name(turn) -> None:
+@pytest.mark.parametrize(
+    "db_manager", [None, Mock(is_initialized=True)], ids=["without a database", "with a database"]
+)
+async def test_the_tasks_artifacts_are_found_by_name_through_the_turns_history(turn, db_manager) -> None:
+    """The history holds every task of the context, whoever owns it: never searched by ``user_id``."""
     turn("t-2", _task("t-1", "first", "second"))
-    service = A2AArtifactService()
+    service = A2AArtifactService(db_manager=db_manager)
 
     assert await _load(service) == "second"
     assert await service.list_artifact_keys(app_name=APP, user_id=USER, session_id=CONTEXT) == ["report"]

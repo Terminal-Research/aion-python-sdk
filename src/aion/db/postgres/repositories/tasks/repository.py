@@ -19,7 +19,6 @@ from aion.db.postgres.records import TaskRecord, resolve_status_timestamp
 from aion.db.postgres.repositories.base import BaseRepository
 from aion.db.postgres.models import TaskArtifactModel, TaskRecordModel
 from aion.db.postgres.types import Pagination, Sorting
-from aion.db.postgres.repositories.tasks.selectors import latest_artifacts, artifacts_by_version, all_versions_by_name
 
 
 STATUS_TIMESTAMP_SORT_KEY = "status.timestamp"
@@ -392,89 +391,6 @@ class TasksRepository(BaseRepository[TaskRecordModel, TaskRecord]):
             stmt = self._apply_pagination(stmt, pagination)
 
         return await self._execute_and_convert_many(stmt)
-
-    async def find_artifacts(
-            self,
-            agent_id: str,
-            task_id: Optional[str] = None,
-            context_id: Optional[str] = None,
-            artifact_name: Optional[str] = None,
-            artifact_version: Optional[str] = None,
-            owner_scope: Optional[str] = None,
-            artifact_id: Optional[str] = None,
-    ) -> List[Artifact]:
-        """Find artifacts matching the given criteria.
-
-        Either ``task_id`` or ``context_id`` must be provided to scope the search.
-        ``owner_scope`` narrows it to one user's tasks - a ``context_id`` is
-        chosen by clients, and two users may share one. ``artifact_id`` keeps
-        only the artifacts with that id, before the matrix below applies.
-
-        Behaviour matrix:
-        - name=None,  version=None   > latest version of each artifact (by task creation order)
-        - name=given, version=None   > all versions of the named artifact
-        - name=None,  version="-1"   > latest version of each artifact (explicit sentinel)
-        - name=given, version="-1"   > latest version of the named artifact
-        - name=None,  version=given  > all artifacts matching that version
-        - name=given, version=given  > all artifacts matching both name and version
-        """
-        if task_id is None and context_id is None:
-            raise ValueError("Either 'task_id' or 'context_id' must be provided.")
-
-        want_latest = artifact_version == "-1"
-        effective_version = None if want_latest else artifact_version
-
-        stmt = (
-            select(self.model_class.id, TaskArtifactModel.payload)
-            .select_from(self.model_class)
-            .join(TaskArtifactModel, TaskArtifactModel.task_id == self.model_class.id)
-            .order_by(desc(self.model_class.created_at), self.model_class.id)
-        )
-        stmt = self._apply_filter(
-            stmt,
-            agent_id=agent_id,
-            owner_scope=owner_scope,
-            task_id=task_id,
-            context_id=context_id,
-        )
-
-        if artifact_id is not None:
-            stmt = stmt.where(TaskArtifactModel.artifact_id == artifact_id)
-        if artifact_name is not None:
-            stmt = stmt.where(TaskArtifactModel.payload["name"].astext == artifact_name)
-        if effective_version is not None:
-            stmt = stmt.where(
-                TaskArtifactModel.payload["metadata"]["version"].astext == effective_version
-            )
-
-        result = await self._session.execute(stmt)
-
-        # Regrouped by task, one list per task in the same newest-task-first
-        # order the query already produced - the shape latest_artifacts() and
-        # friends below expect, since they were written against one row per
-        # task holding that task's whole artifact list.
-        grouped: dict[uuid.UUID, list[Artifact]] = {}
-        order: list[uuid.UUID] = []
-        for row_task_id, payload in result.all():
-            if row_task_id not in grouped:
-                grouped[row_task_id] = []
-                order.append(row_task_id)
-            grouped[row_task_id].append(payload)
-        rows = [grouped[tid] for tid in order]
-
-        if artifact_name is not None and want_latest:
-            # `rows` is already newest-task-first; latest_artifacts() only
-            # ever looks at the first occurrence, so nothing past the first
-            # task's group could change the answer.
-            rows = rows[:1]
-
-        if effective_version is not None:
-            return artifacts_by_version(rows, effective_version, artifact_name)
-
-        if artifact_name is not None and not want_latest:
-            return all_versions_by_name(rows, artifact_name)
-
-        return latest_artifacts(rows, artifact_name)
 
     async def find_artifact_versions(
             self, agent_id: str, context_id: str, artifact_id: str

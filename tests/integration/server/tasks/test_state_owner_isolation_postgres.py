@@ -7,8 +7,11 @@ beside it to the same rule, on a real PostgreSQL:
 
 * the LangGraph checkpoint, through ``stream`` and ``resume``, and the
   thread it is saved under;
-* the ADK session, through ``stream``, and the session it is saved as;
-* the ADK artifact service's fallback to the tasks table.
+* the ADK session, through ``stream``, and the session it is saved as.
+
+The ADK artifact service reads a context's tasks through the turn's history,
+which context admission keeps to the context's holder
+(``tests/integration/adk/server/test_artifact_reads_postgres.py``).
 
 ``owner_scope`` here is the trusted user of ``ServerCallContext`` - not the
 lease owner, which is a server process. The agents are minimal on purpose:
@@ -30,7 +33,7 @@ import pytest_asyncio
 from a2a.auth.user import User
 from a2a.server.agent_execution import RequestContext
 from a2a.server.context import ServerCallContext
-from a2a.types import Artifact, Message, Part, Role, SendMessageRequest, Task, TaskState, TaskStatus
+from a2a.types import Message, Part, Role, SendMessageRequest, Task, TaskState, TaskStatus
 from google.adk.agents import BaseAgent
 from google.adk.events import Event
 from google.genai import types
@@ -41,7 +44,6 @@ from typing_extensions import override
 from unittest.mock import AsyncMock, patch
 
 from aion.adk.server.adapter import ADKAdapter
-from aion.adk.server.artifacts.backends.a2a import A2AArtifactService
 from aion.core.config.models import AgentConfig
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
 from aion.langgraph.server.adapter import LangGraphAdapter
@@ -58,7 +60,6 @@ from aion.server.auth import (
 )
 from aion.server.agent.exceptions import ExecutionError
 from aion.server.agent.execution.scope import init_execution_scope
-from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore
 
 from .postgres_support import POSTGRES_TEST_URL, prepared_database, truncate
 
@@ -314,56 +315,6 @@ async def test_adk_session_saved_under_the_shared_user_is_refused(db) -> None:
 
     kept = await sessions.get_session(app_name=SHARED_NAME, user_id="default-user", session_id=context_id)
     assert [event.content.parts[0].text for event in kept.events] == ["legacy"]
-
-
-# ------------------------------------------------------------ ADK artifacts
-
-
-async def _save_task_with_report(agent_id: str, user: ServerCallContext, context_id: str, text: str, version: int) -> None:
-    store = PostgresTaskStore(agent_id=agent_id)
-    task_id = str(uuid.uuid4())
-    artifact = Artifact(artifact_id=uuid.uuid4().hex, name="report.txt", parts=[Part(text=text)])
-    artifact.metadata["version"] = str(version)
-    await store.save(
-        Task(
-            id=task_id,
-            context_id=context_id,
-            status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
-            artifacts=[artifact],
-        ),
-        user,
-    )
-
-
-async def test_adk_artifact_fallback_reads_only_the_callers_rows(db) -> None:
-    context_id = str(uuid.uuid4())
-    await _save_task_with_report("adk-a", ALICE, context_id, "alice v0", 0)
-    await _save_task_with_report("adk-a", ALICE, context_id, "alice v1", 1)
-    await _save_task_with_report("adk-a", MALLORY, context_id, "mallory v0", 0)
-    await _save_task_with_report("adk-b", ALICE, context_id, "other agent", 0)
-    service = A2AArtifactService(db_manager=db)
-
-    async def load(app: str, user: str, version: Optional[int] = None):
-        part = await service.load_artifact(
-            app_name=app, user_id=user, session_id=context_id, filename="report.txt", version=version
-        )
-        return part.text if part is not None else None
-
-    try:
-        assert await load("adk-a", "alice") == "alice v1"
-        assert await load("adk-a", "alice", 0) == "alice v0"
-        assert await load("adk-a", "mallory") == "mallory v0"
-        assert await load("adk-b", "alice") == "other agent"
-        assert await load("adk-b", "mallory") is None
-
-        for app, user, versions in (("adk-a", "alice", [0, 1]), ("adk-a", "mallory", [0]), ("adk-b", "mallory", [])):
-            keys = await service.list_artifact_keys(app_name=app, user_id=user, session_id=context_id)
-            assert keys == (["report.txt"] if versions else [])
-            assert await service.list_versions(
-                app_name=app, user_id=user, session_id=context_id, filename="report.txt"
-            ) == versions
-    finally:
-        await service.close()
 
 
 # ------------------------------------------------ one owner resolver for both

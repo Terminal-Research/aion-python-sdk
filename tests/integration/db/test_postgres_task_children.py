@@ -12,7 +12,6 @@ import uuid
 import pytest
 from a2a.server.tasks.task_manager import append_artifact_to_task
 from a2a.types import Artifact, Message, Part, Role, Task, TaskArtifactUpdateEvent, TaskState, TaskStatus
-from google.protobuf.struct_pb2 import Struct
 from sqlalchemy import text
 
 from aion.db.postgres.records import TaskRecord
@@ -238,22 +237,6 @@ async def test_upsert_batch_adds_a_new_artifact_alongside_existing_ones(postgres
 
     stored = await repo.find_by_task_id(task_id)
     assert sorted(a.artifact_id for a in stored) == ["a1", "a2"]
-
-
-async def test_find_artifacts_reads_through_the_normalized_table(postgres_session):
-    """``TasksRepository.find_artifacts`` still answers name/version queries."""
-    task_id = await _make_task(postgres_session)
-    meta = Struct()
-    meta.update({"version": "1"})
-    artifact = Artifact(artifact_id="report-v1", name="report", metadata=meta)
-    await TaskArtifactsRepository(postgres_session).upsert_batch(task_id, [artifact])
-    await postgres_session.commit()
-
-    found = await TasksRepository(postgres_session).find_artifacts(
-        agent_id=AGENT_ID, task_id=str(task_id), artifact_name="report"
-    )
-
-    assert [a.artifact_id for a in found] == ["report-v1"]
 
 
 async def test_deleting_a_task_cascades_to_its_children(postgres_session):
