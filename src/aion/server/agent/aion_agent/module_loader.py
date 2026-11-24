@@ -15,6 +15,7 @@ import inspect
 import sys
 from pathlib import Path
 from types import ModuleType
+from collections.abc import Sequence
 from typing import Any, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -228,6 +229,7 @@ class ModuleLoader:
             module: ModuleType,
             supported_types: list[type],
             item_name: Optional[str] = None,
+            preferred_types: Sequence[type] = (),
     ) -> Any:
         """Discover an object in a module by type.
 
@@ -238,6 +240,8 @@ class ModuleLoader:
             module: Module to search in
             supported_types: List of types to match (using isinstance/issubclass)
             item_name: Optional specific item name to look for
+            preferred_types: Types whose instance is taken first, in this
+                order (``AgentAdapter.get_preferred_types``)
 
         Returns:
             Any: Found object
@@ -246,8 +250,9 @@ class ModuleLoader:
             ValueError: If no matching object found
 
         Priority order (when item_name is None):
-        1. Instances of supported_types (preserves user configuration)
-        2. Classes that are subclasses of supported_types
+        1. Instances of the first of preferred_types that has any, the first by name
+        2. Instances of supported_types (preserves user configuration)
+        3. Classes that are subclasses of supported_types
 
         Note: Callables are only supported when explicitly specified via item_name
         """
@@ -263,7 +268,16 @@ class ModuleLoader:
             )
             return obj
 
-        # Auto-discovery: try to find objects matching supported types
+        # Auto-discovery: an instance of a preferred type wins, in their order.
+        for preferred in preferred_types:
+            for name, member in inspect.getmembers(module):
+                if not name.startswith("_") and isinstance(member, preferred):
+                    self.logger.info(
+                        f"Discovered instance '{name}' ({preferred.__name__}) in module '{module.__name__}'"
+                    )
+                    return member
+
+        # Then any object matching supported types
         found_objects = []
 
         # 1. Search for classes (subclasses of supported types)

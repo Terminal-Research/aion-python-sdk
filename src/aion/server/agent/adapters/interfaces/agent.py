@@ -65,6 +65,19 @@ class AgentAdapter(ABC):
         """
         pass
 
+    def get_preferred_types(self) -> list[type]:
+        """Return the supported types whose instance a module is searched for first, in this order.
+
+        Used by ModuleLoader when the agent's path names no object: the
+        first of these types with an instance in the module decides, and
+        among its instances the first by name. Only when none has an
+        instance does every supported type count alike.
+
+        Returns:
+            list[type]: The preferred types; none by default.
+        """
+        return []
+
     @abstractmethod
     async def initialize_agent(self, agent_obj: Any, config: AgentConfig) -> Any:
         """Initialize an agent with the given configuration.

@@ -2,7 +2,8 @@
 
 The server runs every task with an executor from one pool, `TaskExecutorPool`,
 and calls each the same way, through `TaskExecutor`: `stream` for a new task,
-`resume` for a message that continues one, `cancel` to stop its running turn.
+`resume` for a message that continues one, `cancel` to stop its running turn,
+and `aclose` once, at the end of a server shutdown, to release what it holds.
 An executor yields A2A events, which go the standard way
 (`AionEventPipeline`); the turn around them is the server's. The pool holds
 two kinds of executor:

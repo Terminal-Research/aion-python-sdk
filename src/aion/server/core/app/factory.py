@@ -36,6 +36,7 @@ from aion.server.core.middlewares.runtime_identity import RuntimeIdentityMiddlew
 from aion.server.core.middlewares.tracing import TracingMiddleware
 from aion.server.plugins import PluginFactory
 from aion.server.settings import app_settings
+from aion.server.shutdown import shutdown_budget
 from aion.server.tasks import StoreManager, PushNotificationFactory
 from aion.server.tasks.abandoned import AbandonedTasks
 from aion.server.tasks.conversation import StoredConversations
@@ -342,6 +343,16 @@ class AppFactory:
                 logger.info("Push notification client closed")
             except Exception as exc:
                 logger.error("Error closing push notification client", exc_info=exc)
+
+        # No turn runs any more: the executors release what they hold - an
+        # ADK agent's plugins and toolsets - before the plugins and the
+        # database they may still write to are closed.
+        if self._executor is not None:
+            try:
+                await self._executor.close_executors(shutdown_budget().cleanup)
+                logger.info("Executors closed")
+            except Exception as exc:
+                logger.error("Error closing the executors", exc_info=exc)
 
         if self.token_verifier is not None:
             try:

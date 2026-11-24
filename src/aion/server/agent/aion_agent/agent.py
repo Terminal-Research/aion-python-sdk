@@ -341,7 +341,8 @@ class AionAgent:
                 native_agent = module_loader.discover_object(
                     module=module,
                     supported_types=adapter.get_supported_types(),
-                    item_name=item_name
+                    item_name=item_name,
+                    preferred_types=adapter.get_preferred_types(),
                 )
 
                 # Check if the adapter can handle the discovered agent

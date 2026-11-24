@@ -12,7 +12,7 @@ This subpackage provides the server-side plugin for running Google ADK agents wi
 - **Artifact storage** — Memory and A2A-backed artifact service via `ArtifactServiceFactory`
 - **Transformers** — Bidirectional A2A ↔ ADK format conversion
 
-An agent's `path` in `aion.yaml` names an ADK agent (a `BaseAgent` instance) or a callable that returns one. The callable may be an `async def`: the server awaits it once at startup, on its own event loop, so a factory can load MCP tools or open a connection while it builds the agent.
+An agent's `path` in `aion.yaml` names an ADK agent (a `BaseAgent` instance), an ADK `App` that holds one, or a callable that returns either. The callable may be an `async def`: the server awaits it once at startup, on its own event loop, so a factory can load MCP tools or open a connection while it builds the agent. A path that names no object takes the module's `App` before any of its agents, as ADK's own loader takes `app` before `root_agent` (`ADKAdapter.get_preferred_types`). An ADK 2.x `Workflow`, or any ADK node that is not an agent, is refused at startup - as the object the path names, what a factory returns, or an App's `root_agent` - with an error that names its type.
 
 ## How an agent runs
 
@@ -23,9 +23,12 @@ The Runner works only with what the server gives it (`execution/runner.py`):
 - **Sessions** are the server's session service, memory or PostgreSQL. Every write, the Runner's included, passes one point where the turn in progress decides what a session keeps (`TurnSessionService`), and where a file an event carries inline is stored and kept as a link (see [Files in the session](#files-in-the-session)).
 - **Artifacts** are the server's artifact service.
 - **Memory** is the server's memory service (see [Memory](#memory)).
-- **Nothing else is passed**: no credential service, no plugins, no context cache, no event compaction. The Runner creates no session on its own; the server finds or creates it first.
+- **The App** is the agent's own when the path names one (`server_app`): its plugins, events compaction (`events_compaction_config`) and context cache (`context_cache_config`) run with the agent as ADK runs them. Its name is not used - sessions, memory and artifacts are keyed by the Aion agent id - and every invocation is resumable whatever its `resumability_config` says; an App that turns resumability off is warned about at startup. An agent given alone runs in an App of the server's with none of these.
+- **Nothing else is passed**: no credential service. The Runner creates no session on its own; the server finds or creates it first.
 - **The run configuration is fixed**: text out, streamed (`RUN_CONFIG`), and every invocation resumable.
 - **The invocation context** is `AionInvocationContext`, which carries the Aion runtime context of the request.
+
+When the server stops, once the running turns ended and their tasks settled, the executor closes its Runner (`ADKExecutor.aclose`): ADK's `Runner.close` closes the App's plugins, the toolsets of the agent and its sub-agents - an MCP toolset's connection among them - and flushes the session service.
 
 After `transfer_to_agent` the next message of the context goes to the agent that answered last, as long as that agent may hand the conversation back to its parent (`disallow_transfer_to_parent` is off for it and for every agent above it); otherwise the root agent answers. That is the Runner's rule, unchanged.
 

@@ -301,6 +301,19 @@ class AionAgentRequestExecutor(AgentExecutor):
         if pending:
             logger.warning("%d turn(s) did not end within %.1fs of the shutdown", len(pending), within)
 
+    async def close_executors(self, within: float) -> None:
+        """Close the pool's executors, at the end of a server shutdown, for at most ``within`` seconds.
+
+        Called once the running turns were stopped and their tasks settled,
+        with the cleanup window of the shutdown budget
+        (``aion.server.shutdown.ShutdownBudget.cleanup``); an executor still
+        closing then is left to the process exit.
+        """
+        try:
+            await asyncio.wait_for(self.pool.aclose(), timeout=within)
+        except asyncio.TimeoutError:
+            logger.warning("The executors did not close within %.1fs of the shutdown", within)
+
     async def _stop(self, turn: _Turn, within: Optional[float], reason: str = _CANCEL) -> bool:
         """Ask the turn's executor to stop it, once; whether the executor took the request.
 

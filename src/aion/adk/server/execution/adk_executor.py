@@ -1,10 +1,11 @@
 """The ADK framework executor: runs an agent through ADK's Runner on the server's own services."""
 
+import asyncio
 import logging
 import time
 import uuid
 from collections.abc import AsyncIterator
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING, Union
 
 from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from aion.server.agent.adapters import (
@@ -14,6 +15,8 @@ from aion.server.agent.adapters import (
 )
 from aion.server.agent.exceptions import ExecutionError
 from aion.core.config.models import AgentConfig
+from google.adk.agents import BaseAgent
+from google.adk.apps import App
 from google.adk.artifacts import BaseArtifactService
 from google.adk.memory import BaseMemoryService
 from google.adk.sessions import Session, BaseSessionService
@@ -49,16 +52,18 @@ logger = logging.getLogger(__name__)
 class ADKExecutor(AgentFrameworkExecutor):
     """The framework executor that runs an ADK agent through ADK's ``Runner``.
 
-    The Runner is given the server's session service and artifact service
-    and nothing else (``runner.build_runner``); what a turn leaves in the
-    session is decided by the turn's ``ADKStreamExecutor``.
+    The Runner is given the server's session, artifact and memory services,
+    and runs the agent in its ADK ``App`` (``runner.build_runner``); what a
+    turn leaves in the session is decided by the turn's ``ADKStreamExecutor``.
+    The Runners are closed with the executor (``aclose``), at the end of a
+    server shutdown.
     """
 
     framework = "adk"
 
     def __init__(
             self,
-            agent: Any,
+            agent: Union[BaseAgent, App],
             config: AgentConfig,
             session_service: Optional[BaseSessionService] = None,
             artifact_service: Optional[BaseArtifactService] = None,
@@ -72,6 +77,20 @@ class ADKExecutor(AgentFrameworkExecutor):
         self._memory_service = memory_service or MemoryServiceFactory.create()
         self._result_handler = result_handler or ADKExecutionResultHandler()
         self._runners: dict[str, AionRunner] = {}
+
+    async def aclose(self) -> None:
+        """Close every Runner built here: the App's plugins, the agent's toolsets, the session writes.
+
+        ADK's ``Runner.close`` closes the toolsets of the agent and its
+        sub-agents - an MCP toolset's connection among them - and the App's
+        plugins, and flushes the session service. A Runner that fails to
+        close is logged; the others are closed all the same.
+        """
+        runners, self._runners = list(self._runners.values()), {}
+        results = await asyncio.gather(*(runner.close() for runner in runners), return_exceptions=True)
+        for result in results:
+            if isinstance(result, BaseException):
+                logger.error("Closing an ADK Runner failed", exc_info=result)
 
     def _runner(self, agent_id: str) -> AionRunner:
         """The Runner for the Aion agent ``agent_id``, built once and kept."""

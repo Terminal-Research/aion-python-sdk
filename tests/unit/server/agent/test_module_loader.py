@@ -371,6 +371,34 @@ class TestDiscoverObject:
         # Instance should win over class
         assert result is instance
 
+    def test_an_instance_of_a_preferred_type_wins_whatever_its_name(self):
+        """The first preferred type with an instance decides; its instances go by name."""
+        class Holder:
+            pass
+
+        class Held:
+            pass
+
+        holder, held = Holder(), Held()
+        mod = _make_module("test_mod_preferred", {"a_held": held, "z_holder": holder})
+        loader = ModuleLoader(logger=MagicMock())
+
+        assert loader.discover_object(mod, [Holder, Held]) is held
+        assert loader.discover_object(mod, [Holder, Held], preferred_types=[Holder, Held]) is holder
+
+    def test_without_a_preferred_instance_every_supported_type_counts_alike(self):
+        class Holder:
+            pass
+
+        class Held:
+            pass
+
+        held = Held()
+        mod = _make_module("test_mod_no_preferred", {"held": held})
+        loader = ModuleLoader(logger=MagicMock())
+
+        assert loader.discover_object(mod, [Holder, Held], preferred_types=[Holder]) is held
+
     def test_no_match_raises_value_error(self):
         """discover_object raises ValueError with 'No supported object found' when nothing matches."""
         mod = _make_module("test_mod_empty", {"x": 42, "y": "hello"})

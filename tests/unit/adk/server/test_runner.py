@@ -2,34 +2,48 @@
 
 ADK's ``Runner`` drives the agent, picks who answers and writes the session.
 It must do so only through what the server hands it: the server's session
-service and artifact service, the server's run configuration, and an
-invocation context that carries the Aion runtime context. These tests hold
-``build_runner`` to that, and hold ``TurnSessionService`` to passing every
-call of ADK's session interface on to the server's service.
+service and artifact service, the server's run configuration, the agent's
+own ADK ``App`` when it was given one, and an invocation context that
+carries the Aion runtime context. These tests hold ``build_runner`` to that,
+hold ``TurnSessionService`` to passing every call of ADK's session interface
+on to the server's service, and hold the executor to closing its Runners.
 """
 
 from __future__ import annotations
 
 import inspect
+import logging
 from unittest.mock import AsyncMock, Mock
 
-from google.adk.agents import BaseAgent
+from a2a.types import Message, Part, Role
+from google.adk.agents import BaseAgent, LlmAgent
+from google.adk.agents.context_cache_config import ContextCacheConfig
+from google.adk.apps import App, ResumabilityConfig
+from google.adk.apps.app import EventsCompactionConfig
+from google.adk.memory import InMemoryMemoryService
+from google.adk.models import BaseLlm, LlmRequest, LlmResponse
+from google.adk.plugins.base_plugin import BasePlugin
 from google.adk.agents.run_config import StreamingMode
 from google.adk.events import Event
 from google.adk.sessions import BaseSessionService, InMemorySessionService
 from google.genai import types
 
 from aion.adk.authoring.invocation import AionInvocationContext
+from aion.adk.server.artifacts.backends.a2a import A2AArtifactService
 from aion.adk.server.execution.adk_executor import ADKExecutor
 from aion.adk.server.execution.runner import (
+    APP_NAME,
     RUN_CONFIG,
     AionRunner,
     TurnSessionService,
     build_runner,
     running_turn,
 )
+from aion.core.config.models import AgentConfig
 from aion.core.runtime.context.models import AionRuntimeContext
 from aion.core.runtime.context.registry import AionRuntimeContextRegistry
+from aion.server.agent.adapters import ExecutionConfig, StateScope
+from aion.server.agent.execution.context.providers import RequestScopeRuntimeContextProvider
 
 
 def _runner(sessions=None, artifacts=None) -> AionRunner:
@@ -97,6 +111,124 @@ def test_sessions_and_artifacts_are_keyed_by_the_aion_agent_id() -> None:
 
 def test_every_invocation_is_resumable() -> None:
     assert _runner().resumability_config.is_resumable is True
+
+
+def test_an_app_given_as_the_agent_runs_with_its_plugins_compaction_and_cache() -> None:
+    plugin = BasePlugin(name="recorder")
+    compaction = EventsCompactionConfig(compaction_interval=3, overlap_size=1)
+    cache = ContextCacheConfig()
+    app = App(
+        name="mine",
+        root_agent=BaseAgent(name="showcase"),
+        plugins=[plugin],
+        events_compaction_config=compaction,
+        context_cache_config=cache,
+    )
+
+    runner = build_runner(app, app_name="agent-1", session_service=InMemorySessionService(), artifact_service=None)
+
+    assert runner.agent is app.root_agent
+    assert list(runner.plugin_manager.plugins) == [plugin]
+    assert runner.app.events_compaction_config == compaction
+    assert runner.context_cache_config == cache
+    assert (runner.app_name, runner.app.name) == ("agent-1", APP_NAME)
+    assert runner.resumability_config.is_resumable is True
+
+
+def test_an_app_that_turns_resumability_off_runs_resumable_and_is_left_as_it_was() -> None:
+    app = App(
+        name="mine",
+        root_agent=BaseAgent(name="showcase"),
+        resumability_config=ResumabilityConfig(is_resumable=False),
+    )
+
+    runner = build_runner(app, app_name="agent-1", session_service=InMemorySessionService(), artifact_service=None)
+
+    assert runner.resumability_config.is_resumable is True
+    assert app.resumability_config.is_resumable is False
+    assert app.name == "mine"
+
+
+class _ClosingPlugin(BasePlugin):
+    """A plugin that records being closed."""
+
+    closed: bool = False
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+async def test_closing_the_executor_closes_the_plugins_of_every_runner() -> None:
+    plugin = _ClosingPlugin(name="closing")
+    executor = ADKExecutor(
+        App(name="mine", root_agent=BaseAgent(name="showcase"), plugins=[plugin]),
+        Mock(),
+        session_service=InMemorySessionService(),
+        artifact_service=Mock(),
+        memory_service=Mock(),
+    )
+    executor._runner("agent-1")
+
+    await executor.aclose()
+
+    assert plugin.closed is True
+    assert executor._runners == {}
+
+
+async def test_a_runner_that_fails_to_close_leaves_the_others_to_close(caplog) -> None:
+    executor = ADKExecutor(
+        BaseAgent(name="showcase"), Mock(), session_service=InMemorySessionService(), artifact_service=Mock(),
+        memory_service=Mock(),
+    )
+    failing, closing = Mock(close=AsyncMock(side_effect=RuntimeError("boom"))), Mock(close=AsyncMock())
+    executor._runners = {"agent-1": failing, "agent-2": closing}
+
+    with caplog.at_level(logging.ERROR):
+        await executor.aclose()
+
+    closing.close.assert_awaited_once()
+    assert "Closing an ADK Runner failed" in caplog.text
+
+
+class _EchoLlm(BaseLlm):
+    """A model that answers every request, the summary of compacted events included."""
+
+    model: str = "echo"
+
+    async def generate_content_async(self, llm_request: LlmRequest, stream: bool = False):
+        yield LlmResponse(content=types.Content(role="model", parts=[types.Part(text="echo")]), partial=False)
+
+
+async def test_an_apps_events_compaction_writes_to_the_session_after_its_turns() -> None:
+    """ADK compacts after an invocation's events are yielded; the turn's session writes keep the compaction."""
+    sessions = InMemorySessionService()
+    app = App(
+        name="mine",
+        root_agent=LlmAgent(name="echo", model=_EchoLlm()),
+        events_compaction_config=EventsCompactionConfig(compaction_interval=2, overlap_size=0),
+    )
+    executor = ADKExecutor(
+        app, AgentConfig(path="m:app"), session_service=sessions, artifact_service=A2AArtifactService(),
+        memory_service=InMemoryMemoryService(),
+    )
+    scope = StateScope(agent_id="agent-1", owner_scope="owner")
+    AionRuntimeContextRegistry.set_provider(RequestScopeRuntimeContextProvider())
+    AionRuntimeContextRegistry.set_current_context(AionRuntimeContext())
+    try:
+        for turn in range(2):
+            request = Mock(
+                task_id=f"t-{turn}",
+                context_id="ctx-1",
+                message=Message(message_id=f"m-{turn}", role=Role.ROLE_USER, parts=[Part(text=f"hello {turn}")]),
+            )
+            config = ExecutionConfig(task_id=f"t-{turn}", context_id="ctx-1", state_scope=scope)
+            [event async for event in executor.stream(request, config)]
+    finally:
+        AionRuntimeContextRegistry.set_current_context(None)
+        AionRuntimeContextRegistry.clear_provider()
+
+    session = await sessions.get_session(app_name="agent-1", user_id="owner", session_id="ctx-1")
+    assert any(event.actions and event.actions.compaction for event in session.events)
 
 
 def test_a_run_streams_text() -> None:

@@ -164,12 +164,14 @@ aion.cli
   URI. Read `docs/development/extension-exposure.md` before changing
   extension exposure or routing.
 - Every task runs on an executor from one pool (`TaskExecutorPool`) through one
-  API, `TaskExecutor` (`stream`, `resume`, `cancel`): the agent's framework
+  API, `TaskExecutor` (`stream`, `resume`, `cancel`, and `aclose` at the end
+  of a shutdown): the agent's framework
   executor (`AgentFrameworkExecutor`, created by the LangGraph or ADK
   plugin) or the `ExtensionExecutor` of an executable extension the agent
   enables. The request executor drives every turn the same way - a raised
   error fails the task, an `ExtensionRejection` rejects it, the final status
-  of a cancel or a shutdown is the server's - and the pool is only a lookup.
+  of a cancel or a shutdown is the server's - and the pool only looks the
+  executors up and closes them at the end of a shutdown.
   Executable extensions are registered from the list `aion.server` ships
   (`EXECUTABLE_EXTENSIONS`) in one step of `AppFactory._initialize`, and
   their executors are created with their `aion.yaml` options; an executor

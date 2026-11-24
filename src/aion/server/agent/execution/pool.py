@@ -2,8 +2,9 @@
 
 ``TaskExecutorPool`` holds the agent's framework executor, which serves every task
 by default, and the executor of each executable extension the agent enables,
-by URI. It is a lookup and nothing more: the request executor drives every
-turn the same way, whichever executor it took from here.
+by URI. It looks executors up and closes them at the end of a server
+shutdown (``aclose``), nothing more: the request executor drives every turn
+the same way, whichever executor it took from here.
 
 A new task goes to the executor of the executable extension its request
 activates (``route``); the request handler keeps that choice on the call
@@ -15,6 +16,8 @@ agent.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
@@ -36,6 +39,8 @@ __all__ = [
     "refusal_data",
     "task_busy",
 ]
+
+logger = logging.getLogger(__name__)
 
 EXTENSION_ROUTE_STATE_KEY = "aion:extensionRoute"
 """Key of the ``ServerCallContext.state`` entry that carries the URI a new task is routed to.
@@ -120,3 +125,14 @@ class TaskExecutorPool:
         if executor is None:
             raise extension_unavailable(uri)
         return executor
+
+    async def aclose(self) -> None:
+        """Close every executor of the pool, all at once (``TaskExecutor.aclose``).
+
+        One that fails to close is logged; the others are closed all the same.
+        """
+        executors = [self.default, *self.extensions.values()]
+        results = await asyncio.gather(*(executor.aclose() for executor in executors), return_exceptions=True)
+        for executor, result in zip(executors, results):
+            if isinstance(result, BaseException):
+                logger.error("Closing the executor %s failed", type(executor).__name__, exc_info=result)
