@@ -28,6 +28,13 @@ def _reset():
     clear_execution_scope()
 
 
+@pytest.fixture(autouse=True)
+def _no_scope_left_behind():
+    """Clear the scope a test set, so a later test in the process does not run in it."""
+    yield
+    clear_execution_scope()
+
+
 class TestSetGetClear:
     def setup_method(self):
         _reset()
