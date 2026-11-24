@@ -1,7 +1,7 @@
 """``A2AArtifactService`` as an ADK agent uses it: save, load, list, versions.
 
-Without a database the service is its in-memory half; the database half is
-reached only when memory has nothing, and the offset it contributes is the
+Outside a turn the service is its in-memory half; the context's tasks are
+reached only when memory has nothing, and the offset they contribute is the
 one place the two meet - tested here through the method that asks for it.
 """
 
@@ -130,7 +130,7 @@ async def test_numbering_continues_after_what_the_database_already_holds(
     service: A2AArtifactService,
 ) -> None:
     """A new process saves version 2, not 0, when the database holds 0 and 1."""
-    service._resolve_db_version_offset = AsyncMock(return_value=2)
+    service._resolve_version_offset = AsyncMock(return_value=2)
 
     version = await _save(service, "report.txt", "three")
 
@@ -174,7 +174,7 @@ async def _nothing():
 def _numbered_by(database: _Database, next_versions: list[int]) -> A2AArtifactService:
     """A service over ``database`` that reads ``next_versions`` from it, one per lookup."""
     service = A2AArtifactService(db_manager=database)
-    service._resolve_db_version_offset = AsyncMock(side_effect=next_versions)
+    service._resolve_version_offset = AsyncMock(side_effect=next_versions)
     return service
 
 

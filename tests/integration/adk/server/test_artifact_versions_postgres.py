@@ -3,7 +3,8 @@
 Each ``A2AArtifactService`` here is a server of its own: its memory is its
 own, and only the database is shared. A version's artifact reaches the tasks
 table later, with the task that carries it, as the event consumer writes it;
-the tests write it the same way once the saves are done.
+the tests write it the same way once the saves are done, and read it back
+from inside a turn of the context's holder, as ADK reads it.
 """
 
 from __future__ import annotations
@@ -13,11 +14,10 @@ import uuid
 
 import pytest
 import pytest_asyncio
-from a2a.server.context import ServerCallContext
-from a2a.types import Artifact, Part, Task, TaskState, TaskStatus
 from google.genai import types
 from sqlalchemy import text
 
+from tests.integration.adk.server.postgres_turns import PostgresAgent, private, runtime_provider
 from tests.integration.server.tasks.postgres_support import POSTGRES_TEST_URL, prepared_database
 
 from unittest.mock import Mock
@@ -31,15 +31,14 @@ from aion.adk.server.execution.adk_executor import ADKExecutor
 from aion.adk.server.tables import migrate_aion_tables
 from aion.db.postgres.constants import ADK_SCHEMA, AION_SCHEMA
 from aion.server.agent.adapters import ExecutionConfig, StateScope
-from aion.server.tasks.stores.postgres_task_store import PostgresTaskStore
 
 pytestmark = [
     pytest.mark.skipif(not POSTGRES_TEST_URL, reason="POSTGRES_TEST_URL is not set"),
     pytest.mark.asyncio(loop_scope="module"),
 ]
 
-USER = ""
-"""The anonymous owner, the one ``ServerCallContext()`` writes tasks as."""
+USER = "alice"
+"""The owner the tasks are written as, and the state owner of the private context she holds."""
 
 FILENAME = "report.txt"
 SAVES = 6
@@ -50,6 +49,12 @@ SAVES = 6
 async def db():
     async with prepared_database() as manager:
         yield manager
+
+
+@pytest.fixture(autouse=True)
+def _runtime_provider():
+    with runtime_provider():
+        yield
 
 
 @pytest_asyncio.fixture(loop_scope="module")
@@ -74,17 +79,14 @@ async def _save(service: A2AArtifactService, agent_id: str, context_id: str, tex
 
 async def _store_version(agent_id: str, context_id: str, version: int, text_: str) -> None:
     """Write the version's artifact into a task, as the event consumer of the server that saved it does."""
-    artifact = Artifact(artifact_id=uuid.uuid4().hex, name=FILENAME, parts=[Part(text=text_)])
-    artifact.metadata["version"] = str(version)
-    await PostgresTaskStore(agent_id=agent_id).save(
-        Task(
-            id=str(uuid.uuid4()),
-            context_id=context_id,
-            status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
-            artifacts=[artifact],
-        ),
-        ServerCallContext(),
-    )
+    await PostgresAgent(agent_id).store_artifact(context_id, private(USER), FILENAME, version, text_)
+
+
+async def _turn(agent_id: str, context_id: str) -> None:
+    """Install the history of a turn of ``USER``, who holds the context."""
+    agent = PostgresAgent(agent_id)
+    assert await agent.admit(context_id, private(USER))
+    agent.turn(context_id, private(USER))
 
 
 async def _recorded(db, agent_id: str, context_id: str) -> list[int]:
@@ -119,6 +121,7 @@ async def test_two_servers_saving_one_artifact_at_once_give_distinct_continuous_
 
     for version, body in {**by_first, **by_second}.items():
         await _store_version(agent_id, context_id, version, body)
+    await _turn(agent_id, context_id)
     reader = services()
     assert await reader.list_versions(
         app_name=agent_id, user_id=USER, session_id=context_id, filename=FILENAME

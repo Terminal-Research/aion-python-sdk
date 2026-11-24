@@ -319,57 +319,6 @@ async def test_find_page_context_filter_matches_find(postgres_session):
     assert [str(entity.id) for entity in page] == [str(in_context.id)]
 
 
-async def test_find_artifacts_latest_only_returns_the_newest_task_s_version(
-    postgres_session,
-):
-    """The ``LIMIT 1`` added for ``artifact_version="-1"`` must return the
-    same artifact ``latest_artifacts()`` picks out of every matching row -
-    the newest task's occurrence of the name - not merely some row.
-    """
-    repository = TasksRepository(postgres_session)
-    artifacts_repository = TaskArtifactsRepository(postgres_session)
-
-    def _artifact(version: str) -> Artifact:
-        meta = Struct()
-        meta.update({"version": version})
-        return Artifact(name="report", artifact_id=f"report-v{version}", metadata=meta)
-
-    older = TaskRecord(
-        id=uuid.uuid4(),
-        agent_id=AGENT_ID,
-        owner_scope=OWNER_SCOPE,
-        context_id="ctx-artifacts",
-        status=_status(),
-    )
-    await repository.save(older)
-    await artifacts_repository.upsert_batch(older.id, [_artifact("1")])
-    await postgres_session.commit()
-    await _advance_transaction_clock()
-
-    newer = TaskRecord(
-        id=uuid.uuid4(),
-        agent_id=AGENT_ID,
-        owner_scope=OWNER_SCOPE,
-        context_id="ctx-artifacts",
-        status=_status(),
-    )
-    await repository.save(newer)
-    await artifacts_repository.upsert_batch(newer.id, [_artifact("2")])
-    await postgres_session.commit()
-
-    latest = await repository.find_artifacts(
-        agent_id=AGENT_ID, context_id="ctx-artifacts", artifact_name="report", artifact_version="-1"
-    )
-
-    assert [a.artifact_id for a in latest] == ["report-v2"]
-
-    # The other modes this method serves must still see the full history.
-    all_versions = await repository.find_artifacts(
-        agent_id=AGENT_ID, context_id="ctx-artifacts", artifact_name="report"
-    )
-    assert sorted(a.artifact_id for a in all_versions) == ["report-v1", "report-v2"]
-
-
 async def _task_with_artifacts(postgres_session, context_id: str, *artifacts: Artifact) -> uuid.UUID:
     """Save a task of ``context_id`` holding ``artifacts``, apart in time from the previous one."""
     await _advance_transaction_clock()
@@ -384,26 +333,6 @@ def _versioned(artifact_id: str, version: str, name: str = "report") -> Artifact
     meta = Struct()
     meta.update({"version": version})
     return Artifact(name=name, artifact_id=artifact_id, metadata=meta)
-
-
-async def test_find_artifacts_can_be_narrowed_to_one_artifact_id(postgres_session):
-    repository = TasksRepository(postgres_session)
-    await _task_with_artifacts(
-        postgres_session, "ctx-by-id", _versioned("evolution-spec", "0", "spec"), _versioned("notes", "0", "spec")
-    )
-    await _task_with_artifacts(postgres_session, "ctx-by-id", _versioned("evolution-spec", "1", "spec"))
-
-    only_spec = await repository.find_artifacts(
-        agent_id=AGENT_ID, context_id="ctx-by-id", artifact_id="evolution-spec", artifact_name="spec"
-    )
-    first_version = await repository.find_artifacts(
-        agent_id=AGENT_ID, context_id="ctx-by-id", artifact_id="evolution-spec", artifact_version="0"
-    )
-    nothing = await repository.find_artifacts(agent_id=AGENT_ID, context_id="ctx-by-id", artifact_id="missing")
-
-    assert [a.metadata["version"] for a in only_spec] == ["1", "0"]
-    assert [a.metadata["version"] for a in first_version] == ["0"]
-    assert nothing == []
 
 
 async def test_find_artifact_versions_lists_the_newest_task_first(postgres_session):

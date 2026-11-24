@@ -18,9 +18,9 @@ logger = logging.getLogger(__name__)
 class ArtifactServiceFactory:
     """Factory for creating ADK artifact service instances.
 
-    Always an A2AArtifactService: it reads the tasks' artifacts by name - through
-    the database when there is one, through each turn's conversation history
-    otherwise - so ADK's own tools find what the agent published to the task.
+    Always an A2AArtifactService: it reads the tasks' artifacts by name
+    through each turn's conversation history, so ADK's own tools find what
+    the agent published to the task.
     """
 
     @classmethod
@@ -31,8 +31,8 @@ class ArtifactServiceFactory:
         """Create artifact service using the most appropriate backend.
 
         Args:
-            db_manager: Optional database manager, for the service's database
-                        reads and version records.
+            db_manager: Optional database manager, for the service's version
+                        records.
 
         Returns:
             BaseArtifactService: An artifact service instance
