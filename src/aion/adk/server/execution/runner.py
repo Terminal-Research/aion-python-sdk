@@ -211,7 +211,7 @@ class AionRunner(Runner):
 
 
 def build_runner(
-        agent: Union[BaseAgent, App],
+        agent: Union[BaseAgent, App, Any],
         *,
         app_name: str,
         session_service: BaseSessionService,
@@ -234,7 +234,8 @@ def build_runner(
     response, as in ADK itself.
 
     Args:
-        agent: The root agent, or an ADK ``App`` whose ``root_agent`` it is.
+        agent: The root agent or ADK ``Workflow``, or an ADK ``App`` whose
+            ``root_agent`` it is.
         app_name: The Aion agent id; sessions, memory and artifacts are
             keyed by it.
         session_service: The server's session service. The Runner writes
@@ -254,13 +255,15 @@ def build_runner(
     )
 
 
-def server_app(agent: Union[BaseAgent, App]) -> App:
+def server_app(agent: Union[BaseAgent, App, Any]) -> App:
     """The ADK ``App`` the server runs ``agent`` in.
 
     An App given as the agent is kept whole - its root agent, plugins,
     events compaction and context cache, and whatever else ADK adds to it -
     except its name, ``APP_NAME``, and resumability, which is always on.
-    An agent given alone runs in an App of its own with nothing else set.
+    An agent or a Workflow given alone runs in an App of its own with
+    nothing else set: ADK runs a Workflow root as it runs one given to the
+    Runner as its ``node``.
     """
     resumable = ResumabilityConfig(is_resumable=True)
     if isinstance(agent, App):

@@ -28,6 +28,7 @@ __all__ = [
     "SEQUENCE_AGENTS",
     "TRANSFER_AGENTS",
     "APP_AGENTS",
+    "WORKFLOW_AGENTS",
     "NATIVE_UNSUPPORTED",
     "native_unsupported_reason",
     "Since",
@@ -294,6 +295,20 @@ APP_AGENTS: dict[str, Framework] = {
 }
 
 
+WORKFLOW_AGENTS: dict[str, Framework] = {
+    # An ADK Workflow that routes each message to a branch, beside one of
+    # its agent nodes in one module, served by a path that names neither:
+    # `native/test_workflow.py`. Its result, its questions and its agent
+    # nodes reach the client as an agent's do.
+    "adk": Framework(
+        name="adk",
+        agent_package="tests.scenarios.agents.adk_workflow",
+        agent_entry="agent.py",
+        sdk_extras=("adk-server",),
+    ),
+}
+
+
 NATIVE_UNSUPPORTED: dict[tuple[str, str], str] = {
     # (framework name, capability) -> why the framework has no such thing.
     #
@@ -344,6 +359,10 @@ NATIVE_UNSUPPORTED: dict[tuple[str, str], str] = {
         "LangGraph has no App that holds a graph with plugins; a graph is compiled "
         "with what it runs with"
     ),
+    ("langgraph", "workflow"): (
+        "LangGraph has no ADK Workflow; a LangGraph graph is a workflow of its own, "
+        "which every other scenario serves"
+    ),
     ("langgraph", "memory-service"): (
         "LangGraph has no memory service; its memory across conversations is the store, "
         "which the `store` scenarios drive"
@@ -379,6 +398,14 @@ NATIVE_SINCE: dict[tuple[str, str], Since] = {
     # scenario driving one runs where the server's installation has that
     # release or a newer one, and skips below it: on the oldest releases
     # allowed, for one, which the scenarios run against in the floors CI job.
+    ("adk", "workflow"): Since(
+        distribution="google-adk",
+        version="2.12.0",
+        reason=(
+            "ADK before 2.0 has no Workflow, and the server reads a workflow's output from "
+            "events that name it, which 2.12 is the first release tested with"
+        ),
+    ),
     ("adk", "tool-media"): Since(
         distribution="google-adk",
         version="2.7.0",

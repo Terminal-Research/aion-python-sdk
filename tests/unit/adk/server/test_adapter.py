@@ -11,10 +11,16 @@ from google.adk.apps import App, ResumabilityConfig
 from aion.adk.server.adapter import ADKAdapter
 from aion.server.agent.aion_agent.module_loader import ModuleLoader
 
+from aion.adk.server import adapter as adapter_module
+
 try:
-    from google.adk.workflow import Workflow
+    from google.adk.workflow import FunctionNode, Workflow
 except ImportError:  # ADK 1.x has no Workflow
-    Workflow = None
+    FunctionNode = Workflow = None
+
+
+def _shout(node_input: str) -> str:
+    return node_input.upper()
 
 needs_workflow = pytest.mark.skipif(Workflow is None, reason="ADK before 2.0 has no Workflow")
 
@@ -64,7 +70,7 @@ def _app(**kwargs) -> App:
 
 
 class TestApp:
-    """An ADK App is run with what it holds; a Workflow is refused at startup."""
+    """An ADK App is run with what it holds; a Workflow is run as it is or in an App, any other node refused."""
 
     def setup_method(self):
         self.adapter = ADKAdapter()
@@ -106,25 +112,53 @@ class TestApp:
         assert executor.agent is app
 
     @needs_workflow
-    def test_a_workflow_is_handled_to_be_refused(self):
-        assert self.adapter.can_handle(Workflow(name="flow"))
+    async def test_a_workflow_is_returned_as_is(self):
+        flow = Workflow(name="flow")
+
+        assert self.adapter.can_handle(flow)
+        assert await self.adapter.initialize_agent(flow, self.config) is flow
 
     @needs_workflow
-    async def test_a_workflow_is_refused(self):
-        with pytest.raises(TypeError, match="Workflow is not supported"):
-            await self.adapter.initialize_agent(Workflow(name="flow"), self.config)
-
-    @needs_workflow
-    async def test_an_app_whose_root_is_a_workflow_is_refused(self):
+    async def test_an_app_whose_root_is_a_workflow_is_returned_as_is(self):
         app = App(name="mine", root_agent=Workflow(name="flow"))
 
-        with pytest.raises(TypeError, match="root_agent of the ADK App 'mine' is Workflow"):
+        assert await self.adapter.initialize_agent(app, self.config) is app
+
+    @needs_workflow
+    async def test_a_factory_may_return_a_workflow(self):
+        flow = Workflow(name="flow")
+
+        assert await self.adapter.initialize_agent(lambda: flow, self.config) is flow
+
+    @needs_workflow
+    async def test_the_executor_runs_the_workflow(self):
+        flow = Workflow(name="flow")
+
+        assert (await ADKAdapter().create_executor(flow, self.config)).agent is flow
+
+    @needs_workflow
+    async def test_another_adk_node_is_refused(self):
+        node = FunctionNode(func=_shout)
+
+        assert self.adapter.can_handle(node)
+        with pytest.raises(TypeError, match="An ADK FunctionNode cannot be the agent"):
+            await self.adapter.initialize_agent(node, self.config)
+
+    @needs_workflow
+    async def test_an_app_whose_root_is_another_node_is_refused(self):
+        app = App(name="mine", root_agent=FunctionNode(func=_shout))
+
+        with pytest.raises(TypeError, match="root_agent of the ADK App 'mine' is FunctionNode"):
             await self.adapter.initialize_agent(app, self.config)
 
     @needs_workflow
-    async def test_a_factory_returning_a_workflow_is_refused(self):
-        with pytest.raises(TypeError, match="Workflow is not supported"):
-            await self.adapter.initialize_agent(lambda: Workflow(name="flow"), self.config)
+    async def test_a_workflow_is_refused_where_adk_does_not_name_its_output(self, monkeypatch):
+        monkeypatch.setattr(adapter_module, "WORKFLOWS_SUPPORTED", False)
+
+        with pytest.raises(TypeError, match="An ADK Workflow needs google-adk 2.12 or later"):
+            await self.adapter.initialize_agent(Workflow(name="flow"), self.config)
+        with pytest.raises(TypeError, match="An ADK Workflow needs google-adk 2.12 or later"):
+            await self.adapter.initialize_agent(App(name="mine", root_agent=Workflow(name="flow")), self.config)
 
 
 def _module(**members) -> types.ModuleType:
@@ -156,14 +190,22 @@ class TestDiscovery:
         assert _discovered(module) is module.root_agent
 
     @needs_workflow
-    def test_an_agent_is_taken_before_another_node(self):
-        module = _module(a_flow=Workflow(name="flow"), root_agent=BaseAgent(name="root"))
+    def test_a_workflow_is_taken_before_the_agents_of_its_module(self):
+        """The agents of a workflow's module are most often its nodes."""
+        module = _module(a_writer=BaseAgent(name="writer"), root_agent=Workflow(name="flow"))
 
         assert _discovered(module) is module.root_agent
 
     @needs_workflow
-    def test_a_module_with_only_a_workflow_yields_it_to_be_refused(self):
-        module = _module(flow=Workflow(name="flow"))
+    def test_an_app_is_taken_before_a_workflow(self):
+        flow = Workflow(name="flow")
+        module = _module(a_flow=flow, app=App(name="mine", root_agent=flow))
 
-        assert _discovered(module) is module.flow
+        assert _discovered(module) is module.app
+
+    @needs_workflow
+    def test_an_agent_is_taken_before_another_node(self):
+        module = _module(a_step=FunctionNode(func=_shout), root_agent=BaseAgent(name="root"))
+
+        assert _discovered(module) is module.root_agent
 

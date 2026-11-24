@@ -23,9 +23,10 @@ from google.genai import types
 
 from .event_converter import ADKToA2AEventConverter
 from .event_queue import ADKEventConsumer, ADKEventQueue
-from .pause import PendingCall, paused_on
+from .pause import PendingCall, paused_on, waiting_call
 from .runner import RUN_CONFIG, running_turn
 from .structured_response import NO_STRUCTURED_RESPONSE, structured_response
+from .workflow import NO_OUTPUT, run_output
 
 logger = logging.getLogger(__name__)
 
@@ -66,12 +67,18 @@ class ADKStreamResult:
         keeps the key across turns, and the next turn in the context would
         read it back.
     paused_on — the long-running tool call the run paused on, or None
-        when the run went to its end.
+        when the run went to its end: the call one of the run's last two
+        events made, else a call of the run's invocation the session still
+        waits on - a workflow goes on with its other branches after a node
+        asked, and a run answered one of several questions it asked at
+        once.
     error — the error the run's events reported, the last one when several
         did, or None.
     structured_response — the object the last final response of an agent
-        with an ``output_schema`` answered with during this cycle, or None
-        when none did (``structured_response``).
+        with an ``output_schema`` answered with during this cycle, or the
+        output a workflow's run ended with when it is not a string, or None
+        when there was none (``structured_response``,
+        ``workflow.run_output``).
     """
 
     outbox: Any = None
@@ -125,10 +132,25 @@ class ADKStreamExecutor:
         """Accumulated state. Valid after execute() iteration is complete."""
         return ADKStreamResult(
             outbox=self._outbox,
-            paused_on=paused_on(list(self._last_agent_events)),
+            paused_on=self._paused_on(),
             error=self._error,
             structured_response=self._structured_response,
         )
+
+    def _root_name(self) -> str:
+        """The name of what the invocation runs: its agent, or the workflow ADK runs as a node and gives no agent."""
+        agent = getattr(self._ctx, "agent", None)
+        if agent is not None:
+            return agent.name
+        root = getattr(getattr(self._runner, "app", None), "root_agent", None)
+        return getattr(root, "name", "") or ""
+
+    def _paused_on(self) -> Optional[PendingCall]:
+        """The call the run paused on: one of its last two events', else one its invocation still waits on."""
+        call = paused_on(list(self._last_agent_events))
+        if call is None and self._ctx is not None:
+            call = waiting_call(self._ctx.session.events, invocation_id=self._ctx.invocation_id)
+        return call
 
     @property
     def session(self) -> Any:
@@ -230,7 +252,7 @@ class ADKStreamExecutor:
             return False
         if self._ctx is not None:
             event.invocation_id = event.invocation_id or self._ctx.invocation_id
-            event.author = event.author or self._ctx.agent.name
+            event.author = event.author or self._root_name()
         # Looked up before serializing, which drops an outbox written as None:
         # that write still clears one made earlier in the same run.
         wrote_outbox = event.actions is not None and "a2a_outbox" in event.actions.state_delta
@@ -263,6 +285,9 @@ class ADKStreamExecutor:
                         answered = structured_response(event, getattr(self._ctx, "agent", None))
                         if answered is not NO_STRUCTURED_RESPONSE:
                             self._structured_response = answered
+                        output = run_output(event)
+                        if output is not NO_OUTPUT and not isinstance(output, str):
+                            self._structured_response = output
                     if event.error_code or event.error_message:
                         self._error = ErrorResponse(code=event.error_code, message=event.error_message)
                     queue.enqueue_event(event)
@@ -289,7 +314,7 @@ class ADKStreamExecutor:
                 if fr:
                     logger.debug("Tool response: %s", fr.name)
 
-        for a2a_event in await self._converter.convert(event):
+        for a2a_event in await self._converter.convert(_with_output_text(event)):
             yield a2a_event
 
     async def _persist_thread_event(self, event: Event) -> None:
@@ -305,12 +330,13 @@ class ADKStreamExecutor:
         instructions, and leaves another branch's events out, so a
         sub-agent's or a remote agent's words stay theirs. An event the
         thread emits is the SDK's own and is stamped as the agent's the
-        invocation was started for.
+        invocation was started for - or, for a workflow, as the workflow's,
+        which is the author ADK gives its nodes' events.
         """
         ctx = self._ctx
         event.invocation_id = ctx.invocation_id
         event.branch = ctx.branch
-        event.author = ctx.agent.name
+        event.author = self._root_name()
         await self._runner.session_service.append_event(session=ctx.session, event=event)
 
     @staticmethod
@@ -326,3 +352,21 @@ class ADKStreamExecutor:
 
 
 __all__ = ["ADKStreamExecutor", "ADKStreamResult", "ErrorResponse"]
+
+
+def _with_output_text(event: Event) -> Event:
+    """``event`` as the client reads it: a workflow's text output, with no text of its own, as its text.
+
+    A function node's result is in ``Event.output`` alone; when it is the
+    string the run ends with, it is the reply, as an agent's final text is.
+    The session keeps the event as ADK wrote it.
+    """
+    output = run_output(event)
+    if not isinstance(output, str) or _has_text(event):
+        return event
+    return event.model_copy(update={"content": types.Content(role="model", parts=[types.Part(text=output)])})
+
+
+def _has_text(event: Event) -> bool:
+    parts = event.content.parts if event.content is not None and event.content.parts else []
+    return any(part.text for part in parts)

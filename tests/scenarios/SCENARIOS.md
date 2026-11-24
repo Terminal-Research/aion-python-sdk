@@ -4,7 +4,7 @@
      commands.py and frameworks.py. Do not edit by hand: run
      `make scenarios-matrix`. -->
 
-290 scenarios in 53 files, 653 runs across 2 frameworks: 602 run, 50 skipped, 1 independent of the framework.
+300 scenarios in 55 files, 673 runs across 2 frameworks: 613 run, 59 skipped, 1 independent of the framework.
 
 Nothing here was produced by running a scenario: `pytest --collect-only` and the registries are all it takes, and the same suite always renders the same file. What the suite is and how to run it is in [README.md](README.md).
 
@@ -53,12 +53,14 @@ Features a framework's native agent does not have; a native scenario driving one
 | langgraph | `session-state` | LangGraph has no output_key or tool-written session state; its state is the graph's own channels |
 | adk | `store` | ADK has no LangGraph store; its memory across conversations is the memory service, which the `memory-service` scenarios drive |
 | langgraph | `app` | LangGraph has no App that holds a graph with plugins; a graph is compiled with what it runs with |
+| langgraph | `workflow` | LangGraph has no ADK Workflow; a LangGraph graph is a workflow of its own, which every other scenario serves |
 | langgraph | `memory-service` | LangGraph has no memory service; its memory across conversations is the store, which the `store` scenarios drive |
 
 Features a framework gained inside the range the SDK allows; a native scenario driving one runs where the server has that release or a newer one and `skip`s on an older one, such as the oldest releases `make tests-floors` installs:
 
 | Framework | Capability | From | Reason before it |
 |---|---|---|---|
+| adk | `workflow` | google-adk 2.12.0 | ADK before 2.0 has no Workflow, and the server reads a workflow's output from events that name it, which 2.12 is the first release tested with |
 | adk | `tool-media` | google-adk 2.7.0 | ADK before 2.7 has no function response media: a Part a tool returns is a value of its function response |
 
 An authoring surface only some adapters have; a scenario about it `skip`s on the rest:
@@ -88,9 +90,9 @@ One marker per suite, from `pyproject.toml`; `TAGS=` selects on them.
 | `lifecycle` | cancel, concurrency, push notifications, startup | 15 | `make tests-scenarios TAGS=lifecycle` |
 | `contexts` | Context extension: list, read and delete conversations | 6 | `make tests-scenarios TAGS=contexts` |
 | `evolution` | the evolution extension through the SDK's wrapper and a stand-in toolkit: the standard path, refusals as REJECTED tasks, a cancel | 15 | `make tests-scenarios TAGS=evolution` |
-| `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 23 | `make tests-scenarios-persistence` |
+| `persistence` | needs POSTGRES_TEST_URL; survives a server restart, migrates an empty database | 24 | `make tests-scenarios-persistence` |
 | `distributed` | needs POSTGRES_TEST_URL; two servers over one database | 19 | `make tests-scenarios-distributed` |
-| `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 70 | `make tests-scenarios TAGS=native` |
+| `native` | an ordinary framework agent on its own path: model, tools, memory, no Aion API | 79 | `make tests-scenarios TAGS=native` |
 
 ## Scenarios by file
 
@@ -702,6 +704,22 @@ A tool's confirmation, answered ADK's way or the agent's, through the server.
 | [``before_tool_callback`` runs before ADK checks the confirmation, and sets it.](native/test_tool_confirmation.py#L116 "test_the_agent_judges_the_answer_for_a_tool_adk_confirms") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
 | [With no judge of the agent's, an answer that is not ADK's object as data is a refusal, not a crash.](native/test_tool_confirmation.py#L135 "test_a_tool_adk_confirms_takes_only_its_object") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native` |
 
+### `tests/scenarios/native/test_workflow.py`
+
+An ADK Workflow served as the agent.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [A text result is the reply](native/test_workflow.py#L43 "test_a_text_result_is_the_reply") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native`, [skip](#frameworks) before google-adk 2.12.0 |
+| [Any other result is the structured response](native/test_workflow.py#L50 "test_any_other_result_is_the_structured_response") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native`, [skip](#frameworks) before google-adk 2.12.0 |
+| [A nodes question pauses the task and the answer resumes it](native/test_workflow.py#L62 "test_a_nodes_question_pauses_the_task_and_the_answer_resumes_it") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native`, [skip](#frameworks) before google-adk 2.12.0 |
+| [Two branches ask; the task waits for each answer in turn, and the join goes on once both came.](native/test_workflow.py#L74 "test_questions_asked_at_once_are_asked_one_at_a_time") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native`, [skip](#frameworks) before google-adk 2.12.0 |
+| [A node posts through the aion thread](native/test_workflow.py#L87 "test_a_node_posts_through_the_aion_thread") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native`, [skip](#frameworks) before google-adk 2.12.0 |
+| [The terminal node adds nothing, so the message a node posted is the task's answer.](native/test_workflow.py#L93 "test_a_terminal_none_leaves_the_last_message_as_the_answer") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native`, [skip](#frameworks) before google-adk 2.12.0 |
+| [A terminal none after nothing said completes without an answer](native/test_workflow.py#L102 "test_a_terminal_none_after_nothing_said_completes_without_an_answer") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native`, [skip](#frameworks) before google-adk 2.12.0 |
+| [An agent nodes text reaches the client and the terminal node answers](native/test_workflow.py#L110 "test_an_agent_nodes_text_reaches_the_client_and_the_terminal_node_answers") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native`, [skip](#frameworks) before google-adk 2.12.0 |
+| [A terminal agent nodes text is the reply once](native/test_workflow.py#L116 "test_a_terminal_agent_nodes_text_is_the_reply_once") | `native` | — | `default` | [skip](#frameworks) | ✓ `adk_native`, [skip](#frameworks) before google-adk 2.12.0 |
+
 ### `tests/scenarios/persistence/test_database_migrations.py`
 
 Migrating the database: `aion db migrate`, `aion db check` and DB_MIGRATE_ON_START.
@@ -754,6 +772,14 @@ The streamed answer as PostgreSQL keeps it.
 | Scenario | Suite | Command | Deployment | langgraph | adk |
 |---|---|---|---|---|---|
 | [Three chunks and the end mark on the wire; one part with the whole text in the database.](persistence/test_streamed_answer.py#L21 "test_the_stored_task_keeps_the_streamed_answer_in_one_part") | `persistence` | `stream` | `default` | ✓ | ✓ |
+
+### `tests/scenarios/persistence/test_workflow_restart.py`
+
+An ADK Workflow's question outlives a restart of a server backed by PostgreSQL.
+
+| Scenario | Suite | Command | Deployment | langgraph | adk |
+|---|---|---|---|---|---|
+| [A nodes question is answered after a restart](persistence/test_workflow_restart.py#L42 "test_a_nodes_question_is_answered_after_a_restart") | `persistence` | — | `default` | ✓ | ✓ |
 
 ## Commands
 
