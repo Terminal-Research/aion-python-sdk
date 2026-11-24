@@ -27,6 +27,7 @@ function isConversationMessage(message: Message): boolean {
 /**
  * One turn: latest Assistant Answer, current-turn messages, then Stream Delta.
  * Artifact content is self-contained; source IDs only associate duplicates.
+ * A present empty or file-only answer stops message/stream fallback.
  * Status prompts and failure explanations remain visible independently.
  */
 export class ResponseAnswer {
@@ -87,10 +88,9 @@ export class ResponseAnswer {
 	/** Produce a self-contained message for display and saved transcript restore. */
 	message(): Message | undefined {
 		const message = this.selectMessage();
-		if (!message || this.notice) return message;
+		if (!message || this.notice || this.assistant) return message;
 		// File display is independent of which source supplies canonical text.
-		const candidates = [...(this.assistant?.parts ?? []),
-			...this.messages.flatMap((value) => value.parts)];
+		const candidates = this.messages.flatMap((value) => value.parts);
 		const seen = new Set(message.parts.map((part) => JSON.stringify(part)));
 		const files = candidates.filter((part) => {
 			if (part.content?.$case !== "url" && part.content?.$case !== "raw") return false;
@@ -104,7 +104,7 @@ export class ResponseAnswer {
 
 	private selectMessage(): Message | undefined {
 		if (this.notice) return { ...this.notice, messageId: this.entryId, taskId: this.taskId };
-		if (this.assistant && textOf(this.assistant.parts, "\n").trim()) {
+		if (this.assistant) {
 			return this.fromArtifact(this.assistant, "\n");
 		}
 		const text = this.messages.map((message) => textOf(message.parts, "\n"))
@@ -121,16 +121,13 @@ export class ResponseAnswer {
 		// Non-text messages remain inspectable without becoming answer text.
 		const last = this.messages.at(-1);
 		if (last?.parts.length) return { ...last, messageId: this.entryId, taskId: this.taskId };
-		if (this.assistant?.parts.some((part) => part.content?.$case === "url" || part.content?.$case === "raw")) {
-			return this.fromArtifact(this.assistant, "\n");
-		}
 		return undefined;
 	}
 
 	/** Source IDs associate rendered duplicates; they never gate artifact text. */
 	replacedEntryIds(): Set<string> {
 		const source = this.assistant?.metadata?.["aion:sourceMessageId"];
-		const ids = this.notice ? [this.notice.messageId] : this.assistant && textOf(this.assistant.parts, "\n").trim()
+		const ids = this.notice ? [this.notice.messageId] : this.assistant
 			? (typeof source === "string" ? [source] : [])
 			: this.messages.map((message) => message.messageId);
 		return new Set([this.entryId, ...ids.map((id) => `message:${this.taskId || "no-task"}:${id}`)]);
@@ -185,10 +182,11 @@ export class ResponseAnswer {
 	}
 
 	private fromArtifact(artifact: Artifact, separator: string): Message {
+		const text = textOf(artifact.parts, separator);
 		return {
 			messageId: this.entryId, taskId: this.taskId, contextId: this.contextId,
 			role: Role.ROLE_AGENT, referenceTaskIds: [], metadata: artifact.metadata, extensions: artifact.extensions,
-			parts: [makeTextPart(textOf(artifact.parts, separator)),
+			parts: [...(text.trim() ? [makeTextPart(text)] : []),
 				...artifact.parts.filter((part) => part.content?.$case !== "text")]
 		};
 	}

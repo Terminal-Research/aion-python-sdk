@@ -48,14 +48,49 @@ describe("canonical response selection", () => {
 		expect(body(answer)).toBe("latest");
 	});
 
-	it("falls back after an empty answer replacement without reviving its old text", () => {
+	it("stops fallback after an empty answer replacement", () => {
 		const answer = new ResponseAnswer();
 		answer.observe(update("old"));
 		answer.observe(update(""));
 		answer.observe(update("Stream", false, stream));
 		answer.observe(update("ed", true, stream));
 		answer.observe(update("", false, stream));
-		expect(body(answer)).toBe("Streamed");
+		expect(body(answer)).toBe("");
+	});
+
+	it("keeps nonempty content across empty appends, but accepts blank snapshots", () => {
+		const answer = new ResponseAnswer();
+		answer.observe(update("First"));
+		answer.observe(update("", true));
+		expect(body(answer)).toBe("First");
+		answer.observe(snapshot([artifact(assistant, " \t\n")], [message("fallback", "message")]));
+		expect(body(answer)?.trim()).toBe("");
+		answer.observe(snapshot());
+		expect(body(answer)?.trim()).toBe("");
+	});
+
+	it("keeps the artifact's files without borrowing message files", () => {
+		const answer = new ResponseAnswer();
+		const ownFile = Artifact.fromJSON({ artifactId: assistant, parts: [{ url: "https://files.test/answer.pdf" }] });
+		const fallback = Message.fromJSON({ ...message("source", "fallback"), parts: [{ url: "https://files.test/draft.pdf" }] });
+		answer.observe(snapshot([ownFile], [fallback]));
+		expect(body(answer)).toContain("answer.pdf");
+		expect(body(answer)).not.toContain("draft.pdf");
+		answer.observe(update(""));
+		expect(body(answer)).toBe("");
+	});
+
+	it("removes this turn's draft for an empty final answer without an empty bubble", () => {
+		const answer = new ResponseAnswer("request");
+		const draftId = "artifact:task:aion:stream-delta:1";
+		const entries: TranscriptEntry[] = [
+			{ id: "previous", role: "agent", body: "earlier turn", isFinalized: true },
+			{ id: draftId, role: "agent", body: "draft", isFinalized: false }
+		];
+		answer.observe(update(""));
+		const final = reconcileResponseTranscript(entries, answer, body(answer)!, new Set([draftId]));
+		expect(final.map((entry) => entry.body)).toEqual(["earlier turn"]);
+		expect(restoredTranscriptEntries(responseMessages(snapshot([artifact(assistant, "")])))).toEqual([]);
 	});
 
 	it("prefers current-turn messages to aggregated stream text", () => {
@@ -86,7 +121,7 @@ describe("canonical response selection", () => {
 		expect(answer.message()?.parts.filter((part) => part.content?.$case === "text" && part.content.value)).toEqual([]);
 		expect(body(answer)).toContain("https://files.test/a.pdf");
 		answer.observe(snapshot([fileOnly], [message("fallback", "message")]));
-		expect(body(answer)).toContain("message");
+		expect(body(answer)).not.toContain("message");
 		expect(body(answer)).toContain("https://files.test/a.pdf");
 	});
 

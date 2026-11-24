@@ -53515,11 +53515,11 @@ function reconcileResponseTranscript(entries, answer, body, responseEntryIds) {
   const result = entries.flatMap((entry) => {
     if (removedDividers.has(entry.id)) return [];
     if (!replaced.has(entry.id) && !streamEntryIds.has(entry.id)) return [entry];
-    if (inserted) return [];
+    if (inserted || !body.trim()) return [];
     inserted = true;
     return [canonical];
   });
-  return inserted ? result : [...result, canonical];
+  return inserted || !body.trim() ? result : [...result, canonical];
 }
 
 // src/components/HomeScreen.tsx
@@ -59122,11 +59122,8 @@ var ResponseAnswer = class {
   /** Produce a self-contained message for display and saved transcript restore. */
   message() {
     const message = this.selectMessage();
-    if (!message || this.notice) return message;
-    const candidates = [
-      ...this.assistant?.parts ?? [],
-      ...this.messages.flatMap((value) => value.parts)
-    ];
+    if (!message || this.notice || this.assistant) return message;
+    const candidates = this.messages.flatMap((value) => value.parts);
     const seen = new Set(message.parts.map((part) => JSON.stringify(part)));
     const files = candidates.filter((part) => {
       if (part.content?.$case !== "url" && part.content?.$case !== "raw") return false;
@@ -59139,7 +59136,7 @@ var ResponseAnswer = class {
   }
   selectMessage() {
     if (this.notice) return { ...this.notice, messageId: this.entryId, taskId: this.taskId };
-    if (this.assistant && textOf(this.assistant.parts, "\n").trim()) {
+    if (this.assistant) {
       return this.fromArtifact(this.assistant, "\n");
     }
     const text = this.messages.map((message) => textOf(message.parts, "\n")).filter((value) => value.trim()).join("\n\n");
@@ -59157,15 +59154,12 @@ var ResponseAnswer = class {
     }
     const last = this.messages.at(-1);
     if (last?.parts.length) return { ...last, messageId: this.entryId, taskId: this.taskId };
-    if (this.assistant?.parts.some((part) => part.content?.$case === "url" || part.content?.$case === "raw")) {
-      return this.fromArtifact(this.assistant, "\n");
-    }
     return void 0;
   }
   /** Source IDs associate rendered duplicates; they never gate artifact text. */
   replacedEntryIds() {
     const source = this.assistant?.metadata?.["aion:sourceMessageId"];
-    const ids = this.notice ? [this.notice.messageId] : this.assistant && textOf(this.assistant.parts, "\n").trim() ? typeof source === "string" ? [source] : [] : this.messages.map((message) => message.messageId);
+    const ids = this.notice ? [this.notice.messageId] : this.assistant ? typeof source === "string" ? [source] : [] : this.messages.map((message) => message.messageId);
     return /* @__PURE__ */ new Set([this.entryId, ...ids.map((id) => `message:${this.taskId || "no-task"}:${id}`)]);
   }
   observeTask(task) {
@@ -59210,6 +59204,7 @@ var ResponseAnswer = class {
     } : next;
   }
   fromArtifact(artifact, separator) {
+    const text = textOf(artifact.parts, separator);
     return {
       messageId: this.entryId,
       taskId: this.taskId,
@@ -59219,7 +59214,7 @@ var ResponseAnswer = class {
       metadata: artifact.metadata,
       extensions: artifact.extensions,
       parts: [
-        makeTextPart(textOf(artifact.parts, separator)),
+        ...text.trim() ? [makeTextPart(text)] : [],
         ...artifact.parts.filter((part) => part.content?.$case !== "text")
       ]
     };
@@ -61109,11 +61104,10 @@ ${JSON.stringify(
       return false;
     }
     const body = formatMessageParts(message.parts);
-    if (!body) return false;
-    lastCopyableResponseRef.current = { kind: "message", content: body };
+    lastCopyableResponseRef.current = body.trim() ? { kind: "message", content: body } : void 0;
     const responseEntries = responseEntriesRef.current.get(answer) ?? /* @__PURE__ */ new Set();
     setEntries((current) => reconcileResponseTranscript(current, answer, body, responseEntries));
-    return true;
+    return Boolean(body.trim());
   };
   const renderAgentResponseBubble = (message, fallbackTaskId, answer) => {
     if (!shouldRenderLiveResponseMessage(message)) {

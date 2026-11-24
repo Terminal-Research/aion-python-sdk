@@ -145,22 +145,38 @@ def conversation_messages(task: Task) -> list[Message]:
 
 
 def answer_text(task: Task) -> Optional[str]:
-    """Select the canonical text of the task's current response.
+    """Read the canonical answer text from one task snapshot.
 
-    Prefer the latest ``aion:assistant-answer`` artifact, then agent messages
-    after the latest user message, then ``aion:stream-delta``. Artifacts are
-    complete snapshots here: their own parts supply the answer, without
-    requiring a source message in history. Other artifacts remain available
-    through the generic part readers and do not supply answer text.
+    Select the answer in this order:
+
+    1. Use the last ``aion:assistant-answer`` artifact, if present. Join its
+       text parts with newlines. An empty, whitespace-only, or file-only
+       artifact returns ``None`` and stops selection. Do not use fallback
+       text or require its ``aion:sourceMessageId`` to exist in history.
+
+    2. If no Assistant Answer exists, use conversation messages from agents
+       after the latest user message. Include the task status message if it
+       is not already in history. Join each message's text parts, then join
+       the nonblank messages with blank lines. Ignore non-conversation events.
+
+    3. If those messages have no text, use the last ``aion:stream-delta``
+       artifact. Join its text parts without a separator.
+
+    This helper reads complete artifacts. It does not accumulate stream
+    events, render files, or create an answer artifact. Use the generic part
+    readers to inspect files and other artifacts.
+
+    Args:
+        task: The task snapshot that contains the current response.
 
     Returns:
-        The selected text, or None when the current response has no text.
+        The selected text, or ``None`` when the canonical answer has no text
+        or no eligible source supplies text.
     """
     answers = [artifact for artifact in task.artifacts if artifact.artifact_id == ArtifactId.ASSISTANT_ANSWER.value]
     if answers:
         text = text_of(answers[-1], separator="\n")
-        if text.strip():
-            return text
+        return text if text.strip() else None
 
     messages = list(task.history)
     if task.status.HasField("message") and not any(

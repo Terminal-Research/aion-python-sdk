@@ -476,7 +476,7 @@ export function replaceActiveStreamTranscriptSection({
 	};
 }
 
-/** Replace this turn's response sections and source duplicates, keeping other output. */
+/** Replace this turn's response sections, or remove them for an empty answer. */
 export function reconcileResponseTranscript(
 	entries: TranscriptEntry[],
 	answer: ResponseAnswer,
@@ -496,9 +496,9 @@ export function reconcileResponseTranscript(
 	const result = entries.flatMap((entry): TranscriptEntry[] => {
 		if (removedDividers.has(entry.id)) return [];
 		if (!replaced.has(entry.id) && !streamEntryIds.has(entry.id)) return [entry];
-		if (inserted) return [];
+		if (inserted || !body.trim()) return [];
 		inserted = true;
 		return [canonical];
 	});
-	return inserted ? result : [...result, canonical];
+	return inserted || !body.trim() ? result : [...result, canonical];
 }

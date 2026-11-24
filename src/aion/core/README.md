@@ -98,11 +98,13 @@ issues every reader a link of their own.
 `aion.core.a2a` reads any message, artifact or task the same way:
 `text_of`, `data_of`, `files_of` - its files as `ConversationFile` -
 `conversation_messages(task)` and `answer_text(task)`. For the current
-response, `answer_text` selects the first source with text in this order:
+response, `answer_text` uses this order:
 
-1. The latest `aion:assistant-answer` artifact.
-2. Agent messages after the latest user message.
-3. The latest `aion:stream-delta` artifact.
+1. The latest `aion:assistant-answer` artifact, if present. An empty,
+   whitespace-only, or file-only answer returns `None` without fallback.
+2. If that artifact is absent, agent conversation messages after the latest
+   user message, including a status message not already in history.
+3. If those messages have no text, the latest `aion:stream-delta` artifact.
 
 The answer artifact supplies its own text. It does not need a matching
 `aion:sourceMessageId` in task history. Other artifacts do not supply answer

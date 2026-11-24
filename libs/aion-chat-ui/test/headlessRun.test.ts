@@ -947,7 +947,7 @@ it.each(["send-message", "streaming-message"] as const)("selects one canonical a
 });
 
 
-it("does not retain a cached answer after an empty replacement", async () => {
+it.each(["", " \n\t"])("does not restore draft text after a blank answer (%j)", async (blank) => {
 	const stdout = createStream();
 	const stderr = createStream();
 	const answerEvent = (text: string): StreamResponse => ({ payload: { $case: "artifactUpdate", value:
@@ -959,8 +959,11 @@ it("does not retain a cached answer after an empty replacement", async () => {
 		discoverAgentSourcesImpl: async () => discoveryResult(),
 		connectClientImpl: async () => connectedClient({
 			card: { ...agentCard, capabilities: { extensions: [], streaming: true } },
-			streamEvents: [answerEvent("obsolete"), answerEvent(""),
-				{ payload: { $case: "task", value: task() } }]
+			streamEvents: [streamArtifactUpdate("Draft"), answerEvent("obsolete"), answerEvent(blank),
+				{ payload: { $case: "task", value: task({
+					history: [message("fallback", "agent", "Do not restore")],
+					artifacts: [Artifact.fromJSON({ artifactId: "aion:stream-delta", parts: [{ text: "Draft" }] })]
+				}) } }]
 		}),
 		buildMessagePartsImpl: async (text) => buildParts(text),
 		getStoredAccessTokenImpl: async () => undefined
