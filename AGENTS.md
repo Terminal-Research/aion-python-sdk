@@ -100,6 +100,12 @@ contracts; reconcile this file with them when behavior changes.
 - Database migrations only add. Every table in the `aion` schema, those on
   a2a-sdk's models included, comes from `aion.db.postgres.migrations`, and
   `aion.server.database` runs it with the installed frameworks' migrations.
+  The `aion` schema holds the SDK's own tables only, whatever framework an
+  agent runs: a framework is a plugin installed with its extra, so its
+  tables - the framework's own and the ones the SDK adds for it - lie in its
+  schema (`aion_langgraph`, `aion_adk`) and come from its plugin's
+  `migrate_database`. The SDK's tables for ADK come from
+  `aion.adk.server.tables`, whose migrations only add as well.
   The previous release must keep working on the new schema: servers roll out
   one at a time, and a release can be rolled back onto a migrated database.
   Removing a table or column takes two releases - one where the code stops

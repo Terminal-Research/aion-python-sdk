@@ -10,7 +10,6 @@ from a2a.types import Artifact, Message, Task, TaskStatus
 from google.protobuf.struct_pb2 import Struct
 
 __all__ = [
-    "AdkArtifactVersionRecord",
     "ContextReservationRecord",
     "TaskRecord",
     "TaskMessageRecord",
@@ -211,20 +210,3 @@ class ContextReservationRecord(BaseModel):
     """``owner_scope`` of the caller whose request started the deletion."""
     deleted_at: _dt.datetime | None = None
     """When the deletion finished."""
-
-
-class AdkArtifactVersionRecord(BaseModel):
-    """Pydantic representation of a row from the ``adk_artifact_versions`` table."""
-
-    agent_id: str
-    """The agent whose artifact this is."""
-    owner_scope: str
-    """The owner the artifact was saved for."""
-    context_id: str
-    """The A2A context ID."""
-    artifact_name: str
-    """The artifact's name."""
-    version: int
-    """The version number given."""
-    created_at: _dt.datetime | None = None
-    """When the number was given."""

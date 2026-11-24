@@ -183,7 +183,7 @@ async def test_a_number_another_server_took_is_skipped_for_the_next_free_one() -
     database = _Database([False, True, True])
     service = _numbered_by(database, [0, 2, 3])
 
-    with patch("aion.adk.server.artifacts.backends.a2a.AdkArtifactVersionsRepository", return_value=database.repository):
+    with patch("aion.adk.server.artifacts.backends.a2a.ArtifactVersions", return_value=database.repository):
         first = await _save(service, "report.txt", "mine")
         second = await _save(service, "report.txt", "mine too")
 
@@ -200,7 +200,7 @@ async def test_a_save_that_never_gets_a_number_fails() -> None:
     database = _Database([False] * VERSION_ATTEMPTS)
     service = _numbered_by(database, list(range(VERSION_ATTEMPTS + 1)))
 
-    with patch("aion.adk.server.artifacts.backends.a2a.AdkArtifactVersionsRepository", return_value=database.repository):
+    with patch("aion.adk.server.artifacts.backends.a2a.ArtifactVersions", return_value=database.repository):
         with pytest.raises(ArtifactVersionConflictError):
             await _save(service, "report.txt", "never")
 
@@ -213,7 +213,7 @@ async def test_user_scoped_artifacts_record_no_number() -> None:
     database = _Database([])
     service = _numbered_by(database, [0])
 
-    with patch("aion.adk.server.artifacts.backends.a2a.AdkArtifactVersionsRepository", return_value=database.repository):
+    with patch("aion.adk.server.artifacts.backends.a2a.ArtifactVersions", return_value=database.repository):
         assert await _save(service, "user:profile.txt", "x") == 0
 
     assert database.tried == []

@@ -11,7 +11,7 @@ from aion.server.plugins import AgentPluginProtocol
 from .adapter import ADKAdapter
 
 
-ADK_TABLES_NAME = "ADK session and memory tables"
+ADK_TABLES_NAME = "ADK tables"
 
 
 class ADKPlugin(AgentPluginProtocol):
@@ -58,7 +58,7 @@ class ADKPlugin(AgentPluginProtocol):
 
     @override
     async def check_database(self, db_manager: DbManagerProtocol) -> Optional[SchemaCheck]:
-        """Report whether google-adk's session tables and the SDK's memory tables are in place, as one check."""
+        """Report whether google-adk's session tables and the SDK's ADK tables are in place, as one check."""
         from .session.backends.postgres import check_session_tables
         from .tables import check_aion_tables
 

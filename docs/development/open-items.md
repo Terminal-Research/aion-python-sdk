@@ -46,3 +46,17 @@ authorization; the owner gets a working link by reading the task with its
 attribution. A refused link costs nothing more: the refusal is logged with
 the file's id, and the file version is not asked about again on the same
 behalf for a minute.
+
+## drop-aion-adk-artifact-versions
+
+- **Status:** Planned
+- **Code:** `src/aion/adk/server/tables.py`
+
+The ADK artifact service records the version numbers it gives in
+`aion_adk.adk_artifact_versions`, beside the ADK sessions, and the ADK
+migrations copy the rows of `aion.adk_artifact_versions` (SDK revision `010`)
+into it once. The table in the `aion` schema is no longer read or written; it
+stays for one release, for the servers of the previous version during a rolling
+upgrade and for a rollback onto the migrated database. The next release drops
+it with an SDK revision listed in `TWO_RELEASE_REMOVALS`, and the copy step
+stays, finding nothing to copy.

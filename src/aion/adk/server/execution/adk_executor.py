@@ -236,12 +236,14 @@ class ADKExecutor(AgentFrameworkExecutor):
             yield converter.generate_complete()
 
     async def delete_state(self, config: ExecutionConfig) -> None:
-        """Delete the context's ADK session and the artifacts saved under it.
+        """Delete the context's ADK session, the artifacts saved under it and their version numbers.
 
         Keyed as every execution of the context was: the agent as the app,
         the scope's state owner as the user, the context as the session.
         Artifacts kept in the task tables go with the context's tasks; this
-        removes the ones the artifact service still holds in memory.
+        removes the ones the artifact service still holds in memory, and the
+        version numbers it gave in the context, so a context reused
+        afterwards numbers from 0.
         """
         scope = config.require_state_scope()
         session_id = ADKTransformer.to_session_id(config)
@@ -255,6 +257,8 @@ class ADKExecutor(AgentFrameworkExecutor):
                 filename=filename,
                 session_id=session_id,
             )
+        if isinstance(self._artifact_service, A2AArtifactService):
+            await self._artifact_service.forget_context_versions(app_name=scope.agent_id, session_id=session_id)
         session = await self._session_service.get_session(
             app_name=scope.agent_id, user_id=scope.state_owner, session_id=session_id
         )

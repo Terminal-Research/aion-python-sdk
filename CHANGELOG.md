@@ -18,6 +18,10 @@
 * **adk:** say that a `LongRunningFunctionTool` pauses a run only when its function returns `None`
 * **files:** say that a stored part keeps the file's protected address, and its download link is issued on behalf of the caller
 
+### Code Refactoring
+
+* **adk:** keep the version numbers ADK's artifact service gives in the `aion_adk` schema, beside the ADK sessions; the table in the `aion` schema is no longer used
+
 ### Miscellaneous Chores
 
 * link the documentation and the changelog from the package page ([f93e48f](https://github.com/Terminal-Research/aion-python-sdk/commit/f93e48f48e9a682fea3b6ff2e5652dc388239f14))
