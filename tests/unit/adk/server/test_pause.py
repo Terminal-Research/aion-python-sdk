@@ -122,6 +122,25 @@ class TestWaitingCall:
 
         assert waiting_call(events).call_id == "second"
 
+    def test_calls_waiting_at_once_are_asked_one_at_a_time(self):
+        """Branches asked together: the newest first, then the one before it once that is answered."""
+        asked = [_call_event(INPUT_CALL, {}, call_id="first"), _call_event(INPUT_CALL, {}, call_id="second")]
+
+        assert waiting_call(asked).call_id == "second"
+        assert waiting_call([*asked, _response_event(INPUT_CALL, call_id="second")]).call_id == "first"
+        assert waiting_call(
+            [*asked, _response_event(INPUT_CALL, call_id="second"), _response_event(INPUT_CALL, call_id="first")]
+        ) is None
+
+    def test_the_calls_of_one_invocation_alone(self):
+        other = _call_event(INPUT_CALL, {}, call_id="elsewhere")
+        other.invocation_id = "inv-0"
+        events = [other, _call_event(INPUT_CALL, {}, call_id="here")]
+
+        assert waiting_call(events, invocation_id="inv-1").call_id == "here"
+        assert waiting_call([other], invocation_id="inv-1") is None
+        assert waiting_call([other]).call_id == "elsewhere"
+
 
 class TestQuestion:
     def test_a_confirmation_asks_with_its_hint(self):

@@ -4,6 +4,7 @@
 
 ### Features
 
+* **adk:** run an ADK `Workflow` as the agent on google-adk 2.12 and later: a text result is the reply, any other result the `structured_response` artifact, and a node's question pauses the task; a workflow on an older ADK is refused at startup
 * **adk:** run an ADK `App` given as the agent with its plugins, events compaction and context cache; a path that names no object takes the module's `App` first
 * **adk:** give an agent a memory service: what it keeps for a user is found in the user's later conversations, kept apart for every agent and state owner, in PostgreSQL beside the sessions
 * **langgraph:** give a graph without a store of its own the server's: memory across a user's conversations, kept apart for every agent and state owner, in PostgreSQL with the checkpoints
@@ -12,7 +13,7 @@
 ### Bug Fixes
 
 * **adk:** close the agent's toolsets and its `App`'s plugins when the server stops
-* **adk:** refuse an ADK `Workflow` at startup instead of completing its tasks without an answer
+* **adk:** ask the questions a run asks at once one at a time instead of completing the task after the first answer
 * **adk:** find the artifacts of a shared conversation's earlier turns with a database, whichever participant saved them
 * **files:** keep a stored file's download link out of the logs
 * **langgraph:** save a file as a link wherever the checkpoint keeps its message - in a model, a dataclass, a `Send` or an `interrupt()` - and in a checkpointer of the graph's own

@@ -63,7 +63,7 @@ class ADKExecutor(AgentFrameworkExecutor):
 
     def __init__(
             self,
-            agent: Union[BaseAgent, App],
+            agent: Union[BaseAgent, App, Any],
             config: AgentConfig,
             session_service: Optional[BaseSessionService] = None,
             artifact_service: Optional[BaseArtifactService] = None,

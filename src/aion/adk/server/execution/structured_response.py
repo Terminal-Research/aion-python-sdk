@@ -47,9 +47,10 @@ def structured_response(event: Event, root: Optional[BaseAgent]) -> Any:
     Args:
         event: An event of the run.
         root: The invocation's root agent, in whose tree the event's author
-            is found.
+            is found. A workflow's result is read by ``workflow.run_output``
+            instead, and no other root is searched.
     """
-    if event.partial or not event.is_final_response() or root is None or not event.author:
+    if event.partial or not event.is_final_response() or not isinstance(root, BaseAgent) or not event.author:
         return NO_STRUCTURED_RESPONSE
     agent = root.find_agent(event.author)
     schema = getattr(agent, "output_schema", None)

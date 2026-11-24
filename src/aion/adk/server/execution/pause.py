@@ -5,7 +5,9 @@ event's ``long_running_tool_ids`` and which no function response has
 answered yet. A ``LongRunningFunctionTool`` whose function returns None,
 the built-in ``request_input`` tool, ``tool_context.request_confirmation``
 (``adk_request_confirmation``) and ``tool_context.request_credential``
-(``adk_request_credential``) all end that way. The agent returns, and the
+(``adk_request_credential``) all end that way, and so does a workflow node
+that yields ``RequestInput`` or asks for confirmation
+(``adk_request_input``). The agent returns, and the
 call waits in the session until a function response with its id arrives.
 A long-running function that returns a value answers its own call, so the
 run goes on without a pause, as in ADK itself.
@@ -158,21 +160,27 @@ def paused_on(last_events: Sequence[Event]) -> Optional[PendingCall]:
     return None
 
 
-def waiting_call(events: Iterable[Event]) -> Optional[PendingCall]:
+def waiting_call(events: Iterable[Event], *, invocation_id: Optional[str] = None) -> Optional[PendingCall]:
     """The long-running call a session still waits on, or None.
 
-    The newest such call wins; a call is answered once a function response
-    with its id is in the session after it.
+    A call is answered once a function response with its id is in the
+    session after it. Several calls can wait at once - the branches of a
+    workflow, or of a ``ParallelAgent``, each asking - and they are asked
+    one at a time: the newest one still waiting first, and the one before
+    it once that is answered.
+
+    Args:
+        events: The session's events, oldest first.
+        invocation_id: Only the calls of this invocation; every call when None.
     """
-    pending: Optional[PendingCall] = None
+    pending: dict[str, PendingCall] = {}
     for event in events:
         for response in event.get_function_responses():
-            if pending is not None and response.id == pending.call_id:
-                pending = None
-        calls = _long_running_calls(event)
-        if calls:
-            pending = calls[-1]
-    return pending
+            pending.pop(response.id, None)
+        for call in _long_running_calls(event):
+            if invocation_id is None or call.invocation_id == invocation_id:
+                pending[call.call_id] = call
+    return list(pending.values())[-1] if pending else None
 
 
 def _response(call: PendingCall, reply: Reply) -> dict[str, Any]:
