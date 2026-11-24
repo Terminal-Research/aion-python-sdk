@@ -11,6 +11,7 @@
 
 ### Bug Fixes
 
+* **a2a:** take a present `aion:assistant-answer` without text - empty, blank or files only - as the answer in `answer_text` and `aion chat`, without falling back to the turn's messages or Stream Delta text
 * **adk:** close the agent's toolsets and its `App`'s plugins when the server stops
 * **adk:** refuse an ADK `Workflow` at startup instead of completing its tasks without an answer
 * **adk:** find the artifacts of a shared conversation's earlier turns with a database, whichever participant saved them

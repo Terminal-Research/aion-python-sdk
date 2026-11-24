@@ -644,7 +644,9 @@ and push subscribers all get them:
   artifact and every later one extend it.
 - `aion:reaction` is the agent's latest reaction to a message.
 - `aion:assistant-answer` is given to a task that completes having produced
-  no other artifact in any of its turns: the content of the last message
+  no result in any of its turns - no artifact but its thoughts
+  (`aion:thinking-delta`) and reactions (`aion:reaction`), which are not
+  results (`is_result_artifact`): the content of the last message
   the agent sent in the completing turn, without the message's routing
   target, and that message's id in `aion:sourceMessageId`. A completed task
   without such a message gets none, and the server logs a warning. A failed
