@@ -5,13 +5,11 @@ Standalone terminal chat UI for Aion agents. This subproject is published to npm
 ## Install
 
 Use `aio chat` for a conversation in the terminal composer or `aio run` to print a single reply.
-On npm release `0.1.2`, use the `aion-chat` shortcut to open the composer.
 
 ```bash
 npm install -g @terminal-research/aion
-aio chat --url https://agent.example.com
-aio chat --agent-id my-agent --url http://localhost:8000
-aion-chat --agent-id my-agent --url http://localhost:8000
+aio login
+aio chat
 ```
 
 ## Commands
@@ -23,7 +21,9 @@ aio chat --url http://localhost:8000
 aio chat --agent-id my-agent --url http://localhost:8000
 ```
 
-`--url` is an A2A endpoint URL used to discover and connect to agents. The selected Aion environment is separate from `--url`; it controls which Aion account and registry services are used for login and hosted agent discovery.
+When you are signed in, `aio chat` connects to Aion and lists agents in your selected workspace, including agents hosted on Aion.
+It also checks `http://localhost:8000` for a local SDK server. Pass `--url` to discover agents only at the specified A2A endpoint.
+The endpoint can run the Aion Python SDK or another A2A-compatible implementation.
 
 CLI endpoint auth values such as `--token` and `--header` are sent only to the explicit `--url` source. They are not sent to default localhost discovery or Aion registry-discovered agents.
 
@@ -121,7 +121,7 @@ aio login
 aion-chat login
 ```
 
-`aio login` signs in to the currently selected Aion environment, defaulting to production when no environment has been selected. The login flow opens the Aion sign-in page in the default browser when possible and shows the user code in the terminal. If your account needs additional setup, the CLI opens the appropriate Aion web app page after sign-in.
+`aio login` signs you in to Aion so you can use hosted agents in your workspace from `aio chat` or `aio run`. The login flow opens the Aion sign-in page in the default browser when possible and shows the user code in the terminal. If your account needs additional setup, the CLI opens the appropriate Aion web app page after sign-in.
 
 Inside the composer, `/login` is visible in the slash command picker and runs the same login flow.
 
