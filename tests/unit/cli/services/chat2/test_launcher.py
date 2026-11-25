@@ -21,6 +21,7 @@ def test_chat_launch_options_to_args() -> None:
     )
 
     assert options.to_args() == [
+        "chat",
         "--url",
         "http://localhost:8000",
         "--agent-id",
@@ -46,7 +47,7 @@ def test_chat_launch_options_omits_endpoint_when_not_supplied() -> None:
         push_receiver="http://localhost:5000",
     )
 
-    assert options.to_args() == []
+    assert options.to_args() == ["chat"]
 
 
 def test_chat_run_launch_options_to_args() -> None:
@@ -174,6 +175,7 @@ def test_launch_chat_returns_process_exit_code(monkeypatch) -> None:
     assert recorded["command"] == [
         "node",
         "/tmp/cli.mjs",
+        "chat",
     ]
     assert recorded["check"] is False
     assert isinstance(recorded["env"], dict)

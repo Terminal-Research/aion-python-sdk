@@ -53,8 +53,8 @@ class ChatLaunchOptions:
     workspace: Optional[str] = None
 
     def to_args(self) -> list[str]:
-        """Convert the options to CLI arguments for the standalone UI."""
-        args: list[str] = []
+        """Build the standalone chat command and its options."""
+        args: list[str] = ["chat"]
 
         if self.environment_id:
             args.extend(["--env", self.environment_id])

@@ -49284,7 +49284,7 @@ function getPackageInfo() {
 // src/args.ts
 var HELP_TEXT = `
 Usage:
-  aio [options]
+  aio chat [options]
   aio run [options] [message]
   aio login
   aion-chat [options]
@@ -49637,6 +49637,9 @@ function parseRunArgs(argv) {
   };
 }
 function parseCliArgs(argv) {
+  if (argv.length === 0 || argv[0] === "--help") {
+    return { kind: "help" };
+  }
   const normalized = [];
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
@@ -49672,7 +49675,7 @@ function parseCliArgs(argv) {
   }
   return {
     kind: "chat",
-    options: parseArgs(argv)
+    options: parseArgs(argv[0] === "chat" ? argv.slice(1) : argv)
   };
 }
 
@@ -62954,6 +62957,10 @@ async function main() {
   try {
     const command = parseCliArgs(process.argv.slice(2));
     parsedCommand = command;
+    if (command.kind === "help") {
+      printHelp();
+      return;
+    }
     if (command.kind === "login") {
       await runLoginCommand();
       return;

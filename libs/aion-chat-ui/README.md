@@ -1,15 +1,16 @@
 # aion-chat-ui
 
-Standalone terminal chat UI for Aion agents. This subproject is published to npm as `@terminal-research/aion` and installs the `aio` executable with an `aion-chat` alias.
+Standalone terminal chat UI for Aion agents. This subproject is published to npm as `@terminal-research/aion` and installs the `aio` and `aion-chat` executables.
 
 ## Install
 
-`aio` is the standalone Node entrypoint. `aion-chat` is available as an alias.
+Use `aio chat` for a conversation in the terminal composer or `aio run` to print a single reply.
+On npm release `0.1.2`, use the `aion-chat` shortcut to open the composer.
 
 ```bash
 npm install -g @terminal-research/aion
-aio --url https://agent.example.com
-aio --agent-id my-agent --url http://localhost:8000
+aio chat --url https://agent.example.com
+aio chat --agent-id my-agent --url http://localhost:8000
 aion-chat --agent-id my-agent --url http://localhost:8000
 ```
 
@@ -18,8 +19,8 @@ aion-chat --agent-id my-agent --url http://localhost:8000
 ### Chat
 
 ```bash
-aio --url http://localhost:8000
-aio --agent-id my-agent --url http://localhost:8000
+aio chat --url http://localhost:8000
+aio chat --agent-id my-agent --url http://localhost:8000
 ```
 
 `--url` is an A2A endpoint URL used to discover and connect to agents. The selected Aion environment is separate from `--url`; it controls which Aion account and registry services are used for login and hosted agent discovery.
@@ -42,7 +43,7 @@ The selected workspace appears above the composer. Use `@` to choose an agent.
 Both launchers accept the same startup option:
 
 ```bash
-aio --env production --workspace "Terminal Research"
+aio chat --env production --workspace "Terminal Research"
 aion chat --env production --workspace "Terminal Research"
 aion chat run --env production --workspace "Terminal Research" --agent @nflstats "Hello"
 ```
@@ -128,7 +129,7 @@ If a session expires from inactivity or its credentials are rejected, registry d
 
 ### Updates
 
-When an interactive chat session starts, `aio` checks npm for the latest published version. If a newer version is available, it links to that version's GitHub release notes and asks whether to update globally, update in the current project, skip once, or skip until the next version. Choosing an update option runs the npm command and exits; start `aio` again after the install completes.
+When an interactive chat session starts, `aio chat` checks npm for the latest published version. If a newer version is available, it links to that version's GitHub release notes and asks whether to update globally, update in the current project, skip once, or skip until the next version. Choosing an update option runs the npm command and exits; start `aio chat` again after the install completes.
 
 ### Agent Sources and Sessions
 
@@ -156,7 +157,7 @@ aio env staging
 aion-chat environment staging
 aion-chat env development
 aio env development http://localhost:8081
-aio --env development https://dev-api.example.com
+aio chat --env development https://dev-api.example.com
 aio run --env development https://dev-api.example.com --agent @team-agent "Hello"
 ```
 
@@ -221,7 +222,7 @@ enforcement. Those are implemented separately in the SDK runtime phase.
 ```bash
 npm install
 npm run graphql:codegen
-npm run dev -- --url http://localhost:8000
+npm run dev -- chat --url http://localhost:8000
 ```
 
 Run the UI directly from `libs/aion-chat-ui` when you want to work on the Ink/React interface itself. Pass an A2A endpoint with `--url` when you want agent discovery and chat connection.

@@ -143,6 +143,10 @@ async function main(): Promise<void> {
 	try {
 		const command = parseCliArgs(process.argv.slice(2));
 		parsedCommand = command;
+		if (command.kind === "help") {
+			printHelp();
+			return;
+		}
 		if (command.kind === "login") {
 			await runLoginCommand();
 			return;

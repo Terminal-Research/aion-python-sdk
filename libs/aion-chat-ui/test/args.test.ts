@@ -41,6 +41,21 @@ describe("parseArgs", () => {
 		expect(parseArgs([]).url).toBeUndefined();
 	});
 
+	it("selects help for the root command", () => {
+		expect(parseCliArgs([])).toEqual({ kind: "help" });
+		expect(parseCliArgs(["--help"])).toEqual({ kind: "help" });
+	});
+
+	it("opens chat with default or explicit options", () => {
+		expect(parseCliArgs(["chat"])).toEqual({ kind: "chat", options: parseArgs([]) });
+		expect(parseCliArgs(["chat", "--workspace=Team"])).toEqual({
+			kind: "chat",
+			options: parseArgs(["--workspace", "Team"])
+		});
+		const endpoint = ["--url", "http://localhost:8000"];
+		expect(parseCliArgs(["chat", ...endpoint])).toEqual(parseCliArgs(endpoint));
+	});
+
 	it("parses login as a command", () => {
 		expect(parseCliArgs(["login"])).toEqual({
 			kind: "login"

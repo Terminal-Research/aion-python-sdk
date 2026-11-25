@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+* **chat:** open the standalone terminal client with `aio chat`.
+
 ## 0.2.0 (2026-11-20)
 
 ### ⚠ BREAKING CHANGES

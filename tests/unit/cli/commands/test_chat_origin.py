@@ -24,7 +24,8 @@ async def test_chat_origin_forwarding(monkeypatch, args):
     assert result.exit_code == 0, result.output
     assert calls[0].environment_id == "development"
     assert calls[0].control_plane_origin == ORIGIN
-    assert calls[0].to_args()[:3] == (["run", "--env", "development"] if "run" in args else ["--env", "development", ORIGIN])
+    command = "run" if "run" in args else "chat"
+    assert calls[0].to_args()[:4] == [command, "--env", "development", ORIGIN]
 
 
 @pytest.mark.parametrize("args, message", [

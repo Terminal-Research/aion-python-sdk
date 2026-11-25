@@ -32,6 +32,7 @@ export interface HeadlessRunOptions extends ChatCliOptions {
 }
 
 export type CliCommand =
+	| { kind: "help" }
 	| {
 			kind: "chat";
 			options: ChatCliOptions;
@@ -51,7 +52,7 @@ export type CliCommand =
 
 const HELP_TEXT = `
 Usage:
-  aio [options]
+  aio chat [options]
   aio run [options] [message]
   aio login
   aion-chat [options]
@@ -422,6 +423,10 @@ export function parseRunArgs(argv: string[]): HeadlessRunOptions {
 }
 
 export function parseCliArgs(argv: string[]): CliCommand {
+	if (argv.length === 0 || argv[0] === "--help") {
+		return { kind: "help" };
+	}
+
 	const normalized: string[] = [];
 	for (let index = 0; index < argv.length; index++) {
 		const arg = argv[index];
@@ -457,6 +462,6 @@ export function parseCliArgs(argv: string[]): CliCommand {
 
 	return {
 		kind: "chat",
-		options: parseArgs(argv)
+		options: parseArgs(argv[0] === "chat" ? argv.slice(1) : argv)
 	};
 }

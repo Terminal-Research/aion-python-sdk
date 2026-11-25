@@ -68,14 +68,14 @@ The workflow publishes stable GitHub releases to npm with the `latest` dist-tag.
 
 ```bash
 npm install -g @terminal-research/aion
-aio
+aio chat
 ```
 
 The workflow publishes GitHub prereleases to npm with the `next` dist-tag.
 
 ```bash
 npm install -g @terminal-research/aion@next
-aio
+aio chat
 ```
 
 ## One-Time npm Setup
